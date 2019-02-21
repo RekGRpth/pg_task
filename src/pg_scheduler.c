@@ -76,7 +76,6 @@ void ticker(Datum main_arg) {
             got_sighup = false;
             (void)ProcessConfigFile(PGC_SIGHUP);
         }
-        (void)connect_my();
         if (rc & WL_TIMEOUT) {
             (void)connect_my();
             if (execute_my("SELECT ticker()") != SPI_OK_SELECT) elog(FATAL, "execute_my != SPI_OK_SELECT");
