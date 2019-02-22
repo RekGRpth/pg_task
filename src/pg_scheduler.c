@@ -61,6 +61,36 @@ static inline void finish_my() {
     (void)ProcessCompletedNotifies();
 }
 
+static inline void expirator() {
+    (void)connect_my();
+    if (execute_my("WITH subquery AS ("
+        "SELECT id FROM task WHERE state = 'QUEUED' AND duration IS NOT NULL AND dt + duration < now() FOR UPDATE SKIP LOCKED"
+    ") UPDATE task SET state = 'EXPIRED' FROM subquery WHERE task.id = subquery.id") != SPI_OK_UPDATE) elog(FATAL, "execute_my != SPI_OK_UPDATE");
+    (void)finish_my();
+}
+
+static inline void launch_runner(int id, char *datname, char *usename) {
+    elog(LOG, "launch_runner id=%i, datname=%s, usename=%s", id, datname, usename);
+}
+
+static inline void launcher() {
+    (void)connect_my();
+//    if (execute_my("SELECT id, usename, datname FROM task WHERE state = 'QUEUED' AND dt <= now() FOR UPDATE SKIP LOCKED") != SPI_OK_SELECT) elog(FATAL, "execute_my != SPI_OK_SELECT");
+    if (execute_my("WITH updated AS (WITH subquery AS ("
+        "SELECT id FROM task WHERE state = 'QUEUED' AND dt <= now() FOR UPDATE SKIP LOCKED"
+    ") UPDATE task SET state = 'ASSIGNED' FROM subquery WHERE task.id = subquery.id RETURNING task.id, usename, datname) select * FROM updated") != SPI_OK_SELECT) elog(FATAL, "execute_my != SPI_OK_SELECT");
+    for (unsigned int i = 0; i < SPI_processed; i++) {
+        bool isnull;
+        int id = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 1, &isnull));
+        char *usename = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 2);
+        char *datname = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 3);
+        (void)launch_runner(id, datname, usename);
+        if (datname != NULL) (void)pfree(datname);
+        if (usename != NULL) (void)pfree(usename);
+    }
+    (void)finish_my();
+}
+
 void ticker(Datum main_arg) {
     elog(LOG, "ticker started database=%s, username=%s", database, username);
     pqsignal(SIGHUP, sighup);
@@ -77,12 +107,11 @@ void ticker(Datum main_arg) {
             (void)ProcessConfigFile(PGC_SIGHUP);
         }
         if (rc & WL_TIMEOUT) {
-            (void)connect_my();
-            if (execute_my("SELECT ticker()") != SPI_OK_SELECT) elog(FATAL, "execute_my != SPI_OK_SELECT");
-            (void)finish_my();
+            expirator();
+            launcher();
         }
     }
-//    elog(LOG, "ticker finished database=%s, username=%s", database, username);
+    elog(LOG, "ticker finished database=%s, username=%s", database, username);
     (void)proc_exit(1);
 }
 
