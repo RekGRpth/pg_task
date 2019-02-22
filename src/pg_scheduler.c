@@ -12,6 +12,7 @@
 #include "utils/guc.h"
 #include "utils/memutils.h"
 #include "commands/async.h"
+#include <catalog/pg_type.h>
 
 PG_MODULE_MAGIC;
 
@@ -121,12 +122,12 @@ static inline void assigner() {
 }
 
 void runner(Datum main_arg) {
-    int id = DatumGetInt64(main_arg);
-    elog(LOG, "runner started id=%i, database=%s, username=%s", id, database, username);
+    Oid argtypes[] = {INT8OID};
+    Datum Values[] = {main_arg};
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
     (void)connect_my();
-    if (execute_my("SELECT func_name, func_arg FROM pgq.maint_operations()") != SPI_OK_SELECT) elog(FATAL, "execute_my != SPI_OK_SELECT");
+    if (execute_with_args_my("SELECT * FROM task WHERE id = $1", 1, argtypes, Values, NULL) != SPI_OK_SELECT) elog(FATAL, "execute_my != SPI_OK_SELECT");
     (void)finish_my();
 }
 
