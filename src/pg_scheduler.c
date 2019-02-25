@@ -43,36 +43,38 @@ static inline void sigterm(SIGNAL_ARGS) {
 }
 
 static inline void connect_my() {
-    (void)SetCurrentStatementStartTimestamp();
-    (void)StartTransactionCommand();
+//    (void)SetCurrentStatementStartTimestamp();
+//    (void)StartTransactionCommand();
 //    if (SPI_connect() != SPI_OK_CONNECT) elog(FATAL, "SPI_connect != SPI_OK_CONNECT");
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
-    (void)PushActiveSnapshot(GetTransactionSnapshot());
+//    (void)PushActiveSnapshot(GetTransactionSnapshot());
+    (void)SPI_start_transaction();
 }
 
 static inline int execute_my(const char *src) {
     int ret;
-    (void)pgstat_report_activity(STATE_RUNNING, src);
+//    (void)pgstat_report_activity(STATE_RUNNING, src);
     ret = SPI_execute(src, false, 0);
-    (void)pgstat_report_activity(STATE_IDLE, src);
-    (void)pgstat_report_stat(true);
+//    (void)pgstat_report_activity(STATE_IDLE, src);
+//    (void)pgstat_report_stat(true);
     return ret;
 }
 
 static inline int execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls) {
     int ret;
-    (void)pgstat_report_activity(STATE_RUNNING, src);
+//    (void)pgstat_report_activity(STATE_RUNNING, src);
     ret = SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0);
-    (void)pgstat_report_activity(STATE_IDLE, src);
-    (void)pgstat_report_stat(true);
+//    (void)pgstat_report_activity(STATE_IDLE, src);
+//    (void)pgstat_report_stat(true);
     return ret;
 }
 
 static inline void finish_my() {
+    (void)SPI_commit();
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
-    (void)PopActiveSnapshot();
-    (void)CommitTransactionCommand();
-    (void)ProcessCompletedNotifies();
+//    (void)PopActiveSnapshot();
+//    (void)CommitTransactionCommand();
+//    (void)ProcessCompletedNotifies();
 }
 
 static inline void launch_task(Datum id) {
@@ -140,23 +142,31 @@ static inline void run(char *src) {
 }
 
 void task(Datum main_arg) {
-//    Oid argtypes[] = {INT8OID};
-//    Datum Values[] = {main_arg};
-//    char *request = NULL;
+    Oid argtypes[] = {INT8OID};
+    Datum Values[] = {main_arg};
+    char *request = NULL;
     elog(LOG, "task started id=%li", DatumGetInt64(main_arg));
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
-//    (void)connect_my();
-//    if (execute_with_args_my("UPDATE task SET state = 'WORK' WHERE id = $1 RETURNING request", 1, argtypes, Values, NULL) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "execute_my != SPI_OK_UPDATE_RETURNING");
-//    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1");
-//    request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
+    (void)connect_my();
+//    (void)SPI_start_transaction();
+    if (execute_with_args_my("UPDATE task SET state = 'WORK' WHERE id = $1 RETURNING request", 1, argtypes, Values, NULL) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "execute_my != SPI_OK_UPDATE_RETURNING");
+    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1");
+    request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
+    (void)SPI_commit();
+    (void)SPI_start_transaction();
 //    (void)finish_my();
-    (void)run(work(main_arg));
-//    elog(LOG, "request=%s", request);
+//    (void)run(work(main_arg));
+    elog(LOG, "request=%s", request);
 //    (void)connect_my();
-//    elog(LOG, "execute_my=%i", execute_my(request));
-//    (void)finish_my();
+//    (void)SPI_start_transaction();
+    elog(LOG, "execute_my=%i", execute_my(request));
+//    (void)SPI_commit();
 //    if (request != NULL) (void)pfree(request);
+    (void)SPI_commit();
+    (void)SPI_start_transaction();
+    if (execute_with_args_my("UPDATE task SET state = 'DONE' WHERE id = $1", 1, argtypes, Values, NULL) != SPI_OK_UPDATE) elog(FATAL, "execute_my != SPI_OK_UPDATE");
+    (void)finish_my();
 //    (void)connect_my();
 //    if (execute_with_args_my("UPDATE task SET state = 'DONE' WHERE id = $1", 1, argtypes, Values, NULL) != SPI_OK_UPDATE) elog(FATAL, "execute_my != SPI_OK_UPDATE");
 //    (void)finish_my();
@@ -170,7 +180,7 @@ void task(Datum main_arg) {
     }
     (void)finish_my();*/
 //    (void)done(main_arg);
-    (void)proc_exit(0);
+//    (void)proc_exit(0);
 }
 
 void man(Datum main_arg) {
