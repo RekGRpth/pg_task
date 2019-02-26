@@ -84,6 +84,18 @@ static inline void connect_my() {
     (void)PushActiveSnapshot(GetTransactionSnapshot());
 }
 
+static inline int execute_my(const char *src, bool read_only, long tcount) {
+    int res;
+    res = SPI_execute(src, read_only, tcount);
+    return res;
+}
+
+static inline int execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount) {
+    int res;
+    res = SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount);
+    return res;
+}
+
 static inline void finish_my() {
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
     (void)PopActiveSnapshot();
@@ -96,7 +108,7 @@ static inline char *work(Datum main_arg) {
     Datum Values[] = {main_arg};
     char *request = NULL;
     (void)connect_my();
-    if (SPI_execute_with_args("UPDATE task SET state = 'WORK' WHERE id = $1 RETURNING request", 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
+    if (execute_with_args_my("UPDATE task SET state = 'WORK' WHERE id = $1 RETURNING request", 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "execute_with_args_my != SPI_OK_UPDATE_RETURNING");
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1");
     request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
     (void)finish_my();
@@ -106,7 +118,7 @@ static inline char *work(Datum main_arg) {
 static inline void execute(char *src) {
     elog(LOG, "src=%s", src);
     (void)connect_my();
-    elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
+    elog(LOG, "execute_my=%i", execute_my(src, false, 0));
     if (src != NULL) (void)pfree(src);
     (void)finish_my();
 }
@@ -115,7 +127,7 @@ static inline void done(Datum main_arg) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {main_arg};
     (void)connect_my();
-    if (SPI_execute_with_args("UPDATE task SET state = 'DONE' WHERE id = $1", 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    if (execute_with_args_my("UPDATE task SET state = 'DONE' WHERE id = $1", 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "execute_with_args_my != SPI_OK_UPDATE");
     (void)finish_my();
 }
 
@@ -129,7 +141,7 @@ void task(Datum main_arg) {
 
 static inline void assign() {
     (void)connect_my();
-    if (SPI_execute("UPDATE task SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute != SPI_OK_UPDATE_RETURNING");
+    if (execute_my("UPDATE task SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "execute_my != SPI_OK_UPDATE_RETURNING");
     else {
         uint64 processed = SPI_processed;
         SPITupleTable *tuptable = SPI_tuptable;
