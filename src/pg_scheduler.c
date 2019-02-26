@@ -77,13 +77,79 @@ static inline void launch_task(Datum id) {
     if (handle != NULL) (void)pfree(handle);
 }
 
+/*static inline char *work(Datum main_arg) {
+    Oid argtypes[] = {INT8OID};
+    Datum Values[] = {main_arg};
+    char *request = NULL;
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    (void)SPI_start_transaction();
+    if (SPI_execute_with_args("UPDATE task SET state = 'WORK' WHERE id = $1 RETURNING request", 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
+    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1");
+    request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
+    (void)SPI_commit();
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+//    (void)ProcessCompletedNotifies();
+    return request;
+}
+
+static inline void execute(char *src) {
+    elog(LOG, "src=%s", src);
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    (void)SPI_start_transaction();
+    elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
+    (void)SPI_commit();
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+//    (void)ProcessCompletedNotifies();
+    if (src != NULL) (void)pfree(src);
+}
+
+static inline void done(Datum main_arg) {
+    Oid argtypes[] = {INT8OID};
+    Datum Values[] = {main_arg};
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    (void)SPI_start_transaction();
+    if (SPI_execute_with_args("UPDATE task SET state = 'DONE' WHERE id = $1", 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    (void)SPI_commit();
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+//    (void)ProcessCompletedNotifies();
+}
+
+void task(Datum main_arg) {
+    elog(LOG, "task started id=%li", DatumGetInt64(main_arg));
+    pqsignal(SIGTERM, sigterm);
+    (void)BackgroundWorkerUnblockSignals();
+    (void)BackgroundWorkerInitializeConnection(database, username, 0);
+//    (void)ResetLatch(MyLatch);
+//    (void)execute(work(main_arg));
+//    (void)done(main_arg);
+    while (!got_sigterm) {
+        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1L, PG_WAIT_EXTENSION);
+        (void)ResetLatch(MyLatch);
+        if (rc & WL_POSTMASTER_DEATH) (void)proc_exit(1);
+        if (got_sigterm) (void)proc_exit(0);
+        if (got_sighup) {
+            got_sighup = false;
+            (void)ProcessConfigFile(PGC_SIGHUP);
+        }
+        if (rc & WL_TIMEOUT) {
+            (void)execute(work(main_arg));
+            (void)done(main_arg);
+            (void)proc_exit(0);
+        }
+    }
+    (void)proc_exit(1);
+}*/
+
 void task(Datum main_arg) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {main_arg};
     char *request = NULL;
     elog(LOG, "task started id=%li", DatumGetInt64(main_arg));
+//    pqsignal(SIGTERM, sigterm);
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
+//    if (got_sigterm) (void)proc_exit(0);
+//    (void)ResetLatch(MyLatch);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
     (void)SPI_start_transaction();
     if (SPI_execute_with_args("UPDATE task SET state = 'WORK' WHERE id = $1 RETURNING request", 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
@@ -109,13 +175,16 @@ static inline void assign() {
     (void)SPI_start_transaction();
     if (SPI_execute("UPDATE task SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute != SPI_OK_UPDATE_RETURNING");
     else {
-        unsigned int processed = SPI_processed;
+        uint64 processed = SPI_processed;
         SPITupleTable *tuptable = SPI_tuptable;
         bool isnull;
         (void)SPI_commit();
         if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
         (void)ProcessCompletedNotifies();
-        for (unsigned int i = 0; i < processed; i++) (void)launch_task(SPI_getbinval(tuptable->vals[i], tuptable->tupdesc, 1, &isnull));
+        for (uint64 i = 0; i < processed; i++) {
+            elog(LOG, "i=%lu", i);
+            (void)launch_task(SPI_getbinval(tuptable->vals[i], tuptable->tupdesc, 1, &isnull));
+        }
     }
 }
 
