@@ -104,6 +104,21 @@ void task(Datum main_arg) {
     (void)ProcessCompletedNotifies();
 }
 
+static inline void assign() {
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    (void)SPI_start_transaction();
+    if (SPI_execute("UPDATE task SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute != SPI_OK_UPDATE_RETURNING");
+    else {
+        unsigned int processed = SPI_processed;
+        SPITupleTable *tuptable = SPI_tuptable;
+        bool isnull;
+        (void)SPI_commit();
+        if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+        (void)ProcessCompletedNotifies();
+        for (unsigned int i = 0; i < processed; i++) (void)launch_task(SPI_getbinval(tuptable->vals[i], tuptable->tupdesc, 1, &isnull));
+    }
+}
+
 void loop(Datum main_arg) {
     elog(LOG, "loop started database=%s, username=%s", database, username);
     pqsignal(SIGHUP, sighup);
@@ -119,20 +134,7 @@ void loop(Datum main_arg) {
             got_sighup = false;
             (void)ProcessConfigFile(PGC_SIGHUP);
         }
-        if (rc & WL_TIMEOUT) {
-            if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
-            (void)SPI_start_transaction();
-            if (SPI_execute("UPDATE task SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute != SPI_OK_UPDATE_RETURNING");
-            else {
-                unsigned int processed = SPI_processed;
-                SPITupleTable *tuptable = SPI_tuptable;
-                bool isnull;
-                (void)SPI_commit();
-                if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
-                (void)ProcessCompletedNotifies();
-                for (unsigned int i = 0; i < processed; i++) (void)launch_task(SPI_getbinval(tuptable->vals[i], tuptable->tupdesc, 1, &isnull));
-            }
-        }
+        if (rc & WL_TIMEOUT) (void)assign();
     }
     (void)proc_exit(1);
 }
