@@ -104,7 +104,12 @@ static inline char *work(Datum main_arg) {
 static inline void execute(char *src) {
     elog(LOG, "src=%s", src);
     (void)connect_my(src);
-    elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
+    PG_TRY(); {
+        elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
+    } PG_CATCH(); {
+        elog(LOG, "PG_CATCH");
+        PG_RE_THROW();
+    } PG_END_TRY();
     if (src != NULL) (void)pfree(src);
     (void)finish_my(src);
 }
