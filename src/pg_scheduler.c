@@ -107,7 +107,9 @@ static inline void execute(char *src) {
     PG_TRY(); {
         elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
     } PG_CATCH(); {
-        elog(LOG, "PG_CATCH");
+        ErrorData *edata = CopyErrorData();
+        elog(LOG, "PG_CATCH=%p", edata);
+        if (edata != NULL) (void)FreeErrorData(edata);
         PG_RE_THROW();
     } PG_END_TRY();
     if (src != NULL) (void)pfree(src);
