@@ -64,15 +64,9 @@ static inline void launch_task(Datum id) {
     (MemoryContext)MemoryContextSwitchTo(oldcontext);
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
-        case BGWH_STOPPED:
-            if (handle != NULL) (void)pfree(handle);
-            ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background process"), errhint("More details may be available in the server log.")));
-            //break;
-        case BGWH_POSTMASTER_DIED:
-            if (handle != NULL) (void)pfree(handle);
-            ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background processes without postmaster"), errhint("Kill all remaining database processes and restart the database.")));
-            //break;
-        default: elog(ERROR, "unexpected bgworker handle status"); //break;
+        case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background process"), errhint("More details may be available in the server log.")));
+        case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background processes without postmaster"), errhint("Kill all remaining database processes and restart the database.")));
+        default: elog(ERROR, "unexpected bgworker handle status");
     }
     if (handle != NULL) (void)pfree(handle);
 }
@@ -83,24 +77,6 @@ static inline void connect_my(const char *cmd_str) {
     (void)StartTransactionCommand();
     if (SPI_connect() != SPI_OK_CONNECT) elog(FATAL, "SPI_connect != SPI_OK_CONNECT");
     (void)PushActiveSnapshot(GetTransactionSnapshot());
-}
-
-static inline int execute_my(const char *src, bool read_only, long tcount) {
-    int res;
-//    (void)pgstat_report_activity(STATE_RUNNING, src);
-    res = SPI_execute(src, read_only, tcount);
-//    (void)pgstat_report_activity(STATE_IDLE, src);
-//    (void)pgstat_report_stat(false);
-    return res;
-}
-
-static inline int execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount) {
-    int res;
-//    (void)pgstat_report_activity(STATE_RUNNING, src);
-    res = SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount);
-//    (void)pgstat_report_activity(STATE_IDLE, src);
-//    (void)pgstat_report_stat(false);
-    return res;
 }
 
 static inline void finish_my(const char *cmd_str) {
@@ -118,7 +94,7 @@ static inline char *work(Datum main_arg) {
     char *request = NULL;
     const char *src = "UPDATE task SET state = 'WORK' WHERE id = $1 RETURNING request";
     (void)connect_my(src);
-    if (execute_with_args_my(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "execute_with_args_my != SPI_OK_UPDATE_RETURNING");
+    if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1");
     request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
     (void)finish_my(src);
@@ -128,7 +104,7 @@ static inline char *work(Datum main_arg) {
 static inline void execute(char *src) {
     elog(LOG, "src=%s", src);
     (void)connect_my(src);
-    elog(LOG, "execute_my=%i", execute_my(src, false, 0));
+    elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
     if (src != NULL) (void)pfree(src);
     (void)finish_my(src);
 }
@@ -138,7 +114,7 @@ static inline void done(Datum main_arg) {
     Datum Values[] = {main_arg};
     const char *src = "UPDATE task SET state = 'DONE' WHERE id = $1";
     (void)connect_my(src);
-    if (execute_with_args_my(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "execute_with_args_my != SPI_OK_UPDATE");
+    if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
     (void)finish_my(src);
 }
 
@@ -153,7 +129,7 @@ void task(Datum main_arg) {
 static inline void assign() {
     const char *src = "UPDATE task SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id";
     (void)connect_my(src);
-    if (execute_my(src, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "execute_my != SPI_OK_UPDATE_RETURNING");
+    if (SPI_execute(src, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute != SPI_OK_UPDATE_RETURNING");
     else {
         uint64 processed = SPI_processed;
         SPITupleTable *tuptable = SPI_tuptable;
