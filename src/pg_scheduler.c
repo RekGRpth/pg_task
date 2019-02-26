@@ -42,54 +42,6 @@ static inline void sigterm(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
-static inline void SPI_connect_and_start_transaction() {
-//    (void)SetCurrentStatementStartTimestamp();
-//    (void)StartTransactionCommand();
-//    if (SPI_connect() != SPI_OK_CONNECT) elog(FATAL, "SPI_connect != SPI_OK_CONNECT");
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
-//    (void)PushActiveSnapshot(GetTransactionSnapshot());
-    (void)SPI_start_transaction();
-}
-/*
-static inline int execute_my(const char *src) {
-    int ret;
-//    (void)pgstat_report_activity(STATE_RUNNING, src);
-    ret = SPI_execute(src, false, 0);
-//    (void)pgstat_report_activity(STATE_IDLE, src);
-//    (void)pgstat_report_stat(true);
-    return ret;
-}*/
-
-/*static inline int execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls) {
-    int ret;
-//    (void)pgstat_report_activity(STATE_RUNNING, src);
-    ret = SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0);
-//    (void)pgstat_report_activity(STATE_IDLE, src);
-//    (void)pgstat_report_stat(true);
-    return ret;
-}*/
-
-static inline void SPI_commit_and_finish() {
-//    (void)ProcessCompletedNotifiesMy();
-    (void)SPI_commit();
-//    (void)ProcessCompletedNotifies();
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
-    (void)ProcessCompletedNotifies();
-//    (void)PopActiveSnapshot();
-//    (void)CommitTransactionCommand();
-//    (void)ProcessCompletedNotifies();
-}
-
-static inline void SPI_commit_and_start_transaction() {
-//    (void)ProcessCompletedNotifiesMy();
-//    (void)SPI_commit();
-//    (void)ProcessCompletedNotifies();
-//    (void)SPI_start_transaction();
-
-    (void)SPI_commit_and_finish();
-    (void)SPI_connect_and_start_transaction();
-}
-
 static inline void launch_task(Datum id) {
     BackgroundWorker worker;
     BackgroundWorkerHandle *handle;
@@ -113,16 +65,16 @@ static inline void launch_task(Datum id) {
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
         case BGWH_STOPPED:
-            (void)pfree(handle);
+            if (handle != NULL) (void)pfree(handle);
             ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background process"), errhint("More details may be available in the server log.")));
-            break;
+            //break;
         case BGWH_POSTMASTER_DIED:
-            (void)pfree(handle);
+            if (handle != NULL) (void)pfree(handle);
             ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background processes without postmaster"), errhint("Kill all remaining database processes and restart the database.")));
-            break;
-        default: elog(ERROR, "unexpected bgworker handle status"); break;
+            //break;
+        default: elog(ERROR, "unexpected bgworker handle status"); //break;
     }
-//    if (handle != NULL) (void)pfree(handle);
+    if (handle != NULL) (void)pfree(handle);
 }
 
 void task(Datum main_arg) {
@@ -132,25 +84,21 @@ void task(Datum main_arg) {
     elog(LOG, "task started id=%li", DatumGetInt64(main_arg));
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
-//    (void)SPI_connect_and_start_transaction();
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
     (void)SPI_start_transaction();
     if (SPI_execute_with_args("UPDATE task SET state = 'WORK' WHERE id = $1 RETURNING request", 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1");
     request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
-//    (void)SPI_commit_and_start_transaction();
     (void)SPI_commit();
 //    (void)ProcessCompletedNotifies();
     (void)SPI_start_transaction();
     elog(LOG, "request=%s", request);
     elog(LOG, "SPI_execute=%i", SPI_execute(request, false, 0));
     if (request != NULL) (void)pfree(request);
-//    (void)SPI_commit_and_start_transaction();
     (void)SPI_commit();
 //    (void)ProcessCompletedNotifies();
     (void)SPI_start_transaction();
     if (SPI_execute_with_args("UPDATE task SET state = 'DONE' WHERE id = $1", 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
-//    (void)SPI_commit_and_finish();
     (void)SPI_commit();
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
     (void)ProcessCompletedNotifies();
@@ -172,10 +120,6 @@ void loop(Datum main_arg) {
             (void)ProcessConfigFile(PGC_SIGHUP);
         }
         if (rc & WL_TIMEOUT) {
-//            bool isnull;
-//            unsigned int processed;
-//            SPITupleTable *tuptable;
-//            (void)SPI_connect_and_start_transaction();
             if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
             (void)SPI_start_transaction();
             if (SPI_execute("UPDATE task SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute != SPI_OK_UPDATE_RETURNING");
@@ -183,7 +127,6 @@ void loop(Datum main_arg) {
                 unsigned int processed = SPI_processed;
                 SPITupleTable *tuptable = SPI_tuptable;
                 bool isnull;
-//                (void)SPI_commit_and_finish();
                 (void)SPI_commit();
                 if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
                 (void)ProcessCompletedNotifies();
