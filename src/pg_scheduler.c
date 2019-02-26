@@ -18,7 +18,7 @@ PG_MODULE_MAGIC;
 
 void _PG_init(void);
 
-void man(Datum arg);
+void loop(Datum arg);
 void task(Datum arg);
 
 static volatile sig_atomic_t got_sighup = false;
@@ -70,6 +70,7 @@ static inline int execute_my(const char *src) {
 }*/
 
 static inline void SPI_commit_and_finish() {
+//    (void)ProcessCompletedNotifiesMy();
     (void)SPI_commit();
 //    (void)ProcessCompletedNotifies();
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
@@ -80,9 +81,13 @@ static inline void SPI_commit_and_finish() {
 }
 
 static inline void SPI_commit_and_start_transaction() {
-    (void)SPI_commit();
+//    (void)ProcessCompletedNotifiesMy();
+//    (void)SPI_commit();
 //    (void)ProcessCompletedNotifies();
-    (void)SPI_start_transaction();
+//    (void)SPI_start_transaction();
+
+    (void)SPI_commit_and_finish();
+    (void)SPI_connect_and_start_transaction();
 }
 
 static inline void launch_task(Datum id) {
@@ -127,21 +132,32 @@ void task(Datum main_arg) {
     elog(LOG, "task started id=%li", DatumGetInt64(main_arg));
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
-    (void)SPI_connect_and_start_transaction();
+//    (void)SPI_connect_and_start_transaction();
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    (void)SPI_start_transaction();
     if (SPI_execute_with_args("UPDATE task SET state = 'WORK' WHERE id = $1 RETURNING request", 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1");
     request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
-    (void)SPI_commit_and_start_transaction();
+//    (void)SPI_commit_and_start_transaction();
+    (void)SPI_commit();
+//    (void)ProcessCompletedNotifies();
+    (void)SPI_start_transaction();
     elog(LOG, "request=%s", request);
     elog(LOG, "SPI_execute=%i", SPI_execute(request, false, 0));
     if (request != NULL) (void)pfree(request);
-    (void)SPI_commit_and_start_transaction();
+//    (void)SPI_commit_and_start_transaction();
+    (void)SPI_commit();
+//    (void)ProcessCompletedNotifies();
+    (void)SPI_start_transaction();
     if (SPI_execute_with_args("UPDATE task SET state = 'DONE' WHERE id = $1", 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
-    (void)SPI_commit_and_finish();
+//    (void)SPI_commit_and_finish();
+    (void)SPI_commit();
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+    (void)ProcessCompletedNotifies();
 }
 
-void man(Datum main_arg) {
-    elog(LOG, "man started database=%s, username=%s", database, username);
+void loop(Datum main_arg) {
+    elog(LOG, "loop started database=%s, username=%s", database, username);
     pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
     (void)BackgroundWorkerUnblockSignals();
@@ -159,13 +175,18 @@ void man(Datum main_arg) {
 //            bool isnull;
 //            unsigned int processed;
 //            SPITupleTable *tuptable;
-            (void)SPI_connect_and_start_transaction();
+//            (void)SPI_connect_and_start_transaction();
+            if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+            (void)SPI_start_transaction();
             if (SPI_execute("UPDATE task SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute != SPI_OK_UPDATE_RETURNING");
             else {
                 unsigned int processed = SPI_processed;
                 SPITupleTable *tuptable = SPI_tuptable;
                 bool isnull;
-                (void)SPI_commit_and_finish();
+//                (void)SPI_commit_and_finish();
+                (void)SPI_commit();
+                if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+                (void)ProcessCompletedNotifies();
                 for (unsigned int i = 0; i < processed; i++) (void)launch_task(SPI_getbinval(tuptable->vals[i], tuptable->tupdesc, 1, &isnull));
             }
         }
@@ -181,16 +202,16 @@ void _PG_init(void) {
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &database, "postgres", PGC_POSTMASTER, 0, NULL, NULL, NULL);
     (void)DefineCustomStringVariable("pg_scheduler.username", "pg_scheduler username", NULL, &username, "postgres", PGC_POSTMASTER, 0, NULL, NULL, NULL);
-    (void)DefineCustomIntVariable("pg_scheduler.period", "how often to run man", NULL, &period, 1, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    (void)DefineCustomIntVariable("pg_scheduler.restart", "how often to restart man", NULL, &worker.bgw_restart_time, 10, 1, INT_MAX, PGC_POSTMASTER, 0, NULL, NULL, NULL);
+    (void)DefineCustomIntVariable("pg_scheduler.period", "how often to run loop", NULL, &period, 1, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    (void)DefineCustomIntVariable("pg_scheduler.restart", "how often to restart loop", NULL, &worker.bgw_restart_time, 10, 1, INT_MAX, PGC_POSTMASTER, 0, NULL, NULL, NULL);
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
 //    worker.bgw_restart_time = 10;
     if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf");
-    if (snprintf(worker.bgw_function_name, sizeof("man"), "man") != sizeof("man") - 1) elog(FATAL, "snprintf");
-    len = sizeof("%s %s pg_scheduler man") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2;
-    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler man", database, username) != len) elog(FATAL, "snprintf");
-    if (snprintf(worker.bgw_type, sizeof("pg_scheduler man"), "pg_scheduler man") != sizeof("pg_scheduler man") - 1) elog(FATAL, "snprintf");
+    if (snprintf(worker.bgw_function_name, sizeof("loop"), "loop") != sizeof("loop") - 1) elog(FATAL, "snprintf");
+    len = sizeof("%s %s pg_scheduler loop") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2;
+    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler loop", database, username) != len) elog(FATAL, "snprintf");
+    if (snprintf(worker.bgw_type, sizeof("pg_scheduler loop"), "pg_scheduler loop") != sizeof("pg_scheduler loop") - 1) elog(FATAL, "snprintf");
     worker.bgw_notify_pid = 0;
     worker.bgw_main_arg = (Datum) 0;
     (void)RegisterBackgroundWorker(&worker);
