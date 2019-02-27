@@ -170,6 +170,36 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
 //        Int32GetDatum(edata->saved_errno),
         main_arg
     };
+    const char Nulls[] = {
+        ' ',
+        ' ',
+        ' ',
+        ' ',
+        ' ',
+        ' ',
+        edata->filename!=NULL?' ':'n',
+        ' ',
+        edata->funcname!=NULL?' ':'n',
+        edata->domain!=NULL?' ':'n',
+        edata->context_domain!=NULL?' ':'n',
+        ' ',
+        edata->message!=NULL?' ':'n',
+//        edata->detail!=NULL?' ':'n',
+//        edata->detail_log!=NULL?' ':'n',
+//        edata->hint!=NULL?' ':'n',
+//        edata->context!=NULL?' ':'n',
+//        edata->message_id!=NULL?' ':'n',
+//        edata->schema_name!=NULL?' ':'n',
+//        edata->table_name!=NULL?' ':'n',
+//        edata->column_name!=NULL?' ':'n',
+//        edata->datatype_name!=NULL?' ':'n',
+//        edata->constraint_name!=NULL?' ':'n',
+//        ' ',
+//        ' ',
+//        edata->internalquery!=NULL?' ':'n',
+//        ' ',
+        ' '
+    };
     elog(LOG, "edata={"
         "\"elevel\":%i,"
         "\"output_to_server\":%s,"
@@ -256,7 +286,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
 //        "internalpos\t'||$25::text||'\n"
 //        "internalquery\t'||$26||'\n"
 //        "saved_errno\t'||$27::text||'"
-    "' WHERE id = $14", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    "' WHERE id = $14", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
 }
 
 static inline void execute(Datum main_arg) {
