@@ -117,18 +117,18 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         BOOLOID,
         BOOLOID,
         BOOLOID,
-//        TEXTOID,
-//        INT4OID,
-//        TEXTOID,
-//        TEXTOID,
-//        TEXTOID,
-//        INT4OID,
-//        TEXTOID,
-//        TEXTOID,
-//        TEXTOID,
-//        TEXTOID,
-//        TEXTOID,
         TEXTOID,
+//        INT4OID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        INT4OID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
 //        TEXTOID,
 //        TEXTOID,
 //        TEXTOID,
@@ -147,7 +147,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         BoolGetDatum(edata->show_funcname),
         BoolGetDatum(edata->hide_stmt),
         BoolGetDatum(edata->hide_ctx),
-//        CStringGetDatum(edata->filename),
+        CStringGetTextDatum(edata->filename),
 //        Int32GetDatum(edata->lineno),
 //        CStringGetDatum(edata->funcname),
 //        CStringGetDatum(edata->domain),
@@ -158,7 +158,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
 //        CStringGetDatum(edata->detail_log),
 //        CStringGetDatum(edata->hint),
 //        CStringGetDatum(edata->context),
-        CStringGetTextDatum(edata->message_id),
+//        CStringGetTextDatum(edata->message_id),
 //        CStringGetDatum(edata->schema_name),
 //        CStringGetDatum(edata->table_name),
 //        CStringGetDatum(edata->column_name),
@@ -235,7 +235,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         "show_funcname\t'||$4::text||'\n"
         "hide_stmt\t'||$5::text||'\n"
         "hide_ctx\t'||$6::text||'\n"
-        "message_id\t'||$7||'\n"
+        "filename\t'||$7||'\n"
     "' "
 //        "\"filename\":'||$7||',"
 //        "\"lineno\":'||$8::text||',"
