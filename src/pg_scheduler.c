@@ -14,6 +14,8 @@
 #include "commands/async.h"
 #include <catalog/pg_type.h>
 
+#include "utils/builtins.h"
+
 PG_MODULE_MAGIC;
 
 void _PG_init(void);
@@ -109,94 +111,65 @@ static inline void done(Datum main_arg) {
 
 static inline void fail(Datum main_arg, ErrorData *edata) {
     Oid argtypes[] = {
-        INT4OID,
-        BOOLOID,
-        BOOLOID,
-        BOOLOID,
-        BOOLOID,
-        BOOLOID,
+//        INT4OID,
+//        BOOLOID,
+//        BOOLOID,
+//        BOOLOID,
+//        BOOLOID,
+//        BOOLOID,
+//        TEXTOID,
+//        INT4OID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        INT4OID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
         TEXTOID,
-        INT4OID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        INT4OID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        INT4OID,
-        INT4OID,
-        TEXTOID,
-        INT4OID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        INT4OID,
+//        INT4OID,
+//        TEXTOID,
+//        INT4OID,
         INT8OID
     };
     Datum Values[] = {
-        Int32GetDatum(edata->elevel),
-        BoolGetDatum(edata->output_to_server),
-        BoolGetDatum(edata->output_to_client),
-        BoolGetDatum(edata->show_funcname),
-        BoolGetDatum(edata->hide_stmt),
-        BoolGetDatum(edata->hide_ctx),
-        CStringGetDatum(edata->filename),
-        Int32GetDatum(edata->lineno),
-        CStringGetDatum(edata->funcname),
-        CStringGetDatum(edata->domain),
-        CStringGetDatum(edata->context_domain),
-        Int32GetDatum(edata->sqlerrcode),
-        CStringGetDatum(edata->message),
-        CStringGetDatum(edata->detail),
-        CStringGetDatum(edata->detail_log),
-        CStringGetDatum(edata->hint),
-        CStringGetDatum(edata->context),
-        CStringGetDatum(edata->message_id),
-        CStringGetDatum(edata->schema_name),
-        CStringGetDatum(edata->table_name),
-        CStringGetDatum(edata->column_name),
-        CStringGetDatum(edata->datatype_name),
-        CStringGetDatum(edata->constraint_name),
-        Int32GetDatum(edata->cursorpos),
-        Int32GetDatum(edata->internalpos),
-        CStringGetDatum(edata->internalquery),
-        CStringGetDatum(edata->saved_errno),
+//        Int32GetDatum(edata->elevel),
+//        CStringGetDatum(edata->output_to_server?"true":"false"),
+//        CStringGetDatum(edata->output_to_client?"true":"false"),
+//        CStringGetDatum(edata->show_funcname?"true":"false"),
+//        CStringGetDatum(edata->hide_stmt?"true":"false"),
+//        CStringGetDatum(edata->hide_ctx?"true":"false"),
+//        CStringGetDatum(edata->filename),
+//        Int32GetDatum(edata->lineno),
+//        CStringGetDatum(edata->funcname),
+//        CStringGetDatum(edata->domain),
+//        CStringGetDatum(edata->context_domain),
+//        Int32GetDatum(edata->sqlerrcode),
+//        CStringGetDatum(edata->message),
+//        CStringGetDatum(edata->detail),
+//        CStringGetDatum(edata->detail_log),
+//        CStringGetDatum(edata->hint),
+//        CStringGetDatum(edata->context),
+        CStringGetTextDatum(edata->message_id),
+//        CStringGetDatum(edata->schema_name),
+//        CStringGetDatum(edata->table_name),
+//        CStringGetDatum(edata->column_name),
+//        CStringGetDatum(edata->datatype_name),
+//        CStringGetDatum(edata->constraint_name),
+//        Int32GetDatum(edata->cursorpos),
+//        Int32GetDatum(edata->internalpos),
+//        CStringGetDatum(edata->internalquery),
+//        CStringGetDatum(edata->saved_errno),
         main_arg
     };
-    if (SPI_execute_with_args("UPDATE task SET state = 'FAIL', response='{"
-        "\"elevel\":$1,"
-        "\"output_to_server\":$2,"
-        "\"output_to_client\":$3,"
-        "\"show_funcname\":$4,"
-        "\"hide_stmt\":$5,"
-        "\"hide_ctx\":$6,"
-        "\"filename\":$7,"
-        "\"lineno\":$8,"
-        "\"funcname\":$9,"
-        "\"domain\":$10,"
-        "\"context_domain\":$11,"
-        "\"sqlerrcode\":$12,"
-        "\"message\":$13,"
-        "\"detail\":$14,"
-        "\"detail_log\":$15,"
-        "\"hint\":$16,"
-        "\"context\":$17,"
-        "\"message_id\":$18,"
-        "\"schema_name\":$19,"
-        "\"table_name\":$20,"
-        "\"column_name\":$21,"
-        "\"datatype_name\":$22,"
-        "\"constraint_name\":$23,"
-        "\"cursorpos\":$24,"
-        "\"internalpos\":$25,"
-        "\"internalquery\":$26,"
-        "\"saved_errno\":$27"
-    "}' WHERE id = $28", 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
     elog(LOG, "edata={"
         "\"elevel\":%i,"
         "\"output_to_server\":%s,"
@@ -254,6 +227,37 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         edata->internalquery,
         edata->saved_errno
     );
+//    if (SPI_execute_with_args("UPDATE task SET state = 'FAIL', response='{"
+    if (SPI_execute_with_args("UPDATE task SET state = 'FAIL', response=$1 "
+//        "\"elevel\":'||$1::text||',"
+//        "\"output_to_server\":'||$2||',"
+//        "\"output_to_client\":'||$3||',"
+//        "\"show_funcname\":'||$4||',"
+//        "\"hide_stmt\":'||$5||',"
+//        "\"hide_ctx\":'||$6||',"
+//        "\"filename\":'||$7||',"
+//        "\"lineno\":'||$8::text||',"
+//        "\"funcname\":'||$9||',"
+//        "\"domain\":'||$10||',"
+//        "\"context_domain\":'||$11||',"
+//        "\"sqlerrcode\":'||$12::text||',"
+//        "\"message\":'||$13||',"
+//        "\"detail\":'||$14||',"
+//        "\"detail_log\":'||$15||',"
+//        "\"hint\":'||$16||',"
+//        "\"context\":'||$17||',"
+//        "\"message_id\":'||$18||',"
+//        "\"schema_name\":'||$19||',"
+//        "\"table_name\":'||$20||',"
+//        "\"column_name\":'||$21||',"
+//        "\"datatype_name\":'||$22||',"
+//        "\"constraint_name\":'||$23||',"
+//        "\"cursorpos\":'||$24::text||',"
+//        "\"internalpos\":'||$25::text||',"
+//        "\"internalquery\":'||$26||',"
+//        "\"saved_errno\":'||$27||'"
+//    "}' WHERE id = $28", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    "WHERE id = $2", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
 }
 
 static inline void execute(Datum main_arg) {
