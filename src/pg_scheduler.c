@@ -228,11 +228,11 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         edata->saved_errno
     );
 //    if (SPI_execute_with_args("UPDATE task SET state = 'FAIL', response='{"
-    if (SPI_execute_with_args("UPDATE task SET state = 'FAIL', response='{"
-        "\"elevel\":'||$1::text||',"
-        "\"output_to_server\":'||$2::text||',"
-        "\"message_id\":\"'||$3||'\""
-    "}' "
+    if (SPI_execute_with_args("UPDATE task SET state = 'FAIL', response='"
+        "elevel\t'||$1::text||'\n"
+        "output_to_server\t'||$2::text||'\n"
+        "message_id\t'||$3||'\n"
+    "' "
 //        "\"elevel\":'||$1::text||',"
 //        "\"output_to_server\":'||$2||',"
 //        "\"output_to_client\":'||$3||',"
