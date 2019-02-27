@@ -111,7 +111,7 @@ static inline void done(Datum main_arg) {
 
 static inline void fail(Datum main_arg, ErrorData *edata) {
     Oid argtypes[] = {
-//        INT4OID,
+        INT4OID,
 //        BOOLOID,
 //        BOOLOID,
 //        BOOLOID,
@@ -141,7 +141,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         INT8OID
     };
     Datum Values[] = {
-//        Int32GetDatum(edata->elevel),
+        Int32GetDatum(edata->elevel),
 //        CStringGetDatum(edata->output_to_server?"true":"false"),
 //        CStringGetDatum(edata->output_to_client?"true":"false"),
 //        CStringGetDatum(edata->show_funcname?"true":"false"),
@@ -229,7 +229,8 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
     );
 //    if (SPI_execute_with_args("UPDATE task SET state = 'FAIL', response='{"
     if (SPI_execute_with_args("UPDATE task SET state = 'FAIL', response='{"
-        "\"message_id\":\"'||$1||'\""
+        "\"elevel\":'||$1::text||',"
+        "\"message_id\":\"'||$2||'\""
     "}' "
 //        "\"elevel\":'||$1::text||',"
 //        "\"output_to_server\":'||$2||',"
@@ -259,7 +260,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
 //        "\"internalquery\":'||$26||',"
 //        "\"saved_errno\":'||$27||'"
 //    "}' WHERE id = $28", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
-    "WHERE id = $2", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    "WHERE id = $3", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
 }
 
 static inline void execute(Datum main_arg) {
