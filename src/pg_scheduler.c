@@ -119,7 +119,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         BOOLOID,
         TEXTOID,
         INT4OID,
-//        TEXTOID,
+        TEXTOID,
 //        TEXTOID,
 //        TEXTOID,
 //        INT4OID,
@@ -149,7 +149,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         BoolGetDatum(edata->hide_ctx),
         CStringGetTextDatum(edata->filename),
         Int32GetDatum(edata->lineno),
-//        CStringGetTextDatum(edata->funcname),
+        CStringGetTextDatum(edata->funcname),
 //        CStringGetTextDatum(edata->domain),
 //        CStringGetTextDatum(edata->context_domain),
 //        Int32GetDatum(edata->sqlerrcode),
@@ -237,7 +237,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         "hide_ctx\t'||$6::text||'\n"
         "filename\t'||$7||'\n"
         "lineno\t'||$8::text||'\n"
-//        "funcname\t'||$9||'\n"
+        "funcname\t'||$9||'\n"
 //        "domain\t'||$10||'\n"
 //        "context_domain\t'||$11||'\n"
 //        "sqlerrcode\t'||$12::text||'\n"
@@ -256,7 +256,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
 //        "internalpos\t'||$25::text||'\n"
 //        "internalquery\t'||$26||'\n"
 //        "saved_errno\t'||$27::text||'"
-    "' WHERE id = $9", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    "' WHERE id = $10", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
 }
 
 static inline void execute(Datum main_arg) {
