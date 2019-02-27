@@ -113,9 +113,9 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
     Oid argtypes[] = {
         INT4OID,
         BOOLOID,
-//        BOOLOID,
-//        BOOLOID,
-//        BOOLOID,
+        BOOLOID,
+        BOOLOID,
+        BOOLOID,
 //        BOOLOID,
 //        TEXTOID,
 //        INT4OID,
@@ -143,9 +143,9 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
     Datum Values[] = {
         Int32GetDatum(edata->elevel),
         BoolGetDatum(edata->output_to_server),
-//        CStringGetDatum(edata->output_to_client?"true":"false"),
-//        CStringGetDatum(edata->show_funcname?"true":"false"),
-//        CStringGetDatum(edata->hide_stmt?"true":"false"),
+        BoolGetDatum(edata->output_to_client),
+        BoolGetDatum(edata->show_funcname),
+        BoolGetDatum(edata->hide_stmt),
 //        CStringGetDatum(edata->hide_ctx?"true":"false"),
 //        CStringGetDatum(edata->filename),
 //        Int32GetDatum(edata->lineno),
@@ -231,13 +231,11 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
     if (SPI_execute_with_args("UPDATE task SET state = 'FAIL', response='"
         "elevel\t'||$1::text||'\n"
         "output_to_server\t'||$2::text||'\n"
-        "message_id\t'||$3||'\n"
+        "output_to_client\t'||$3::text||'\n"
+        "show_funcname\t'||$4::text||'\n"
+        "hide_stmt\t'||$5::text||'\n"
+        "message_id\t'||$6||'\n"
     "' "
-//        "\"elevel\":'||$1::text||',"
-//        "\"output_to_server\":'||$2||',"
-//        "\"output_to_client\":'||$3||',"
-//        "\"show_funcname\":'||$4||',"
-//        "\"hide_stmt\":'||$5||',"
 //        "\"hide_ctx\":'||$6||',"
 //        "\"filename\":'||$7||',"
 //        "\"lineno\":'||$8::text||',"
@@ -261,7 +259,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
 //        "\"internalquery\":'||$26||',"
 //        "\"saved_errno\":'||$27||'"
 //    "}' WHERE id = $28", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
-    "WHERE id = $4", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    "WHERE id = $7", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
 }
 
 static inline void execute(Datum main_arg) {
