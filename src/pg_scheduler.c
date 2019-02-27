@@ -188,83 +188,15 @@ static inline int execute_my(const char *src, bool read_only, long tcount) {
 //    return res;
 }
 
-static inline int execute(char *src) {
+static inline int execute(Datum main_arg) {
     int res;
-//    MemoryContext oldcontext;
+    char *src = work(main_arg);
     elog(LOG, "src=%s", src);
     (void)connect_my(src);
 //    elog(LOG, "execute_my=%i", execute_my(src, false, 0));
     res = execute_my(src, false, 0);
-/*    oldcontext = CurrentMemoryContext;
-    PG_TRY(); {
-        elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
-    } PG_CATCH(); {
-        ErrorData *edata;
-        MemoryContextSwitchTo(oldcontext);
-        edata = CopyErrorData();
-        FlushErrorState();
-        elog(LOG, "edata={"
-            "\"elevel\":%i,"
-            "\"output_to_server\":%s,"
-            "\"output_to_client\":%s,"
-            "\"show_funcname\":%s,"
-            "\"hide_stmt\":%s,"
-            "\"hide_ctx\":%s,"
-            "\"filename\":\"%s\","
-            "\"lineno\":%i,"
-            "\"funcname\":\"%s\","
-            "\"domain\":\"%s\","
-            "\"context_domain\":\"%s\","
-            "\"sqlerrcode\":%i,"
-            "\"message\":\"%s\","
-            "\"detail\":\"%s\","
-            "\"detail_log\":\"%s\","
-            "\"hint\":\"%s\","
-            "\"context\":\"%s\","
-            "\"message_id\":\"%s\","
-            "\"schema_name\":\"%s\","
-            "\"table_name\":\"%s\","
-            "\"column_name\":\"%s\","
-            "\"datatype_name\":\"%s\","
-            "\"constraint_name\":\"%s\","
-            "\"cursorpos\":%i,"
-            "\"internalpos\":%i,"
-            "\"internalquery\":\"%s\","
-            "\"saved_errno\":%i"
-        "}",
-            edata->elevel,
-            edata->output_to_server?"true":"false",
-            edata->output_to_client?"true":"false",
-            edata->show_funcname?"true":"false",
-            edata->hide_stmt?"true":"false",
-            edata->hide_ctx?"true":"false",
-            edata->filename,
-            edata->lineno,
-            edata->funcname,
-            edata->domain,
-            edata->context_domain,
-            edata->sqlerrcode,
-            edata->message,
-            edata->detail,
-            edata->detail_log,
-            edata->hint,
-            edata->context,
-            edata->message_id,
-            edata->schema_name,
-            edata->table_name,
-            edata->column_name,
-            edata->datatype_name,
-            edata->constraint_name,
-            edata->cursorpos,
-            edata->internalpos,
-            edata->internalquery,
-            edata->saved_errno
-        );
-//        if (edata != NULL) (void)FreeErrorData(edata);
-//        PG_RE_THROW();
-    } PG_END_TRY();*/
-    if (src != NULL) (void)pfree(src);
     (void)finish_my(src);
+    if (src != NULL) (void)pfree(src);
     return res;
 }
 
@@ -290,8 +222,7 @@ void task(Datum main_arg) {
     elog(LOG, "task started id=%li", DatumGetInt64(main_arg));
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
-    if (execute(work(main_arg)) > 0) (void)done(main_arg);
-    else (void)fail(main_arg);
+    if (execute(main_arg) > 0) (void)done(main_arg); else (void)fail(main_arg);
 }
 
 static inline void assign() {
