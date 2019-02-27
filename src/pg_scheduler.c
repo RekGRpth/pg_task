@@ -101,128 +101,195 @@ static inline char *work(Datum main_arg) {
     return request;
 }
 
-//static inline void exception() {
-//}
-
-static inline int execute_my(const char *src, bool read_only, long tcount) {
-//    int res = 0;
-    MemoryContext oldcontext = CurrentMemoryContext;
-    ResourceOwner oldowner = CurrentResourceOwner;
-    BeginInternalSubTransaction(NULL);
-    MemoryContextSwitchTo(oldcontext);
-    PG_TRY(); {
-        int res = SPI_execute(src, false, 0);
-        ReleaseCurrentSubTransaction();
-        MemoryContextSwitchTo(oldcontext);
-        CurrentResourceOwner = oldowner;
-        return res;
-    } PG_CATCH(); {
-        ErrorData *edata;
-        MemoryContextSwitchTo(oldcontext);
-        edata = CopyErrorData();
-        FlushErrorState();
-        RollbackAndReleaseCurrentSubTransaction();
-        MemoryContextSwitchTo(oldcontext);
-        CurrentResourceOwner = oldowner;
-        elog(LOG, "edata={"
-            "\"elevel\":%i,"
-            "\"output_to_server\":%s,"
-            "\"output_to_client\":%s,"
-            "\"show_funcname\":%s,"
-            "\"hide_stmt\":%s,"
-            "\"hide_ctx\":%s,"
-            "\"filename\":\"%s\","
-            "\"lineno\":%i,"
-            "\"funcname\":\"%s\","
-            "\"domain\":\"%s\","
-            "\"context_domain\":\"%s\","
-            "\"sqlerrcode\":%i,"
-            "\"message\":\"%s\","
-            "\"detail\":\"%s\","
-            "\"detail_log\":\"%s\","
-            "\"hint\":\"%s\","
-            "\"context\":\"%s\","
-            "\"message_id\":\"%s\","
-            "\"schema_name\":\"%s\","
-            "\"table_name\":\"%s\","
-            "\"column_name\":\"%s\","
-            "\"datatype_name\":\"%s\","
-            "\"constraint_name\":\"%s\","
-            "\"cursorpos\":%i,"
-            "\"internalpos\":%i,"
-            "\"internalquery\":\"%s\","
-            "\"saved_errno\":%i"
-        "}",
-            edata->elevel,
-            edata->output_to_server?"true":"false",
-            edata->output_to_client?"true":"false",
-            edata->show_funcname?"true":"false",
-            edata->hide_stmt?"true":"false",
-            edata->hide_ctx?"true":"false",
-            edata->filename,
-            edata->lineno,
-            edata->funcname,
-            edata->domain,
-            edata->context_domain,
-            edata->sqlerrcode,
-            edata->message,
-            edata->detail,
-            edata->detail_log,
-            edata->hint,
-            edata->context,
-            edata->message_id,
-            edata->schema_name,
-            edata->table_name,
-            edata->column_name,
-            edata->datatype_name,
-            edata->constraint_name,
-            edata->cursorpos,
-            edata->internalpos,
-            edata->internalquery,
-            edata->saved_errno
-        );
-        (void)FreeErrorData(edata);
-//        PG_RE_THROW();
-        return 0;
-    } PG_END_TRY();
-//    return res;
-}
-
-static inline int execute(Datum main_arg) {
-    int res;
-    char *src = work(main_arg);
-    elog(LOG, "src=%s", src);
-    (void)connect_my(src);
-//    elog(LOG, "execute_my=%i", execute_my(src, false, 0));
-    res = execute_my(src, false, 0);
-    (void)finish_my(src);
-    if (src != NULL) (void)pfree(src);
-    return res;
-}
-
 static inline void done(Datum main_arg) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {main_arg};
-    const char *src = "UPDATE task SET state = 'DONE' WHERE id = $1";
-    (void)connect_my(src);
-    if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
-    (void)finish_my(src);
+    if (SPI_execute_with_args("UPDATE task SET state = 'DONE' WHERE id = $1", 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
 }
 
-static inline void fail(Datum main_arg) {
-    Oid argtypes[] = {INT8OID};
-    Datum Values[] = {main_arg};
-    const char *src = "UPDATE task SET state = 'FAIL' WHERE id = $1";
-    (void)connect_my(src);
-    if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
-    (void)finish_my(src);
+static inline void fail(Datum main_arg, ErrorData *edata) {
+    Oid argtypes[] = {
+        INT4OID,
+        BOOLOID,
+        BOOLOID,
+        BOOLOID,
+        BOOLOID,
+        BOOLOID,
+        TEXTOID,
+        INT4OID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        INT4OID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        INT4OID,
+        INT4OID,
+        TEXTOID,
+        INT4OID,
+        INT8OID
+    };
+    Datum Values[] = {
+        Int32GetDatum(edata->elevel),
+        BoolGetDatum(edata->output_to_server),
+        BoolGetDatum(edata->output_to_client),
+        BoolGetDatum(edata->show_funcname),
+        BoolGetDatum(edata->hide_stmt),
+        BoolGetDatum(edata->hide_ctx),
+        CStringGetDatum(edata->filename),
+        Int32GetDatum(edata->lineno),
+        CStringGetDatum(edata->funcname),
+        CStringGetDatum(edata->domain),
+        CStringGetDatum(edata->context_domain),
+        Int32GetDatum(edata->sqlerrcode),
+        CStringGetDatum(edata->message),
+        CStringGetDatum(edata->detail),
+        CStringGetDatum(edata->detail_log),
+        CStringGetDatum(edata->hint),
+        CStringGetDatum(edata->context),
+        CStringGetDatum(edata->message_id),
+        CStringGetDatum(edata->schema_name),
+        CStringGetDatum(edata->table_name),
+        CStringGetDatum(edata->column_name),
+        CStringGetDatum(edata->datatype_name),
+        CStringGetDatum(edata->constraint_name),
+        Int32GetDatum(edata->cursorpos),
+        Int32GetDatum(edata->internalpos),
+        CStringGetDatum(edata->internalquery),
+        CStringGetDatum(edata->saved_errno),
+        main_arg
+    };
+    if (SPI_execute_with_args("UPDATE task SET state = 'FAIL', response='{"
+        "\"elevel\":$1,"
+        "\"output_to_server\":$2,"
+        "\"output_to_client\":$3,"
+        "\"show_funcname\":$4,"
+        "\"hide_stmt\":$5,"
+        "\"hide_ctx\":$6,"
+        "\"filename\":$7,"
+        "\"lineno\":$8,"
+        "\"funcname\":$9,"
+        "\"domain\":$10,"
+        "\"context_domain\":$11,"
+        "\"sqlerrcode\":$12,"
+        "\"message\":$13,"
+        "\"detail\":$14,"
+        "\"detail_log\":$15,"
+        "\"hint\":$16,"
+        "\"context\":$17,"
+        "\"message_id\":$18,"
+        "\"schema_name\":$19,"
+        "\"table_name\":$20,"
+        "\"column_name\":$21,"
+        "\"datatype_name\":$22,"
+        "\"constraint_name\":$23,"
+        "\"cursorpos\":$24,"
+        "\"internalpos\":$25,"
+        "\"internalquery\":$26,"
+        "\"saved_errno\":$27"
+    "}' WHERE id = $28", 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    elog(LOG, "edata={"
+        "\"elevel\":%i,"
+        "\"output_to_server\":%s,"
+        "\"output_to_client\":%s,"
+        "\"show_funcname\":%s,"
+        "\"hide_stmt\":%s,"
+        "\"hide_ctx\":%s,"
+        "\"filename\":\"%s\","
+        "\"lineno\":%i,"
+        "\"funcname\":\"%s\","
+        "\"domain\":\"%s\","
+        "\"context_domain\":\"%s\","
+        "\"sqlerrcode\":%i,"
+        "\"message\":\"%s\","
+        "\"detail\":\"%s\","
+        "\"detail_log\":\"%s\","
+        "\"hint\":\"%s\","
+        "\"context\":\"%s\","
+        "\"message_id\":\"%s\","
+        "\"schema_name\":\"%s\","
+        "\"table_name\":\"%s\","
+        "\"column_name\":\"%s\","
+        "\"datatype_name\":\"%s\","
+        "\"constraint_name\":\"%s\","
+        "\"cursorpos\":%i,"
+        "\"internalpos\":%i,"
+        "\"internalquery\":\"%s\","
+        "\"saved_errno\":%i"
+    "}",
+        edata->elevel,
+        edata->output_to_server?"true":"false",
+        edata->output_to_client?"true":"false",
+        edata->show_funcname?"true":"false",
+        edata->hide_stmt?"true":"false",
+        edata->hide_ctx?"true":"false",
+        edata->filename,
+        edata->lineno,
+        edata->funcname,
+        edata->domain,
+        edata->context_domain,
+        edata->sqlerrcode,
+        edata->message,
+        edata->detail,
+        edata->detail_log,
+        edata->hint,
+        edata->context,
+        edata->message_id,
+        edata->schema_name,
+        edata->table_name,
+        edata->column_name,
+        edata->datatype_name,
+        edata->constraint_name,
+        edata->cursorpos,
+        edata->internalpos,
+        edata->internalquery,
+        edata->saved_errno
+    );
+}
+
+static inline void execute(Datum main_arg) {
+    const char *src = work(main_arg);
+    elog(LOG, "src=%s", src);
+    (void)connect_my(src); {
+        MemoryContext oldcontext = CurrentMemoryContext;
+        ResourceOwner oldowner = CurrentResourceOwner;
+        (void)BeginInternalSubTransaction(NULL);
+        (MemoryContext)MemoryContextSwitchTo(oldcontext);
+        PG_TRY(); {
+            elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
+            (void)ReleaseCurrentSubTransaction();
+            (MemoryContext)MemoryContextSwitchTo(oldcontext);
+            CurrentResourceOwner = oldowner;
+            (void)done(main_arg);
+        } PG_CATCH(); {
+            ErrorData *edata;
+            (MemoryContext)MemoryContextSwitchTo(oldcontext);
+            edata = CopyErrorData();
+            (void)FlushErrorState();
+            (void)RollbackAndReleaseCurrentSubTransaction();
+            (MemoryContext)MemoryContextSwitchTo(oldcontext);
+            CurrentResourceOwner = oldowner;
+            (void)fail(main_arg, edata);
+            (void)FreeErrorData(edata);
+        } PG_END_TRY();
+    } (void)finish_my(src);
+    if (src != NULL) (void)pfree((void *)src);
 }
 
 void task(Datum main_arg) {
     elog(LOG, "task started id=%li", DatumGetInt64(main_arg));
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
-    if (execute(main_arg) > 0) (void)done(main_arg); else (void)fail(main_arg);
+    (void)execute(main_arg);
 }
 
 static inline void assign() {
