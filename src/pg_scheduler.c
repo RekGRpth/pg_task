@@ -124,7 +124,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         TEXTOID,
         INT4OID,
         TEXTOID,
-//        TEXTOID,
+        TEXTOID,
 //        TEXTOID,
 //        TEXTOID,
 //        TEXTOID,
@@ -154,7 +154,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         CStringGetTextDatum(edata->context_domain),
         Int32GetDatum(edata->sqlerrcode),
         CStringGetTextDatum(edata->message),
-//        CStringGetTextDatum(edata->detail),
+        CStringGetTextDatum(edata->detail!=NULL?edata->detail:""),
 //        CStringGetTextDatum(edata->detail_log),
 //        CStringGetTextDatum(edata->hint),
 //        CStringGetTextDatum(edata->context),
@@ -170,7 +170,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
 //        Int32GetDatum(edata->saved_errno),
         main_arg
     };
-    const char Nulls[] = {
+    /*const char Nulls[] = {
         ' ',
         ' ',
         ' ',
@@ -184,7 +184,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         edata->context_domain!=NULL?' ':'n',
         ' ',
         edata->message!=NULL?' ':'n',
-//        edata->detail!=NULL?' ':'n',
+        edata->detail!=NULL?' ':'n',
 //        edata->detail_log!=NULL?' ':'n',
 //        edata->hint!=NULL?' ':'n',
 //        edata->context!=NULL?' ':'n',
@@ -199,7 +199,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
 //        edata->internalquery!=NULL?' ':'n',
 //        ' ',
         ' '
-    };
+    };*/
     elog(LOG, "edata={"
         "\"elevel\":%i,"
         "\"output_to_server\":%s,"
@@ -272,7 +272,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         "context_domain\t'||$11||'\n"
         "sqlerrcode\t'||$12::text||'\n"
         "message\t'||$13||'\n"
-//        "detail\t'||$14||'\n"
+        "detail\t'||$14||'\n"
 //        "detail_log\t'||$15||'\n"
 //        "hint\t'||$16||'\n"
 //        "context\t'||$17||'\n"
@@ -286,7 +286,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
 //        "internalpos\t'||$25::text||'\n"
 //        "internalquery\t'||$26||'\n"
 //        "saved_errno\t'||$27::text||'"
-    "' WHERE id = $14", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    "' WHERE id = $15", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
 }
 
 static inline void execute(Datum main_arg) {
