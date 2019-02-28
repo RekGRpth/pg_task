@@ -108,10 +108,21 @@ static inline char *work(Datum main_arg) {
     return request;
 }
 
-static inline void done(Datum main_arg) {
+static inline void done(Datum main_arg, uint64 processed, SPITupleTable *tuptable) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {main_arg};
     const char *src = "UPDATE task SET state = 'DONE' WHERE id = $1";
+    if (tuptable != NULL) {
+        for (uint64 row = 0; row < processed; row++) {
+            for (int col = 1; col <= tuptable->tupdesc->natts; col++) {
+                bool isnull;
+                Datum val = SPI_getbinval(tuptable->vals[row], tuptable->tupdesc, col, &isnull);
+                char *fname = SPI_fname(tuptable->tupdesc, col);
+                elog(LOG, "row=%lu, col=%i, isnull=%s, fname=%s, p=%lu", row, col, isnull?"true":"false", fname, val);
+                if (fname != NULL) pfree(fname);
+            }
+        }
+    }
     (void)connect_my(src);
     elog(LOG, "done src=%s", src);
     if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
@@ -343,18 +354,7 @@ static inline void execute(Datum main_arg) {
             (MemoryContext)MemoryContextSwitchTo(oldcontext);
             CurrentResourceOwner = oldowner;
             (void)finish_my((const char *)src);
-            if (tuptable != NULL) {
-                for (uint64 row = 0; row < processed; row++) {
-                    for (int col = 1; col <= tuptable->tupdesc->natts; col++) {
-                        bool isnull;
-                        Datum val = SPI_getbinval(tuptable->vals[row], tuptable->tupdesc, col, &isnull);
-                        char *fname = SPI_fname(tuptable->tupdesc, col);
-                        elog(LOG, "row=%lu, col=%i, isnull=%s, fname=%s, p=%lu", row, col, isnull?"true":"false", fname, val);
-                        if (fname != NULL) pfree(fname);
-                    }
-                }
-            }
-            (void)done(main_arg);
+            (void)done(main_arg, processed, tuptable);
         } PG_CATCH(); {
             ErrorData *edata;
             (MemoryContext)MemoryContextSwitchTo(oldcontext);
