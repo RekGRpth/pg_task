@@ -147,30 +147,30 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         BoolGetDatum(edata->show_funcname),
         BoolGetDatum(edata->hide_stmt),
         BoolGetDatum(edata->hide_ctx),
-        CStringGetTextDatum(edata->filename!=NULL?edata->filename:""),
+        CStringGetTextDatum(edata->filename!=NULL?edata->filename:"<NULL>"),
         Int32GetDatum(edata->lineno),
-        CStringGetTextDatum(edata->funcname!=NULL?edata->funcname:""),
-        CStringGetTextDatum(edata->domain!=NULL?edata->domain:""),
-        CStringGetTextDatum(edata->context_domain!=NULL?edata->context_domain:""),
+        CStringGetTextDatum(edata->funcname!=NULL?edata->funcname:"<NULL>"),
+        CStringGetTextDatum(edata->domain!=NULL?edata->domain:"<NULL>"),
+        CStringGetTextDatum(edata->context_domain!=NULL?edata->context_domain:"<NULL>"),
         Int32GetDatum(edata->sqlerrcode),
-        CStringGetTextDatum(edata->message!=NULL?edata->message:""),
-        CStringGetTextDatum(edata->detail!=NULL?edata->detail:""),
-        CStringGetTextDatum(edata->detail_log!=NULL?edata->detail_log:""),
-        CStringGetTextDatum(edata->hint!=NULL?edata->hint:""),
-        CStringGetTextDatum(edata->context!=NULL?edata->context:""),
-        CStringGetTextDatum(edata->message_id!=NULL?edata->message_id:""),
-        CStringGetTextDatum(edata->schema_name!=NULL?edata->schema_name:""),
-        CStringGetTextDatum(edata->table_name!=NULL?edata->table_name:""),
-        CStringGetTextDatum(edata->column_name!=NULL?edata->column_name:""),
-        CStringGetTextDatum(edata->datatype_name!=NULL?edata->datatype_name:""),
-        CStringGetTextDatum(edata->constraint_name!=NULL?edata->constraint_name:""),
+        CStringGetTextDatum(edata->message!=NULL?edata->message:"<NULL>"),
+        CStringGetTextDatum(edata->detail!=NULL?edata->detail:"<NULL>"),
+        CStringGetTextDatum(edata->detail_log!=NULL?edata->detail_log:"<NULL>"),
+        CStringGetTextDatum(edata->hint!=NULL?edata->hint:"<NULL>"),
+        CStringGetTextDatum(edata->context!=NULL?edata->context:"<NULL>"),
+        CStringGetTextDatum(edata->message_id!=NULL?edata->message_id:"<NULL>"),
+        CStringGetTextDatum(edata->schema_name!=NULL?edata->schema_name:"<NULL>"),
+        CStringGetTextDatum(edata->table_name!=NULL?edata->table_name:"<NULL>"),
+        CStringGetTextDatum(edata->column_name!=NULL?edata->column_name:"<NULL>"),
+        CStringGetTextDatum(edata->datatype_name!=NULL?edata->datatype_name:"<NULL>"),
+        CStringGetTextDatum(edata->constraint_name!=NULL?edata->constraint_name:"<NULL>"),
         Int32GetDatum(edata->cursorpos),
         Int32GetDatum(edata->internalpos),
-        CStringGetTextDatum(edata->internalquery!=NULL?edata->internalquery:""),
+        CStringGetTextDatum(edata->internalquery!=NULL?edata->internalquery:"<NULL>"),
         Int32GetDatum(edata->saved_errno),
         main_arg
     };
-    const char Nulls[] = {
+    /*const char Nulls[] = {
         ' ',
         ' ',
         ' ',
@@ -185,21 +185,21 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         ' ',
         edata->message!=NULL?' ':'n',
         edata->detail!=NULL?' ':'n',
-        edata->detail_log!=NULL?' ':'n',
-        edata->hint!=NULL?' ':'n',
-        edata->context!=NULL?' ':'n',
-        edata->message_id!=NULL?' ':'n',
-        edata->schema_name!=NULL?' ':'n',
-        edata->table_name!=NULL?' ':'n',
-        edata->column_name!=NULL?' ':'n',
-        edata->datatype_name!=NULL?' ':'n',
-        edata->constraint_name!=NULL?' ':'n',
-        ' ',
-        ' ',
-        edata->internalquery!=NULL?' ':'n',
-        ' ',
+//        edata->detail_log!=NULL?' ':'n',
+//        edata->hint!=NULL?' ':'n',
+//        edata->context!=NULL?' ':'n',
+//        edata->message_id!=NULL?' ':'n',
+//        edata->schema_name!=NULL?' ':'n',
+//        edata->table_name!=NULL?' ':'n',
+//        edata->column_name!=NULL?' ':'n',
+//        edata->datatype_name!=NULL?' ':'n',
+//        edata->constraint_name!=NULL?' ':'n',
+//        ' ',
+//        ' ',
+//        edata->internalquery!=NULL?' ':'n',
+//        ' ',
         ' '
-    };
+    };*/
     elog(LOG, "edata={"
         "\"elevel\":%i,"
         "\"output_to_server\":%s,"
@@ -285,7 +285,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         "internalpos\t'||$25::text||'\n"
         "internalquery\t'||$26::text||'\n"
         "saved_errno\t'||$27::text||'"
-    "' WHERE id = $28", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    "' WHERE id = $28", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
 }
 
 static inline void execute(Datum main_arg) {
