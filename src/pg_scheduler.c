@@ -190,50 +190,52 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
     (void)finish_my(src);
 }
 
-static inline void result(StringInfoData *buf) {
-    (void)initStringInfo(buf);
+static inline char *result() {
+    StringInfoData buf;
+    (void)initStringInfo(&buf);
     if ((SPI_tuptable != NULL) && (SPI_processed > 0)) {
         for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
             char *name = SPI_fname(SPI_tuptable->tupdesc, col);
             char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
-            (void)appendStringInfo(buf, "%s::%s", name, type);
-            if (col > 1) (void)appendStringInfoString(buf, "\t");
+            (void)appendStringInfo(&buf, "%s::%s", name, type);
+            if (col > 1) (void)appendStringInfoString(&buf, "\t");
             if (name != NULL) pfree(name);
             if (type != NULL) pfree(type);
         }
-        (void)appendStringInfoString(buf, "\n");
+        (void)appendStringInfoString(&buf, "\n");
         for (uint64 row = 0; row < SPI_processed; row++) {
             for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
                 char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
-                (void)appendStringInfo(buf, "%s", value);
-                if (col > 1) (void)appendStringInfoString(buf, "\t");
+                (void)appendStringInfo(&buf, "%s", value);
+                if (col > 1) (void)appendStringInfoString(&buf, "\t");
                 if (value != NULL) pfree(value);
             }
-            if (row < SPI_processed - 1) (void)appendStringInfoString(buf, "\n");
+            if (row < SPI_processed - 1) (void)appendStringInfoString(&buf, "\n");
         }
-        elog(LOG, "result\n%s", buf->data);
+        elog(LOG, "result\n%s", buf.data);
     }
+    return buf.data;
 }
 
 static inline void execute(Datum main_arg) {
     char *src = work(main_arg);
 //    elog(LOG, "src=%s", src);
-    (void)connect_my((const char *)src); {
+    (void)connect_my(src); {
         MemoryContext oldcontext = CurrentMemoryContext;
         ResourceOwner oldowner = CurrentResourceOwner;
         elog(LOG, "execute src=%s", src);
         (void)BeginInternalSubTransaction(NULL);
         (MemoryContext)MemoryContextSwitchTo(oldcontext);
         PG_TRY(); {
-            StringInfoData buf;
-            if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0");
-            (void)result(&buf);
-            (void)ReleaseCurrentSubTransaction();
-            (MemoryContext)MemoryContextSwitchTo(oldcontext);
-            CurrentResourceOwner = oldowner;
-            (void)finish_my((const char *)src);
-            (void)done(main_arg, buf.data);
-            (void)pfree(buf.data);
+            if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0"); else {
+                char *data = result();
+                (void)ReleaseCurrentSubTransaction();
+                (MemoryContext)MemoryContextSwitchTo(oldcontext);
+                CurrentResourceOwner = oldowner;
+                (void)finish_my(src);
+                (void)done(main_arg, data);
+                (void)pfree(data);
+            }
         } PG_CATCH(); {
             ErrorData *edata;
             (MemoryContext)MemoryContextSwitchTo(oldcontext);
