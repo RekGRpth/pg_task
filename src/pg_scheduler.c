@@ -74,6 +74,7 @@ static inline void launch_task(Datum id) {
 }
 
 static inline void connect_my(const char *cmd_str) {
+    elog(LOG, "connect_my cmd_str=%s", cmd_str);
     (void)pgstat_report_activity(STATE_RUNNING, cmd_str);
     (void)SetCurrentStatementStartTimestamp();
     (void)StartTransactionCommand();
@@ -82,6 +83,7 @@ static inline void connect_my(const char *cmd_str) {
 }
 
 static inline void finish_my(const char *cmd_str) {
+    elog(LOG, "finish_my cmd_str=%s", cmd_str);
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
     (void)PopActiveSnapshot();
     (void)CommitTransactionCommand();
@@ -94,11 +96,14 @@ static inline char *work(Datum main_arg) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {main_arg};
     char *request = NULL;
+    bool isnull;
     const char *src = "UPDATE task SET state = 'WORK' WHERE id = $1 RETURNING request";
     (void)connect_my(src);
+    elog(LOG, "work src=%s", src);
     if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1");
-    request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
+//    request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
+    request = strdup(TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1, &isnull)));
     (void)finish_my(src);
     return request;
 }
@@ -106,7 +111,11 @@ static inline char *work(Datum main_arg) {
 static inline void done(Datum main_arg) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {main_arg};
-    if (SPI_execute_with_args("UPDATE task SET state = 'DONE' WHERE id = $1", 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    const char *src = "UPDATE task SET state = 'DONE' WHERE id = $1";
+    (void)connect_my(src);
+    elog(LOG, "done src=%s", src);
+    if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    (void)finish_my(src);
 }
 
 static inline void fail(Datum main_arg, ErrorData *edata) {
@@ -200,6 +209,35 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
 //        ' ',
         ' '
     };*/
+    const char *src = "UPDATE task SET state = 'FAIL', response='"
+        "elevel\t'||$1::text||'\n"
+        "output_to_server\t'||$2::text||'\n"
+        "output_to_client\t'||$3::text||'\n"
+        "show_funcname\t'||$4::text||'\n"
+        "hide_stmt\t'||$5::text||'\n"
+        "hide_ctx\t'||$6::text||'\n"
+        "filename\t'||$7::text||'\n"
+        "lineno\t'||$8::text||'\n"
+        "funcname\t'||$9::text||'\n"
+        "domain\t'||$10::text||'\n"
+        "context_domain\t'||$11::text||'\n"
+        "sqlerrcode\t'||$12::text||'\n"
+        "message\t'||$13::text||'\n"
+        "detail\t'||$14::text||'\n"
+        "detail_log\t'||$15::text||'\n"
+        "hint\t'||$16::text||'\n"
+        "context\t'||$17::text||'\n"
+        "message_id\t'||$18::text||'\n"
+        "schema_name\t'||$19::text||'\n"
+        "table_name\t'||$20::text||'\n"
+        "column_name\t'||$21::text||'\n"
+        "datatype_name\t'||$22::text||'\n"
+        "constraint_name\t'||$23::text||'\n"
+        "cursorpos\t'||$24::text||'\n"
+        "internalpos\t'||$25::text||'\n"
+        "internalquery\t'||$26::text||'\n"
+        "saved_errno\t'||$27::text||'"
+    "' WHERE id = $28";
     elog(LOG, "edata={"
         "\"elevel\":%i,"
         "\"output_to_server\":%s,"
@@ -257,50 +295,32 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         edata->internalquery,
         edata->saved_errno
     );
-    if (SPI_execute_with_args("UPDATE task SET state = 'FAIL', response='"
-        "elevel\t'||$1::text||'\n"
-        "output_to_server\t'||$2::text||'\n"
-        "output_to_client\t'||$3::text||'\n"
-        "show_funcname\t'||$4::text||'\n"
-        "hide_stmt\t'||$5::text||'\n"
-        "hide_ctx\t'||$6::text||'\n"
-        "filename\t'||$7::text||'\n"
-        "lineno\t'||$8::text||'\n"
-        "funcname\t'||$9::text||'\n"
-        "domain\t'||$10::text||'\n"
-        "context_domain\t'||$11::text||'\n"
-        "sqlerrcode\t'||$12::text||'\n"
-        "message\t'||$13::text||'\n"
-        "detail\t'||$14::text||'\n"
-        "detail_log\t'||$15::text||'\n"
-        "hint\t'||$16::text||'\n"
-        "context\t'||$17::text||'\n"
-        "message_id\t'||$18::text||'\n"
-        "schema_name\t'||$19::text||'\n"
-        "table_name\t'||$20::text||'\n"
-        "column_name\t'||$21::text||'\n"
-        "datatype_name\t'||$22::text||'\n"
-        "constraint_name\t'||$23::text||'\n"
-        "cursorpos\t'||$24::text||'\n"
-        "internalpos\t'||$25::text||'\n"
-        "internalquery\t'||$26::text||'\n"
-        "saved_errno\t'||$27::text||'"
-    "' WHERE id = $28", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    (void)connect_my(src);
+    elog(LOG, "fail src=%s", src);
+    if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    (void)finish_my(src);
 }
 
 static inline void execute(Datum main_arg) {
-    const char *src = work(main_arg);
-    elog(LOG, "src=%s", src);
-    (void)connect_my(src); {
+    char *src = work(main_arg);
+//    int res;
+//    MemoryContext oldcontext;
+//    ResourceOwner oldowner;
+//    elog(LOG, "src=%s", src);
+    (void)connect_my((const char *)src); {
         MemoryContext oldcontext = CurrentMemoryContext;
         ResourceOwner oldowner = CurrentResourceOwner;
+        elog(LOG, "execute src=%s", src);
         (void)BeginInternalSubTransaction(NULL);
         (MemoryContext)MemoryContextSwitchTo(oldcontext);
         PG_TRY(); {
             elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
+//            (int)SPI_execute((const char *)src, false, 0);
+//            elog(LOG, "execute res=%i", res);
             (void)ReleaseCurrentSubTransaction();
             (MemoryContext)MemoryContextSwitchTo(oldcontext);
             CurrentResourceOwner = oldowner;
+            (void)finish_my((const char *)src);
             (void)done(main_arg);
         } PG_CATCH(); {
             ErrorData *edata;
@@ -310,11 +330,12 @@ static inline void execute(Datum main_arg) {
             (void)RollbackAndReleaseCurrentSubTransaction();
             (MemoryContext)MemoryContextSwitchTo(oldcontext);
             CurrentResourceOwner = oldowner;
+            (void)finish_my(src);
             (void)fail(main_arg, edata);
             (void)FreeErrorData(edata);
         } PG_END_TRY();
-    } (void)finish_my(src);
-    if (src != NULL) (void)pfree((void *)src);
+    }
+    if (src != NULL) (void)free(src);
 }
 
 void task(Datum main_arg) {
@@ -327,8 +348,8 @@ void task(Datum main_arg) {
 static inline void assign() {
     const char *src = "UPDATE task SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id";
     (void)connect_my(src);
-    if (SPI_execute(src, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute != SPI_OK_UPDATE_RETURNING");
-    else {
+    elog(LOG, "assign src=%s", src);
+    if (SPI_execute(src, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute != SPI_OK_UPDATE_RETURNING"); else {
         uint64 processed = SPI_processed;
         SPITupleTable *tuptable = SPI_tuptable;
         bool isnull;
