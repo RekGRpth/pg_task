@@ -98,7 +98,7 @@ static inline char *work(Datum main_arg) {
     Datum Values[] = {main_arg};
     char *request = NULL;
     bool isnull;
-    const char *src = "UPDATE task SET state = 'WORK' WHERE id = $1 RETURNING request";
+    const char *src = "UPDATE task SET state = 'WORK', start = now() WHERE id = $1 RETURNING request";
     (void)connect_my(src);
     elog(LOG, "work src=%s", src);
     if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
@@ -112,7 +112,7 @@ static inline char *work(Datum main_arg) {
 static inline void done(Datum main_arg, const char *data) {
     Oid argtypes[] = {TEXTOID, INT8OID};
     Datum Values[] = {CStringGetTextDatum(data!=NULL?data:"(null)"), main_arg};
-    const char *src = "UPDATE task SET state = 'DONE', response=$1 WHERE id = $2";
+    const char *src = "UPDATE task SET state = 'DONE', stop = now(), response=$1 WHERE id = $2";
     (void)connect_my(src);
     elog(LOG, "done src=%s", src);
     if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
@@ -122,7 +122,7 @@ static inline void done(Datum main_arg, const char *data) {
 static inline void fail(Datum main_arg, const char *data) {
     Oid argtypes[] = {TEXTOID, INT8OID};
     Datum Values[] = {CStringGetTextDatum(data!=NULL?data:"(null)"), main_arg};
-    const char *src = "UPDATE task SET state = 'FAIL', response=$1 WHERE id = $2";
+    const char *src = "UPDATE task SET state = 'FAIL', stop = now(), response=$1 WHERE id = $2";
     (void)connect_my(src);
     elog(LOG, "fail src=%s", src);
     if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
