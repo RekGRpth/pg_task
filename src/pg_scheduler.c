@@ -328,7 +328,7 @@ static inline void execute(Datum main_arg) {
 //            elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
             uint64 processed;
             SPITupleTable *tuptable;
-            switch (SPI_execute(src, false, 0)) {
+            /*switch (SPI_execute(src, false, 0)) {
                 case SPI_OK_SELECT: elog(LOG, "SPI_OK_SELECT"); break;
                 case SPI_OK_SELINTO: elog(LOG, "SPI_OK_SELINTO"); break;
                 case SPI_OK_INSERT: elog(LOG, "SPI_OK_INSERT"); break;
@@ -345,7 +345,8 @@ static inline void execute(Datum main_arg) {
                 case SPI_ERROR_OPUNKNOWN: elog(FATAL, "SPI_ERROR_OPUNKNOWN"); break;
                 case SPI_ERROR_UNCONNECTED: elog(FATAL, "SPI_ERROR_UNCONNECTED"); break;
                 default: elog(FATAL, "SPI_execute");
-            }
+            }*/
+            if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0");
             processed = SPI_processed;
             tuptable = SPI_tuptable;
 //            (int)SPI_execute((const char *)src, false, 0);
