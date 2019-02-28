@@ -181,11 +181,11 @@ static inline void fail(Datum main_arg, const char *data) {
         edata->internalquery,
         edata->saved_errno
     );*/
-    elog(LOG, "edata\n%s", data);
+//    elog(LOG, "edata\n%s", data);
 //    Values[0] = CStringGetTextDatum(buf.data);
 //    pfree(buf.data);
     (void)connect_my(src);
-//    elog(LOG, "fail src=%s", src);
+    elog(LOG, "fail src=%s", src);
     if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
     (void)finish_my(src);
 }
@@ -278,6 +278,7 @@ static inline char *error() {
         edata->saved_errno
     );
     (void)FreeErrorData(edata);
+    elog(LOG, "error\n%s", buf.data);
     return buf.data;
 }
 
