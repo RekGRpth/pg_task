@@ -270,6 +270,15 @@ static inline void execute(Datum main_arg) {
                     if (type != NULL) pfree(type);
                 }
                 (void)appendStringInfoString(&buf, "\n");
+                for (uint64 row = 0; row < SPI_processed; row++) {
+                    for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
+                        char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
+                        (void)appendStringInfo(&buf, "%s", value);
+                        if (col > 1) (void)appendStringInfoString(&buf, "\t");
+                        if (value != NULL) pfree(value);
+                    }
+                    if (row < SPI_processed - 1) (void)appendStringInfoString(&buf, "\n");
+                }
 //                if ((datum_ids = palloc(sizeof(Datum) * SPI_processed * SPI_tuptable->tupdesc->natts)) == NULL) elog(ERROR, "datum_ids == NULL");
 /*                for (uint64 row = 0; row < SPI_processed; row++) {
                     for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
