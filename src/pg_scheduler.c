@@ -113,27 +113,6 @@ static inline void done(Datum main_arg, const char *response) {
     Oid argtypes[] = {TEXTOID, INT8OID};
     Datum Values[] = {CStringGetTextDatum(response!=NULL?response:"(null)"), main_arg};
     const char *src = "UPDATE task SET state = 'DONE', response=$1 WHERE id = $2";
-/*    if (tuptable != NULL) {
-//            char *getvalue = SPI_getvalue(tuptable->vals[0], tuptable->tupdesc, 1);
-//            (int)SPI_execute((const char *)src, false, 0);
-//            elog(LOG, "execute getvalue=%s", getvalue);
-        for (uint64 row = 0; row < processed; row++) {
-            for (int col = 1; col <= tuptable->tupdesc->natts; col++) {
-                bool isnull = false;
-                Datum getbinval = SPI_getbinval(tuptable->vals[row], tuptable->tupdesc, col, &isnull);
-                char *fname = SPI_fname(tuptable->tupdesc, col);
-                int gettype = SPI_gettypeid(tuptable->tupdesc, col);
-//                elog(LOG, "row=%lu, col=%i, fname=%s, gettype=%i", row, col, fname, gettype);
-            //     request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
-//                char *getvalue = SPI_getvalue(tuptable->vals[row], tuptable->tupdesc, col);
-//                elog(LOG, "row=%lu, col=%i, getvalue=%s", row, col, getvalue);
-                elog(LOG, "row=%lu, col=%i, isnull=%s, fname=%s, gettype=%i, getbinval=%lu", row, col, isnull?"true":"false", fname, gettype, getbinval);
-                if (fname != NULL) pfree(fname);
-//                if (gettype != NULL) pfree(gettype);
-//                if (getvalue != NULL) pfree(getvalue);
-            }
-        }
-    }*/
     (void)connect_my(src);
     elog(LOG, "done src=%s", src);
     if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
@@ -213,9 +192,6 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
 
 static inline void execute(Datum main_arg) {
     char *src = work(main_arg);
-//    int res;
-//    MemoryContext oldcontext;
-//    ResourceOwner oldowner;
 //    elog(LOG, "src=%s", src);
     (void)connect_my((const char *)src); {
         MemoryContext oldcontext = CurrentMemoryContext;
@@ -225,41 +201,8 @@ static inline void execute(Datum main_arg) {
         (MemoryContext)MemoryContextSwitchTo(oldcontext);
         PG_TRY(); {
             StringInfoData buf;
-//            elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
-//            uint64 processed;
-//            SPITupleTable *tuptable;
-//            char *getvalue;
-//            bool isnull;
-            /*switch (SPI_execute(src, false, 0)) {
-                case SPI_OK_SELECT: elog(LOG, "SPI_OK_SELECT"); break;
-                case SPI_OK_SELINTO: elog(LOG, "SPI_OK_SELINTO"); break;
-                case SPI_OK_INSERT: elog(LOG, "SPI_OK_INSERT"); break;
-                case SPI_OK_DELETE: elog(LOG, "SPI_OK_DELETE"); break;
-                case SPI_OK_UPDATE: elog(LOG, "SPI_OK_UPDATE"); break;
-                case SPI_OK_INSERT_RETURNING: elog(LOG, "SPI_OK_INSERT_RETURNING"); break;
-                case SPI_OK_DELETE_RETURNING: elog(LOG, "SPI_OK_DELETE_RETURNING"); break;
-                case SPI_OK_UPDATE_RETURNING: elog(LOG, "SPI_OK_UPDATE_RETURNING"); break;
-                case SPI_OK_UTILITY: elog(LOG, "SPI_OK_UTILITY"); break;
-                case SPI_OK_REWRITTEN: elog(LOG, "SPI_OK_REWRITTEN"); break;
-                case SPI_ERROR_ARGUMENT: elog(FATAL, "SPI_ERROR_ARGUMENT"); break;
-                case SPI_ERROR_COPY: elog(FATAL, "SPI_ERROR_COPY"); break;
-                case SPI_ERROR_TRANSACTION: elog(FATAL, "SPI_ERROR_TRANSACTION"); break;
-                case SPI_ERROR_OPUNKNOWN: elog(FATAL, "SPI_ERROR_OPUNKNOWN"); break;
-                case SPI_ERROR_UNCONNECTED: elog(FATAL, "SPI_ERROR_UNCONNECTED"); break;
-                default: elog(FATAL, "SPI_execute");
-            }*/
             if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0");
-//            processed = SPI_processed;
-//            tuptable = SPI_tuptable;
-
-
             if ((SPI_tuptable != NULL) && (SPI_processed > 0)) {
-        //            char *getvalue = SPI_getvalue(tuptable->vals[0], tuptable->tupdesc, 1);
-        //            (int)SPI_execute((const char *)src, false, 0);
-        //            elog(LOG, "execute getvalue=%s", getvalue);
-//                ArrayType *array_ids;
-//                Datum *datum_ids;
-//                int i = 0;
                 (void)initStringInfo(&buf);
                 for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
                     char *name = SPI_fname(SPI_tuptable->tupdesc, col);
@@ -279,45 +222,8 @@ static inline void execute(Datum main_arg) {
                     }
                     if (row < SPI_processed - 1) (void)appendStringInfoString(&buf, "\n");
                 }
-//                if ((datum_ids = palloc(sizeof(Datum) * SPI_processed * SPI_tuptable->tupdesc->natts)) == NULL) elog(ERROR, "datum_ids == NULL");
-/*                for (uint64 row = 0; row < SPI_processed; row++) {
-                    for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-                        bool isnull = false;
-                        Oid typoutput;
-                        bool typisvarlena;
-//                        Datum getbinval = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col, &isnull);
-                        char *fname = SPI_fname(SPI_tuptable->tupdesc, col);
-                        int gettypeid = SPI_gettypeid(SPI_tuptable->tupdesc, col);
-                        char *gettype = SPI_gettype(SPI_tuptable->tupdesc, col);
-        //                elog(LOG, "row=%lu, col=%i, fname=%s, gettype=%i", row, col, fname, gettype);
-                    //     request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
-                        char *getvalue = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
-        //                elog(LOG, "row=%lu, col=%i, getvalue=%s", row, col, getvalue);
-//                        elog(LOG, "row=%lu, col=%i, isnull=%s, fname=%s, gettype=%i, getbinval=%lu", row, col, isnull?"true":"false", fname, gettype, getbinval);
-                        elog(LOG, "row=%lu, col=%i, fname=%s, gettypeid=%i, gettype=%s, getvalue=%s", row, col, fname, gettypeid, gettype, getvalue);
-//                        datum_ids[i] = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col, &isnull);
-                        (void)getTypeOutputInfo(gettypeid, &typoutput, &typisvarlena);
-                        elog(LOG, "typoutput=%i, typisvarlena=%s, s=%s", typoutput, typisvarlena?"true":"false", OidOutputFunctionCall(typoutput, SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col, &isnull)));
-//                        (void)appendStringInfo(&buf,
-                        if (fname != NULL) pfree(fname);
-                        if (gettype != NULL) pfree(gettype);
-                        if (getvalue != NULL) pfree(getvalue);
-                        i++;
-                    }
-                }*/
                 elog(LOG, "result\n%s", buf.data);
-//                pfree(buf.data);
-//                array_ids = construct_array(datum_ids, SPI_processed * SPI_tuptable->tupdesc->natts, TEXTOID, -1, false, 'i');
-//                if (array_ids != NULL) pfree(array_ids);
-//                if (datum_ids != NULL) pfree(datum_ids);
             }
-
-
-//            getvalue = SPI_getvalue(tuptable->vals[0], tuptable->tupdesc, 1);
-//            (int)SPI_execute((const char *)src, false, 0);
-//            elog(LOG, "execute getvalue=%s", getvalue);
-//            getvalue = TextDatumGetCString(SPI_getbinval(tuptable->vals[0], tuptable->tupdesc, 1, &isnull));
-//            elog(LOG, "execute getvalue2=%s", getvalue);
             (void)ReleaseCurrentSubTransaction();
             (MemoryContext)MemoryContextSwitchTo(oldcontext);
             CurrentResourceOwner = oldowner;
