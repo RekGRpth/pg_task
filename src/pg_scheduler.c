@@ -123,67 +123,6 @@ static inline void fail(Datum main_arg, const char *data) {
     Oid argtypes[] = {TEXTOID, INT8OID};
     Datum Values[] = {CStringGetTextDatum(data!=NULL?data:"(null)"), main_arg};
     const char *src = "UPDATE task SET state = 'FAIL', response=$1 WHERE id = $2";
-/*    StringInfoData buf;
-    (void)initStringInfo(&buf);
-    (void)appendStringInfo(&buf,
-        "elevel\t%i\n"
-        "output_to_server\t%s\n"
-        "output_to_client\t%s\n"
-        "show_funcname\t%s\n"
-        "hide_stmt\t%s\n"
-        "hide_ctx\t%s\n"
-        "filename\t%s\n"
-        "lineno\t%i\n"
-        "funcname\t%s\n"
-        "domain\t%s\n"
-        "context_domain\t%s\n"
-        "sqlerrcode\t%i\n"
-        "message\t%s\n"
-        "detail\t%s\n"
-        "detail_log\t%s\n"
-        "hint\t%s\n"
-        "context\t%s\n"
-        "message_id\t%s\n"
-        "schema_name\t%s\n"
-        "table_name\t%s\n"
-        "column_name\t%s\n"
-        "datatype_name\t%s\n"
-        "constraint_name\t%s\n"
-        "cursorpos\t%i\n"
-        "internalpos\t%i\n"
-        "internalquery\t%s\n"
-        "saved_errno\t%i",
-        edata->elevel,
-        edata->output_to_server?"true":"false",
-        edata->output_to_client?"true":"false",
-        edata->show_funcname?"true":"false",
-        edata->hide_stmt?"true":"false",
-        edata->hide_ctx?"true":"false",
-        edata->filename,
-        edata->lineno,
-        edata->funcname,
-        edata->domain,
-        edata->context_domain,
-        edata->sqlerrcode,
-        edata->message,
-        edata->detail,
-        edata->detail_log,
-        edata->hint,
-        edata->context,
-        edata->message_id,
-        edata->schema_name,
-        edata->table_name,
-        edata->column_name,
-        edata->datatype_name,
-        edata->constraint_name,
-        edata->cursorpos,
-        edata->internalpos,
-        edata->internalquery,
-        edata->saved_errno
-    );*/
-//    elog(LOG, "edata\n%s", data);
-//    Values[0] = CStringGetTextDatum(buf.data);
-//    pfree(buf.data);
     (void)connect_my(src);
     elog(LOG, "fail src=%s", src);
     if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
@@ -303,7 +242,6 @@ static inline void execute(Datum main_arg) {
             }
         } PG_CATCH(); {
             (MemoryContext)MemoryContextSwitchTo(oldcontext); {
-                //ErrorData *edata = CopyErrorData();
                 char *data = error();
                 (void)FlushErrorState();
                 (void)RollbackAndReleaseCurrentSubTransaction();
@@ -311,7 +249,6 @@ static inline void execute(Datum main_arg) {
                 CurrentResourceOwner = oldowner;
                 (void)finish_my(src);
                 (void)fail(main_arg, data);
-                //(void)FreeErrorData(edata);
                 (void)pfree(data);
             }
         } PG_END_TRY();
@@ -339,7 +276,6 @@ static inline void assign() {
             elog(LOG, "row=%lu", row);
             (void)launch_task(SPI_getbinval(tuptable->vals[row], tuptable->tupdesc, SPI_fnumber(tuptable->tupdesc, "id"), &isnull));
         }
-//        (void)SPI_freetuptable(tuptable);
     }
 }
 
