@@ -346,7 +346,9 @@ static inline void execute(Datum main_arg) {
             (void)finish_my((const char *)src);
             if (tuptable != NULL) {
                 for (uint64 row = 0; row < processed; row++) {
-                    elog(LOG, "row=%lu, p=%lu", row, SPI_getbinval(tuptable->vals[row], tuptable->tupdesc, 1, &isnull));
+                    for (int col = 1; col <= tuptable->tupdesc->natts; col++) {
+                        elog(LOG, "row=%lu, col=%i, p=%lu", row, col, SPI_getbinval(tuptable->vals[row], tuptable->tupdesc, col, &isnull));
+                    }
                 }
             }
             (void)done(main_arg);
