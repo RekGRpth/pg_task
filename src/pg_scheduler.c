@@ -190,7 +190,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
     (void)finish_my(src);
 }
 
-static inline char *result() {
+static inline char *success() {
     StringInfoData buf;
     (void)initStringInfo(&buf);
     if ((SPI_tuptable != NULL) && (SPI_processed > 0)) {
@@ -212,7 +212,7 @@ static inline char *result() {
             }
             if (row < SPI_processed - 1) (void)appendStringInfoString(&buf, "\n");
         }
-        elog(LOG, "result\n%s", buf.data);
+        elog(LOG, "success\n%s", buf.data);
     }
     return buf.data;
 }
@@ -228,7 +228,7 @@ static inline void execute(Datum main_arg) {
         (MemoryContext)MemoryContextSwitchTo(oldcontext);
         PG_TRY(); {
             if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0"); else {
-                char *data = result();
+                char *data = success();
                 (void)ReleaseCurrentSubTransaction();
                 (MemoryContext)MemoryContextSwitchTo(oldcontext);
                 CurrentResourceOwner = oldowner;
