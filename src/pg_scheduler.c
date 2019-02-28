@@ -15,6 +15,7 @@
 #include <catalog/pg_type.h>
 
 #include "utils/builtins.h"
+#include "utils/lsyscache.h"
 
 PG_MODULE_MAGIC;
 
@@ -141,63 +142,64 @@ static inline void done(Datum main_arg/*, uint64 processed, SPITupleTable *tupta
 
 static inline void fail(Datum main_arg, ErrorData *edata) {
     Oid argtypes[] = {
-        INT4OID,
-        BOOLOID,
-        BOOLOID,
-        BOOLOID,
-        BOOLOID,
-        BOOLOID,
+//        INT4OID,
+//        BOOLOID,
+//        BOOLOID,
+//        BOOLOID,
+//        BOOLOID,
+//        BOOLOID,
+//        TEXTOID,
+//        INT4OID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        INT4OID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        TEXTOID,
+//        INT4OID,
+//        INT4OID,
         TEXTOID,
-        INT4OID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        INT4OID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        TEXTOID,
-        INT4OID,
-        INT4OID,
-        TEXTOID,
-        INT4OID,
+//        INT4OID,
         INT8OID
     };
     Datum Values[] = {
-        Int32GetDatum(edata->elevel),
-        BoolGetDatum(edata->output_to_server),
-        BoolGetDatum(edata->output_to_client),
-        BoolGetDatum(edata->show_funcname),
-        BoolGetDatum(edata->hide_stmt),
-        BoolGetDatum(edata->hide_ctx),
-        CStringGetTextDatum(edata->filename!=NULL?edata->filename:"<NULL>"),
-        Int32GetDatum(edata->lineno),
-        CStringGetTextDatum(edata->funcname!=NULL?edata->funcname:"<NULL>"),
-        CStringGetTextDatum(edata->domain!=NULL?edata->domain:"<NULL>"),
-        CStringGetTextDatum(edata->context_domain!=NULL?edata->context_domain:"<NULL>"),
-        Int32GetDatum(edata->sqlerrcode),
-        CStringGetTextDatum(edata->message!=NULL?edata->message:"<NULL>"),
-        CStringGetTextDatum(edata->detail!=NULL?edata->detail:"<NULL>"),
-        CStringGetTextDatum(edata->detail_log!=NULL?edata->detail_log:"<NULL>"),
-        CStringGetTextDatum(edata->hint!=NULL?edata->hint:"<NULL>"),
-        CStringGetTextDatum(edata->context!=NULL?edata->context:"<NULL>"),
-        CStringGetTextDatum(edata->message_id!=NULL?edata->message_id:"<NULL>"),
-        CStringGetTextDatum(edata->schema_name!=NULL?edata->schema_name:"<NULL>"),
-        CStringGetTextDatum(edata->table_name!=NULL?edata->table_name:"<NULL>"),
-        CStringGetTextDatum(edata->column_name!=NULL?edata->column_name:"<NULL>"),
-        CStringGetTextDatum(edata->datatype_name!=NULL?edata->datatype_name:"<NULL>"),
-        CStringGetTextDatum(edata->constraint_name!=NULL?edata->constraint_name:"<NULL>"),
-        Int32GetDatum(edata->cursorpos),
-        Int32GetDatum(edata->internalpos),
-        CStringGetTextDatum(edata->internalquery!=NULL?edata->internalquery:"<NULL>"),
-        Int32GetDatum(edata->saved_errno),
+//        Int32GetDatum(edata->elevel),
+//        BoolGetDatum(edata->output_to_server),
+//        BoolGetDatum(edata->output_to_client),
+//        BoolGetDatum(edata->show_funcname),
+//        BoolGetDatum(edata->hide_stmt),
+//        BoolGetDatum(edata->hide_ctx),
+//        CStringGetTextDatum(edata->filename!=NULL?edata->filename:"<NULL>"),
+//        Int32GetDatum(edata->lineno),
+//        CStringGetTextDatum(edata->funcname!=NULL?edata->funcname:"<NULL>"),
+//        CStringGetTextDatum(edata->domain!=NULL?edata->domain:"<NULL>"),
+//        CStringGetTextDatum(edata->context_domain!=NULL?edata->context_domain:"<NULL>"),
+//        Int32GetDatum(edata->sqlerrcode),
+//        CStringGetTextDatum(edata->message!=NULL?edata->message:"<NULL>"),
+//        CStringGetTextDatum(edata->detail!=NULL?edata->detail:"<NULL>"),
+//        CStringGetTextDatum(edata->detail_log!=NULL?edata->detail_log:"<NULL>"),
+//        CStringGetTextDatum(edata->hint!=NULL?edata->hint:"<NULL>"),
+//        CStringGetTextDatum(edata->context!=NULL?edata->context:"<NULL>"),
+//        CStringGetTextDatum(edata->message_id!=NULL?edata->message_id:"<NULL>"),
+//        CStringGetTextDatum(edata->schema_name!=NULL?edata->schema_name:"<NULL>"),
+//        CStringGetTextDatum(edata->table_name!=NULL?edata->table_name:"<NULL>"),
+//        CStringGetTextDatum(edata->column_name!=NULL?edata->column_name:"<NULL>"),
+//        CStringGetTextDatum(edata->datatype_name!=NULL?edata->datatype_name:"<NULL>"),
+//        CStringGetTextDatum(edata->constraint_name!=NULL?edata->constraint_name:"<NULL>"),
+//        Int32GetDatum(edata->cursorpos),
+//        Int32GetDatum(edata->internalpos),
+//        CStringGetTextDatum(edata->internalquery!=NULL?edata->internalquery:"<NULL>"),
+//        Int32GetDatum(edata->saved_errno),
+        (Datum)NULL,
         main_arg
     };
     /*const char Nulls[] = {
@@ -230,7 +232,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
 //        ' ',
         ' '
     };*/
-    const char *src = "UPDATE task SET state = 'FAIL', response='"
+    /*const char *src = "UPDATE task SET state = 'FAIL', response='"
         "elevel\t'||$1::text||'\n"
         "output_to_server\t'||$2::text||'\n"
         "output_to_client\t'||$3::text||'\n"
@@ -258,8 +260,68 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         "internalpos\t'||$25::text||'\n"
         "internalquery\t'||$26::text||'\n"
         "saved_errno\t'||$27::text||'"
-    "' WHERE id = $28";
-    elog(LOG, "edata={"
+    "' WHERE id = $28";*/
+    const char *src = "UPDATE task SET state = 'FAIL', response=$1 WHERE id = $2";
+    StringInfoData buf;
+    (void)initStringInfo(&buf);
+    (void)appendStringInfo(&buf,
+        "elevel\t%i\n"
+        "output_to_server\t%s\n"
+        "output_to_client\t%s\n"
+        "show_funcname\t%s\n"
+        "hide_stmt\t%s\n"
+        "hide_ctx\t%s\n"
+        "filename\t%s\n"
+        "lineno\t%i\n"
+        "funcname\t%s\n"
+        "domain\t%s\n"
+        "context_domain\t%s\n"
+        "sqlerrcode\t%i\n"
+        "message\t%s\n"
+        "detail\t%s\n"
+        "detail_log\t%s\n"
+        "hint\t%s\n"
+        "context\t%s\n"
+        "message_id\t%s\n"
+        "schema_name\t%s\n"
+        "table_name\t%s\n"
+        "column_name\t%s\n"
+        "datatype_name\t%s\n"
+        "constraint_name\t%s\n"
+        "cursorpos\t%i\n"
+        "internalpos\t%i\n"
+        "internalquery\t%s\n"
+        "saved_errno\t%i",
+        edata->elevel,
+        edata->output_to_server?"true":"false",
+        edata->output_to_client?"true":"false",
+        edata->show_funcname?"true":"false",
+        edata->hide_stmt?"true":"false",
+        edata->hide_ctx?"true":"false",
+        edata->filename,
+        edata->lineno,
+        edata->funcname,
+        edata->domain,
+        edata->context_domain,
+        edata->sqlerrcode,
+        edata->message,
+        edata->detail,
+        edata->detail_log,
+        edata->hint,
+        edata->context,
+        edata->message_id,
+        edata->schema_name,
+        edata->table_name,
+        edata->column_name,
+        edata->datatype_name,
+        edata->constraint_name,
+        edata->cursorpos,
+        edata->internalpos,
+        edata->internalquery,
+        edata->saved_errno
+    );
+    elog(LOG, "edata\n%s", buf.data);
+    /*elog(LOG, "edata={"
         "\"elevel\":%i,"
         "\"output_to_server\":%s,"
         "\"output_to_client\":%s,"
@@ -315,11 +377,131 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         edata->internalpos,
         edata->internalquery,
         edata->saved_errno
-    );
+    );*/
+    Values[0] = CStringGetTextDatum(buf.data);
     (void)connect_my(src);
 //    elog(LOG, "fail src=%s", src);
     if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
     (void)finish_my(src);
+}
+
+static inline FmgrInfo *
+build_concat_foutcache(FunctionCallInfo fcinfo, int argidx)
+{
+	FmgrInfo   *foutcache;
+	int			i;
+
+	/* We keep the info in fn_mcxt so it survives across calls */
+	foutcache = (FmgrInfo *) MemoryContextAlloc(fcinfo->flinfo->fn_mcxt,
+												PG_NARGS() * sizeof(FmgrInfo));
+
+	for (i = argidx; i < PG_NARGS(); i++)
+	{
+		Oid			valtype;
+		Oid			typOutput;
+		bool		typIsVarlena;
+
+		valtype = get_fn_expr_argtype(fcinfo->flinfo, i);
+		if (!OidIsValid(valtype))
+			elog(ERROR, "could not determine data type of concat() input");
+
+		getTypeOutputInfo(valtype, &typOutput, &typIsVarlena);
+		fmgr_info_cxt(typOutput, &foutcache[i], fcinfo->flinfo->fn_mcxt);
+	}
+
+	fcinfo->flinfo->fn_extra = foutcache;
+
+	return foutcache;
+}
+
+static inline text *concat_internal(const char *sepstr, int argidx, FunctionCallInfo fcinfo) {
+	text	   *result;
+	StringInfoData str;
+	FmgrInfo   *foutcache;
+	bool		first_arg = true;
+	int			i;
+
+	/*
+	 * concat(VARIADIC some-array) is essentially equivalent to
+	 * array_to_text(), ie concat the array elements with the given separator.
+	 * So we just pass the case off to that code.
+	 */
+#if false
+	if (get_fn_expr_variadic(fcinfo->flinfo))
+	{
+		ArrayType  *arr;
+
+		/* Should have just the one argument */
+		Assert(argidx == PG_NARGS() - 1);
+
+		/* concat(VARIADIC NULL) is defined as NULL */
+		if (PG_ARGISNULL(argidx))
+			return NULL;
+
+		/*
+		 * Non-null argument had better be an array.  We assume that any call
+		 * context that could let get_fn_expr_variadic return true will have
+		 * checked that a VARIADIC-labeled parameter actually is an array.  So
+		 * it should be okay to just Assert that it's an array rather than
+		 * doing a full-fledged error check.
+		 */
+		Assert(OidIsValid(get_base_element_type(get_fn_expr_argtype(fcinfo->flinfo, argidx))));
+
+		/* OK, safe to fetch the array value */
+		arr = PG_GETARG_ARRAYTYPE_P(argidx);
+
+		/*
+		 * And serialize the array.  We tell array_to_text to ignore null
+		 * elements, which matches the behavior of the loop below.
+		 */
+		return array_to_text_internal(fcinfo, arr, sepstr, NULL);
+	}
+#endif
+	/* Normal case without explicit VARIADIC marker */
+	initStringInfo(&str);
+
+	/* Get output function info, building it if first time through */
+	foutcache = (FmgrInfo *) fcinfo->flinfo->fn_extra;
+	if (foutcache == NULL)
+		foutcache = build_concat_foutcache(fcinfo, argidx);
+
+	for (i = argidx; i < PG_NARGS(); i++)
+	{
+		if (!PG_ARGISNULL(i))
+		{
+			Datum		value = PG_GETARG_DATUM(i);
+
+			/* add separator if appropriate */
+			if (first_arg)
+				first_arg = false;
+			else
+				appendStringInfoString(&str, sepstr);
+
+			/* call the appropriate type output function, append the result */
+			appendStringInfoString(&str,
+								   OutputFunctionCall(&foutcache[i], value));
+		}
+	}
+
+	result = cstring_to_text_with_len(str.data, str.len);
+	pfree(str.data);
+
+	return result;
+}
+
+static inline Datum text_concat_ws_my(PG_FUNCTION_ARGS) {
+	char	   *sep;
+	text	   *result;
+
+	/* return NULL when separator is NULL */
+	if (PG_ARGISNULL(0))
+		PG_RETURN_NULL();
+	sep = text_to_cstring(PG_GETARG_TEXT_PP(0));
+
+	result = concat_internal(sep, 1, fcinfo);
+	if (result == NULL)
+		PG_RETURN_NULL();
+	PG_RETURN_TEXT_P(result);
 }
 
 static inline void execute(Datum main_arg) {
@@ -363,13 +545,19 @@ static inline void execute(Datum main_arg) {
 //            tuptable = SPI_tuptable;
 
 
-            if (SPI_tuptable != NULL) {
+            if ((SPI_tuptable != NULL) && (SPI_processed > 0)) {
         //            char *getvalue = SPI_getvalue(tuptable->vals[0], tuptable->tupdesc, 1);
         //            (int)SPI_execute((const char *)src, false, 0);
         //            elog(LOG, "execute getvalue=%s", getvalue);
+//                ArrayType *array_ids;
+                Datum *datum_ids;
+                int i = 0;
+                if ((datum_ids = palloc(sizeof(Datum) * SPI_processed * SPI_tuptable->tupdesc->natts)) == NULL) elog(ERROR, "datum_ids == NULL");
                 for (uint64 row = 0; row < SPI_processed; row++) {
                     for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-//                        bool isnull = false;
+                        bool isnull = false;
+                        Oid typoutput;
+                        bool typisvarlena;
 //                        Datum getbinval = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col, &isnull);
                         char *fname = SPI_fname(SPI_tuptable->tupdesc, col);
                         int gettypeid = SPI_gettypeid(SPI_tuptable->tupdesc, col);
@@ -380,11 +568,18 @@ static inline void execute(Datum main_arg) {
         //                elog(LOG, "row=%lu, col=%i, getvalue=%s", row, col, getvalue);
 //                        elog(LOG, "row=%lu, col=%i, isnull=%s, fname=%s, gettype=%i, getbinval=%lu", row, col, isnull?"true":"false", fname, gettype, getbinval);
                         elog(LOG, "row=%lu, col=%i, fname=%s, gettypeid=%i, gettype=%s, getvalue=%s", row, col, fname, gettypeid, gettype, getvalue);
+//                        datum_ids[i] = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col, &isnull);
+                        (void)getTypeOutputInfo(gettypeid, &typoutput, &typisvarlena);
+                        elog(LOG, "typoutput=%i, typisvarlena=%s, s=%s", typoutput, typisvarlena?"true":"false", OidOutputFunctionCall(typoutput, SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col, &isnull)));
                         if (fname != NULL) pfree(fname);
                         if (gettype != NULL) pfree(gettype);
                         if (getvalue != NULL) pfree(getvalue);
+                        i++;
                     }
                 }
+//                array_ids = construct_array(datum_ids, SPI_processed * SPI_tuptable->tupdesc->natts, TEXTOID, -1, false, 'i');
+//                if (array_ids != NULL) pfree(array_ids);
+                if (datum_ids != NULL) pfree(datum_ids);
             }
 
 
