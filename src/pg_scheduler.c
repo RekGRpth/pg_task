@@ -118,8 +118,10 @@ static inline void done(Datum main_arg, uint64 processed, SPITupleTable *tuptabl
                 bool isnull;
                 Datum val = SPI_getbinval(tuptable->vals[row], tuptable->tupdesc, col, &isnull);
                 char *fname = SPI_fname(tuptable->tupdesc, col);
-                elog(LOG, "row=%lu, col=%i, isnull=%s, fname=%s, p=%lu", row, col, isnull?"true":"false", fname, val);
+                int gettype = SPI_gettypeid(tuptable->tupdesc, col);
+                elog(LOG, "row=%lu, col=%i, isnull=%s, fname=%s, gettype=%i, p=%lu", row, col, isnull?"true":"false", fname, gettype, val);
                 if (fname != NULL) pfree(fname);
+//                if (gettype != NULL) pfree(gettype);
             }
         }
     }
