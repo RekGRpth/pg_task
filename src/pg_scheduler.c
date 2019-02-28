@@ -109,9 +109,9 @@ static inline char *work(Datum main_arg) {
     return request;
 }
 
-static inline void done(Datum main_arg, const char *response) {
+static inline void done(Datum main_arg, const char *data) {
     Oid argtypes[] = {TEXTOID, INT8OID};
-    Datum Values[] = {CStringGetTextDatum(response!=NULL?response:"(null)"), main_arg};
+    Datum Values[] = {CStringGetTextDatum(data!=NULL?data:"(null)"), main_arg};
     const char *src = "UPDATE task SET state = 'DONE', response=$1 WHERE id = $2";
     (void)connect_my(src);
     elog(LOG, "done src=%s", src);
@@ -119,10 +119,106 @@ static inline void done(Datum main_arg, const char *response) {
     (void)finish_my(src);
 }
 
-static inline void fail(Datum main_arg, ErrorData *edata) {
+static inline void fail(Datum main_arg, const char *data) {
     Oid argtypes[] = {TEXTOID, INT8OID};
-    Datum Values[] = {(Datum)NULL, main_arg};
+    Datum Values[] = {CStringGetTextDatum(data!=NULL?data:"(null)"), main_arg};
     const char *src = "UPDATE task SET state = 'FAIL', response=$1 WHERE id = $2";
+/*    StringInfoData buf;
+    (void)initStringInfo(&buf);
+    (void)appendStringInfo(&buf,
+        "elevel\t%i\n"
+        "output_to_server\t%s\n"
+        "output_to_client\t%s\n"
+        "show_funcname\t%s\n"
+        "hide_stmt\t%s\n"
+        "hide_ctx\t%s\n"
+        "filename\t%s\n"
+        "lineno\t%i\n"
+        "funcname\t%s\n"
+        "domain\t%s\n"
+        "context_domain\t%s\n"
+        "sqlerrcode\t%i\n"
+        "message\t%s\n"
+        "detail\t%s\n"
+        "detail_log\t%s\n"
+        "hint\t%s\n"
+        "context\t%s\n"
+        "message_id\t%s\n"
+        "schema_name\t%s\n"
+        "table_name\t%s\n"
+        "column_name\t%s\n"
+        "datatype_name\t%s\n"
+        "constraint_name\t%s\n"
+        "cursorpos\t%i\n"
+        "internalpos\t%i\n"
+        "internalquery\t%s\n"
+        "saved_errno\t%i",
+        edata->elevel,
+        edata->output_to_server?"true":"false",
+        edata->output_to_client?"true":"false",
+        edata->show_funcname?"true":"false",
+        edata->hide_stmt?"true":"false",
+        edata->hide_ctx?"true":"false",
+        edata->filename,
+        edata->lineno,
+        edata->funcname,
+        edata->domain,
+        edata->context_domain,
+        edata->sqlerrcode,
+        edata->message,
+        edata->detail,
+        edata->detail_log,
+        edata->hint,
+        edata->context,
+        edata->message_id,
+        edata->schema_name,
+        edata->table_name,
+        edata->column_name,
+        edata->datatype_name,
+        edata->constraint_name,
+        edata->cursorpos,
+        edata->internalpos,
+        edata->internalquery,
+        edata->saved_errno
+    );*/
+    elog(LOG, "edata\n%s", data);
+//    Values[0] = CStringGetTextDatum(buf.data);
+//    pfree(buf.data);
+    (void)connect_my(src);
+//    elog(LOG, "fail src=%s", src);
+    if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    (void)finish_my(src);
+}
+
+static inline char *success() {
+    StringInfoData buf;
+    (void)initStringInfo(&buf);
+    if ((SPI_tuptable != NULL) && (SPI_processed > 0)) {
+        for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
+            char *name = SPI_fname(SPI_tuptable->tupdesc, col);
+            char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
+            (void)appendStringInfo(&buf, "%s::%s", name, type);
+            if (col > 1) (void)appendStringInfoString(&buf, "\t");
+            if (name != NULL) pfree(name);
+            if (type != NULL) pfree(type);
+        }
+        (void)appendStringInfoString(&buf, "\n");
+        for (uint64 row = 0; row < SPI_processed; row++) {
+            for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
+                char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
+                (void)appendStringInfo(&buf, "%s", value);
+                if (col > 1) (void)appendStringInfoString(&buf, "\t");
+                if (value != NULL) pfree(value);
+            }
+            if (row < SPI_processed - 1) (void)appendStringInfoString(&buf, "\n");
+        }
+        elog(LOG, "success\n%s", buf.data);
+    }
+    return buf.data;
+}
+
+static inline char *error() {
+    ErrorData *edata = CopyErrorData();
     StringInfoData buf;
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf,
@@ -181,39 +277,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         edata->internalquery,
         edata->saved_errno
     );
-    elog(LOG, "edata\n%s", buf.data);
-    Values[0] = CStringGetTextDatum(buf.data);
-    pfree(buf.data);
-    (void)connect_my(src);
-//    elog(LOG, "fail src=%s", src);
-    if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
-    (void)finish_my(src);
-}
-
-static inline char *success() {
-    StringInfoData buf;
-    (void)initStringInfo(&buf);
-    if ((SPI_tuptable != NULL) && (SPI_processed > 0)) {
-        for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-            char *name = SPI_fname(SPI_tuptable->tupdesc, col);
-            char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
-            (void)appendStringInfo(&buf, "%s::%s", name, type);
-            if (col > 1) (void)appendStringInfoString(&buf, "\t");
-            if (name != NULL) pfree(name);
-            if (type != NULL) pfree(type);
-        }
-        (void)appendStringInfoString(&buf, "\n");
-        for (uint64 row = 0; row < SPI_processed; row++) {
-            for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-                char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
-                (void)appendStringInfo(&buf, "%s", value);
-                if (col > 1) (void)appendStringInfoString(&buf, "\t");
-                if (value != NULL) pfree(value);
-            }
-            if (row < SPI_processed - 1) (void)appendStringInfoString(&buf, "\n");
-        }
-        elog(LOG, "success\n%s", buf.data);
-    }
+    (void)FreeErrorData(edata);
     return buf.data;
 }
 
@@ -238,14 +302,16 @@ static inline void execute(Datum main_arg) {
             }
         } PG_CATCH(); {
             (MemoryContext)MemoryContextSwitchTo(oldcontext); {
-                ErrorData *edata = CopyErrorData();
+                //ErrorData *edata = CopyErrorData();
+                char *data = error();
                 (void)FlushErrorState();
                 (void)RollbackAndReleaseCurrentSubTransaction();
                 (MemoryContext)MemoryContextSwitchTo(oldcontext);
                 CurrentResourceOwner = oldowner;
                 (void)finish_my(src);
-                (void)fail(main_arg, edata);
-                (void)FreeErrorData(edata);
+                (void)fail(main_arg, data);
+                //(void)FreeErrorData(edata);
+                (void)pfree(data);
             }
         } PG_END_TRY();
     }
