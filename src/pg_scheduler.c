@@ -317,7 +317,6 @@ static inline void execute(Datum main_arg) {
 //            elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
             uint64 processed;
             SPITupleTable *tuptable;
-            bool isnull;
             switch (SPI_execute(src, false, 0)) {
                 case SPI_OK_SELECT: elog(LOG, "SPI_OK_SELECT"); break;
                 case SPI_OK_SELINTO: elog(LOG, "SPI_OK_SELINTO"); break;
@@ -347,7 +346,11 @@ static inline void execute(Datum main_arg) {
             if (tuptable != NULL) {
                 for (uint64 row = 0; row < processed; row++) {
                     for (int col = 1; col <= tuptable->tupdesc->natts; col++) {
-                        elog(LOG, "row=%lu, col=%i, p=%lu", row, col, SPI_getbinval(tuptable->vals[row], tuptable->tupdesc, col, &isnull));
+                        bool isnull;
+                        Datum val = SPI_getbinval(tuptable->vals[row], tuptable->tupdesc, col, &isnull);
+                        char *fname = SPI_fname(tuptable->tupdesc, col);
+                        elog(LOG, "row=%lu, col=%i, isnull=%s, fname=%s, p=%lu", row, col, isnull?"true":"false", fname, val);
+                        if (fname != NULL) pfree(fname);
                     }
                 }
             }
