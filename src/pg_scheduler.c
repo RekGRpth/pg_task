@@ -74,7 +74,7 @@ static inline void launch_task(Datum id) {
 }
 
 static inline void connect_my(const char *cmd_str) {
-    elog(LOG, "connect_my cmd_str=%s", cmd_str);
+//    elog(LOG, "connect_my cmd_str=%s", cmd_str);
     (void)pgstat_report_activity(STATE_RUNNING, cmd_str);
     (void)SetCurrentStatementStartTimestamp();
     (void)StartTransactionCommand();
@@ -83,7 +83,7 @@ static inline void connect_my(const char *cmd_str) {
 }
 
 static inline void finish_my(const char *cmd_str) {
-    elog(LOG, "finish_my cmd_str=%s", cmd_str);
+//    elog(LOG, "finish_my cmd_str=%s", cmd_str);
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
     (void)PopActiveSnapshot();
     (void)CommitTransactionCommand();
@@ -296,7 +296,7 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         edata->saved_errno
     );
     (void)connect_my(src);
-    elog(LOG, "fail src=%s", src);
+//    elog(LOG, "fail src=%s", src);
     if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
     (void)finish_my(src);
 }
@@ -348,7 +348,7 @@ void task(Datum main_arg) {
 static inline void assign() {
     const char *src = "UPDATE task SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id";
     (void)connect_my(src);
-    elog(LOG, "assign src=%s", src);
+//    elog(LOG, "assign src=%s", src);
     if (SPI_execute(src, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute != SPI_OK_UPDATE_RETURNING"); else {
         uint64 processed = SPI_processed;
         SPITupleTable *tuptable = SPI_tuptable;
