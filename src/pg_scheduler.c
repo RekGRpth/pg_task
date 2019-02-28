@@ -108,7 +108,7 @@ static inline char *work(Datum main_arg) {
     return request;
 }
 
-static inline void done(Datum main_arg, uint64 processed, SPITupleTable *tuptable) {
+static inline void done(Datum main_arg/*, uint64 processed, SPITupleTable *tuptable*/) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {main_arg};
     const char *src = "UPDATE task SET state = 'DONE' WHERE id = $1";
@@ -336,8 +336,8 @@ static inline void execute(Datum main_arg) {
         (MemoryContext)MemoryContextSwitchTo(oldcontext);
         PG_TRY(); {
 //            elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
-            uint64 processed;
-            SPITupleTable *tuptable;
+//            uint64 processed;
+//            SPITupleTable *tuptable;
 //            char *getvalue;
 //            bool isnull;
             /*switch (SPI_execute(src, false, 0)) {
@@ -359,8 +359,8 @@ static inline void execute(Datum main_arg) {
                 default: elog(FATAL, "SPI_execute");
             }*/
             if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0");
-            processed = SPI_processed;
-            tuptable = SPI_tuptable;
+//            processed = SPI_processed;
+//            tuptable = SPI_tuptable;
 
 
             if (SPI_tuptable != NULL) {
@@ -376,7 +376,7 @@ static inline void execute(Datum main_arg) {
                         char *gettype = SPI_gettype(SPI_tuptable->tupdesc, col);
         //                elog(LOG, "row=%lu, col=%i, fname=%s, gettype=%i", row, col, fname, gettype);
                     //     request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
-                        char *getvalue = SPI_getvalue(tuptable->vals[row], tuptable->tupdesc, col);
+                        char *getvalue = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
         //                elog(LOG, "row=%lu, col=%i, getvalue=%s", row, col, getvalue);
 //                        elog(LOG, "row=%lu, col=%i, isnull=%s, fname=%s, gettype=%i, getbinval=%lu", row, col, isnull?"true":"false", fname, gettype, getbinval);
                         elog(LOG, "row=%lu, col=%i, fname=%s, gettypeid=%i, gettype=%s, getvalue=%s", row, col, fname, gettypeid, gettype, getvalue);
@@ -397,7 +397,7 @@ static inline void execute(Datum main_arg) {
             (MemoryContext)MemoryContextSwitchTo(oldcontext);
             CurrentResourceOwner = oldowner;
             (void)finish_my((const char *)src);
-            (void)done(main_arg, processed, tuptable);
+            (void)done(main_arg/*, processed, tuptable*/);
         } PG_CATCH(); {
             ErrorData *edata;
             (MemoryContext)MemoryContextSwitchTo(oldcontext);
