@@ -237,16 +237,16 @@ static inline void execute(Datum main_arg) {
                 (void)pfree(data);
             }
         } PG_CATCH(); {
-            ErrorData *edata;
-            (MemoryContext)MemoryContextSwitchTo(oldcontext);
-            edata = CopyErrorData();
-            (void)FlushErrorState();
-            (void)RollbackAndReleaseCurrentSubTransaction();
-            (MemoryContext)MemoryContextSwitchTo(oldcontext);
-            CurrentResourceOwner = oldowner;
-            (void)finish_my(src);
-            (void)fail(main_arg, edata);
-            (void)FreeErrorData(edata);
+            (MemoryContext)MemoryContextSwitchTo(oldcontext); {
+                ErrorData *edata = CopyErrorData();
+                (void)FlushErrorState();
+                (void)RollbackAndReleaseCurrentSubTransaction();
+                (MemoryContext)MemoryContextSwitchTo(oldcontext);
+                CurrentResourceOwner = oldowner;
+                (void)finish_my(src);
+                (void)fail(main_arg, edata);
+                (void)FreeErrorData(edata);
+            }
         } PG_END_TRY();
     }
     if (src != NULL) (void)free(src);
