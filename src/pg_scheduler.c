@@ -314,7 +314,25 @@ static inline void execute(Datum main_arg) {
         (void)BeginInternalSubTransaction(NULL);
         (MemoryContext)MemoryContextSwitchTo(oldcontext);
         PG_TRY(); {
-            elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
+//            elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
+            switch (SPI_execute(src, false, 0)) {
+                case SPI_OK_SELECT: elog(LOG, "SPI_OK_SELECT"); break;
+                case SPI_OK_SELINTO: elog(LOG, "SPI_OK_SELINTO"); break;
+                case SPI_OK_INSERT: elog(LOG, "SPI_OK_INSERT"); break;
+                case SPI_OK_DELETE: elog(LOG, "SPI_OK_DELETE"); break;
+                case SPI_OK_UPDATE: elog(LOG, "SPI_OK_UPDATE"); break;
+                case SPI_OK_INSERT_RETURNING: elog(LOG, "SPI_OK_INSERT_RETURNING"); break;
+                case SPI_OK_DELETE_RETURNING: elog(LOG, "SPI_OK_DELETE_RETURNING"); break;
+                case SPI_OK_UPDATE_RETURNING: elog(LOG, "SPI_OK_UPDATE_RETURNING"); break;
+                case SPI_OK_UTILITY: elog(LOG, "SPI_OK_UTILITY"); break;
+                case SPI_OK_REWRITTEN: elog(LOG, "SPI_OK_REWRITTEN"); break;
+                case SPI_ERROR_ARGUMENT: elog(FATAL, "SPI_ERROR_ARGUMENT"); break;
+                case SPI_ERROR_COPY: elog(FATAL, "SPI_ERROR_COPY"); break;
+                case SPI_ERROR_TRANSACTION: elog(FATAL, "SPI_ERROR_TRANSACTION"); break;
+                case SPI_ERROR_OPUNKNOWN: elog(FATAL, "SPI_ERROR_OPUNKNOWN"); break;
+                case SPI_ERROR_UNCONNECTED: elog(FATAL, "SPI_ERROR_UNCONNECTED"); break;
+                default: elog(FATAL, "SPI_execute");
+            }
 //            (int)SPI_execute((const char *)src, false, 0);
 //            elog(LOG, "execute res=%i", res);
             (void)ReleaseCurrentSubTransaction();
@@ -358,6 +376,7 @@ static inline void assign() {
             elog(LOG, "i=%lu", i);
             (void)launch_task(SPI_getbinval(tuptable->vals[i], tuptable->tupdesc, 1, &isnull));
         }
+//        (void)SPI_freetuptable(tuptable);
     }
 }
 
