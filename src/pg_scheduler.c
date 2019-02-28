@@ -110,9 +110,9 @@ static inline char *work(Datum main_arg) {
 }
 
 static inline void done(Datum main_arg, const char *response) {
-    Oid argtypes[] = {INT8OID, TEXTOID};
-    Datum Values[] = {main_arg, CStringGetTextDatum(response!=NULL?response:"(null)")};
-    const char *src = "UPDATE task SET state = 'DONE', response=$1 WHERE id = $1";
+    Oid argtypes[] = {TEXTOID, INT8OID};
+    Datum Values[] = {CStringGetTextDatum(response!=NULL?response:"(null)"), main_arg};
+    const char *src = "UPDATE task SET state = 'DONE', response=$1 WHERE id = $2";
 /*    if (tuptable != NULL) {
 //            char *getvalue = SPI_getvalue(tuptable->vals[0], tuptable->tupdesc, 1);
 //            (int)SPI_execute((const char *)src, false, 0);
