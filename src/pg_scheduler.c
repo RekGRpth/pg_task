@@ -109,10 +109,10 @@ static inline char *work(Datum main_arg) {
     return request;
 }
 
-static inline void done(Datum main_arg/*, uint64 processed, SPITupleTable *tuptable*/) {
-    Oid argtypes[] = {INT8OID};
-    Datum Values[] = {main_arg};
-    const char *src = "UPDATE task SET state = 'DONE' WHERE id = $1";
+static inline void done(Datum main_arg, const char *response) {
+    Oid argtypes[] = {INT8OID, TEXTOID};
+    Datum Values[] = {main_arg, CStringGetTextDatum(response!=NULL?response:"(null)")};
+    const char *src = "UPDATE task SET state = 'DONE', response=$1 WHERE id = $1";
 /*    if (tuptable != NULL) {
 //            char *getvalue = SPI_getvalue(tuptable->vals[0], tuptable->tupdesc, 1);
 //            (int)SPI_execute((const char *)src, false, 0);
@@ -136,7 +136,7 @@ static inline void done(Datum main_arg/*, uint64 processed, SPITupleTable *tupta
     }*/
     (void)connect_my(src);
     elog(LOG, "done src=%s", src);
-    if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
     (void)finish_my(src);
 }
 
@@ -224,6 +224,7 @@ static inline void execute(Datum main_arg) {
         (void)BeginInternalSubTransaction(NULL);
         (MemoryContext)MemoryContextSwitchTo(oldcontext);
         PG_TRY(); {
+            StringInfoData buf;
 //            elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
 //            uint64 processed;
 //            SPITupleTable *tuptable;
@@ -259,7 +260,6 @@ static inline void execute(Datum main_arg) {
 //                ArrayType *array_ids;
 //                Datum *datum_ids;
 //                int i = 0;
-                StringInfoData buf;
                 (void)initStringInfo(&buf);
                 for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
                     char *name = SPI_fname(SPI_tuptable->tupdesc, col);
@@ -306,7 +306,7 @@ static inline void execute(Datum main_arg) {
                     }
                 }*/
                 elog(LOG, "result\n%s", buf.data);
-                pfree(buf.data);
+//                pfree(buf.data);
 //                array_ids = construct_array(datum_ids, SPI_processed * SPI_tuptable->tupdesc->natts, TEXTOID, -1, false, 'i');
 //                if (array_ids != NULL) pfree(array_ids);
 //                if (datum_ids != NULL) pfree(datum_ids);
@@ -322,7 +322,8 @@ static inline void execute(Datum main_arg) {
             (MemoryContext)MemoryContextSwitchTo(oldcontext);
             CurrentResourceOwner = oldowner;
             (void)finish_my((const char *)src);
-            (void)done(main_arg/*, processed, tuptable*/);
+            (void)done(main_arg, buf.data);
+            (void)pfree(buf.data);
         } PG_CATCH(); {
             ErrorData *edata;
             (MemoryContext)MemoryContextSwitchTo(oldcontext);
