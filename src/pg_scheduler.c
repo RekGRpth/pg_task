@@ -345,8 +345,8 @@ static inline void execute(Datum main_arg) {
             CurrentResourceOwner = oldowner;
             (void)finish_my((const char *)src);
             if (tuptable != NULL) {
-                for (uint64 i = 0; i < processed; i++) {
-                    elog(LOG, "i=%lu, p=%lu", i, SPI_getbinval(tuptable->vals[i], tuptable->tupdesc, 1, &isnull));
+                for (uint64 row = 0; row < processed; row++) {
+                    elog(LOG, "row=%lu, p=%lu", row, SPI_getbinval(tuptable->vals[row], tuptable->tupdesc, 1, &isnull));
                 }
             }
             (void)done(main_arg);
@@ -382,9 +382,9 @@ static inline void assign() {
         SPITupleTable *tuptable = SPI_tuptable;
         bool isnull;
         (void)finish_my(src);
-        for (uint64 i = 0; i < processed; i++) {
-            elog(LOG, "i=%lu", i);
-            (void)launch_task(SPI_getbinval(tuptable->vals[i], tuptable->tupdesc, SPI_fnumber(tuptable->tupdesc, "id"), &isnull));
+        for (uint64 row = 0; row < processed; row++) {
+            elog(LOG, "row=%lu", row);
+            (void)launch_task(SPI_getbinval(tuptable->vals[row], tuptable->tupdesc, SPI_fnumber(tuptable->tupdesc, "id"), &isnull));
         }
 //        (void)SPI_freetuptable(tuptable);
     }
