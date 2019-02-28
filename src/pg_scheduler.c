@@ -125,19 +125,19 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         INT4OID,
         TEXTOID,
         TEXTOID,
-//        TEXTOID,
-//        TEXTOID,
-//        TEXTOID,
-//        TEXTOID,
-//        TEXTOID,
-//        TEXTOID,
-//        TEXTOID,
-//        TEXTOID,
-//        TEXTOID,
-//        INT4OID,
-//        INT4OID,
-//        TEXTOID,
-//        INT4OID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        TEXTOID,
+        INT4OID,
+        INT4OID,
+        TEXTOID,
+        INT4OID,
         INT8OID
     };
     Datum Values[] = {
@@ -155,19 +155,19 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         Int32GetDatum(edata->sqlerrcode),
         CStringGetTextDatum(edata->message!=NULL?edata->message:""),
         CStringGetTextDatum(edata->detail!=NULL?edata->detail:""),
-//        CStringGetTextDatum(edata->detail_log),
-//        CStringGetTextDatum(edata->hint),
-//        CStringGetTextDatum(edata->context),
-//        CStringGetTextDatum(edata->message_id),
-//        CStringGetTextDatum(edata->schema_name),
-//        CStringGetTextDatum(edata->table_name),
-//        CStringGetTextDatum(edata->column_name),
-//        CStringGetTextDatum(edata->datatype_name),
-//        CStringGetTextDatum(edata->constraint_name),
-//        Int32GetDatum(edata->cursorpos),
-//        Int32GetDatum(edata->internalpos),
-//        CStringGetTextDatum(edata->internalquery),
-//        Int32GetDatum(edata->saved_errno),
+        CStringGetTextDatum(edata->detail_log!=NULL?edata->detail_log:""),
+        CStringGetTextDatum(edata->hint!=NULL?edata->hint:""),
+        CStringGetTextDatum(edata->context!=NULL?edata->context:""),
+        CStringGetTextDatum(edata->message_id!=NULL?edata->message_id:""),
+        CStringGetTextDatum(edata->schema_name!=NULL?edata->schema_name:""),
+        CStringGetTextDatum(edata->table_name!=NULL?edata->table_name:""),
+        CStringGetTextDatum(edata->column_name!=NULL?edata->column_name:""),
+        CStringGetTextDatum(edata->datatype_name!=NULL?edata->datatype_name:""),
+        CStringGetTextDatum(edata->constraint_name!=NULL?edata->constraint_name:""),
+        Int32GetDatum(edata->cursorpos),
+        Int32GetDatum(edata->internalpos),
+        CStringGetTextDatum(edata->internalquery!=NULL?edata->internalquery:""),
+        Int32GetDatum(edata->saved_errno),
         main_arg
     };
     /*const char Nulls[] = {
@@ -273,20 +273,20 @@ static inline void fail(Datum main_arg, ErrorData *edata) {
         "sqlerrcode\t'||$12::text||'\n"
         "message\t'||$13||'\n"
         "detail\t'||$14||'\n"
-//        "detail_log\t'||$15||'\n"
-//        "hint\t'||$16||'\n"
-//        "context\t'||$17||'\n"
-//        "message_id\t'||$18||'\n"
-//        "schema_name\t'||$19||'\n"
-//        "table_name\t'||$20||'\n"
-//        "column_name\t'||$21||'\n"
-//        "datatype_name\t'||$22||'\n"
-//        "constraint_name\t'||$23||'\n"
-//        "cursorpos\t'||$24::text||'\n"
-//        "internalpos\t'||$25::text||'\n"
-//        "internalquery\t'||$26||'\n"
-//        "saved_errno\t'||$27::text||'"
-    "' WHERE id = $15", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+        "detail_log\t'||$15||'\n"
+        "hint\t'||$16||'\n"
+        "context\t'||$17||'\n"
+        "message_id\t'||$18||'\n"
+        "schema_name\t'||$19||'\n"
+        "table_name\t'||$20||'\n"
+        "column_name\t'||$21||'\n"
+        "datatype_name\t'||$22||'\n"
+        "constraint_name\t'||$23||'\n"
+        "cursorpos\t'||$24::text||'\n"
+        "internalpos\t'||$25::text||'\n"
+        "internalquery\t'||$26||'\n"
+        "saved_errno\t'||$27::text||'"
+    "' WHERE id = $28", sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
 }
 
 static inline void execute(Datum main_arg) {
