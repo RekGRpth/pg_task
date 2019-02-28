@@ -315,6 +315,9 @@ static inline void execute(Datum main_arg) {
         (MemoryContext)MemoryContextSwitchTo(oldcontext);
         PG_TRY(); {
 //            elog(LOG, "SPI_execute=%i", SPI_execute(src, false, 0));
+            uint64 processed;
+            SPITupleTable *tuptable;
+            bool isnull;
             switch (SPI_execute(src, false, 0)) {
                 case SPI_OK_SELECT: elog(LOG, "SPI_OK_SELECT"); break;
                 case SPI_OK_SELINTO: elog(LOG, "SPI_OK_SELINTO"); break;
@@ -333,12 +336,19 @@ static inline void execute(Datum main_arg) {
                 case SPI_ERROR_UNCONNECTED: elog(FATAL, "SPI_ERROR_UNCONNECTED"); break;
                 default: elog(FATAL, "SPI_execute");
             }
+            processed = SPI_processed;
+            tuptable = SPI_tuptable;
 //            (int)SPI_execute((const char *)src, false, 0);
 //            elog(LOG, "execute res=%i", res);
             (void)ReleaseCurrentSubTransaction();
             (MemoryContext)MemoryContextSwitchTo(oldcontext);
             CurrentResourceOwner = oldowner;
             (void)finish_my((const char *)src);
+            if (tuptable != NULL) {
+                for (uint64 i = 0; i < processed; i++) {
+                    elog(LOG, "i=%lu, p=%lu", i, SPI_getbinval(tuptable->vals[i], tuptable->tupdesc, 1, &isnull));
+                }
+            }
             (void)done(main_arg);
         } PG_CATCH(); {
             ErrorData *edata;
