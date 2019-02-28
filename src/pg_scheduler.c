@@ -384,7 +384,7 @@ static inline void assign() {
         (void)finish_my(src);
         for (uint64 i = 0; i < processed; i++) {
             elog(LOG, "i=%lu", i);
-            (void)launch_task(SPI_getbinval(tuptable->vals[i], tuptable->tupdesc, 1, &isnull));
+            (void)launch_task(SPI_getbinval(tuptable->vals[i], tuptable->tupdesc, SPI_fnumber(tuptable->tupdesc, "id"), &isnull));
         }
 //        (void)SPI_freetuptable(tuptable);
     }
