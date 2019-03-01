@@ -5,7 +5,7 @@ CREATE TYPE state AS ENUM (
     'ASSIGN',
     'WORK',
     'DONE',
-    'FAIL',
+    'FAIL'
 );
 ALTER TYPE state OWNER TO pgs;
 CREATE TABLE task (
