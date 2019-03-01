@@ -77,19 +77,14 @@ static inline void launch_task(Datum id) {
 static inline void connect_my(const char *cmd_str) {
 //    elog(LOG, "connect_my cmd_str=%s", cmd_str);
     (void)pgstat_report_activity(STATE_RUNNING, cmd_str);
-//    (void)SetCurrentStatementStartTimestamp();
-//    (void)StartTransactionCommand();
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
     (void)SPI_start_transaction();
-//    (void)PushActiveSnapshot(GetTransactionSnapshot());
 }
 
 static inline void finish_my(const char *cmd_str, bool commit) {
 //    elog(LOG, "finish_my cmd_str=%s", cmd_str);
-//    (void)PopActiveSnapshot();
     if (commit) (void)SPI_commit(); else (void)SPI_rollback();
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
-//    (void)CommitTransactionCommand();
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, cmd_str);
     (void)pgstat_report_stat(true);
@@ -226,38 +221,22 @@ static inline void execute(Datum main_arg) {
     char *src = work(main_arg);
 //    elog(LOG, "src=%s", src);
     (void)connect_my(src); {
-//        MemoryContext oldcontext = CurrentMemoryContext;
-//        ResourceOwner oldowner = CurrentResourceOwner;
         elog(LOG, "execute src=%s", src);
-//        (void)BeginInternalSubTransaction(NULL);
-//        (MemoryContext)MemoryContextSwitchTo(oldcontext);
         PG_TRY(); {
             elog(LOG, "execute try finish_my 1 src=%s", src);
             if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0"); else {
                 char *data = success();
                 elog(LOG, "execute try finish_my 2 src=%s", src);
-//                (void)ReleaseCurrentSubTransaction();
-//                (MemoryContext)MemoryContextSwitchTo(oldcontext);
-//                CurrentResourceOwner = oldowner;
-//                elog(LOG, "execute try finish_my 3 src=%s", src);
                 (void)finish_my(src, true);
                 (void)done(main_arg, data);
                 if (data != NULL) (void)pfree(data);
             }
         } PG_CATCH(); {
-//            (MemoryContext)MemoryContextSwitchTo(oldcontext);
-//            {
-                char *data = error();
-//                (void)FlushErrorState();
-//                (void)AbortCurrentTransaction();
-//                (void)RollbackAndReleaseCurrentSubTransaction();
-//                (MemoryContext)MemoryContextSwitchTo(oldcontext);
-//                CurrentResourceOwner = oldowner;
-                elog(LOG, "execute catch finish_my src=%s", src);
-                (void)finish_my(src, false);
-                (void)fail(main_arg, data);
-                if (data != NULL) (void)pfree(data);
-//            }
+            char *data = error();
+            elog(LOG, "execute catch finish_my src=%s", src);
+            (void)finish_my(src, false);
+            (void)fail(main_arg, data);
+            if (data != NULL) (void)pfree(data);
         } PG_END_TRY();
     }
     if (src != NULL) (void)free(src);
