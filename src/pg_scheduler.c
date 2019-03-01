@@ -97,13 +97,13 @@ static inline char *work(Datum main_arg) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {main_arg};
     const char *src = "UPDATE task SET state = 'WORK', start = now() WHERE id = $1 RETURNING request";
-    StringInfoData buf;
     char *data;
     (void)connect_my(src);
     elog(LOG, "work src=%s", src);
     if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1"); else {
         char *value = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
+        StringInfoData buf;
         (void)initStringInfo(&buf);
         (void)appendStringInfoString(&buf, value);
         data = strdup(buf.data);
@@ -111,7 +111,6 @@ static inline char *work(Datum main_arg) {
         if (buf.data != NULL) (void)pfree(buf.data);
         (void)finish_my(src);
     }
-//    return buf.data;
     return data;
 }
 
@@ -235,12 +234,12 @@ static inline void execute(Datum main_arg) {
 //        ResourceOwner oldowner = CurrentResourceOwner;
         elog(LOG, "execute src=%s", src);
         (void)BeginInternalSubTransaction("execute");
-//        (MemoryContext)MemoryContextSwitchTo(oldcontext);
+        (MemoryContext)MemoryContextSwitchTo(oldcontext);
         PG_TRY(); {
             if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0"); else {
                 char *data = success();
                 (void)ReleaseCurrentSubTransaction();
-//                (MemoryContext)MemoryContextSwitchTo(oldcontext);
+                (MemoryContext)MemoryContextSwitchTo(oldcontext);
 //                CurrentResourceOwner = oldowner;
                 elog(LOG, "execute try finish_my src=%s", src);
                 (void)finish_my(src);
@@ -261,7 +260,6 @@ static inline void execute(Datum main_arg) {
             }
         } PG_END_TRY();
     }
-//    if (src != NULL) (void)pfree(src);
     if (src != NULL) (void)free(src);
 }
 
