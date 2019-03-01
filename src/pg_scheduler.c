@@ -98,6 +98,7 @@ static inline char *work(Datum main_arg) {
     Datum Values[] = {main_arg};
     const char *src = "UPDATE task SET state = 'WORK', start = now() WHERE id = $1 RETURNING request";
     char *data;
+//    StringInfoData buf;
     (void)connect_my(src);
     elog(LOG, "work src=%s", src);
     if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
@@ -112,6 +113,7 @@ static inline char *work(Datum main_arg) {
         (void)finish_my(src);
     }
     return data;
+//    return buf.data;
 }
 
 static inline void done(Datum main_arg, const char *data) {
@@ -236,12 +238,14 @@ static inline void execute(Datum main_arg) {
         (void)BeginInternalSubTransaction("execute");
         (MemoryContext)MemoryContextSwitchTo(oldcontext);
         PG_TRY(); {
+//            elog(LOG, "execute try finish_my 1 src=%s", src);
             if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0"); else {
                 char *data = success();
+//                elog(LOG, "execute try finish_my 2 src=%s", src);
                 (void)ReleaseCurrentSubTransaction();
                 (MemoryContext)MemoryContextSwitchTo(oldcontext);
 //                CurrentResourceOwner = oldowner;
-                elog(LOG, "execute try finish_my src=%s", src);
+//                elog(LOG, "execute try finish_my 3 src=%s", src);
                 (void)finish_my(src);
                 (void)done(main_arg, data);
                 if (data != NULL) (void)pfree(data);
@@ -253,7 +257,7 @@ static inline void execute(Datum main_arg) {
                 (void)RollbackAndReleaseCurrentSubTransaction();
                 (MemoryContext)MemoryContextSwitchTo(oldcontext);
 //                CurrentResourceOwner = oldowner;
-                elog(LOG, "execute catch finish_my src=%s", src);
+//                elog(LOG, "execute catch finish_my src=%s", src);
                 (void)finish_my(src);
                 (void)fail(main_arg, data);
                 if (data != NULL) (void)pfree(data);
