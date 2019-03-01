@@ -29,7 +29,7 @@ static volatile sig_atomic_t got_sigterm = false;
 
 static char *database = NULL;
 static char *username = NULL;
-static int period = 1;
+static int period = 0;
 
 static inline void sighup(SIGNAL_ARGS) {
     int save_errno = errno;
@@ -45,7 +45,7 @@ static inline void sigterm(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
-static inline void launch_task(Datum id) {
+static inline void launch_task(Datum arg) {
     BackgroundWorker worker;
     BackgroundWorkerHandle *handle;
     pid_t pid;
@@ -61,7 +61,7 @@ static inline void launch_task(Datum id) {
     }
     if (snprintf(worker.bgw_type, sizeof("pg_scheduler task"), "pg_scheduler task") != sizeof("pg_scheduler task") - 1) elog(FATAL, "snprintf");
     worker.bgw_notify_pid = MyProcPid;
-    worker.bgw_main_arg = id;
+    worker.bgw_main_arg = arg;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
@@ -88,9 +88,9 @@ static inline void SPI_commit_or_rollback_and_finish(const char *cmd_str, bool c
     (void)pgstat_report_stat(true);
 }
 
-static inline char *work(Datum main_arg) {
+static inline char *work(Datum arg) {
     Oid argtypes[] = {INT8OID};
-    Datum Values[] = {main_arg};
+    Datum Values[] = {arg};
     const char *src = "UPDATE task SET state = 'WORK', start = now() WHERE id = $1 RETURNING request";
     char *data;
     (void)SPI_connect_ext_and_start_transaction(src);
@@ -103,9 +103,9 @@ static inline char *work(Datum main_arg) {
     return data;
 }
 
-static inline void done(Datum main_arg, const char *data) {
+static inline void done(Datum arg, const char *data) {
     Oid argtypes[] = {TEXTOID, INT8OID};
-    Datum Values[] = {CStringGetTextDatum(data!=NULL?data:"(null)"), main_arg};
+    Datum Values[] = {CStringGetTextDatum(data!=NULL?data:"(null)"), arg};
     const char *src = "UPDATE task SET state = 'DONE', stop = now(), response=$1 WHERE id = $2";
     (void)SPI_connect_ext_and_start_transaction(src);
     elog(LOG, "done src=%s", src);
@@ -113,9 +113,9 @@ static inline void done(Datum main_arg, const char *data) {
     (void)SPI_commit_or_rollback_and_finish(src, true);
 }
 
-static inline void fail(Datum main_arg, const char *data) {
+static inline void fail(Datum arg, const char *data) {
     Oid argtypes[] = {TEXTOID, INT8OID};
-    Datum Values[] = {CStringGetTextDatum(data!=NULL?data:"(null)"), main_arg};
+    Datum Values[] = {CStringGetTextDatum(data!=NULL?data:"(null)"), arg};
     const char *src = "UPDATE task SET state = 'FAIL', stop = now(), response=$1 WHERE id = $2";
     (void)SPI_connect_ext_and_start_transaction(src);
     elog(LOG, "fail src=%s", src);
@@ -215,8 +215,8 @@ static inline char *error() {
     return buf.data;
 }
 
-static inline void execute(Datum main_arg) {
-    char *src = work(main_arg);
+static inline void execute(Datum arg) {
+    char *src = work(arg);
 //    elog(LOG, "src=%s", src);
     (void)SPI_connect_ext_and_start_transaction(src);
     elog(LOG, "execute src=%s", src);
@@ -226,24 +226,24 @@ static inline void execute(Datum main_arg) {
             char *data = success();
 //            elog(LOG, "execute try SPI_commit_or_rollback_and_finish 2 src=%s", src);
             (void)SPI_commit_or_rollback_and_finish(src, true);
-            (void)done(main_arg, data);
+            (void)done(arg, data);
             if (data != NULL) (void)pfree(data);
         }
     } PG_CATCH(); {
         char *data = error();
 //        elog(LOG, "execute catch SPI_commit_or_rollback_and_finish src=%s", src);
         (void)SPI_commit_or_rollback_and_finish(src, false);
-        (void)fail(main_arg, data);
+        (void)fail(arg, data);
         if (data != NULL) (void)pfree(data);
     } PG_END_TRY();
     if (src != NULL) (void)free(src);
 }
 
-void task(Datum main_arg) {
-    elog(LOG, "task started id=%li", DatumGetInt64(main_arg));
+void task(Datum arg) {
+    elog(LOG, "task started id=%li", DatumGetInt64(arg));
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
-    (void)execute(main_arg);
+    (void)execute(arg);
 }
 
 static inline void assign() {
@@ -262,14 +262,14 @@ static inline void assign() {
     }
 }
 
-void loop(Datum main_arg) {
+void loop(Datum arg) {
     elog(LOG, "loop started database=%s, username=%s", database, username);
     pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
     while (!got_sigterm) {
-        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period * 1000L, PG_WAIT_EXTENSION);
+        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
         (void)ResetLatch(MyLatch);
         if (rc & WL_POSTMASTER_DEATH) (void)proc_exit(1);
         if (got_sigterm) (void)proc_exit(0);
@@ -289,7 +289,7 @@ void _PG_init(void) {
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &database, "postgres", PGC_POSTMASTER, 0, NULL, NULL, NULL);
     (void)DefineCustomStringVariable("pg_scheduler.username", "pg_scheduler username", NULL, &username, "postgres", PGC_POSTMASTER, 0, NULL, NULL, NULL);
-    (void)DefineCustomIntVariable("pg_scheduler.period", "how often to run loop", NULL, &period, 1, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    (void)DefineCustomIntVariable("pg_scheduler.period", "how often to run loop", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     (void)DefineCustomIntVariable("pg_scheduler.restart", "how often to restart loop", NULL, &worker.bgw_restart_time, 10, 1, INT_MAX, PGC_POSTMASTER, 0, NULL, NULL, NULL);
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
