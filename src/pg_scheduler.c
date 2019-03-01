@@ -96,17 +96,23 @@ static inline void finish_my(const char *cmd_str) {
 static inline char *work(Datum main_arg) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {main_arg};
-    char *request = NULL;
-    bool isnull;
     const char *src = "UPDATE task SET state = 'WORK', start = now() WHERE id = $1 RETURNING request";
+    StringInfoData buf;
+    char *data;
     (void)connect_my(src);
     elog(LOG, "work src=%s", src);
     if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
-    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1");
-//    request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
-    request = strdup(TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"), &isnull)));
-    (void)finish_my(src);
-    return request;
+    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1"); else {
+        char *value = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
+        (void)initStringInfo(&buf);
+        (void)appendStringInfoString(&buf, value);
+        data = strdup(buf.data);
+        if (value != NULL) (void)pfree(value);
+        if (buf.data != NULL) (void)pfree(buf.data);
+        (void)finish_my(src);
+    }
+//    return buf.data;
+    return data;
 }
 
 static inline void done(Datum main_arg, const char *data) {
@@ -138,8 +144,8 @@ static inline char *success() {
             char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
             (void)appendStringInfo(&buf, "%s::%s", name, type);
             if (col > 1) (void)appendStringInfoString(&buf, "\t");
-            if (name != NULL) pfree(name);
-            if (type != NULL) pfree(type);
+            if (name != NULL) (void)pfree(name);
+            if (type != NULL) (void)pfree(type);
         }
         (void)appendStringInfoString(&buf, "\n");
         for (uint64 row = 0; row < SPI_processed; row++) {
@@ -147,7 +153,7 @@ static inline char *success() {
                 char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
                 (void)appendStringInfo(&buf, "%s", value);
                 if (col > 1) (void)appendStringInfoString(&buf, "\t");
-                if (value != NULL) pfree(value);
+                if (value != NULL) (void)pfree(value);
             }
             if (row < SPI_processed - 1) (void)appendStringInfoString(&buf, "\n");
         }
@@ -238,7 +244,7 @@ static inline void execute(Datum main_arg) {
                 CurrentResourceOwner = oldowner;
                 (void)finish_my(src);
                 (void)done(main_arg, data);
-                (void)pfree(data);
+                if (data != NULL) (void)pfree(data);
             }
         } PG_CATCH(); {
             (MemoryContext)MemoryContextSwitchTo(oldcontext); {
@@ -249,10 +255,11 @@ static inline void execute(Datum main_arg) {
                 CurrentResourceOwner = oldowner;
                 (void)finish_my(src);
                 (void)fail(main_arg, data);
-                (void)pfree(data);
+                if (data != NULL) (void)pfree(data);
             }
         } PG_END_TRY();
     }
+//    if (src != NULL) (void)pfree(src);
     if (src != NULL) (void)free(src);
 }
 
