@@ -232,16 +232,17 @@ static inline void execute(Datum main_arg) {
 //    elog(LOG, "src=%s", src);
     (void)connect_my(src); {
         MemoryContext oldcontext = CurrentMemoryContext;
-        ResourceOwner oldowner = CurrentResourceOwner;
+//        ResourceOwner oldowner = CurrentResourceOwner;
         elog(LOG, "execute src=%s", src);
-        (void)BeginInternalSubTransaction(NULL);
-        (MemoryContext)MemoryContextSwitchTo(oldcontext);
+        (void)BeginInternalSubTransaction("execute");
+//        (MemoryContext)MemoryContextSwitchTo(oldcontext);
         PG_TRY(); {
             if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0"); else {
                 char *data = success();
                 (void)ReleaseCurrentSubTransaction();
-                (MemoryContext)MemoryContextSwitchTo(oldcontext);
-                CurrentResourceOwner = oldowner;
+//                (MemoryContext)MemoryContextSwitchTo(oldcontext);
+//                CurrentResourceOwner = oldowner;
+                elog(LOG, "execute try finish_my src=%s", src);
                 (void)finish_my(src);
                 (void)done(main_arg, data);
                 if (data != NULL) (void)pfree(data);
@@ -252,7 +253,8 @@ static inline void execute(Datum main_arg) {
                 (void)FlushErrorState();
                 (void)RollbackAndReleaseCurrentSubTransaction();
                 (MemoryContext)MemoryContextSwitchTo(oldcontext);
-                CurrentResourceOwner = oldowner;
+//                CurrentResourceOwner = oldowner;
+                elog(LOG, "execute catch finish_my src=%s", src);
                 (void)finish_my(src);
                 (void)fail(main_arg, data);
                 if (data != NULL) (void)pfree(data);
