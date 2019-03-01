@@ -95,7 +95,7 @@ static inline char *work(Datum main_arg) {
     char *data;
     (void)SPI_connect_ext_and_start_transaction(src);
     elog(LOG, "work src=%s", src);
-    if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
+    if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1");
     data = strdup(SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request")));
 //    data = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
