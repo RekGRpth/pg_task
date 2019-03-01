@@ -223,17 +223,17 @@ static inline void execute(Datum main_arg) {
     (void)connect_my(src); {
         elog(LOG, "execute src=%s", src);
         PG_TRY(); {
-            elog(LOG, "execute try finish_my 1 src=%s", src);
+//            elog(LOG, "execute try finish_my 1 src=%s", src);
             if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0"); else {
                 char *data = success();
-                elog(LOG, "execute try finish_my 2 src=%s", src);
+//                elog(LOG, "execute try finish_my 2 src=%s", src);
                 (void)finish_my(src, true);
                 (void)done(main_arg, data);
                 if (data != NULL) (void)pfree(data);
             }
         } PG_CATCH(); {
             char *data = error();
-            elog(LOG, "execute catch finish_my src=%s", src);
+//            elog(LOG, "execute catch finish_my src=%s", src);
             (void)finish_my(src, false);
             (void)fail(main_arg, data);
             if (data != NULL) (void)pfree(data);
