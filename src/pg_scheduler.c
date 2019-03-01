@@ -62,11 +62,7 @@ static inline void launch_task(Datum id) {
     if (snprintf(worker.bgw_type, sizeof("pg_scheduler task"), "pg_scheduler task") != sizeof("pg_scheduler task") - 1) elog(FATAL, "snprintf");
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_main_arg = id;
-    {
-        MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-        if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
-        (MemoryContext)MemoryContextSwitchTo(oldcontext);
-    }
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background process"), errhint("More details may be available in the server log.")));
