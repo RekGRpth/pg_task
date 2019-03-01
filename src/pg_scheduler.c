@@ -98,23 +98,13 @@ static inline char *work(Datum main_arg) {
     Datum Values[] = {main_arg};
     const char *src = "UPDATE task SET state = 'WORK', start = now() WHERE id = $1 RETURNING request";
     char *data;
-//    StringInfoData buf;
     (void)connect_my(src);
     elog(LOG, "work src=%s", src);
     if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
-    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1"); else {
-        char *value = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
-//        StringInfoData buf;
-//        (void)initStringInfo(&buf);
-//        (void)appendStringInfoString(&buf, value);
-//        data = strdup(buf.data);
-        data = strdup(value);
-        if (value != NULL) (void)pfree(value);
-//        if (buf.data != NULL) (void)pfree(buf.data);
-        (void)finish_my(src);
-    }
+    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1");
+    data = strdup(SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request")));
+    (void)finish_my(src);
     return data;
-//    return buf.data;
 }
 
 static inline void done(Datum main_arg, const char *data) {
