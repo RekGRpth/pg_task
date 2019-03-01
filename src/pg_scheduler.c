@@ -77,17 +77,19 @@ static inline void launch_task(Datum id) {
 static inline void connect_my(const char *cmd_str) {
 //    elog(LOG, "connect_my cmd_str=%s", cmd_str);
     (void)pgstat_report_activity(STATE_RUNNING, cmd_str);
-    (void)SetCurrentStatementStartTimestamp();
-    (void)StartTransactionCommand();
-    if (SPI_connect() != SPI_OK_CONNECT) elog(FATAL, "SPI_connect != SPI_OK_CONNECT");
-    (void)PushActiveSnapshot(GetTransactionSnapshot());
+//    (void)SetCurrentStatementStartTimestamp();
+//    (void)StartTransactionCommand();
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    (void)SPI_start_transaction();
+//    (void)PushActiveSnapshot(GetTransactionSnapshot());
 }
 
-static inline void finish_my(const char *cmd_str) {
+static inline void finish_my(const char *cmd_str, bool commit) {
 //    elog(LOG, "finish_my cmd_str=%s", cmd_str);
+//    (void)PopActiveSnapshot();
+    if (commit) (void)SPI_commit(); else (void)SPI_rollback();
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
-    (void)PopActiveSnapshot();
-    (void)CommitTransactionCommand();
+//    (void)CommitTransactionCommand();
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, cmd_str);
     (void)pgstat_report_stat(true);
@@ -103,7 +105,8 @@ static inline char *work(Datum main_arg) {
     if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1");
     data = strdup(SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request")));
-    (void)finish_my(src);
+//    data = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
+    (void)finish_my(src, true);
     return data;
 }
 
@@ -114,7 +117,7 @@ static inline void done(Datum main_arg, const char *data) {
     (void)connect_my(src);
     elog(LOG, "done src=%s", src);
     if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
-    (void)finish_my(src);
+    (void)finish_my(src, true);
 }
 
 static inline void fail(Datum main_arg, const char *data) {
@@ -124,7 +127,7 @@ static inline void fail(Datum main_arg, const char *data) {
     (void)connect_my(src);
     elog(LOG, "fail src=%s", src);
     if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
-    (void)finish_my(src);
+    (void)finish_my(src, true);
 }
 
 static inline char *success() {
@@ -223,36 +226,38 @@ static inline void execute(Datum main_arg) {
     char *src = work(main_arg);
 //    elog(LOG, "src=%s", src);
     (void)connect_my(src); {
-        MemoryContext oldcontext = CurrentMemoryContext;
+//        MemoryContext oldcontext = CurrentMemoryContext;
 //        ResourceOwner oldowner = CurrentResourceOwner;
         elog(LOG, "execute src=%s", src);
-        (void)BeginInternalSubTransaction(NULL);
-        (MemoryContext)MemoryContextSwitchTo(oldcontext);
+//        (void)BeginInternalSubTransaction(NULL);
+//        (MemoryContext)MemoryContextSwitchTo(oldcontext);
         PG_TRY(); {
-//            elog(LOG, "execute try finish_my 1 src=%s", src);
+            elog(LOG, "execute try finish_my 1 src=%s", src);
             if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0"); else {
                 char *data = success();
-//                elog(LOG, "execute try finish_my 2 src=%s", src);
-                (void)ReleaseCurrentSubTransaction();
-                (MemoryContext)MemoryContextSwitchTo(oldcontext);
+                elog(LOG, "execute try finish_my 2 src=%s", src);
+//                (void)ReleaseCurrentSubTransaction();
+//                (MemoryContext)MemoryContextSwitchTo(oldcontext);
 //                CurrentResourceOwner = oldowner;
 //                elog(LOG, "execute try finish_my 3 src=%s", src);
-                (void)finish_my(src);
+                (void)finish_my(src, true);
                 (void)done(main_arg, data);
                 if (data != NULL) (void)pfree(data);
             }
         } PG_CATCH(); {
-            (MemoryContext)MemoryContextSwitchTo(oldcontext); {
+//            (MemoryContext)MemoryContextSwitchTo(oldcontext);
+//            {
                 char *data = error();
-                (void)FlushErrorState();
-                (void)RollbackAndReleaseCurrentSubTransaction();
-                (MemoryContext)MemoryContextSwitchTo(oldcontext);
+//                (void)FlushErrorState();
+//                (void)AbortCurrentTransaction();
+//                (void)RollbackAndReleaseCurrentSubTransaction();
+//                (MemoryContext)MemoryContextSwitchTo(oldcontext);
 //                CurrentResourceOwner = oldowner;
-//                elog(LOG, "execute catch finish_my src=%s", src);
-                (void)finish_my(src);
+                elog(LOG, "execute catch finish_my src=%s", src);
+                (void)finish_my(src, false);
                 (void)fail(main_arg, data);
                 if (data != NULL) (void)pfree(data);
-            }
+//            }
         } PG_END_TRY();
     }
     if (src != NULL) (void)free(src);
@@ -273,7 +278,7 @@ static inline void assign() {
         uint64 processed = SPI_processed;
         SPITupleTable *tuptable = SPI_tuptable;
         bool isnull;
-        (void)finish_my(src);
+        (void)finish_my(src, true);
         for (uint64 row = 0; row < processed; row++) {
             elog(LOG, "row=%lu", row);
             (void)launch_task(SPI_getbinval(tuptable->vals[row], tuptable->tupdesc, SPI_fnumber(tuptable->tupdesc, "id"), &isnull));
