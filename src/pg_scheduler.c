@@ -1,21 +1,21 @@
-#include "postgres.h"
-#include "fmgr.h"
+#include <postgres.h>
+#include <fmgr.h>
 
-#include "miscadmin.h"
-#include "postmaster/bgworker.h"
-#include "storage/ipc.h"
+#include <miscadmin.h>
+#include <postmaster/bgworker.h>
+#include <storage/ipc.h>
 
-#include "access/xact.h"
-#include "executor/spi.h"
-#include "utils/snapmgr.h"
-#include "pgstat.h"
-#include "utils/guc.h"
-#include "utils/memutils.h"
-#include "commands/async.h"
+#include <access/xact.h>
+#include <executor/spi.h>
+#include <utils/snapmgr.h>
+#include <pgstat.h>
+#include <utils/guc.h>
+#include <utils/memutils.h>
+#include <commands/async.h>
 #include <catalog/pg_type.h>
 
-#include "utils/builtins.h"
-#include "utils/lsyscache.h"
+#include <utils/builtins.h>
+#include <utils/lsyscache.h>
 
 PG_MODULE_MAGIC;
 
