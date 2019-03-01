@@ -72,56 +72,80 @@ static inline void launch_task(Datum arg) {
     if (handle != NULL) (void)pfree(handle);
 }
 
-static inline void SPI_connect_ext_and_start_transaction(const char *cmd_str) {
-//    elog(LOG, "SPI_connect_ext_and_start_transaction cmd_str=%s", cmd_str);
-    (void)pgstat_report_activity(STATE_RUNNING, cmd_str);
+/*static inline void SPI_connect_ext_and_start_transaction(const char *src) {
+//    elog(LOG, "SPI_connect_ext_and_start_transaction src=%s", src);
+    (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
     (void)SPI_start_transaction();
-}
+}*/
 
-static inline void SPI_commit_or_rollback_and_finish(const char *cmd_str, bool commit) {
-//    elog(LOG, "SPI_commit_or_rollback_and_finish cmd_str=%s", cmd_str);
+/*static inline void SPI_commit_or_rollback_and_finish(const char *src, bool commit) {
+//    elog(LOG, "SPI_commit_or_rollback_and_finish src=%s", src);
     if (commit) (void)SPI_commit(); else (void)SPI_rollback();
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
     (void)ProcessCompletedNotifies();
-    (void)pgstat_report_activity(STATE_IDLE, cmd_str);
+    (void)pgstat_report_activity(STATE_IDLE, src);
     (void)pgstat_report_stat(true);
-}
+}*/
 
 static inline char *work(Datum arg) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
     const char *src = "UPDATE task SET state = 'WORK', start = now() WHERE id = $1 RETURNING request";
     char *data;
-    (void)SPI_connect_ext_and_start_transaction(src);
+//    (void)SPI_connect_ext_and_start_transaction(src);
+    (void)pgstat_report_activity(STATE_RUNNING, src);
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    (void)SPI_start_transaction();
     elog(LOG, "work src=%s", src);
     if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1");
     data = strdup(SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request")));
 //    data = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
-    (void)SPI_commit_or_rollback_and_finish(src, true);
+//    (void)SPI_commit_or_rollback_and_finish(src, true);
+    (void)SPI_commit();
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+    (void)ProcessCompletedNotifies();
+    (void)pgstat_report_activity(STATE_IDLE, src);
+    (void)pgstat_report_stat(true);
     return data;
 }
 
-static inline void done(Datum arg, const char *data) {
-    Oid argtypes[] = {TEXTOID, INT8OID};
-    Datum Values[] = {CStringGetTextDatum(data!=NULL?data:"(null)"), arg};
-    const char *src = "UPDATE task SET state = 'DONE', stop = now(), response=$1 WHERE id = $2";
-    (void)SPI_connect_ext_and_start_transaction(src);
+static inline void done(Datum arg, const char *data, const char *status) {
+    Oid argtypes[] = {TEXTOID, TEXTOID, INT8OID};
+    Datum Values[] = {CStringGetTextDatum(status), CStringGetTextDatum(data!=NULL?data:"(null)"), arg};
+    const char *src = "UPDATE task SET state = $1::state, stop = now(), response=$2 WHERE id = $3";
+//    (void)SPI_connect_ext_and_start_transaction(src);
+    (void)pgstat_report_activity(STATE_RUNNING, src);
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    (void)SPI_start_transaction();
     elog(LOG, "done src=%s", src);
     if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
-    (void)SPI_commit_or_rollback_and_finish(src, true);
+//    (void)SPI_commit_or_rollback_and_finish(src, true);
+    (void)SPI_commit();
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+    (void)ProcessCompletedNotifies();
+    (void)pgstat_report_activity(STATE_IDLE, src);
+    (void)pgstat_report_stat(true);
 }
 
-static inline void fail(Datum arg, const char *data) {
+/*static inline void fail(Datum arg, const char *data) {
     Oid argtypes[] = {TEXTOID, INT8OID};
     Datum Values[] = {CStringGetTextDatum(data!=NULL?data:"(null)"), arg};
     const char *src = "UPDATE task SET state = 'FAIL', stop = now(), response=$1 WHERE id = $2";
-    (void)SPI_connect_ext_and_start_transaction(src);
+//    (void)SPI_connect_ext_and_start_transaction(src);
+    (void)pgstat_report_activity(STATE_RUNNING, src);
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    (void)SPI_start_transaction();
     elog(LOG, "fail src=%s", src);
     if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
-    (void)SPI_commit_or_rollback_and_finish(src, true);
-}
+//    (void)SPI_commit_or_rollback_and_finish(src, true);
+    (void)SPI_commit();
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+    (void)ProcessCompletedNotifies();
+    (void)pgstat_report_activity(STATE_IDLE, src);
+    (void)pgstat_report_stat(true);
+}*/
 
 static inline char *success() {
     StringInfoData buf;
@@ -218,22 +242,35 @@ static inline char *error() {
 static inline void execute(Datum arg) {
     char *src = work(arg);
 //    elog(LOG, "src=%s", src);
-    (void)SPI_connect_ext_and_start_transaction(src);
+//    (void)SPI_connect_ext_and_start_transaction(src);
+    (void)pgstat_report_activity(STATE_RUNNING, src);
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    (void)SPI_start_transaction();
     elog(LOG, "execute src=%s", src);
     PG_TRY(); {
 //        elog(LOG, "execute try SPI_commit_or_rollback_and_finish 1 src=%s", src);
         if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0"); else {
             char *data = success();
 //            elog(LOG, "execute try SPI_commit_or_rollback_and_finish 2 src=%s", src);
-            (void)SPI_commit_or_rollback_and_finish(src, true);
-            (void)done(arg, data);
+//            (void)SPI_commit_or_rollback_and_finish(src, true);
+            (void)SPI_commit();
+            if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+            (void)ProcessCompletedNotifies();
+            (void)pgstat_report_activity(STATE_IDLE, src);
+            (void)pgstat_report_stat(true);
+            (void)done(arg, data, "DONE");
             if (data != NULL) (void)pfree(data);
         }
     } PG_CATCH(); {
         char *data = error();
 //        elog(LOG, "execute catch SPI_commit_or_rollback_and_finish src=%s", src);
-        (void)SPI_commit_or_rollback_and_finish(src, false);
-        (void)fail(arg, data);
+//        (void)SPI_commit_or_rollback_and_finish(src, false);
+        (void)SPI_rollback();
+        if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+        (void)ProcessCompletedNotifies();
+        (void)pgstat_report_activity(STATE_IDLE, src);
+        (void)pgstat_report_stat(true);
+        (void)done(arg, data, "FAIL");
         if (data != NULL) (void)pfree(data);
     } PG_END_TRY();
     if (src != NULL) (void)free(src);
@@ -248,18 +285,30 @@ void task(Datum arg) {
 
 static inline void assign() {
     const char *src = "UPDATE task SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id";
-    (void)SPI_connect_ext_and_start_transaction(src);
+//    (void)SPI_connect_ext_and_start_transaction(src);
+    (void)pgstat_report_activity(STATE_RUNNING, src);
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    (void)SPI_start_transaction();
 //    elog(LOG, "assign src=%s", src);
-    if (SPI_execute(src, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute != SPI_OK_UPDATE_RETURNING"); else {
-        uint64 processed = SPI_processed;
-        SPITupleTable *tuptable = SPI_tuptable;
+    if (SPI_execute(src, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute != SPI_OK_UPDATE_RETURNING"); //else {
+//        uint64 processed = SPI_processed;
+//        SPITupleTable *tuptable = SPI_tuptable;
+//        (void)SPI_commit_or_rollback_and_finish(src, true);
+    (void)SPI_commit();
+//        if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+//        (void)ProcessCompletedNotifies();
+//        (void)pgstat_report_activity(STATE_IDLE, src);
+//        (void)pgstat_report_stat(true);
+    for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
-        (void)SPI_commit_or_rollback_and_finish(src, true);
-        for (uint64 row = 0; row < processed; row++) {
-            elog(LOG, "row=%lu", row);
-            (void)launch_task(SPI_getbinval(tuptable->vals[row], tuptable->tupdesc, SPI_fnumber(tuptable->tupdesc, "id"), &isnull));
-        }
+        elog(LOG, "row=%lu", row);
+        (void)launch_task(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull));
     }
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+    (void)ProcessCompletedNotifies();
+    (void)pgstat_report_activity(STATE_IDLE, src);
+    (void)pgstat_report_stat(true);
+//    }
 }
 
 void loop(Datum arg) {
