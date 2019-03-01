@@ -104,12 +104,13 @@ static inline char *work(Datum main_arg) {
     if (SPI_execute_with_args(src, 1, argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1"); else {
         char *value = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
-        StringInfoData buf;
-        (void)initStringInfo(&buf);
-        (void)appendStringInfoString(&buf, value);
-        data = strdup(buf.data);
+//        StringInfoData buf;
+//        (void)initStringInfo(&buf);
+//        (void)appendStringInfoString(&buf, value);
+//        data = strdup(buf.data);
+        data = strdup(value);
         if (value != NULL) (void)pfree(value);
-        if (buf.data != NULL) (void)pfree(buf.data);
+//        if (buf.data != NULL) (void)pfree(buf.data);
         (void)finish_my(src);
     }
     return data;
