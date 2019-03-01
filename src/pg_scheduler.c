@@ -218,25 +218,24 @@ static inline char *error() {
 static inline void execute(Datum main_arg) {
     char *src = work(main_arg);
 //    elog(LOG, "src=%s", src);
-    (void)SPI_connect_ext_and_start_transaction(src); {
-        elog(LOG, "execute src=%s", src);
-        PG_TRY(); {
-//            elog(LOG, "execute try SPI_commit_or_rollback_and_finish 1 src=%s", src);
-            if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0"); else {
-                char *data = success();
-//                elog(LOG, "execute try SPI_commit_or_rollback_and_finish 2 src=%s", src);
-                (void)SPI_commit_or_rollback_and_finish(src, true);
-                (void)done(main_arg, data);
-                if (data != NULL) (void)pfree(data);
-            }
-        } PG_CATCH(); {
-            char *data = error();
-//            elog(LOG, "execute catch SPI_commit_or_rollback_and_finish src=%s", src);
-            (void)SPI_commit_or_rollback_and_finish(src, false);
-            (void)fail(main_arg, data);
+    (void)SPI_connect_ext_and_start_transaction(src);
+    elog(LOG, "execute src=%s", src);
+    PG_TRY(); {
+//        elog(LOG, "execute try SPI_commit_or_rollback_and_finish 1 src=%s", src);
+        if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0"); else {
+            char *data = success();
+//            elog(LOG, "execute try SPI_commit_or_rollback_and_finish 2 src=%s", src);
+            (void)SPI_commit_or_rollback_and_finish(src, true);
+            (void)done(main_arg, data);
             if (data != NULL) (void)pfree(data);
-        } PG_END_TRY();
-    }
+        }
+    } PG_CATCH(); {
+        char *data = error();
+//        elog(LOG, "execute catch SPI_commit_or_rollback_and_finish src=%s", src);
+        (void)SPI_commit_or_rollback_and_finish(src, false);
+        (void)fail(main_arg, data);
+        if (data != NULL) (void)pfree(data);
+    } PG_END_TRY();
     if (src != NULL) (void)free(src);
 }
 
