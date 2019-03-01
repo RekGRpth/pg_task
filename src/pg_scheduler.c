@@ -226,7 +226,7 @@ static inline void execute(Datum main_arg) {
         MemoryContext oldcontext = CurrentMemoryContext;
 //        ResourceOwner oldowner = CurrentResourceOwner;
         elog(LOG, "execute src=%s", src);
-        (void)BeginInternalSubTransaction("execute");
+        (void)BeginInternalSubTransaction(NULL);
         (MemoryContext)MemoryContextSwitchTo(oldcontext);
         PG_TRY(); {
 //            elog(LOG, "execute try finish_my 1 src=%s", src);
