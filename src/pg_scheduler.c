@@ -21,7 +21,7 @@ PG_MODULE_MAGIC;
 
 void _PG_init(void);
 
-void loop(Datum arg);
+void tick(Datum arg);
 void task(Datum arg);
 
 static volatile sig_atomic_t got_sighup = false;
@@ -261,8 +261,8 @@ static inline void assign() {
     (void)pgstat_report_stat(true);
 }
 
-void loop(Datum arg) {
-    elog(LOG, "loop started database=%s, username=%s", database, username);
+void tick(Datum arg) {
+    elog(LOG, "tick started database=%s, username=%s", database, username);
     pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
     (void)BackgroundWorkerUnblockSignals();
@@ -288,17 +288,17 @@ void _PG_init(void) {
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &database, "postgres", PGC_POSTMASTER, 0, NULL, NULL, NULL);
     (void)DefineCustomStringVariable("pg_scheduler.username", "pg_scheduler username", NULL, &username, "postgres", PGC_POSTMASTER, 0, NULL, NULL, NULL);
-    (void)DefineCustomIntVariable("pg_scheduler.period", "how often to run loop", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    (void)DefineCustomIntVariable("pg_scheduler.restart", "how often to restart loop", NULL, &worker.bgw_restart_time, 10, 1, INT_MAX, PGC_POSTMASTER, 0, NULL, NULL, NULL);
+    (void)DefineCustomIntVariable("pg_scheduler.period", "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    (void)DefineCustomIntVariable("pg_scheduler.restart", "how often to restart tick", NULL, &worker.bgw_restart_time, 10, 1, INT_MAX, PGC_POSTMASTER, 0, NULL, NULL, NULL);
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf");
-    if (snprintf(worker.bgw_function_name, sizeof("loop"), "loop") != sizeof("loop") - 1) elog(FATAL, "snprintf");
+    if (snprintf(worker.bgw_function_name, sizeof("tick"), "tick") != sizeof("tick") - 1) elog(FATAL, "snprintf");
     {
-        int len = sizeof("%s %s pg_scheduler loop") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2;
-        if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler loop", database, username) != len) elog(FATAL, "snprintf");
+        int len = sizeof("%s %s pg_scheduler tick") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2;
+        if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler tick", database, username) != len) elog(FATAL, "snprintf");
     }
-    if (snprintf(worker.bgw_type, sizeof("pg_scheduler loop"), "pg_scheduler loop") != sizeof("pg_scheduler loop") - 1) elog(FATAL, "snprintf");
+    if (snprintf(worker.bgw_type, sizeof("pg_scheduler tick"), "pg_scheduler tick") != sizeof("pg_scheduler tick") - 1) elog(FATAL, "snprintf");
     worker.bgw_notify_pid = 0;
     worker.bgw_main_arg = (Datum) 0;
     (void)RegisterBackgroundWorker(&worker);
