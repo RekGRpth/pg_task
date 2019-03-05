@@ -73,7 +73,7 @@ static inline void launch_tick(const char *database, const char *username) {
 void _PG_init(void) {
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errmsg("pg_scheduler can only be loaded via shared_preload_libraries"), errhint("Add pg_scheduler to the shared_preload_libraries configuration variable in postgresql.conf.")));
-    (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &database, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &database, "postgres", PGC_POSTMASTER, 0, NULL, NULL, NULL);
     elog(LOG, "_PG_init database=%s", database);
     {
         List *elemlist;
@@ -86,7 +86,7 @@ void _PG_init(void) {
             elog(LOG, "_PG_init database=%s", database);
             (void)resetStringInfo(&buf);
             (void)appendStringInfo(&buf, "pg_scheduler_username.%s", database);
-            (void)DefineCustomStringVariable(buf.data, "pg_scheduler username", NULL, &username, database, PGC_SIGHUP, 0, NULL, NULL, NULL);
+            (void)DefineCustomStringVariable(buf.data, "pg_scheduler username", NULL, &username, database, PGC_POSTMASTER, 0, NULL, NULL, NULL);
             (void)launch_tick(database, username);
         }
         if (buf.data != NULL) (void)pfree(buf.data);
