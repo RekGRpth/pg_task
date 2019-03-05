@@ -28,7 +28,7 @@ void task(Datum arg);
 static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
 
-int period = 0;
+//int period = 0;
 
 static inline void sighup(SIGNAL_ARGS) {
     int save_errno = errno;
@@ -266,6 +266,7 @@ static inline void assign() {
 }
 
 static inline void init(/*const char *database, const char *username*/) {
+//    int period;
     const char *src = "CREATE TABLE IF NOT EXISTS task ("
         "id bigserial not null primary key,"
         "dt timestamp not null default now(),"
@@ -275,11 +276,12 @@ static inline void init(/*const char *database, const char *username*/) {
         "response text,"
         "state text not null default 'QUEUE'"
     ")";
-//    StringInfoData buf;
-//    (void)initStringInfo(&buf);
-//    (void)resetStringInfo(&buf);
-//    (void)appendStringInfo(&buf, "pg_scheduler_period.%s", database);
-//    (void)DefineCustomIntVariable(buf.data, "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+/*    StringInfoData buf;
+    (void)initStringInfo(&buf);
+    (void)resetStringInfo(&buf);
+    (void)appendStringInfo(&buf, "pg_scheduler_period.%s", database);
+    (void)DefineCustomIntVariable(buf.data, "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    elog(LOG, "init database=%s, username=%s, period=%i", database, username, period);*/
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
     (void)SPI_start_transaction();
@@ -296,6 +298,12 @@ static inline void init(/*const char *database, const char *username*/) {
 void tick(Datum arg) {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
+    StringInfoData buf;
+    int period = 1000;
+    (void)initStringInfo(&buf);
+    (void)resetStringInfo(&buf);
+    (void)appendStringInfo(&buf, "pg_scheduler_period.%s", database);
+    (void)DefineCustomIntVariable(buf.data, "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     elog(LOG, "tick database=%s, username=%s, period=%i", database, username, period);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
@@ -304,6 +312,7 @@ void tick(Datum arg) {
     (void)init(/*database, username*/);
     while (!got_sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
+//        elog(LOG, "tick database=%s, username=%s, period=%i", database, username, period);
         (void)ResetLatch(MyLatch);
         if (rc & WL_POSTMASTER_DEATH) (void)proc_exit(1);
         if (got_sigterm) (void)proc_exit(0);
@@ -331,7 +340,7 @@ void _PG_init(void) {
     if (snprintf(worker.bgw_function_name, sizeof("tick"), "tick") != sizeof("tick") - 1) elog(FATAL, "snprintf");
     if (snprintf(worker.bgw_type, sizeof("pg_scheduler tick"), "pg_scheduler tick") != sizeof("pg_scheduler tick") - 1) elog(FATAL, "snprintf");
     (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &database, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    (void)DefineCustomIntVariable("pg_scheduler.period", "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+//    (void)DefineCustomIntVariable("pg_scheduler.period", "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     elog(LOG, "_PG_init database=%s", database);
     {
         List *elemlist;
