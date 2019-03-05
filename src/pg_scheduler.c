@@ -55,18 +55,27 @@ static inline void launch_task(Datum arg) {
     BackgroundWorker worker;
     BackgroundWorkerHandle *handle;
     pid_t pid;
-    int len;
+    int len, len2, len3, len4;
+    elog(LOG, "launch_task database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
-    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf");
-    if (snprintf(worker.bgw_function_name, sizeof("task"), "task") != sizeof("task") - 1) elog(FATAL, "snprintf");
+    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_function_name, sizeof("task"), "task") != sizeof("task") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_type, sizeof("pg_scheduler task"), "pg_scheduler task") != sizeof("pg_scheduler task") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     len = sizeof("%s %s pg_scheduler task") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2;
-    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task", database, username) != len) elog(FATAL, "snprintf");
-    len = strlen(username);
-    if (snprintf(worker.bgw_extra + snprintf(worker.bgw_extra, strlen(database) + 1, "%s", database) + 1, len + 1, "%s", username) != len) elog(FATAL, "snprintf");
-    if (snprintf(worker.bgw_type, sizeof("pg_scheduler task"), "pg_scheduler task") != sizeof("pg_scheduler task") - 1) elog(FATAL, "snprintf");
+    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task", database, username) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+//    len = strlen(username);
+//    if (snprintf(worker.bgw_extra + snprintf(worker.bgw_extra, strlen(database) + 1, "%s", database) + 1, len + 1, "%s", username) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    len = sizeof("%s") - 1 + strlen(database) - 1 - 1;
+    if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    len2 = sizeof("%s") - 1 + strlen(username) - 1 - 1;
+    if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    len3 = sizeof("%s") - 1 + strlen(schema) - 1 - 1;
+    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1, len3 + 1, "%s", username) != len3) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    len4 = sizeof("%s") - 1 + strlen(table) - 1 - 1;
+    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1 + len3 + 1, len4 + 1, "%s", username) != len4) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_main_arg = arg;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
@@ -80,6 +89,10 @@ static inline void launch_task(Datum arg) {
 }
 
 static inline char *work(Datum arg) {
+    const char *database = MyBgworkerEntry->bgw_extra;
+    const char *username = database + strlen(database) + 1;
+    const char *schema = username + strlen(username) + 1;
+    const char *table = schema + strlen(schema) + 1;
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
     char *data;
@@ -87,15 +100,15 @@ static inline char *work(Datum arg) {
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request", quote_identifier(schema), quote_identifier(table));
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
     elog(LOG, "work buf.data=%s", buf.data);
-    if (SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING");
-    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1");
+    if (SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
+    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__);
     data = strdup(SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request")));
 //    data = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
     (void)SPI_commit();
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, buf.data);
     (void)pgstat_report_stat(true);
@@ -108,12 +121,12 @@ static inline void done(Datum arg, const char *data, const char *status) {
     Datum Values[] = {CStringGetTextDatum(status), CStringGetTextDatum(data!=NULL?data:"(null)"), arg};
     const char *src = "UPDATE task SET state = $1, stop = now(), response=$2 WHERE id = $3";
     (void)pgstat_report_activity(STATE_RUNNING, src);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
     elog(LOG, "done src=%s", src);
-    if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE");
+    if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, src);
     (void)pgstat_report_stat(true);
@@ -215,16 +228,16 @@ static inline void execute(Datum arg) {
     char *src = work(arg);
 //    elog(LOG, "src=%s", src);
     (void)pgstat_report_activity(STATE_RUNNING, src);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
     elog(LOG, "execute src=%s", src);
     PG_TRY(); {
 //        elog(LOG, "execute try SPI_commit_or_rollback_and_finish 1 src=%s", src);
-        if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0"); else {
+        if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0 %s %i", __FILE__, __LINE__); else {
             char *data = success();
 //            elog(LOG, "execute try SPI_commit_or_rollback_and_finish 2 src=%s", src);
             (void)SPI_commit();
-            if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+            if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
             (void)ProcessCompletedNotifies();
             (void)pgstat_report_activity(STATE_IDLE, src);
             (void)pgstat_report_stat(true);
@@ -235,7 +248,7 @@ static inline void execute(Datum arg) {
         char *data = error();
 //        elog(LOG, "execute catch SPI_commit_or_rollback_and_finish src=%s", src);
         (void)SPI_rollback();
-        if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+        if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
         (void)ProcessCompletedNotifies();
         (void)pgstat_report_activity(STATE_IDLE, src);
         (void)pgstat_report_stat(true);
@@ -248,7 +261,9 @@ static inline void execute(Datum arg) {
 void task(Datum arg) {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
-    elog(LOG, "task database=%s, username=%s, id=%li", database, username, DatumGetInt64(arg));
+    const char *schema = username + strlen(username) + 1;
+    const char *table = schema + strlen(schema) + 1;
+    elog(LOG, "task database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
     (void)execute(arg);
@@ -259,17 +274,17 @@ static inline void assign() {
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", quote_identifier(schema), quote_identifier(table));
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
 //    elog(LOG, "assign buf.data=%s", buf.data);
-    if (SPI_execute(buf.data, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute != SPI_OK_UPDATE_RETURNING");
+    if (SPI_execute(buf.data, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
         elog(LOG, "row=%lu", row);
         (void)launch_task(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull));
     }
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, buf.data);
     (void)pgstat_report_stat(true);
@@ -292,12 +307,12 @@ static inline void init() {
     ")", quote_identifier(schema), quote_identifier(schema), quote_identifier(table));
     elog(LOG, "init database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
     elog(LOG, "init buf.data=%s", buf.data);
-    if (SPI_execute(buf.data, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY");
+    if (SPI_execute(buf.data, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, buf.data);
     (void)pgstat_report_stat(true);
@@ -349,9 +364,9 @@ void _PG_init(void) {
     worker.bgw_notify_pid = 0;
     worker.bgw_main_arg = (Datum) 0;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
-    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf");
-    if (snprintf(worker.bgw_function_name, sizeof("tick"), "tick") != sizeof("tick") - 1) elog(FATAL, "snprintf");
-    if (snprintf(worker.bgw_type, sizeof("pg_scheduler tick"), "pg_scheduler tick") != sizeof("pg_scheduler tick") - 1) elog(FATAL, "snprintf");
+    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_function_name, sizeof("tick"), "tick") != sizeof("tick") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_type, sizeof("pg_scheduler tick"), "pg_scheduler tick") != sizeof("pg_scheduler tick") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &database, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
     elog(LOG, "_PG_init database=%s", database);
     {
@@ -368,11 +383,11 @@ void _PG_init(void) {
             (void)appendStringInfo(&buf, "pg_scheduler_username.%s", database);
             (void)DefineCustomStringVariable(buf.data, "pg_scheduler username", NULL, &username, database, PGC_SIGHUP, 0, NULL, NULL, NULL);
             len = sizeof("%s %s pg_scheduler tick") - 1 + strlen(database) - 1 + strlen(username) - 1 - 1 - 1;
-            if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler tick", database, username) != len) elog(FATAL, "snprintf");
+            if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler tick", database, username) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
             len = sizeof("%s") - 1 + strlen(database) - 1 - 1;
-            if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) elog(FATAL, "snprintf");
+            if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
             len2 = sizeof("%s") - 1 + strlen(username) - 1 - 1;
-            if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) elog(FATAL, "snprintf");
+            if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
             (void)RegisterBackgroundWorker(&worker);
         }
         if (buf.data != NULL) (void)pfree(buf.data);
