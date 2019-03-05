@@ -28,7 +28,9 @@ void task(Datum arg);
 static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
 
-//int period = 0;
+static char *database;
+static char *username;
+//static int period;
 
 static inline void sighup(SIGNAL_ARGS) {
     int save_errno = errno;
@@ -327,7 +329,7 @@ void tick(Datum arg) {
 
 void _PG_init(void) {
     BackgroundWorker worker;
-    char *database;
+//    char *database;
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errmsg("pg_scheduler can only be loaded via shared_preload_libraries"), errhint("Add pg_scheduler to the shared_preload_libraries configuration variable in postgresql.conf.")));
     MemSet(&worker, 0, sizeof(BackgroundWorker));
@@ -350,7 +352,7 @@ void _PG_init(void) {
         if (!SplitIdentifierString(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
         for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
             int len;
-            char *username;
+//            char *username;
             const char *database = (const char *)lfirst(cell);
             elog(LOG, "_PG_init database=%s", database);
             (void)resetStringInfo(&buf);
