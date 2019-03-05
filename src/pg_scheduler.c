@@ -29,7 +29,6 @@ static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
 
 static char *database = NULL;
-//static char *username = NULL;
 static int period = 0;
 
 static inline void sighup(SIGNAL_ARGS) {
@@ -292,7 +291,7 @@ static inline void init() {
 void tick(Datum arg) {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
-    elog(LOG, "tick database=%s, username=%s", database, username);
+    elog(LOG, "tick database=%s, username=%s, period=%i", database, username, period);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
     (void)BackgroundWorkerUnblockSignals();
@@ -339,10 +338,10 @@ void _PG_init(void) {
             const char *database = (const char *)lfirst(cell);
             elog(LOG, "_PG_init database=%s", database);
             (void)resetStringInfo(&buf);
-            (void)appendStringInfo(&buf, "pg_scheduler.%s.username", database);
+            (void)appendStringInfo(&buf, "pg_scheduler_username.%s", database);
             (void)DefineCustomStringVariable(buf.data, "pg_scheduler username", NULL, &username, database, PGC_SIGHUP, 0, NULL, NULL, NULL);
             (void)resetStringInfo(&buf);
-            (void)appendStringInfo(&buf, "pg_scheduler.%s.period", database);
+            (void)appendStringInfo(&buf, "pg_scheduler_period.%s", database);
             (void)DefineCustomIntVariable(buf.data, "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
             len = sizeof("%s %s pg_scheduler tick") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2;
             if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler tick", database, username) != len) elog(FATAL, "snprintf");
