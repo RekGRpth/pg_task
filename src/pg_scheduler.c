@@ -28,8 +28,7 @@ void task(Datum arg);
 static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
 
-static char *database = NULL;
-static int period = 0;
+int period = 0;
 
 static inline void sighup(SIGNAL_ARGS) {
     int save_errno = errno;
@@ -319,6 +318,7 @@ void tick(Datum arg) {
 
 void _PG_init(void) {
     BackgroundWorker worker;
+    char *database;
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errmsg("pg_scheduler can only be loaded via shared_preload_libraries"), errhint("Add pg_scheduler to the shared_preload_libraries configuration variable in postgresql.conf.")));
     MemSet(&worker, 0, sizeof(BackgroundWorker));
