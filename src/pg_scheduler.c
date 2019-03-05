@@ -30,7 +30,6 @@ static volatile sig_atomic_t got_sigterm = false;
 
 static char *database;
 static char *username;
-//static int period;
 
 static inline void sighup(SIGNAL_ARGS) {
     int save_errno = errno;
@@ -303,9 +302,10 @@ void tick(Datum arg) {
     StringInfoData buf;
     int period = 1000;
     (void)initStringInfo(&buf);
-    (void)resetStringInfo(&buf);
+//    (void)resetStringInfo(&buf);
     (void)appendStringInfo(&buf, "pg_scheduler_period.%s", database);
     (void)DefineCustomIntVariable(buf.data, "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    if (buf.data != NULL) (void)pfree(buf.data);
     elog(LOG, "tick database=%s, username=%s, period=%i", database, username, period);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
