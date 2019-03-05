@@ -66,8 +66,6 @@ static inline void launch_task(Datum arg) {
     if (snprintf(worker.bgw_type, sizeof("pg_scheduler task"), "pg_scheduler task") != sizeof("pg_scheduler task") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     len = sizeof("%s %s pg_scheduler task") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2;
     if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task", database, username) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-//    len = strlen(username);
-//    if (snprintf(worker.bgw_extra + snprintf(worker.bgw_extra, strlen(database) + 1, "%s", database) + 1, len + 1, "%s", username) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     len = sizeof("%s") - 1 + strlen(database) - 1 - 1;
     if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     len2 = sizeof("%s") - 1 + strlen(username) - 1 - 1;
