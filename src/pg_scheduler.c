@@ -284,7 +284,7 @@ static inline void init(/*const char *database, const char *username*/) {
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
     (void)SPI_start_transaction();
-    elog(LOG, "done src=%s", src);
+    elog(LOG, "init src=%s", src);
     if (SPI_execute(src, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY");
     (void)SPI_commit();
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
@@ -339,7 +339,7 @@ void _PG_init(void) {
         char *rawstring = pstrdup(database);
         (void)initStringInfo(&buf);
         if (!SplitIdentifierString(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
-        else for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
+        for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
             int len;
             char *username;
             const char *database = (const char *)lfirst(cell);
