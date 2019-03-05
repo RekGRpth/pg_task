@@ -31,9 +31,9 @@ static volatile sig_atomic_t got_sigterm = false;
 static char *database;
 static char *username;
 
-int period;// = 1000;
-char *schema;// = NULL;
-char *table;// = NULL;
+int period;
+char *schema;
+char *table;
 
 static inline void sighup(SIGNAL_ARGS) {
     int save_errno = errno;
@@ -270,13 +270,10 @@ static inline void assign() {
     (void)pgstat_report_stat(true);
 }
 
-static inline void init(/*const char *database, const char *username*/) {
-//    int period;
+static inline void init() {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
     StringInfoData buf;
-//    const char *schema_quoted = quote_identifier(schema);
-//    const char *table_quoted = quote_identifier(table);
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s; CREATE TABLE IF NOT EXISTS %s.%s ("
         "id bigserial not null primary key,"
@@ -287,22 +284,6 @@ static inline void init(/*const char *database, const char *username*/) {
         "response text,"
         "state text not null default 'QUEUE'"
     ")", quote_identifier(schema), quote_identifier(schema), quote_identifier(table));
-//    const char *src = buf.data;
-/*    const char *src = "CREATE TABLE IF NOT EXISTS task ("
-        "id bigserial not null primary key,"
-        "dt timestamp not null default now(),"
-        "start timestamp,"
-        "stop timestamp,"
-        "request text NOT NULL,"
-        "response text,"
-        "state text not null default 'QUEUE'"
-    ")";*/
-/*    StringInfoData buf;
-    (void)initStringInfo(&buf);
-    (void)resetStringInfo(&buf);
-    (void)appendStringInfo(&buf, "pg_scheduler_period.%s", database);
-    (void)DefineCustomIntVariable(buf.data, "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    elog(LOG, "init database=%s, username=%s, period=%i", database, username, period);*/
     elog(LOG, "init database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
@@ -315,8 +296,6 @@ static inline void init(/*const char *database, const char *username*/) {
     (void)pgstat_report_activity(STATE_IDLE, buf.data);
     (void)pgstat_report_stat(true);
     if (buf.data != NULL) (void)pfree(buf.data);
-//    if (schema_quoted != NULL) (void)pfree((void *)schema_quoted);
-//    if (table_quoted != NULL) (void)pfree((void *)table_quoted);
 }
 
 void tick(Datum arg) {
@@ -338,17 +317,16 @@ void tick(Datum arg) {
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
-    (void)init(/*database, username*/);
+    (void)init();
     while (!got_sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
-//        elog(LOG, "tick database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
         (void)ResetLatch(MyLatch);
         if (rc & WL_POSTMASTER_DEATH) (void)proc_exit(1);
         if (got_sigterm) (void)proc_exit(0);
         if (got_sighup) {
             got_sighup = false;
             (void)ProcessConfigFile(PGC_SIGHUP);
-            (void)init(/*database, username*/);
+            (void)init();
         }
         if (rc & WL_TIMEOUT) (void)assign();
     }
@@ -357,7 +335,6 @@ void tick(Datum arg) {
 
 void _PG_init(void) {
     BackgroundWorker worker;
-//    char *database;
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errmsg("pg_scheduler can only be loaded via shared_preload_libraries"), errhint("Add pg_scheduler to the shared_preload_libraries configuration variable in postgresql.conf.")));
     MemSet(&worker, 0, sizeof(BackgroundWorker));
@@ -370,7 +347,6 @@ void _PG_init(void) {
     if (snprintf(worker.bgw_function_name, sizeof("tick"), "tick") != sizeof("tick") - 1) elog(FATAL, "snprintf");
     if (snprintf(worker.bgw_type, sizeof("pg_scheduler tick"), "pg_scheduler tick") != sizeof("pg_scheduler tick") - 1) elog(FATAL, "snprintf");
     (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &database, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
-//    (void)DefineCustomIntVariable("pg_scheduler.period", "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     elog(LOG, "_PG_init database=%s", database);
     {
         List *elemlist;
@@ -380,15 +356,11 @@ void _PG_init(void) {
         if (!SplitIdentifierString(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
         for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
             int len;
-//            char *username;
             const char *database = (const char *)lfirst(cell);
             elog(LOG, "_PG_init database=%s", database);
             (void)resetStringInfo(&buf);
             (void)appendStringInfo(&buf, "pg_scheduler_username.%s", database);
             (void)DefineCustomStringVariable(buf.data, "pg_scheduler username", NULL, &username, database, PGC_SIGHUP, 0, NULL, NULL, NULL);
-//            (void)resetStringInfo(&buf);
-//            (void)appendStringInfo(&buf, "pg_scheduler_period.%s", database);
-//            (void)DefineCustomIntVariable(buf.data, "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
             len = sizeof("%s %s pg_scheduler tick") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2;
             if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler tick", database, username) != len) elog(FATAL, "snprintf");
             len = strlen(username);
