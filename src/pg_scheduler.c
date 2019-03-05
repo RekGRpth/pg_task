@@ -361,16 +361,18 @@ void _PG_init(void) {
         (void)initStringInfo(&buf);
         if (!SplitIdentifierString(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
         for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
-            int len;
+            int len, len2;
             const char *database = (const char *)lfirst(cell);
             elog(LOG, "_PG_init database=%s", database);
             (void)resetStringInfo(&buf);
             (void)appendStringInfo(&buf, "pg_scheduler_username.%s", database);
             (void)DefineCustomStringVariable(buf.data, "pg_scheduler username", NULL, &username, database, PGC_SIGHUP, 0, NULL, NULL, NULL);
-            len = sizeof("%s %s pg_scheduler tick") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2;
+            len = sizeof("%s %s pg_scheduler tick") - 1 + strlen(database) - 1 + strlen(username) - 1 - 1 - 1;
             if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler tick", database, username) != len) elog(FATAL, "snprintf");
-            len = strlen(username);
-            if (snprintf(worker.bgw_extra + snprintf(worker.bgw_extra, strlen(database) + 1, "%s", database) + 1, len + 1, "%s", username) != len) elog(FATAL, "snprintf");
+            len = sizeof("%s") - 1 + strlen(database) - 1 - 1;
+            if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) elog(FATAL, "snprintf");
+            len2 = sizeof("%s") - 1 + strlen(username) - 1 - 1;
+            if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) elog(FATAL, "snprintf");
             (void)RegisterBackgroundWorker(&worker);
         }
         if (buf.data != NULL) (void)pfree(buf.data);
