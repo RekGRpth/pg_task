@@ -329,6 +329,7 @@ static inline void init() {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
     StringInfoData buf;
+    elog(LOG, "init database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s; CREATE TABLE IF NOT EXISTS %s.%s ("
         "id bigserial not null primary key,"
@@ -339,7 +340,6 @@ static inline void init() {
         "response text,"
         "state text not null default 'QUEUE'"
     ")", quote_identifier(schema), quote_identifier(schema), quote_identifier(table));
-    elog(LOG, "init database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
