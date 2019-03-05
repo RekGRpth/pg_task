@@ -73,9 +73,9 @@ static inline void launch_task(Datum arg) {
     len2 = sizeof("%s") - 1 + strlen(username) - 1 - 1;
     if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     len3 = sizeof("%s") - 1 + strlen(schema) - 1 - 1;
-    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1, len3 + 1, "%s", username) != len3) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1, len3 + 1, "%s", schema) != len3) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     len4 = sizeof("%s") - 1 + strlen(table) - 1 - 1;
-    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1 + len3 + 1, len4 + 1, "%s", username) != len4) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1 + len3 + 1, len4 + 1, "%s", table) != len4) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_main_arg = arg;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
