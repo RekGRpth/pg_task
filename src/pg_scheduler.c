@@ -229,40 +229,6 @@ static inline char *error() {
     return buf.data;
 }
 
-static inline void execute(Datum arg) {
-    char *src = work(arg);
-//    elog(LOG, "src=%s", src);
-    (void)pgstat_report_activity(STATE_RUNNING, src);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
-    (void)SPI_start_transaction();
-    elog(LOG, "execute src=%s", src);
-    PG_TRY(); {
-//        elog(LOG, "execute try SPI_commit_or_rollback_and_finish 1 src=%s", src);
-        if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0 %s %i", __FILE__, __LINE__); else {
-            char *data = success();
-//            elog(LOG, "execute try SPI_commit_or_rollback_and_finish 2 src=%s", src);
-            (void)SPI_commit();
-            if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-            (void)ProcessCompletedNotifies();
-            (void)pgstat_report_activity(STATE_IDLE, src);
-            (void)pgstat_report_stat(true);
-            (void)done(arg, data, "DONE");
-            if (data != NULL) (void)pfree(data);
-        }
-    } PG_CATCH(); {
-        char *data = error();
-//        elog(LOG, "execute catch SPI_commit_or_rollback_and_finish src=%s", src);
-        (void)SPI_rollback();
-        if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-        (void)ProcessCompletedNotifies();
-        (void)pgstat_report_activity(STATE_IDLE, src);
-        (void)pgstat_report_stat(true);
-        (void)done(arg, data, "FAIL");
-        if (data != NULL) (void)pfree(data);
-    } PG_END_TRY();
-    if (src != NULL) (void)free(src);
-}
-
 static inline void assign() {
     StringInfoData buf;
     (void)initStringInfo(&buf);
@@ -386,6 +352,41 @@ void tick(Datum arg) {
         if (rc & WL_TIMEOUT) (void)assign();
     }
     (void)proc_exit(1);
+}
+
+static inline void execute(Datum arg) {
+    char *src = work(arg);
+    elog(LOG, "execute src=%s", src);
+//    elog(LOG, "src=%s", src);
+    (void)pgstat_report_activity(STATE_RUNNING, src);
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
+    (void)SPI_start_transaction();
+//    elog(LOG, "execute src=%s", src);
+    PG_TRY(); {
+//        elog(LOG, "execute try SPI_commit_or_rollback_and_finish 1 src=%s", src);
+        if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0 %s %i", __FILE__, __LINE__); else {
+            char *data = success();
+//            elog(LOG, "execute try SPI_commit_or_rollback_and_finish 2 src=%s", src);
+            (void)SPI_commit();
+            if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
+            (void)ProcessCompletedNotifies();
+            (void)pgstat_report_activity(STATE_IDLE, src);
+            (void)pgstat_report_stat(true);
+            (void)done(arg, data, "DONE");
+            if (data != NULL) (void)pfree(data);
+        }
+    } PG_CATCH(); {
+        char *data = error();
+//        elog(LOG, "execute catch SPI_commit_or_rollback_and_finish src=%s", src);
+        (void)SPI_rollback();
+        if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
+        (void)ProcessCompletedNotifies();
+        (void)pgstat_report_activity(STATE_IDLE, src);
+        (void)pgstat_report_stat(true);
+        (void)done(arg, data, "FAIL");
+        if (data != NULL) (void)pfree(data);
+    } PG_END_TRY();
+    if (src != NULL) (void)free(src);
 }
 
 void task(Datum arg) {
