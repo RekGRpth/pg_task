@@ -324,13 +324,14 @@ void tick(Datum arg) {
     (void)init(/*database, username*/);
     while (!got_sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
-//        elog(LOG, "tick database=%s, username=%s, period=%i", database, username, period);
+//        elog(LOG, "tick database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
         (void)ResetLatch(MyLatch);
         if (rc & WL_POSTMASTER_DEATH) (void)proc_exit(1);
         if (got_sigterm) (void)proc_exit(0);
         if (got_sighup) {
             got_sighup = false;
             (void)ProcessConfigFile(PGC_SIGHUP);
+            (void)init(/*database, username*/);
         }
         if (rc & WL_TIMEOUT) (void)assign();
     }
