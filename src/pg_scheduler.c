@@ -121,7 +121,15 @@ static inline void init() {
     StringInfoData buf;
     elog(LOG, "init database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
-    (void)appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s; CREATE TABLE IF NOT EXISTS %s.%s ("
+    (void)appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", quote_identifier(schema));
+    (void)pgstat_report_activity(STATE_RUNNING, buf.data);
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
+    (void)SPI_start_transaction();
+    elog(LOG, "init buf.data=%s", buf.data);
+    if (SPI_execute(buf.data, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
+    (void)SPI_commit();
+    (void)resetStringInfo(&buf);
+    (void)appendStringInfo(&buf, "CREATE TABLE IF NOT EXISTS %s.%s ("
         "id bigserial not null primary key,"
         "dt timestamp not null default now(),"
         "start timestamp,"
@@ -129,9 +137,8 @@ static inline void init() {
         "request text NOT NULL,"
         "response text,"
         "state text not null default 'QUEUE'"
-    ")", quote_identifier(schema), quote_identifier(schema), quote_identifier(table));
+    ")", quote_identifier(schema), quote_identifier(table));
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
     elog(LOG, "init buf.data=%s", buf.data);
     if (SPI_execute(buf.data, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
