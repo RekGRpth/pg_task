@@ -49,98 +49,6 @@ static inline void sigterm(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
-static inline char *success() {
-    StringInfoData buf;
-    (void)initStringInfo(&buf);
-    if ((SPI_tuptable != NULL) && (SPI_processed > 0)) {
-        for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-            char *name = SPI_fname(SPI_tuptable->tupdesc, col);
-            char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
-            (void)appendStringInfo(&buf, "%s::%s", name, type);
-            if (col > 1) (void)appendStringInfoString(&buf, "\t");
-            if (name != NULL) (void)pfree(name);
-            if (type != NULL) (void)pfree(type);
-        }
-        (void)appendStringInfoString(&buf, "\n");
-        for (uint64 row = 0; row < SPI_processed; row++) {
-            for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-                char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
-                (void)appendStringInfo(&buf, "%s", value);
-                if (col > 1) (void)appendStringInfoString(&buf, "\t");
-                if (value != NULL) (void)pfree(value);
-            }
-            if (row < SPI_processed - 1) (void)appendStringInfoString(&buf, "\n");
-        }
-        elog(LOG, "success\n%s", buf.data);
-    }
-    return buf.data;
-}
-
-static inline char *error() {
-    ErrorData *edata = CopyErrorData();
-    StringInfoData buf;
-    (void)initStringInfo(&buf);
-    (void)appendStringInfo(&buf,
-        "elevel::int4\t%i\n"
-        "output_to_server::bool\t%s\n"
-        "output_to_client::bool\t%s\n"
-        "show_funcname::bool\t%s\n"
-        "hide_stmt::bool\t%s\n"
-        "hide_ctx::bool\t%s\n"
-        "filename::text\t%s\n"
-        "lineno::int4\t%i\n"
-        "funcname::text\t%s\n"
-        "domain::text\t%s\n"
-        "context_domain::text\t%s\n"
-        "sqlerrcode::int4\t%i\n"
-        "message::text\t%s\n"
-        "detail::text\t%s\n"
-        "detail_log::text\t%s\n"
-        "hint::text\t%s\n"
-        "context::text\t%s\n"
-        "message_id::text\t%s\n"
-        "schema_name::text\t%s\n"
-        "table_name::text\t%s\n"
-        "column_name::text\t%s\n"
-        "datatype_name::text\t%s\n"
-        "constraint_name::text\t%s\n"
-        "cursorpos::int4\t%i\n"
-        "internalpos::int4\t%i\n"
-        "internalquery::text\t%s\n"
-        "saved_errno::int4\t%i",
-        edata->elevel,
-        edata->output_to_server?"true":"false",
-        edata->output_to_client?"true":"false",
-        edata->show_funcname?"true":"false",
-        edata->hide_stmt?"true":"false",
-        edata->hide_ctx?"true":"false",
-        edata->filename,
-        edata->lineno,
-        edata->funcname,
-        edata->domain,
-        edata->context_domain,
-        edata->sqlerrcode,
-        edata->message,
-        edata->detail,
-        edata->detail_log,
-        edata->hint,
-        edata->context,
-        edata->message_id,
-        edata->schema_name,
-        edata->table_name,
-        edata->column_name,
-        edata->datatype_name,
-        edata->constraint_name,
-        edata->cursorpos,
-        edata->internalpos,
-        edata->internalquery,
-        edata->saved_errno
-    );
-    (void)FreeErrorData(edata);
-    elog(LOG, "error\n%s", buf.data);
-    return buf.data;
-}
-
 static inline void launch_task(Datum arg) {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
@@ -354,6 +262,98 @@ static inline void done(Datum arg, const char *data, const char *status) {
     (void)pgstat_report_activity(STATE_IDLE, buf.data);
     (void)pgstat_report_stat(true);
     if (buf.data != NULL) (void)pfree(buf.data);
+}
+
+static inline char *success() {
+    StringInfoData buf;
+    (void)initStringInfo(&buf);
+    if ((SPI_tuptable != NULL) && (SPI_processed > 0)) {
+        for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
+            char *name = SPI_fname(SPI_tuptable->tupdesc, col);
+            char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
+            (void)appendStringInfo(&buf, "%s::%s", name, type);
+            if (col > 1) (void)appendStringInfoString(&buf, "\t");
+            if (name != NULL) (void)pfree(name);
+            if (type != NULL) (void)pfree(type);
+        }
+        (void)appendStringInfoString(&buf, "\n");
+        for (uint64 row = 0; row < SPI_processed; row++) {
+            for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
+                char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
+                (void)appendStringInfo(&buf, "%s", value);
+                if (col > 1) (void)appendStringInfoString(&buf, "\t");
+                if (value != NULL) (void)pfree(value);
+            }
+            if (row < SPI_processed - 1) (void)appendStringInfoString(&buf, "\n");
+        }
+        elog(LOG, "success\n%s", buf.data);
+    }
+    return buf.data;
+}
+
+static inline char *error() {
+    ErrorData *edata = CopyErrorData();
+    StringInfoData buf;
+    (void)initStringInfo(&buf);
+    (void)appendStringInfo(&buf,
+        "elevel::int4\t%i\n"
+        "output_to_server::bool\t%s\n"
+        "output_to_client::bool\t%s\n"
+        "show_funcname::bool\t%s\n"
+        "hide_stmt::bool\t%s\n"
+        "hide_ctx::bool\t%s\n"
+        "filename::text\t%s\n"
+        "lineno::int4\t%i\n"
+        "funcname::text\t%s\n"
+        "domain::text\t%s\n"
+        "context_domain::text\t%s\n"
+        "sqlerrcode::int4\t%i\n"
+        "message::text\t%s\n"
+        "detail::text\t%s\n"
+        "detail_log::text\t%s\n"
+        "hint::text\t%s\n"
+        "context::text\t%s\n"
+        "message_id::text\t%s\n"
+        "schema_name::text\t%s\n"
+        "table_name::text\t%s\n"
+        "column_name::text\t%s\n"
+        "datatype_name::text\t%s\n"
+        "constraint_name::text\t%s\n"
+        "cursorpos::int4\t%i\n"
+        "internalpos::int4\t%i\n"
+        "internalquery::text\t%s\n"
+        "saved_errno::int4\t%i",
+        edata->elevel,
+        edata->output_to_server?"true":"false",
+        edata->output_to_client?"true":"false",
+        edata->show_funcname?"true":"false",
+        edata->hide_stmt?"true":"false",
+        edata->hide_ctx?"true":"false",
+        edata->filename,
+        edata->lineno,
+        edata->funcname,
+        edata->domain,
+        edata->context_domain,
+        edata->sqlerrcode,
+        edata->message,
+        edata->detail,
+        edata->detail_log,
+        edata->hint,
+        edata->context,
+        edata->message_id,
+        edata->schema_name,
+        edata->table_name,
+        edata->column_name,
+        edata->datatype_name,
+        edata->constraint_name,
+        edata->cursorpos,
+        edata->internalpos,
+        edata->internalquery,
+        edata->saved_errno
+    );
+    (void)FreeErrorData(edata);
+    elog(LOG, "error\n%s", buf.data);
+    return buf.data;
 }
 
 static inline void execute(Datum arg) {
