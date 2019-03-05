@@ -115,19 +115,27 @@ static inline char *work(Datum arg) {
 }
 
 static inline void done(Datum arg, const char *data, const char *status) {
+    const char *database = MyBgworkerEntry->bgw_extra;
+    const char *username = database + strlen(database) + 1;
+    const char *schema = username + strlen(username) + 1;
+    const char *table = schema + strlen(schema) + 1;
     Oid argtypes[] = {TEXTOID, TEXTOID, INT8OID};
     Datum Values[] = {CStringGetTextDatum(status), CStringGetTextDatum(data!=NULL?data:"(null)"), arg};
-    const char *src = "UPDATE task SET state = $1, stop = now(), response=$2 WHERE id = $3";
-    (void)pgstat_report_activity(STATE_RUNNING, src);
+//    const char *src = "UPDATE task SET state = $1, stop = now(), response=$2 WHERE id = $3";
+    StringInfoData buf;
+    (void)initStringInfo(&buf);
+    (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(schema), quote_identifier(table));
+    (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
-    elog(LOG, "done src=%s", src);
-    if (SPI_execute_with_args(src, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE %s %i", __FILE__, __LINE__);
+    elog(LOG, "done buf.data=%s", buf.data);
+    if (SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
-    (void)pgstat_report_activity(STATE_IDLE, src);
+    (void)pgstat_report_activity(STATE_IDLE, buf.data);
     (void)pgstat_report_stat(true);
+    if (buf.data != NULL) (void)pfree(buf.data);
 }
 
 static inline char *success() {
