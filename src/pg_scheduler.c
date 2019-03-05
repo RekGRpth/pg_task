@@ -30,6 +30,7 @@ static volatile sig_atomic_t got_sigterm = false;
 
 static char *database;
 static char *username;
+int period = 1000;
 
 static inline void sighup(SIGNAL_ARGS) {
     int save_errno = errno;
@@ -300,7 +301,7 @@ void tick(Datum arg) {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
     StringInfoData buf;
-    int period = 1000;
+//    int period = 1000;
     (void)initStringInfo(&buf);
 //    (void)resetStringInfo(&buf);
     (void)appendStringInfo(&buf, "pg_scheduler_period.%s", database);
