@@ -263,17 +263,6 @@ static inline void execute(Datum arg) {
     if (src != NULL) (void)free(src);
 }
 
-void task(Datum arg) {
-    const char *database = MyBgworkerEntry->bgw_extra;
-    const char *username = database + strlen(database) + 1;
-    const char *schema = username + strlen(username) + 1;
-    const char *table = schema + strlen(schema) + 1;
-    elog(LOG, "task database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
-    (void)BackgroundWorkerUnblockSignals();
-    (void)BackgroundWorkerInitializeConnection(database, username, 0);
-    (void)execute(arg);
-}
-
 static inline void assign() {
     StringInfoData buf;
     (void)initStringInfo(&buf);
@@ -294,6 +283,46 @@ static inline void assign() {
     (void)pgstat_report_activity(STATE_IDLE, buf.data);
     (void)pgstat_report_stat(true);
     if (buf.data != NULL) (void)pfree(buf.data);
+}
+
+void _PG_init(void) {
+    BackgroundWorker worker;
+    if (IsBinaryUpgrade) return;
+    if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errmsg("pg_scheduler can only be loaded via shared_preload_libraries"), errhint("Add pg_scheduler to the shared_preload_libraries configuration variable in postgresql.conf.")));
+    MemSet(&worker, 0, sizeof(BackgroundWorker));
+    worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
+    worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
+    worker.bgw_notify_pid = 0;
+    worker.bgw_main_arg = (Datum) 0;
+    worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
+    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_function_name, sizeof("tick"), "tick") != sizeof("tick") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_type, sizeof("pg_scheduler tick"), "pg_scheduler tick") != sizeof("pg_scheduler tick") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &database, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    elog(LOG, "_PG_init database=%s", database);
+    {
+        List *elemlist;
+        StringInfoData buf;
+        char *rawstring = pstrdup(database);
+        (void)initStringInfo(&buf);
+        if (!SplitIdentifierString(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
+        for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
+            int len, len2;
+            const char *database = (const char *)lfirst(cell);
+            elog(LOG, "_PG_init database=%s", database);
+            (void)resetStringInfo(&buf);
+            (void)appendStringInfo(&buf, "pg_scheduler_username.%s", database);
+            (void)DefineCustomStringVariable(buf.data, "pg_scheduler username", NULL, &username, database, PGC_SIGHUP, 0, NULL, NULL, NULL);
+            len = sizeof("%s %s pg_scheduler tick") - 1 + strlen(database) - 1 + strlen(username) - 1 - 1 - 1;
+            if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler tick", database, username) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+            len = sizeof("%s") - 1 + strlen(database) - 1 - 1;
+            if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+            len2 = sizeof("%s") - 1 + strlen(username) - 1 - 1;
+            if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+            (void)RegisterBackgroundWorker(&worker);
+        }
+        if (buf.data != NULL) (void)pfree(buf.data);
+    }
 }
 
 static inline void init() {
@@ -359,42 +388,13 @@ void tick(Datum arg) {
     (void)proc_exit(1);
 }
 
-void _PG_init(void) {
-    BackgroundWorker worker;
-    if (IsBinaryUpgrade) return;
-    if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errmsg("pg_scheduler can only be loaded via shared_preload_libraries"), errhint("Add pg_scheduler to the shared_preload_libraries configuration variable in postgresql.conf.")));
-    MemSet(&worker, 0, sizeof(BackgroundWorker));
-    worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    worker.bgw_notify_pid = 0;
-    worker.bgw_main_arg = (Datum) 0;
-    worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
-    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    if (snprintf(worker.bgw_function_name, sizeof("tick"), "tick") != sizeof("tick") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    if (snprintf(worker.bgw_type, sizeof("pg_scheduler tick"), "pg_scheduler tick") != sizeof("pg_scheduler tick") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &database, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    elog(LOG, "_PG_init database=%s", database);
-    {
-        List *elemlist;
-        StringInfoData buf;
-        char *rawstring = pstrdup(database);
-        (void)initStringInfo(&buf);
-        if (!SplitIdentifierString(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
-        for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
-            int len, len2;
-            const char *database = (const char *)lfirst(cell);
-            elog(LOG, "_PG_init database=%s", database);
-            (void)resetStringInfo(&buf);
-            (void)appendStringInfo(&buf, "pg_scheduler_username.%s", database);
-            (void)DefineCustomStringVariable(buf.data, "pg_scheduler username", NULL, &username, database, PGC_SIGHUP, 0, NULL, NULL, NULL);
-            len = sizeof("%s %s pg_scheduler tick") - 1 + strlen(database) - 1 + strlen(username) - 1 - 1 - 1;
-            if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler tick", database, username) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-            len = sizeof("%s") - 1 + strlen(database) - 1 - 1;
-            if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-            len2 = sizeof("%s") - 1 + strlen(username) - 1 - 1;
-            if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-            (void)RegisterBackgroundWorker(&worker);
-        }
-        if (buf.data != NULL) (void)pfree(buf.data);
-    }
+void task(Datum arg) {
+    const char *database = MyBgworkerEntry->bgw_extra;
+    const char *username = database + strlen(database) + 1;
+    const char *schema = username + strlen(username) + 1;
+    const char *table = schema + strlen(schema) + 1;
+    elog(LOG, "task database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
+    (void)BackgroundWorkerUnblockSignals();
+    (void)BackgroundWorkerInitializeConnection(database, username, 0);
+    (void)execute(arg);
 }
