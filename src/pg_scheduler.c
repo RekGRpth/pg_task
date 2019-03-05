@@ -272,7 +272,11 @@ static inline void assign() {
 
 static inline void init(/*const char *database, const char *username*/) {
 //    int period;
-    const char *src = "CREATE TABLE IF NOT EXISTS task ("
+    StringInfoData buf;
+//    const char *schema_quoted = quote_identifier(schema);
+//    const char *table_quoted = quote_identifier(table);
+    (void)initStringInfo(&buf);
+    (void)appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s; CREATE TABLE IF NOT EXISTS %s.%s ("
         "id bigserial not null primary key,"
         "dt timestamp not null default now(),"
         "start timestamp,"
@@ -280,33 +284,44 @@ static inline void init(/*const char *database, const char *username*/) {
         "request text NOT NULL,"
         "response text,"
         "state text not null default 'QUEUE'"
-    ")";
+    ")", quote_identifier(schema), quote_identifier(schema), quote_identifier(table));
+//    const char *src = buf.data;
+/*    const char *src = "CREATE TABLE IF NOT EXISTS task ("
+        "id bigserial not null primary key,"
+        "dt timestamp not null default now(),"
+        "start timestamp,"
+        "stop timestamp,"
+        "request text NOT NULL,"
+        "response text,"
+        "state text not null default 'QUEUE'"
+    ")";*/
 /*    StringInfoData buf;
     (void)initStringInfo(&buf);
     (void)resetStringInfo(&buf);
     (void)appendStringInfo(&buf, "pg_scheduler_period.%s", database);
     (void)DefineCustomIntVariable(buf.data, "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     elog(LOG, "init database=%s, username=%s, period=%i", database, username, period);*/
-    (void)pgstat_report_activity(STATE_RUNNING, src);
+    elog(LOG, "init period=%i, schema=%s, table=%s", period, schema, table);
+    (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
     (void)SPI_start_transaction();
-    elog(LOG, "init src=%s", src);
-    if (SPI_execute(src, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY");
+    elog(LOG, "init buf.data=%s", buf.data);
+    if (SPI_execute(buf.data, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY");
     (void)SPI_commit();
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH");
     (void)ProcessCompletedNotifies();
-    (void)pgstat_report_activity(STATE_IDLE, src);
+    (void)pgstat_report_activity(STATE_IDLE, buf.data);
     (void)pgstat_report_stat(true);
-//    if (buf.data != NULL) (void)pfree(buf.data);
+    if (buf.data != NULL) (void)pfree(buf.data);
+//    if (schema_quoted != NULL) (void)pfree((void *)schema_quoted);
+//    if (table_quoted != NULL) (void)pfree((void *)table_quoted);
 }
 
 void tick(Datum arg) {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
     StringInfoData buf;
-//    int period = 1000;
     (void)initStringInfo(&buf);
-//    (void)resetStringInfo(&buf);
     (void)appendStringInfo(&buf, "pg_scheduler_period.%s", database);
     (void)DefineCustomIntVariable(buf.data, "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     (void)resetStringInfo(&buf);
