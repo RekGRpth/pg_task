@@ -272,6 +272,8 @@ static inline void assign() {
 
 static inline void init(/*const char *database, const char *username*/) {
 //    int period;
+    const char *database = MyBgworkerEntry->bgw_extra;
+    const char *username = database + strlen(database) + 1;
     StringInfoData buf;
 //    const char *schema_quoted = quote_identifier(schema);
 //    const char *table_quoted = quote_identifier(table);
@@ -301,7 +303,7 @@ static inline void init(/*const char *database, const char *username*/) {
     (void)appendStringInfo(&buf, "pg_scheduler_period.%s", database);
     (void)DefineCustomIntVariable(buf.data, "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     elog(LOG, "init database=%s, username=%s, period=%i", database, username, period);*/
-    elog(LOG, "init period=%i, schema=%s, table=%s", period, schema, table);
+    elog(LOG, "init database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT");
     (void)SPI_start_transaction();
