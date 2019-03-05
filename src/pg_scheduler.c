@@ -49,43 +49,6 @@ static inline void sigterm(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
-static inline void launch_task(Datum arg) {
-    const char *database = MyBgworkerEntry->bgw_extra;
-    const char *username = database + strlen(database) + 1;
-    BackgroundWorker worker;
-    BackgroundWorkerHandle *handle;
-    pid_t pid;
-    int len, len2, len3, len4;
-    elog(LOG, "launch_task database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
-    MemSet(&worker, 0, sizeof(BackgroundWorker));
-    worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    worker.bgw_restart_time = BGW_NEVER_RESTART;
-    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    if (snprintf(worker.bgw_function_name, sizeof("task"), "task") != sizeof("task") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    if (snprintf(worker.bgw_type, sizeof("pg_scheduler task"), "pg_scheduler task") != sizeof("pg_scheduler task") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    len = sizeof("%s %s pg_scheduler task") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2;
-    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task", database, username) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    len = sizeof("%s") - 1 + strlen(database) - 1 - 1;
-    if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    len2 = sizeof("%s") - 1 + strlen(username) - 1 - 1;
-    if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    len3 = sizeof("%s") - 1 + strlen(schema) - 1 - 1;
-    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1, len3 + 1, "%s", schema) != len3) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    len4 = sizeof("%s") - 1 + strlen(table) - 1 - 1;
-    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1 + len3 + 1, len4 + 1, "%s", table) != len4) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    worker.bgw_notify_pid = MyProcPid;
-    worker.bgw_main_arg = arg;
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
-    switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
-        case BGWH_STARTED: break;
-        case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background process"), errhint("More details may be available in the server log.")));
-        case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background processes without postmaster"), errhint("Kill all remaining database processes and restart the database.")));
-        default: elog(ERROR, "unexpected bgworker handle status");
-    }
-    if (handle != NULL) (void)pfree(handle);
-}
-
 static inline char *work(Datum arg) {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
@@ -227,6 +190,43 @@ static inline char *error() {
     (void)FreeErrorData(edata);
     elog(LOG, "error\n%s", buf.data);
     return buf.data;
+}
+
+static inline void launch_task(Datum arg) {
+    const char *database = MyBgworkerEntry->bgw_extra;
+    const char *username = database + strlen(database) + 1;
+    BackgroundWorker worker;
+    BackgroundWorkerHandle *handle;
+    pid_t pid;
+    int len, len2, len3, len4;
+    elog(LOG, "launch_task database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
+    MemSet(&worker, 0, sizeof(BackgroundWorker));
+    worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
+    worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
+    worker.bgw_restart_time = BGW_NEVER_RESTART;
+    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_function_name, sizeof("task"), "task") != sizeof("task") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_type, sizeof("pg_scheduler task"), "pg_scheduler task") != sizeof("pg_scheduler task") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    len = sizeof("%s %s pg_scheduler task") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2;
+    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task", database, username) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    len = sizeof("%s") - 1 + strlen(database) - 1 - 1;
+    if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    len2 = sizeof("%s") - 1 + strlen(username) - 1 - 1;
+    if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    len3 = sizeof("%s") - 1 + strlen(schema) - 1 - 1;
+    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1, len3 + 1, "%s", schema) != len3) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    len4 = sizeof("%s") - 1 + strlen(table) - 1 - 1;
+    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1 + len3 + 1, len4 + 1, "%s", table) != len4) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    worker.bgw_notify_pid = MyProcPid;
+    worker.bgw_main_arg = arg;
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
+    switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
+        case BGWH_STARTED: break;
+        case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background process"), errhint("More details may be available in the server log.")));
+        case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background processes without postmaster"), errhint("Kill all remaining database processes and restart the database.")));
+        default: elog(ERROR, "unexpected bgworker handle status");
+    }
+    if (handle != NULL) (void)pfree(handle);
 }
 
 static inline void assign() {
