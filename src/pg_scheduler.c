@@ -49,34 +49,6 @@ static inline void sigterm(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
-static inline char *work(Datum arg) {
-    const char *database = MyBgworkerEntry->bgw_extra;
-    const char *username = database + strlen(database) + 1;
-    const char *schema = username + strlen(username) + 1;
-    const char *table = schema + strlen(schema) + 1;
-    Oid argtypes[] = {INT8OID};
-    Datum Values[] = {arg};
-    char *data;
-    StringInfoData buf;
-    (void)initStringInfo(&buf);
-    (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request", quote_identifier(schema), quote_identifier(table));
-    (void)pgstat_report_activity(STATE_RUNNING, buf.data);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
-    (void)SPI_start_transaction();
-    elog(LOG, "work buf.data=%s", buf.data);
-    if (SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
-    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__);
-    data = strdup(SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request")));
-//    data = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
-    (void)SPI_commit();
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-    (void)ProcessCompletedNotifies();
-    (void)pgstat_report_activity(STATE_IDLE, buf.data);
-    (void)pgstat_report_stat(true);
-    if (buf.data != NULL) (void)pfree(buf.data);
-    return data;
-}
-
 static inline void done(Datum arg, const char *data, const char *status) {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
@@ -352,6 +324,35 @@ void tick(Datum arg) {
         if (rc & WL_TIMEOUT) (void)assign();
     }
     (void)proc_exit(1);
+}
+
+static inline char *work(Datum arg) {
+    const char *database = MyBgworkerEntry->bgw_extra;
+    const char *username = database + strlen(database) + 1;
+    const char *schema = username + strlen(username) + 1;
+    const char *table = schema + strlen(schema) + 1;
+    Oid argtypes[] = {INT8OID};
+    Datum Values[] = {arg};
+    char *data;
+    StringInfoData buf;
+    (void)initStringInfo(&buf);
+    (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request", quote_identifier(schema), quote_identifier(table));
+    elog(LOG, "work buf.data=%s", buf.data);
+    (void)pgstat_report_activity(STATE_RUNNING, buf.data);
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
+    (void)SPI_start_transaction();
+//    elog(LOG, "work buf.data=%s", buf.data);
+    if (SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
+    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__);
+    data = strdup(SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request")));
+//    data = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
+    (void)SPI_commit();
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
+    (void)ProcessCompletedNotifies();
+    (void)pgstat_report_activity(STATE_IDLE, buf.data);
+    (void)pgstat_report_stat(true);
+    if (buf.data != NULL) (void)pfree(buf.data);
+    return data;
 }
 
 static inline void execute(Datum arg) {
