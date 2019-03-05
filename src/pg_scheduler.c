@@ -121,7 +121,6 @@ static inline void done(Datum arg, const char *data, const char *status) {
     const char *table = schema + strlen(schema) + 1;
     Oid argtypes[] = {TEXTOID, TEXTOID, INT8OID};
     Datum Values[] = {CStringGetTextDatum(status), CStringGetTextDatum(data!=NULL?data:"(null)"), arg};
-//    const char *src = "UPDATE task SET state = $1, stop = now(), response=$2 WHERE id = $3";
     StringInfoData buf;
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(schema), quote_identifier(table));
