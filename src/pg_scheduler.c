@@ -166,18 +166,20 @@ void loop(Datum arg) {
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
-    while (!got_sigterm) {
+    (void)check();
+    do {
+        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, LONG_MAX, PG_WAIT_EXTENSION);
         (void)ResetLatch(MyLatch);
+        if (rc & WL_POSTMASTER_DEATH) (void)proc_exit(1);
         CHECK_FOR_INTERRUPTS();
         if (got_sigterm) (void)proc_exit(0);
         if (got_sighup) {
             got_sighup = false;
             (void)ProcessConfigFile(PGC_SIGHUP);
+            (void)check();
         }
-        (void)check();
-        if (WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION) & WL_POSTMASTER_DEATH) (void)proc_exit(1);
-    }
-    (void)proc_exit(1);
+    } while (!got_sigterm);
+    (void)proc_exit(0);
 }
 
 static inline void lock() {
@@ -319,7 +321,7 @@ void tick(Datum arg) {
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
     (void)lock();
     (void)init();
-    while (!got_sigterm) {
+    do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
         (void)ResetLatch(MyLatch);
         if (rc & WL_POSTMASTER_DEATH) (void)proc_exit(1);
@@ -328,12 +330,11 @@ void tick(Datum arg) {
         if (got_sighup) {
             got_sighup = false;
             (void)ProcessConfigFile(PGC_SIGHUP);
-//            (void)lock();
             (void)init();
         }
         if (rc & WL_TIMEOUT) (void)assign();
-    }
-    (void)proc_exit(1);
+    } while (!got_sigterm);
+    (void)proc_exit(0);
 }
 
 static inline char *work(Datum arg) {
