@@ -170,7 +170,7 @@ void loop(Datum arg) {
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, LONG_MAX, PG_WAIT_EXTENSION);
         if (rc & WL_LATCH_SET) elog(LOG, "loop WL_LATCH_SET");
-        if (rc & WL_TIMEOUT) elog(LOG, "loop WL_TIMEOUT");
+        //if (rc & WL_TIMEOUT) elog(LOG, "loop WL_TIMEOUT");
         if (rc & WL_POSTMASTER_DEATH) elog(LOG, "loop WL_POSTMASTER_DEATH");
         if (got_sigterm) elog(LOG, "loop got_sigterm");
         if (got_sighup) elog(LOG, "loop got_sighup");
@@ -330,7 +330,7 @@ void tick(Datum arg) {
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
         if (rc & WL_LATCH_SET) elog(LOG, "tick WL_LATCH_SET");
-        if (rc & WL_TIMEOUT) elog(LOG, "tick WL_TIMEOUT");
+        //if (rc & WL_TIMEOUT) elog(LOG, "tick WL_TIMEOUT");
         if (rc & WL_POSTMASTER_DEATH) elog(LOG, "tick WL_POSTMASTER_DEATH");
         if (got_sigterm) elog(LOG, "tick got_sigterm");
         if (got_sighup) elog(LOG, "tick got_sighup");
@@ -338,10 +338,7 @@ void tick(Datum arg) {
         (void)ResetLatch(MyLatch);
         if (rc & WL_POSTMASTER_DEATH) (void)proc_exit(1);
         CHECK_FOR_INTERRUPTS();
-        if (got_sigterm) {
-//            MyBgworkerEntry.bgw_restart_time = BGW_NEVER_RESTART;
-            (void)proc_exit(0);
-        }
+        if (got_sigterm) (void)proc_exit(0);
         if (got_sighup) {
             got_sighup = false;
             (void)ProcessConfigFile(PGC_SIGHUP);
