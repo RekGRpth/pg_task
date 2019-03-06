@@ -113,7 +113,7 @@ static inline void check() {
     if ((argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "argtypes == NULL %s %i", __FILE__, __LINE__);
     if ((Values = palloc(sizeof(Datum) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "Values == NULL %s %i", __FILE__, __LINE__);
     (void)initStringInfo(&buf);
-    (void)appendStringInfoString(&buf, "SELECT datname, usename FROM pg_database, pg_user WHERE (datname, usename) in (");
+    (void)appendStringInfoString(&buf, "with s as (select * from (values ");
     for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
         const char *database_username = (const char *)lfirst(cell);
         char *rawstring = pstrdup(database_username);
@@ -135,7 +135,7 @@ static inline void check() {
         if (elemlist != NULL) (void)list_free(elemlist);
         i++;
     }
-    (void)appendStringInfoString(&buf, ") AND NOT EXISTS (SELECT 1 FROM pg_locks WHERE classid = pg_database.oid AND objid = pg_user.usesysid)");
+    (void)appendStringInfoString(&buf, ") as s (d, u)), l as (select * from pg_locks where locktype = 'advisory' and mode = 'ExclusiveLock' and granted) SELECT datname, usename, true as start FROM pg_database, pg_user WHERE (datname, usename) in (select * from s) AND NOT EXISTS (SELECT pid FROM l WHERE classid = pg_database.oid AND objid = pg_user.usesysid and database = pg_database.oid) union SELECT datname, usename, not pg_terminate_backend(pid) as start from pg_stat_activity inner join l using (pid) where (datname, usename) not in (select * from s) and classid = datid and objid = usesysid and database = datid");
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
@@ -146,8 +146,9 @@ static inline void check() {
         bool isnull;
         char *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &isnull));
         char *username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &isnull));
-        elog(LOG, "check row=%lu, database=%s, username=%s", row, database, username);
-        (void)launch_tick(database, username);
+        bool start = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "start"), &isnull));
+        elog(LOG, "check row=%lu, database=%s, username=%s, start=%s", row, database, username, start?"true":"false");
+        if (start) (void)launch_tick(database, username);
     }
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
