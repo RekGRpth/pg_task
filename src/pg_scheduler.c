@@ -113,7 +113,7 @@ static inline void check() {
     if ((argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "argtypes == NULL %s %i", __FILE__, __LINE__);
     if ((Values = palloc(sizeof(Datum) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "Values == NULL %s %i", __FILE__, __LINE__);
     (void)initStringInfo(&buf);
-    (void)appendStringInfoString(&buf, "with s as (select * from (values ");
+    (void)appendStringInfoString(&buf, "WITH s AS (SELECT * FROM (VALUES ");
     for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
         const char *database_username = (const char *)lfirst(cell);
         char *rawstring = pstrdup(database_username);
@@ -135,7 +135,11 @@ static inline void check() {
         if (elemlist != NULL) (void)list_free(elemlist);
         i++;
     }
-    (void)appendStringInfoString(&buf, ") as s (d, u)), l as (select * from pg_locks where locktype = 'advisory' and mode = 'ExclusiveLock' and granted) SELECT datname, usename, true as start FROM pg_database, pg_user WHERE (datname, usename) in (select * from s) AND NOT EXISTS (SELECT pid FROM l WHERE classid = pg_database.oid AND objid = pg_user.usesysid and database = pg_database.oid) union SELECT datname, usename, not pg_terminate_backend(pid) as start from pg_stat_activity inner join l using (pid) where (datname, usename) not in (select * from s) and classid = datid and objid = usesysid and database = datid");
+    (void)appendStringInfoString(&buf, ") AS s (d, u)), l AS ("
+        "SELECT * FROM pg_locks WHERE locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted"
+    ") SELECT datname, usename, true AS start FROM pg_database, pg_user WHERE (datname, usename) IN (SELECT * FROM s) AND NOT EXISTS ("
+        "SELECT pid FROM l WHERE classid = pg_database.oid AND objid = pg_user.usesysid and database = pg_database.oid"
+    ") UNION SELECT datname, usename, NOT pg_terminate_backend(pid) AS start FROM pg_stat_activity INNER JOIN l USING (pid) WHERE (datname, usename) NOT IN (SELECT * FROM s) AND classid = datid AND objid = usesysid AND database = datid");
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
