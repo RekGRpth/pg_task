@@ -145,7 +145,7 @@ static inline void check() {
     if ((argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "argtypes == NULL %s %i", __FILE__, __LINE__);
     if ((Values = palloc(sizeof(Datum) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "Values == NULL %s %i", __FILE__, __LINE__);
     (void)initStringInfo(&buf);
-    (void)appendStringInfoString(&buf, "SELECT datname, usename, pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) FROM pg_database, pg_user WHERE (datname, usename) in (");
+    (void)appendStringInfoString(&buf, "SELECT datname, usename FROM pg_database, pg_user WHERE (datname, usename) in (");
 //    if ((database_datum = palloc(sizeof(Datum) * list_length(elemlist))) == NULL) elog(FATAL, "database_datum == NULL %s %i", __FILE__, __LINE__);
 //    if ((username_datum = palloc(sizeof(Datum) * list_length(elemlist))) == NULL) elog(FATAL, "username_datum == NULL %s %i", __FILE__, __LINE__);
     for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
@@ -171,7 +171,7 @@ static inline void check() {
         if (elemlist != NULL) (void)list_free(elemlist);
         i++;
     }
-    (void)appendStringInfoString(&buf, ")");
+    (void)appendStringInfoString(&buf, ") AND NOT EXISTS (SELECT 1 FROM pg_locks WHERE classid = pg_database.oid AND objid = pg_user.usesysid)");
 //    elog(LOG, "check buf.data=%s", buf.data);
 //    database_array = construct_array(database_datum, i, TEXTOID, -1, false, 'i');
 //    username_array = construct_array(database_datum, i, TEXTOID, -1, false, 'i');
@@ -194,10 +194,10 @@ static inline void check() {
 //            elog(LOG, "check row=%lu, value=%s", row, DatumGetCString(value));
             char *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &isnull));
             char *username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &isnull));
-            bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "pg_try_advisory_lock"), &isnull));
+//            bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "pg_try_advisory_lock"), &isnull));
 //            char *database = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"));
 //            char *username = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"));
-            elog(LOG, "check row=%lu, database=%s, username=%s, lock=%s", row, database, username, lock?"true":"false");
+            elog(LOG, "check row=%lu, database=%s, username=%s", row, database, username);
             (void)launch_tick(database, username);
 //            if (database != NULL) (void)pfree(database);
 //            if (username != NULL) (void)pfree(username);
@@ -231,7 +231,7 @@ void loop(Datum arg) {
         if (got_sighup) {
             got_sighup = false;
             (void)ProcessConfigFile(PGC_SIGHUP);
-        } else
+        }
         (void)check();
         if (WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION) & WL_POSTMASTER_DEATH) (void)proc_exit(1);
     }
