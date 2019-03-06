@@ -61,7 +61,7 @@ static inline void launch_loop() {
     if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     if (snprintf(worker.bgw_function_name, sizeof("loop"), "loop") != sizeof("loop") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     if (snprintf(worker.bgw_type, sizeof("pg_scheduler loop"), "pg_scheduler loop") != sizeof("pg_scheduler loop") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    if (snprintf(worker.bgw_name, sizeof("pg_scheduler loop"), "pg_scheduler loop") != sizeof("pg_scheduler loop") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_name, sizeof("postgres postgres pg_scheduler loop"), "postgres postgres pg_scheduler loop") != sizeof("postgres postgres pg_scheduler loop") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     (void)RegisterBackgroundWorker(&worker);
 }
 
@@ -223,7 +223,7 @@ void loop(Datum arg) {
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
     (void)BackgroundWorkerUnblockSignals();
-    (void)BackgroundWorkerInitializeConnection("postgres", NULL, 0);
+    (void)BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     while (!got_sigterm) {
         (void)ResetLatch(MyLatch);
         CHECK_FOR_INTERRUPTS();
