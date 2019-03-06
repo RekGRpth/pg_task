@@ -184,7 +184,6 @@ static inline void lock() {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
     const char *src = "SELECT pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) FROM pg_database, pg_user WHERE datname = current_catalog AND usename = current_user";
-//    const char *src = "SELECT pg_try_advisory_lock(pg_database.oid::INT) FROM pg_database WHERE datname = current_catalog";
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
