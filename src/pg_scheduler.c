@@ -67,7 +67,7 @@ static inline void launch_loop() {
 void _PG_init(void) {
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errmsg("pg_scheduler can only be loaded via shared_preload_libraries"), errhint("Add pg_scheduler to the shared_preload_libraries configuration variable in postgresql.conf.")));
-    (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &database, "postgres:postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &database, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
     (void)launch_loop();
 }
 
@@ -169,6 +169,12 @@ void loop(Datum arg) {
     (void)check();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, LONG_MAX, PG_WAIT_EXTENSION);
+        if (rc & WL_LATCH_SET) elog(LOG, "loop WL_LATCH_SET");
+        if (rc & WL_TIMEOUT) elog(LOG, "loop WL_TIMEOUT");
+        if (rc & WL_POSTMASTER_DEATH) elog(LOG, "loop WL_POSTMASTER_DEATH");
+        if (got_sigterm) elog(LOG, "loop got_sigterm");
+        if (got_sighup) elog(LOG, "loop got_sighup");
+        if (ProcDiePending) elog(LOG, "loop ProcDiePending");
         (void)ResetLatch(MyLatch);
         if (rc & WL_POSTMASTER_DEATH) (void)proc_exit(1);
         CHECK_FOR_INTERRUPTS();
@@ -323,10 +329,19 @@ void tick(Datum arg) {
     (void)init();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
+        if (rc & WL_LATCH_SET) elog(LOG, "tick WL_LATCH_SET");
+        if (rc & WL_TIMEOUT) elog(LOG, "tick WL_TIMEOUT");
+        if (rc & WL_POSTMASTER_DEATH) elog(LOG, "tick WL_POSTMASTER_DEATH");
+        if (got_sigterm) elog(LOG, "tick got_sigterm");
+        if (got_sighup) elog(LOG, "tick got_sighup");
+        if (ProcDiePending) elog(LOG, "loop ProcDiePending");
         (void)ResetLatch(MyLatch);
         if (rc & WL_POSTMASTER_DEATH) (void)proc_exit(1);
         CHECK_FOR_INTERRUPTS();
-        if (got_sigterm) (void)proc_exit(0);
+        if (got_sigterm) {
+//            MyBgworkerEntry.bgw_restart_time = BGW_NEVER_RESTART;
+            (void)proc_exit(0);
+        }
         if (got_sighup) {
             got_sighup = false;
             (void)ProcessConfigFile(PGC_SIGHUP);
