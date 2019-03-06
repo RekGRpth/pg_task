@@ -22,6 +22,7 @@ PG_MODULE_MAGIC;
 
 void _PG_init(void);
 
+void loop(Datum arg);
 void tick(Datum arg);
 void task(Datum arg);
 
@@ -29,7 +30,7 @@ static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
 
 static char *database;
-static char *username;
+//static char *username;
 
 int period;
 char *schema;
@@ -49,13 +50,39 @@ static inline void sigterm(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
-static inline void launch_tick(const char *database, const char *username) {
-    int len, len2;
+static inline void launch_loop() {
     BackgroundWorker worker;
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = 0;
+    worker.bgw_main_arg = (Datum) 0;
+    worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
+    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_function_name, sizeof("loop"), "loop") != sizeof("loop") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_type, sizeof("pg_scheduler loop"), "pg_scheduler loop") != sizeof("pg_scheduler loop") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_name, sizeof("pg_scheduler loop"), "pg_scheduler loop") != sizeof("pg_scheduler loop") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    (void)RegisterBackgroundWorker(&worker);
+}
+
+void _PG_init(void) {
+    if (IsBinaryUpgrade) return;
+    if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errmsg("pg_scheduler can only be loaded via shared_preload_libraries"), errhint("Add pg_scheduler to the shared_preload_libraries configuration variable in postgresql.conf.")));
+    (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &database, "postgres:postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    //elog(LOG, "_PG_init database=%s", database);
+    (void)launch_loop();
+}
+
+static inline void launch_tick(const char *database, const char *username) {
+    int len, len2;
+    pid_t pid;
+    BackgroundWorkerHandle *handle;
+    BackgroundWorker worker;
+    MemSet(&worker, 0, sizeof(BackgroundWorker));
+    worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
+    worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
+//    worker.bgw_notify_pid = 0;
+    worker.bgw_notify_pid = MyProcPid;
     worker.bgw_main_arg = (Datum) 0;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
@@ -67,10 +94,18 @@ static inline void launch_tick(const char *database, const char *username) {
     if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     len2 = sizeof("%s") - 1 + strlen(username) - 1 - 1;
     if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    (void)RegisterBackgroundWorker(&worker);
+//    (void)RegisterBackgroundWorker(&worker);
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
+    switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
+        case BGWH_STARTED: break;
+        case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background process"), errhint("More details may be available in the server log.")));
+        case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background processes without postmaster"), errhint("Kill all remaining database processes and restart the database.")));
+        default: elog(ERROR, "unexpected bgworker handle status");
+    }
+    if (handle != NULL) (void)pfree(handle);
 }
 
-void _PG_init(void) {
+/*void _PG_init(void) {
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errmsg("pg_scheduler can only be loaded via shared_preload_libraries"), errhint("Add pg_scheduler to the shared_preload_libraries configuration variable in postgresql.conf.")));
     (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &database, "postgres", PGC_POSTMASTER, 0, NULL, NULL, NULL);
@@ -81,6 +116,7 @@ void _PG_init(void) {
         char *rawstring = pstrdup(database);
         (void)initStringInfo(&buf);
         if (!SplitIdentifierString(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
+        if (rawstring != NULL) (void)pfree(rawstring);
         for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
             const char *database = (const char *)lfirst(cell);
             elog(LOG, "_PG_init database=%s", database);
@@ -91,12 +127,122 @@ void _PG_init(void) {
         }
         if (buf.data != NULL) (void)pfree(buf.data);
     }
+}*/
+
+static inline void check() {
+    int i = 0;
+    List *elemlist;
+    StringInfoData buf;
+    Oid *argtypes;
+    Datum *Values;
+//    ArrayType *database_array;
+//    ArrayType *username_array;
+//    Datum *database_datum;
+//    Datum *username_datum;
+    char *rawstring = pstrdup(database);
+    elog(LOG, "check database=%s", database);
+    if (!SplitGUCList(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
+    if ((argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "argtypes == NULL %s %i", __FILE__, __LINE__);
+    if ((Values = palloc(sizeof(Datum) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "Values == NULL %s %i", __FILE__, __LINE__);
+    (void)initStringInfo(&buf);
+    (void)appendStringInfoString(&buf, "SELECT datname, usename, pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) FROM pg_database, pg_user WHERE (datname, usename) in (");
+//    if ((database_datum = palloc(sizeof(Datum) * list_length(elemlist))) == NULL) elog(FATAL, "database_datum == NULL %s %i", __FILE__, __LINE__);
+//    if ((username_datum = palloc(sizeof(Datum) * list_length(elemlist))) == NULL) elog(FATAL, "username_datum == NULL %s %i", __FILE__, __LINE__);
+    for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
+        const char *database_username = (const char *)lfirst(cell);
+        char *rawstring = pstrdup(database_username);
+        List *elemlist;
+        if (!SplitIdentifierString(rawstring, ':', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf"))); else {
+            ListCell *cell = list_head(elemlist);
+            const char *database = (const char *)lfirst(cell);
+            const char *username = database;
+            if ((cell = lnext(cell)) != NULL) username = (const char *)lfirst(cell);
+            elog(LOG, "check database=%s, username=%s", database, username);
+            if (i > 0) (void)appendStringInfoString(&buf, ", ");
+            (void)appendStringInfo(&buf, "($%i, $%i)", 2 * i + 1, 2 * i + 1 + 1);
+            argtypes[2 * i] = TEXTOID;
+            Values[2 * i] = CStringGetTextDatum(strdup(database));
+            argtypes[2 * i + 1] = TEXTOID;
+            Values[2 * i + 1] = CStringGetTextDatum(strdup(username));
+//            database_datum[i] = CStringGetTextDatum(database);
+//            username_datum[i] = CStringGetTextDatum(username);
+        }
+        if (rawstring != NULL) (void)pfree(rawstring);
+        if (elemlist != NULL) (void)list_free(elemlist);
+        i++;
+    }
+    (void)appendStringInfoString(&buf, ")");
+//    elog(LOG, "check buf.data=%s", buf.data);
+//    database_array = construct_array(database_datum, i, TEXTOID, -1, false, 'i');
+//    username_array = construct_array(database_datum, i, TEXTOID, -1, false, 'i');
+//    {
+//        Oid argtypes[] = {TEXTARRAYOID, TEXTARRAYOID};
+//        Datum Values[] = {PointerGetDatum(database_array), PointerGetDatum(username_array)};
+//        const char *src = "SELECT datname, usename FROM pg_database, pg_user WHERE pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) AND datname = ANY($1) AND usename = ANY($2)";
+//        (void)resetStringInfo(&buf);
+//        (void)appendStringInfoString(&buf, "select 'qwe' as datname, 'rty' as username");
+        (void)pgstat_report_activity(STATE_RUNNING, buf.data);
+        if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
+        (void)SPI_start_transaction();
+        elog(LOG, "check buf.data=%s", buf.data);
+        if (SPI_execute_with_args(buf.data, list_length(elemlist) * 2, argtypes, Values, NULL, false, 0) != SPI_OK_SELECT) elog(FATAL, "SPI_execute_with_args != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
+        (void)SPI_commit();
+        for (uint64 row = 0; row < SPI_processed; row++) {
+//            elog(LOG, "check row=%lu", row);
+            bool isnull;
+//            Datum value = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &isnull);
+//            elog(LOG, "check row=%lu, value=%s", row, DatumGetCString(value));
+            char *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &isnull));
+            char *username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &isnull));
+            bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "pg_try_advisory_lock"), &isnull));
+//            char *database = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"));
+//            char *username = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"));
+            elog(LOG, "check row=%lu, database=%s, username=%s, lock=%s", row, database, username, lock?"true":"false");
+            (void)launch_tick(database, username);
+//            if (database != NULL) (void)pfree(database);
+//            if (username != NULL) (void)pfree(username);
+        }
+        if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
+        (void)ProcessCompletedNotifies();
+        (void)pgstat_report_activity(STATE_IDLE, buf.data);
+        (void)pgstat_report_stat(true);
+//    }
+    if (rawstring != NULL) (void)pfree(rawstring);
+    if (buf.data != NULL) (void)pfree(buf.data);
+    if (argtypes != NULL) (void)pfree(argtypes);
+    if (Values != NULL) (void)pfree(Values);
+    if (elemlist != NULL) (void)list_free(elemlist);
+//    if (database_datum != NULL) (void)pfree(database_datum);
+//    if (username_datum != NULL) (void)pfree(username_datum);
+//    if (database_array != NULL) (void)pfree(database_array);
+//    if (username_array != NULL) (void)pfree(username_array);
+}
+
+void loop(Datum arg) {
+    elog(LOG, "loop database=%s", database);
+    (pqsigfunc)pqsignal(SIGHUP, sighup);
+    (pqsigfunc)pqsignal(SIGTERM, sigterm);
+    (void)BackgroundWorkerUnblockSignals();
+    (void)BackgroundWorkerInitializeConnection("postgres", NULL, 0);
+    while (!got_sigterm) {
+        (void)ResetLatch(MyLatch);
+        CHECK_FOR_INTERRUPTS();
+        if (got_sigterm) (void)proc_exit(0);
+        if (got_sighup) {
+            got_sighup = false;
+            (void)ProcessConfigFile(PGC_SIGHUP);
+        } else
+        (void)check();
+        if (WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION) & WL_POSTMASTER_DEATH) (void)proc_exit(1);
+    }
+    (void)proc_exit(1);
 }
 
 static inline void lock() {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
     const char *src = "SELECT pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) FROM pg_database, pg_user WHERE datname = current_catalog AND usename = current_user";
+//    const char *src = "SELECT pg_try_advisory_lock(pg_database.oid::INT) FROM pg_database WHERE datname = current_catalog";
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
@@ -105,7 +251,7 @@ static inline void lock() {
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__); else {
         bool isnull;
         bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "pg_try_advisory_lock"), &isnull));
-//        if (isnull) elog(FATAL, "isnull %s %i", __FILE__, __LINE__);
+        if (isnull) elog(FATAL, "isnull %s %i", __FILE__, __LINE__);
         if (!lock) elog(FATAL, "already running database=%s, username=%s %s %i", database, username, __FILE__, __LINE__);
     }
     (void)SPI_commit();
@@ -199,8 +345,10 @@ static inline void assign() {
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
+        Datum value = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
+        if (isnull) elog(FATAL, "isnull %s %i", __FILE__, __LINE__);
         elog(LOG, "row=%lu", row);
-        (void)launch_task(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull));
+        (void)launch_task(value);
     }
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
@@ -234,10 +382,12 @@ void tick(Datum arg) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
         (void)ResetLatch(MyLatch);
         if (rc & WL_POSTMASTER_DEATH) (void)proc_exit(1);
+        CHECK_FOR_INTERRUPTS();
         if (got_sigterm) (void)proc_exit(0);
         if (got_sighup) {
             got_sighup = false;
             (void)ProcessConfigFile(PGC_SIGHUP);
+//            (void)lock();
             (void)init();
         }
         if (rc & WL_TIMEOUT) (void)assign();
