@@ -247,7 +247,7 @@ static inline void lock() {
     (void)pgstat_report_stat(true);
 }
 
-static inline void init() {
+static inline void init_schema() {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
     StringInfoData buf;
@@ -257,11 +257,25 @@ static inline void init() {
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
-    elog(LOG, "init buf.data=%s", buf.data);
+    elog(LOG, "init_schema buf.data=%s", buf.data);
     if (SPI_execute(buf.data, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
-    (void)resetStringInfo(&buf);
-    (void)appendStringInfo(&buf, "CREATE TABLE IF NOT EXISTS %s.%s (\n"
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
+    (void)ProcessCompletedNotifies();
+    (void)pgstat_report_activity(STATE_IDLE, buf.data);
+    (void)pgstat_report_stat(true);
+    if (buf.data != NULL) (void)pfree(buf.data);
+}
+
+static inline void init_table() {
+    const char *database = MyBgworkerEntry->bgw_extra;
+    const char *username = database + strlen(database) + 1;
+    StringInfoData buf;
+    elog(LOG, "init database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
+    (void)initStringInfo(&buf);
+    if (schema != NULL) (void)appendStringInfo(&buf, "CREATE TABLE IF NOT EXISTS %s.%s (\n", quote_identifier(schema), quote_identifier(table));
+    else (void)appendStringInfo(&buf, "CREATE TABLE IF NOT EXISTS %s (\n", quote_identifier(table));
+    (void)appendStringInfo(&buf,
     "    id BIGSERIAL NOT NULL PRIMARY KEY,\n"
     "    dt TIMESTAMP NOT NULL DEFAULT NOW(),\n"
     "    start TIMESTAMP,\n"
@@ -269,10 +283,11 @@ static inline void init() {
     "    request TEXT NOT NULL,\n"
     "    response TEXT,\n"
     "    state TEXT NOT NULL DEFAULT 'QUEUE'\n"
-    ")", quote_identifier(schema), quote_identifier(table));
+    ")");
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
-    elog(LOG, "init buf.data=\n%s", buf.data);
+    elog(LOG, "init_table buf.data=%s", buf.data);
     if (SPI_execute(buf.data, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
@@ -303,10 +318,12 @@ static inline void launch_task(Datum arg) {
     if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     len2 = sizeof("%s") - 1 + strlen(username) - 1 - 1;
     if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    len3 = sizeof("%s") - 1 + strlen(schema) - 1 - 1;
-    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1, len3 + 1, "%s", schema) != len3) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    len4 = sizeof("%s") - 1 + strlen(table) - 1 - 1;
-    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1 + len3 + 1, len4 + 1, "%s", table) != len4) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    len3 = sizeof("%s") - 1 + strlen(table) - 1 - 1;
+    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1, len3 + 1, "%s", table) != len3) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (schema != NULL) {
+        len4 = sizeof("%s") - 1 + strlen(schema) - 1 - 1;
+        if (snprintf(worker.bgw_extra + len + 1 + len2 + 1 + len3 + 1, len4 + 1, "%s", schema) != len4) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    }
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_main_arg = arg;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
@@ -322,7 +339,8 @@ static inline void launch_task(Datum arg) {
 static inline void assign() {
     StringInfoData buf;
     (void)initStringInfo(&buf);
-    (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", quote_identifier(schema), quote_identifier(table));
+    if (schema != NULL) (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", quote_identifier(schema), quote_identifier(table));
+    else (void)appendStringInfo(&buf, "UPDATE %s SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", quote_identifier(table));
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
@@ -352,7 +370,7 @@ void tick(Datum arg) {
     (void)DefineCustomIntVariable(buf.data, "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     (void)resetStringInfo(&buf);
     (void)appendStringInfo(&buf, "pg_scheduler_schema.%s", database);
-    (void)DefineCustomStringVariable(buf.data, "pg_scheduler schema", NULL, &schema, "public", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    (void)DefineCustomStringVariable(buf.data, "pg_scheduler schema", NULL, &schema, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
     (void)resetStringInfo(&buf);
     (void)appendStringInfo(&buf, "pg_scheduler_table.%s", database);
     (void)DefineCustomStringVariable(buf.data, "pg_scheduler table", NULL, &table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
@@ -363,7 +381,8 @@ void tick(Datum arg) {
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
     (void)lock();
-    (void)init();
+    if (schema != NULL) (void)init_schema();
+    (void)init_table();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
         if (rc & WL_LATCH_SET) elog(LOG, "tick WL_LATCH_SET");
@@ -380,7 +399,8 @@ void tick(Datum arg) {
         if (got_sighup) {
             got_sighup = false;
             (void)ProcessConfigFile(PGC_SIGHUP);
-            (void)init();
+            if (schema != NULL) (void)init_schema();
+            (void)init_table();
         }
         if (got_sigterm) (void)proc_exit(0);
         if (rc & WL_TIMEOUT) (void)assign();
@@ -391,14 +411,16 @@ void tick(Datum arg) {
 static inline char *work(Datum arg) {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
-    const char *schema = username + strlen(username) + 1;
-    const char *table = schema + strlen(schema) + 1;
+    const char *table = username + strlen(username) + 1;
+    const char *schema = table + strlen(table) + 1;
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
     char *data;
     StringInfoData buf;
+    if (strlen(schema) == 0) schema = NULL;
     (void)initStringInfo(&buf);
-    (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request", quote_identifier(schema), quote_identifier(table));
+    if (schema != NULL) (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request", quote_identifier(schema), quote_identifier(table));
+    else (void)appendStringInfo(&buf, "UPDATE %s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request", quote_identifier(table));
     elog(LOG, "work buf.data=%s", buf.data);
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
@@ -420,13 +442,15 @@ static inline char *work(Datum arg) {
 static inline void done(Datum arg, const char *data, const char *status) {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
-    const char *schema = username + strlen(username) + 1;
-    const char *table = schema + strlen(schema) + 1;
+    const char *table = username + strlen(username) + 1;
+    const char *schema = table + strlen(table) + 1;
     Oid argtypes[] = {TEXTOID, TEXTOID, INT8OID};
     Datum Values[] = {CStringGetTextDatum(status), CStringGetTextDatum(data!=NULL?data:"(null)"), arg};
     StringInfoData buf;
+    if (strlen(schema) == 0) schema = NULL;
     (void)initStringInfo(&buf);
-    (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(schema), quote_identifier(table));
+    if (schema != NULL) (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(schema), quote_identifier(table));
+    else (void)appendStringInfo(&buf, "UPDATE %s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(table));
     elog(LOG, "done buf.data=%s", buf.data);
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
@@ -571,8 +595,9 @@ static inline void execute(Datum arg) {
 void task(Datum arg) {
     const char *database = MyBgworkerEntry->bgw_extra;
     const char *username = database + strlen(database) + 1;
-    const char *schema = username + strlen(username) + 1;
-    const char *table = schema + strlen(schema) + 1;
+    const char *table = username + strlen(username) + 1;
+    const char *schema = table + strlen(table) + 1;
+    if (strlen(schema) == 0) schema = NULL;
     elog(LOG, "task database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
