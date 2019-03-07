@@ -29,7 +29,7 @@ void task(Datum arg);
 static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
 
-static char *database;
+static char *databases;
 
 int period;
 char *schema;
@@ -67,7 +67,7 @@ static inline void launch_loop() {
 void _PG_init(void) {
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errmsg("pg_scheduler can only be loaded via shared_preload_libraries"), errhint("Add pg_scheduler to the shared_preload_libraries configuration variable in postgresql.conf.")));
-    (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &database, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &databases, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
     (void)launch_loop();
 }
 
@@ -108,7 +108,7 @@ static inline void check() {
     Oid *argtypes = NULL;
     Datum *Values = NULL;
     char *nulls = NULL;
-    elog(LOG, "check database=%s", database);
+    elog(LOG, "check database=%s", databases);
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf,
         "WITH s AS (\n"
@@ -118,11 +118,11 @@ static inline void check() {
         "    INNER JOIN  pg_user AS i ON d.datdba = i.usesysid\n"
         "    WHERE       NOT datistemplate\n"
         "    AND         datallowconn\n");
-    if (database == NULL) {
+    if (databases == NULL) {
         (void)appendStringInfoString(&buf,
             "    AND         i.usesysid = u.usesysid\n");
     } else{
-        char *rawstring = pstrdup(database);
+        char *rawstring = pstrdup(databases);
         if (!SplitGUCList(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
         if ((argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "argtypes == NULL %s %i", __FILE__, __LINE__);
         if ((Values = palloc(sizeof(Datum) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "Values == NULL %s %i", __FILE__, __LINE__);
@@ -196,7 +196,7 @@ static inline void check() {
 }
 
 void loop(Datum arg) {
-    elog(LOG, "loop database=%s", database);
+    elog(LOG, "loop database=%s", databases);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
     (void)BackgroundWorkerUnblockSignals();
