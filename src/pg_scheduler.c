@@ -107,11 +107,13 @@ static inline void check() {
     StringInfoData buf;
     Oid *argtypes;
     Datum *Values;
+    char *nulls;
     char *rawstring = pstrdup(database);
     elog(LOG, "check database=%s", database);
     if (!SplitGUCList(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
     if ((argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "argtypes == NULL %s %i", __FILE__, __LINE__);
     if ((Values = palloc(sizeof(Datum) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "Values == NULL %s %i", __FILE__, __LINE__);
+    if ((nulls = palloc(sizeof(char) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "nulls == NULL %s %i", __FILE__, __LINE__);
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf,
         "WITH s AS (\n"
@@ -128,15 +130,16 @@ static inline void check() {
             ListCell *cell = list_head(elemlist);
             const char *database = (const char *)lfirst(cell);
             const char *username = database;
+            nulls[2 * i] = ' ';
+            nulls[2 * i + 1] = ' ';
             if ((cell = lnext(cell)) != NULL) username = (const char *)lfirst(cell);
+            else nulls[2 * i + 1] = 'n';
             elog(LOG, "check database=%s, username=%s", database, username);
             if (i > 0) (void)appendStringInfoString(&buf, ", ");
             (void)appendStringInfo(&buf, "($%i, COALESCE($%i, i.usename))", 2 * i + 1, 2 * i + 1 + 1);
-//            (void)appendStringInfo(&buf, "('%s', COALESCE('%s', i.usename))", database, username);
-//            (void)appendStringInfo(&buf, "($%i, $%i)", 2 * i + 1, 2 * i + 1 + 1);
             argtypes[2 * i] = TEXTOID;
-            Values[2 * i] = CStringGetTextDatum(strdup(database));
             argtypes[2 * i + 1] = TEXTOID;
+            Values[2 * i] = CStringGetTextDatum(strdup(database));
             Values[2 * i + 1] = CStringGetTextDatum(strdup(username));
         }
         if (rawstring != NULL) (void)pfree(rawstring);
@@ -161,7 +164,7 @@ static inline void check() {
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
     elog(LOG, "check buf.data=\n%s", buf.data);
-    if (SPI_execute_with_args(buf.data, list_length(elemlist) * 2, argtypes, Values, NULL, false, 0) != SPI_OK_SELECT) elog(FATAL, "SPI_execute_with_args != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
+    if (SPI_execute_with_args(buf.data, list_length(elemlist) * 2, argtypes, Values, nulls, false, 0) != SPI_OK_SELECT) elog(FATAL, "SPI_execute_with_args != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
@@ -179,6 +182,7 @@ static inline void check() {
     if (buf.data != NULL) (void)pfree(buf.data);
     if (argtypes != NULL) (void)pfree(argtypes);
     if (Values != NULL) (void)pfree(Values);
+    if (nulls != NULL) (void)pfree(nulls);
     if (elemlist != NULL) (void)list_free(elemlist);
 }
 
@@ -249,13 +253,13 @@ static inline void init() {
     (void)SPI_commit();
     (void)resetStringInfo(&buf);
     (void)appendStringInfo(&buf, "CREATE TABLE IF NOT EXISTS %s.%s ("
-        "id bigserial not null primary key,"
-        "dt timestamp not null default now(),"
-        "start timestamp,"
-        "stop timestamp,"
-        "request text NOT NULL,"
-        "response text,"
-        "state text not null default 'QUEUE'"
+        "id BIGSERIAL NOT NULL PRIMARY KEY,"
+        "dt TIMESTAMP NOT NULL DEFAULT NOW(),"
+        "start TIMESTAMP,"
+        "stop TIMESTAMP,"
+        "request TEXT NOT NULL,"
+        "response TEXT,"
+        "state TEXT NOT NULL DEFAULT 'QUEUE'"
     ")", quote_identifier(schema), quote_identifier(table));
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     (void)SPI_start_transaction();
