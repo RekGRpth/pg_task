@@ -38,7 +38,7 @@ char *table;
 static inline void sighup(SIGNAL_ARGS) {
     int save_errno = errno;
     got_sighup = true;
-    SetLatch(MyLatch);
+    (void)SetLatch(MyLatch);
     errno = save_errno;
 }
 
@@ -173,22 +173,24 @@ void loop(Datum arg) {
     (void)BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     (void)check();
     do {
-        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, LONG_MAX, PG_WAIT_EXTENSION);
+        int rc = WaitLatch(MyLatch, WL_LATCH_SET | /*WL_TIMEOUT |*/ WL_POSTMASTER_DEATH, LONG_MAX, PG_WAIT_EXTENSION);
         if (rc & WL_LATCH_SET) elog(LOG, "loop WL_LATCH_SET");
         //if (rc & WL_TIMEOUT) elog(LOG, "loop WL_TIMEOUT");
         if (rc & WL_POSTMASTER_DEATH) elog(LOG, "loop WL_POSTMASTER_DEATH");
         if (got_sigterm) elog(LOG, "loop got_sigterm");
         if (got_sighup) elog(LOG, "loop got_sighup");
-        if (ProcDiePending) elog(LOG, "loop ProcDiePending");
-        (void)ResetLatch(MyLatch);
+//        if (ProcDiePending) elog(LOG, "loop ProcDiePending");
         if (rc & WL_POSTMASTER_DEATH) (void)proc_exit(1);
-        CHECK_FOR_INTERRUPTS();
-        if (got_sigterm) (void)proc_exit(0);
+        if (rc & WL_LATCH_SET) {
+            (void)ResetLatch(MyLatch);
+            CHECK_FOR_INTERRUPTS();
+        }
         if (got_sighup) {
             got_sighup = false;
             (void)ProcessConfigFile(PGC_SIGHUP);
             (void)check();
         }
+        if (got_sigterm) (void)proc_exit(0);
     } while (!got_sigterm);
     (void)proc_exit(0);
 }
@@ -339,16 +341,18 @@ void tick(Datum arg) {
         if (rc & WL_POSTMASTER_DEATH) elog(LOG, "tick WL_POSTMASTER_DEATH");
         if (got_sigterm) elog(LOG, "tick got_sigterm");
         if (got_sighup) elog(LOG, "tick got_sighup");
-        if (ProcDiePending) elog(LOG, "loop ProcDiePending");
-        (void)ResetLatch(MyLatch);
+//        if (ProcDiePending) elog(LOG, "loop ProcDiePending");
         if (rc & WL_POSTMASTER_DEATH) (void)proc_exit(1);
-        CHECK_FOR_INTERRUPTS();
-        if (got_sigterm) (void)proc_exit(0);
+        if (rc & WL_LATCH_SET) {
+            (void)ResetLatch(MyLatch);
+            CHECK_FOR_INTERRUPTS();
+        }
         if (got_sighup) {
             got_sighup = false;
             (void)ProcessConfigFile(PGC_SIGHUP);
             (void)init();
         }
+        if (got_sigterm) (void)proc_exit(0);
         if (rc & WL_TIMEOUT) (void)assign();
     } while (!got_sigterm);
     (void)proc_exit(0);
