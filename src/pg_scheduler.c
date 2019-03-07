@@ -113,7 +113,13 @@ static inline void check() {
     if ((argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "argtypes == NULL %s %i", __FILE__, __LINE__);
     if ((Values = palloc(sizeof(Datum) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "Values == NULL %s %i", __FILE__, __LINE__);
     (void)initStringInfo(&buf);
-    (void)appendStringInfoString(&buf, "WITH s AS (SELECT * FROM (VALUES ");
+    (void)appendStringInfoString(&buf,
+        "WITH s AS (\n"
+        "    SELECT      d.oid, d.datname, u.usesysid, u.usename\n"
+        "    FROM        pg_database AS d\n"
+        "    JOIN        pg_user AS u ON TRUE\n"
+        "    INNER JOIN  pg_user AS i ON d.datdba = i.usesysid\n"
+        "    WHERE       (d.datname, u.usename) IN (\n        ");
     for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
         const char *database_username = (const char *)lfirst(cell);
         char *rawstring = pstrdup(database_username);
@@ -125,7 +131,9 @@ static inline void check() {
             if ((cell = lnext(cell)) != NULL) username = (const char *)lfirst(cell);
             elog(LOG, "check database=%s, username=%s", database, username);
             if (i > 0) (void)appendStringInfoString(&buf, ", ");
-            (void)appendStringInfo(&buf, "($%i, $%i)", 2 * i + 1, 2 * i + 1 + 1);
+            (void)appendStringInfo(&buf, "($%i, COALESCE($%i, i.usename))", 2 * i + 1, 2 * i + 1 + 1);
+//            (void)appendStringInfo(&buf, "('%s', COALESCE('%s', i.usename))", database, username);
+//            (void)appendStringInfo(&buf, "($%i, $%i)", 2 * i + 1, 2 * i + 1 + 1);
             argtypes[2 * i] = TEXTOID;
             Values[2 * i] = CStringGetTextDatum(strdup(database));
             argtypes[2 * i + 1] = TEXTOID;
@@ -135,15 +143,24 @@ static inline void check() {
         if (elemlist != NULL) (void)list_free(elemlist);
         i++;
     }
-    (void)appendStringInfoString(&buf, ") AS s (d, u)), l AS ("
-        "SELECT * FROM pg_locks WHERE locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted"
-    ") SELECT datname, usename, true AS start FROM pg_database, pg_user WHERE (datname, usename) IN (SELECT * FROM s) AND NOT EXISTS ("
-        "SELECT pid FROM l WHERE classid = pg_database.oid AND objid = pg_user.usesysid and database = pg_database.oid"
-    ") UNION SELECT datname, usename, NOT pg_terminate_backend(pid) AS start FROM pg_stat_activity INNER JOIN l USING (pid) WHERE (datname, usename) NOT IN (SELECT * FROM s) AND classid = datid AND objid = usesysid AND database = datid");
+    (void)appendStringInfoString(&buf,
+    "\n    )\n"
+    "), l AS (\n"
+    "    SELECT * FROM pg_locks WHERE locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
+    ")\n"
+    "SELECT      datname, usename, TRUE AS start\n"
+    "FROM        s\n"
+    "WHERE       NOT EXISTS (SELECT pid FROM l WHERE classid = oid AND objid = usesysid AND database = oid)\n"
+    "UNION\n"
+    "SELECT      datname, usename, NOT pg_terminate_backend(pid) AS start\n"
+    "FROM        pg_stat_activity\n"
+    "INNER JOIN  l USING (pid)\n"
+    "WHERE       (datname, usename) NOT IN (SELECT datname, usename FROM s)\n"
+    "AND         classid = datid AND objid = usesysid AND database = datid");
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
-    elog(LOG, "check buf.data=%s", buf.data);
+    elog(LOG, "check buf.data=\n%s", buf.data);
     if (SPI_execute_with_args(buf.data, list_length(elemlist) * 2, argtypes, Values, NULL, false, 0) != SPI_OK_SELECT) elog(FATAL, "SPI_execute_with_args != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
