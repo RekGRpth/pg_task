@@ -294,11 +294,13 @@ static inline void init_table() {
 }
 
 static inline void init_index(const char *index) {
-    StringInfoData buf;
+    StringInfoData buf, name;
     elog(LOG, "init database=%s, username=%s, period=%i, schema=%s, table=%s, index=%s", database, username, period, schema, table, index);
     (void)initStringInfo(&buf);
-    if (schema != NULL) (void)appendStringInfo(&buf, "CREATE INDEX ON %s.%s USING btree (%s)", quote_identifier(schema), quote_identifier(table), quote_identifier(index));
-    else (void)appendStringInfo(&buf, "CREATE INDEX ON %s USING btree (%s)", quote_identifier(table), quote_identifier(index));
+    (void)initStringInfo(&name);
+    (void)appendStringInfo(&name, "%s_%s_idx", table, index);
+    if (schema != NULL) (void)appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON %s.%s USING btree (%s)", quote_identifier(name.data), quote_identifier(schema), quote_identifier(table), quote_identifier(index));
+    else (void)appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON %s USING btree (%s)", quote_identifier(name.data), quote_identifier(table), quote_identifier(index));
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
@@ -310,6 +312,7 @@ static inline void init_index(const char *index) {
     (void)pgstat_report_activity(STATE_IDLE, buf.data);
     (void)pgstat_report_stat(true);
     if (buf.data != NULL) (void)pfree(buf.data);
+    if (name.data != NULL) (void)pfree(name.data);
 }
 
 static inline void launch_task(Datum arg) {
