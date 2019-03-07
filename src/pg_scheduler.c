@@ -438,9 +438,7 @@ void tick(Datum arg) {
 static inline char *work(Datum arg) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
-//    Datum value;
     char *data;
-//    bool isnull;
     StringInfoData buf;
     elog(LOG, "work database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
     (void)initStringInfo(&buf);
@@ -457,11 +455,6 @@ static inline char *work(Datum arg) {
         data = strdup(value);
         if (value != NULL) (void)pfree(value);
     }
-//    data = strdup(SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request")));
-//    data = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
-//    value = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"), &isnull);
-//    if (isnull) elog(FATAL, "isnull %s %i", __FILE__, __LINE__);
-//    data = strdup(TextDatumGetCString(value));
     (void)SPI_commit();
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
