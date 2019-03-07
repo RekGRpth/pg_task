@@ -32,6 +32,8 @@ static volatile sig_atomic_t got_sigterm = false;
 static char *databases;
 
 int period;
+char *database;
+char *username;
 char *schema;
 char *table;
 
@@ -226,8 +228,8 @@ void loop(Datum arg) {
 }
 
 static inline void lock() {
-    const char *database = MyBgworkerEntry->bgw_extra;
-    const char *username = database + strlen(database) + 1;
+//    const char *database = MyBgworkerEntry->bgw_extra;
+//    const char *username = database + strlen(database) + 1;
     const char *src = "SELECT pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) FROM pg_database, pg_user WHERE datname = current_catalog AND usename = current_user";
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
@@ -248,8 +250,8 @@ static inline void lock() {
 }
 
 static inline void init_schema() {
-    const char *database = MyBgworkerEntry->bgw_extra;
-    const char *username = database + strlen(database) + 1;
+//    const char *database = MyBgworkerEntry->bgw_extra;
+//    const char *username = database + strlen(database) + 1;
     StringInfoData buf;
     elog(LOG, "init database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
@@ -268,8 +270,8 @@ static inline void init_schema() {
 }
 
 static inline void init_table() {
-    const char *database = MyBgworkerEntry->bgw_extra;
-    const char *username = database + strlen(database) + 1;
+//    const char *database = MyBgworkerEntry->bgw_extra;
+//    const char *username = database + strlen(database) + 1;
     StringInfoData buf;
     elog(LOG, "init database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
@@ -298,8 +300,8 @@ static inline void init_table() {
 }
 
 static inline void launch_task(Datum arg) {
-    const char *database = MyBgworkerEntry->bgw_extra;
-    const char *username = database + strlen(database) + 1;
+//    const char *database = MyBgworkerEntry->bgw_extra;
+//    const char *username = database + strlen(database) + 1;
     BackgroundWorker worker;
     BackgroundWorkerHandle *handle;
     pid_t pid;
@@ -362,9 +364,9 @@ static inline void assign() {
 }
 
 void tick(Datum arg) {
-    const char *database = MyBgworkerEntry->bgw_extra;
-    const char *username = database + strlen(database) + 1;
     StringInfoData buf;
+    database = MyBgworkerEntry->bgw_extra;
+    username = database + strlen(database) + 1;
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "pg_scheduler_period.%s", database);
     (void)DefineCustomIntVariable(buf.data, "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
@@ -409,15 +411,16 @@ void tick(Datum arg) {
 }
 
 static inline char *work(Datum arg) {
-    const char *database = MyBgworkerEntry->bgw_extra;
-    const char *username = database + strlen(database) + 1;
-    const char *table = username + strlen(username) + 1;
-    const char *schema = table + strlen(table) + 1;
+//    const char *database = MyBgworkerEntry->bgw_extra;
+//    const char *username = database + strlen(database) + 1;
+//    const char *table = username + strlen(username) + 1;
+//    const char *schema = table + strlen(table) + 1;
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
     char *data;
     StringInfoData buf;
-    if (strlen(schema) == 0) schema = NULL;
+    elog(LOG, "work database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
+//    if (strlen(schema) == 0) schema = NULL;
     (void)initStringInfo(&buf);
     if (schema != NULL) (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request", quote_identifier(schema), quote_identifier(table));
     else (void)appendStringInfo(&buf, "UPDATE %s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request", quote_identifier(table));
@@ -440,14 +443,14 @@ static inline char *work(Datum arg) {
 }
 
 static inline void done(Datum arg, const char *data, const char *status) {
-    const char *database = MyBgworkerEntry->bgw_extra;
-    const char *username = database + strlen(database) + 1;
-    const char *table = username + strlen(username) + 1;
-    const char *schema = table + strlen(table) + 1;
+//    const char *database = MyBgworkerEntry->bgw_extra;
+//    const char *username = database + strlen(database) + 1;
+//    const char *table = username + strlen(username) + 1;
+//    const char *schema = table + strlen(table) + 1;
     Oid argtypes[] = {TEXTOID, TEXTOID, INT8OID};
     Datum Values[] = {CStringGetTextDatum(status), CStringGetTextDatum(data!=NULL?data:"(null)"), arg};
     StringInfoData buf;
-    if (strlen(schema) == 0) schema = NULL;
+//    if (strlen(schema) == 0) schema = NULL;
     (void)initStringInfo(&buf);
     if (schema != NULL) (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(schema), quote_identifier(table));
     else (void)appendStringInfo(&buf, "UPDATE %s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(table));
@@ -559,7 +562,8 @@ static inline char *error() {
 
 static inline void execute(Datum arg) {
     char *src = work(arg);
-    elog(LOG, "execute src=%s", src);
+//    elog(LOG, "execute src=%s", src);
+    elog(LOG, "execute database=%s, username=%s, schema=%s, table=%s, src=\n%s", database, username, schema, table, src);
 //    elog(LOG, "src=%s", src);
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
@@ -593,10 +597,10 @@ static inline void execute(Datum arg) {
 }
 
 void task(Datum arg) {
-    const char *database = MyBgworkerEntry->bgw_extra;
-    const char *username = database + strlen(database) + 1;
-    const char *table = username + strlen(username) + 1;
-    const char *schema = table + strlen(table) + 1;
+    database = MyBgworkerEntry->bgw_extra;
+    username = database + strlen(database) + 1;
+    table = username + strlen(username) + 1;
+    schema = table + strlen(table) + 1;
     if (strlen(schema) == 0) schema = NULL;
     elog(LOG, "task database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
     (void)BackgroundWorkerUnblockSignals();
