@@ -252,18 +252,18 @@ static inline void init() {
     if (SPI_execute(buf.data, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
     (void)resetStringInfo(&buf);
-    (void)appendStringInfo(&buf, "CREATE TABLE IF NOT EXISTS %s.%s ("
-        "id BIGSERIAL NOT NULL PRIMARY KEY,"
-        "dt TIMESTAMP NOT NULL DEFAULT NOW(),"
-        "start TIMESTAMP,"
-        "stop TIMESTAMP,"
-        "request TEXT NOT NULL,"
-        "response TEXT,"
-        "state TEXT NOT NULL DEFAULT 'QUEUE'"
+    (void)appendStringInfo(&buf, "CREATE TABLE IF NOT EXISTS %s.%s (\n"
+    "    id BIGSERIAL NOT NULL PRIMARY KEY,\n"
+    "    dt TIMESTAMP NOT NULL DEFAULT NOW(),\n"
+    "    start TIMESTAMP,\n"
+    "    stop TIMESTAMP,\n"
+    "    request TEXT NOT NULL,\n"
+    "    response TEXT,\n"
+    "    state TEXT NOT NULL DEFAULT 'QUEUE'\n"
     ")", quote_identifier(schema), quote_identifier(table));
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     (void)SPI_start_transaction();
-    elog(LOG, "init buf.data=%s", buf.data);
+    elog(LOG, "init buf.data=\n%s", buf.data);
     if (SPI_execute(buf.data, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
