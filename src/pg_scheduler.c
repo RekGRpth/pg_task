@@ -110,6 +110,7 @@ static inline void check() {
     Oid *argtypes = NULL;
     Datum *Values = NULL;
     char *nulls = NULL;
+    char **str = NULL;
     elog(LOG, "check database=%s", databases);
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf,
@@ -129,6 +130,7 @@ static inline void check() {
         if ((argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "argtypes == NULL %s %i", __FILE__, __LINE__);
         if ((Values = palloc(sizeof(Datum) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "Values == NULL %s %i", __FILE__, __LINE__);
         if ((nulls = palloc(sizeof(char) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "nulls == NULL %s %i", __FILE__, __LINE__);
+        if ((str = palloc(sizeof(char *) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "str == NULL %s %i", __FILE__, __LINE__);
         (void)appendStringInfoString(&buf,
             "    AND         (d.datname, u.usename) IN (\n        ");
         for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
@@ -148,8 +150,10 @@ static inline void check() {
                 (void)appendStringInfo(&buf, "($%i, COALESCE($%i, i.usename))", 2 * i + 1, 2 * i + 1 + 1);
                 argtypes[2 * i] = TEXTOID;
                 argtypes[2 * i + 1] = TEXTOID;
-                Values[2 * i] = CStringGetTextDatum(strdup(database));
-                Values[2 * i + 1] = CStringGetTextDatum(strdup(username));
+                str[2 * i] = pstrdup(database);
+                str[2 * i + 1] = pstrdup(username);
+                Values[2 * i] = CStringGetTextDatum(str[2 * i]);
+                Values[2 * i + 1] = CStringGetTextDatum(str[2 * i + 1]);
             }
             if (rawstring != NULL) (void)pfree(rawstring);
             if (elemlist != NULL) (void)list_free(elemlist);
@@ -195,6 +199,8 @@ static inline void check() {
     if (argtypes != NULL) (void)pfree(argtypes);
     if (Values != NULL) (void)pfree(Values);
     if (nulls != NULL) (void)pfree(nulls);
+    for (int j = 0; j < i * 2; j++) if (str[j] != NULL) (void)pfree(str[j]);
+    if (str != NULL) (void)pfree(str);
 }
 
 void loop(Datum arg) {
