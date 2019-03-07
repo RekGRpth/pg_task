@@ -293,6 +293,25 @@ static inline void init_table() {
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
+static inline void init_index(const char *index) {
+    StringInfoData buf;
+    elog(LOG, "init database=%s, username=%s, period=%i, schema=%s, table=%s, index=%s", database, username, period, schema, table, index);
+    (void)initStringInfo(&buf);
+    if (schema != NULL) (void)appendStringInfo(&buf, "CREATE INDEX ON %s.%s USING btree (%s)", quote_identifier(schema), quote_identifier(table), quote_identifier(index));
+    else (void)appendStringInfo(&buf, "CREATE INDEX ON %s USING btree (%s)", quote_identifier(table), quote_identifier(index));
+    (void)pgstat_report_activity(STATE_RUNNING, buf.data);
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
+    (void)SPI_start_transaction();
+    elog(LOG, "init_schema buf.data=%s", buf.data);
+    if (SPI_execute(buf.data, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
+    (void)SPI_commit();
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
+    (void)ProcessCompletedNotifies();
+    (void)pgstat_report_activity(STATE_IDLE, buf.data);
+    (void)pgstat_report_stat(true);
+    if (buf.data != NULL) (void)pfree(buf.data);
+}
+
 static inline void launch_task(Datum arg) {
     BackgroundWorker worker;
     BackgroundWorkerHandle *handle;
@@ -355,6 +374,13 @@ static inline void assign() {
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
+static inline void init() {
+    if (schema != NULL) (void)init_schema();
+    (void)init_table();
+    (void)init_index("dt");
+    (void)init_index("state");
+}
+
 void tick(Datum arg) {
     StringInfoData buf;
     database = MyBgworkerEntry->bgw_extra;
@@ -375,8 +401,7 @@ void tick(Datum arg) {
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
     (void)lock();
-    if (schema != NULL) (void)init_schema();
-    (void)init_table();
+    (void)init();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
         if (rc & WL_LATCH_SET) elog(LOG, "tick WL_LATCH_SET");
@@ -393,8 +418,7 @@ void tick(Datum arg) {
         if (got_sighup) {
             got_sighup = false;
             (void)ProcessConfigFile(PGC_SIGHUP);
-            if (schema != NULL) (void)init_schema();
-            (void)init_table();
+            (void)init();
         }
         if (got_sigterm) (void)proc_exit(0);
         if (rc & WL_TIMEOUT) (void)assign();
