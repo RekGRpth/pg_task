@@ -227,24 +227,6 @@ static inline void check() {
     "WHERE       (datname, usename) NOT IN (SELECT datname, usename FROM s)\n"
     "AND         classid = datid AND objid = usesysid AND database = datid");
     (void)SPI_execute_with_args_and_commit(buf.data, i * 2, argtypes, Values, Nulls, false, 0, check_callback);
-/*    (void)pgstat_report_activity(STATE_RUNNING, buf.data);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
-    (void)SPI_start_transaction();
-    elog(LOG, "check buf.data=\n%s", buf.data);
-    if (SPI_execute_with_args(buf.data, i * 2, argtypes, Values, Nulls, false, 0) != SPI_OK_SELECT) elog(FATAL, "SPI_execute_with_args != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
-    (void)SPI_commit();
-    for (uint64 row = 0; row < SPI_processed; row++) {
-        bool isnull;
-        char *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &isnull));
-        char *username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &isnull));
-        bool start = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "start"), &isnull));
-        elog(LOG, "check row=%lu, database=%s, username=%s, start=%s", row, database, username, start?"true":"false");
-        if (start) (void)launch_tick(database, username);
-    }
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-    (void)ProcessCompletedNotifies();
-    (void)pgstat_report_activity(STATE_IDLE, buf.data);
-    (void)pgstat_report_stat(true);*/
     if (buf.data != NULL) (void)pfree(buf.data);
     if (argtypes != NULL) (void)pfree(argtypes);
     if (Values != NULL) (void)pfree(Values);
@@ -296,22 +278,6 @@ static inline void lock_callback(int res, va_list args) {
 static inline void lock() {
     const char *src = "SELECT pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) FROM pg_database, pg_user WHERE datname = current_catalog AND usename = current_user";
     (void)SPI_execute_and_commit(src, false, 0, lock_callback);
-    /*(void)pgstat_report_activity(STATE_RUNNING, src);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
-    (void)SPI_start_transaction();
-    elog(LOG, "lock src=%s", src);
-    if (SPI_execute(src, false, 0) != SPI_OK_SELECT) elog(FATAL, "SPI_execute != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
-    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__); else {
-        bool isnull;
-        bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "pg_try_advisory_lock"), &isnull));
-        if (isnull) elog(FATAL, "isnull %s %i", __FILE__, __LINE__);
-        if (!lock) elog(FATAL, "already running database=%s, username=%s %s %i", database, username, __FILE__, __LINE__);
-    }
-    (void)SPI_commit();
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-    (void)ProcessCompletedNotifies();
-    (void)pgstat_report_activity(STATE_IDLE, src);
-    (void)pgstat_report_stat(true);*/
 }
 
 static inline void schema_callback(int res, va_list args) {
@@ -324,16 +290,6 @@ static inline void init_schema() {
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", quote_identifier(schema));
     (void)SPI_execute_and_commit(buf.data, false, 0, schema_callback);
-    /*(void)pgstat_report_activity(STATE_RUNNING, buf.data);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
-    (void)SPI_start_transaction();
-    elog(LOG, "init_schema buf.data=%s", buf.data);
-    if (SPI_execute(buf.data, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
-    (void)SPI_commit();
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-    (void)ProcessCompletedNotifies();
-    (void)pgstat_report_activity(STATE_IDLE, buf.data);
-    (void)pgstat_report_stat(true);*/
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
@@ -359,16 +315,6 @@ static inline void init_table() {
     "    timeout INTERVAL"
     ")");
     (void)SPI_execute_and_commit(buf.data, false, 0, table_callback);
-    /*(void)pgstat_report_activity(STATE_RUNNING, buf.data);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
-    (void)SPI_start_transaction();
-    elog(LOG, "init_table buf.data=%s", buf.data);
-    if (SPI_execute(buf.data, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
-    (void)SPI_commit();
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-    (void)ProcessCompletedNotifies();
-    (void)pgstat_report_activity(STATE_IDLE, buf.data);
-    (void)pgstat_report_stat(true);*/
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
@@ -386,16 +332,6 @@ static inline void init_index(const char *index) {
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s USING btree (%s)", quote_identifier(table), quote_identifier(index));
     (void)SPI_execute_and_commit(buf.data, false, 0, index_callback);
-    /*(void)pgstat_report_activity(STATE_RUNNING, buf.data);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
-    (void)SPI_start_transaction();
-    elog(LOG, "init_schema buf.data=%s", buf.data);
-    if (SPI_execute(buf.data, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
-    (void)SPI_commit();
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-    (void)ProcessCompletedNotifies();
-    (void)pgstat_report_activity(STATE_IDLE, buf.data);
-    (void)pgstat_report_stat(true);*/
     if (buf.data != NULL) (void)pfree(buf.data);
     if (name.data != NULL) (void)pfree(name.data);
 }
@@ -455,23 +391,6 @@ static inline void assign() {
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", quote_identifier(table));
     (void)SPI_execute_and_commit(buf.data, false, 0, assign_callback);
-    /*(void)pgstat_report_activity(STATE_RUNNING, buf.data);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
-    (void)SPI_start_transaction();
-//    elog(LOG, "assign buf.data=%s", buf.data);
-    if (SPI_execute(buf.data, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
-    (void)SPI_commit();
-    for (uint64 row = 0; row < SPI_processed; row++) {
-        bool isnull;
-        Datum value = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
-        if (isnull) elog(FATAL, "isnull %s %i", __FILE__, __LINE__);
-        elog(LOG, "row=%lu", row);
-        (void)launch_task(value);
-    }
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-    (void)ProcessCompletedNotifies();
-    (void)pgstat_report_activity(STATE_IDLE, buf.data);
-    (void)pgstat_report_stat(true);*/
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
@@ -552,25 +471,6 @@ static inline void work(Datum arg, char **data, int *timeout) {
     (void)appendStringInfo(&buf, "%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
     elog(LOG, "work buf.data=%s", buf.data);
     (void)SPI_execute_with_args_and_commit(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0, work_callback, data, timeout);
-    /*(void)pgstat_report_activity(STATE_RUNNING, buf.data);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
-    (void)SPI_start_transaction();
-//    elog(LOG, "work buf.data=%s", buf.data);
-    if (SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
-    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__); else {
-        bool isnull;
-//        char *value = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
-        char *value = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"), &isnull));
-        *timeout = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &isnull));
-        *data = strdup(value);
-        elog(LOG, "work timeout=%i, data=\n%s", *timeout, *data);
-        if (value != NULL) (void)pfree(value);
-    }
-    (void)SPI_commit();
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-    (void)ProcessCompletedNotifies();
-    (void)pgstat_report_activity(STATE_IDLE, buf.data);
-    (void)pgstat_report_stat(true);*/
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
@@ -588,16 +488,6 @@ static inline void done(Datum arg, const char *data, const char *state) {
     (void)appendStringInfo(&buf, "%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(table));
     elog(LOG, "done buf.data=%s", buf.data);
     (void)SPI_execute_with_args_and_commit(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0, done_callback);
-    /*(void)pgstat_report_activity(STATE_RUNNING, buf.data);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
-    (void)SPI_start_transaction();
-//    elog(LOG, "done buf.data=%s", buf.data);
-    if (SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE %s %i", __FILE__, __LINE__);
-    (void)SPI_commit();
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-    (void)ProcessCompletedNotifies();
-    (void)pgstat_report_activity(STATE_IDLE, buf.data);
-    (void)pgstat_report_stat(true);*/
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
