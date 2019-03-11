@@ -435,7 +435,7 @@ void tick(Datum arg) {
     (void)proc_exit(0);
 }
 
-static inline void work(Datum arg, char **data, uint64 *timeout) {
+static inline void work(Datum arg, char **data, int *timeout) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
     StringInfoData buf;
@@ -579,16 +579,17 @@ static inline char *error() {
 
 static inline void execute(Datum arg) {
     char *src;
-    uint64 timeout;
+    int timeout;
     (void)work(arg, &src, &timeout);
+    if (StatementTimeout < timeout) timeout = StatementTimeout;
 //    elog(LOG, "execute src=%s", src);
-    elog(LOG, "execute database=%s, username=%s, schema=%s, table=%s, timeout=%lu, src=\n%s", database, username, schema, table, timeout, src);
+    elog(LOG, "execute database=%s, username=%s, schema=%s, table=%s, timeout=%i, src=\n%s", database, username, schema, table, timeout, src);
 //    elog(LOG, "src=%s", src);
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
 //    elog(LOG, "execute src=%s", src);
-    if (StatementTimeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
+    if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
     PG_TRY(); {
 //        elog(LOG, "execute try SPI_commit_or_rollback_and_finish 1 src=%s", src);
         if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0 %s %i", __FILE__, __LINE__); else {
