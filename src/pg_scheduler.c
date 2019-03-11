@@ -304,12 +304,17 @@ static inline void lock() {
     (void)pgstat_report_stat(true);*/
 }
 
+static inline void schema_callback(int res) {
+    if (res != SPI_OK_UTILITY) elog(FATAL, "res != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
+}
+
 static inline void init_schema() {
     StringInfoData buf;
     elog(LOG, "init database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", quote_identifier(schema));
-    (void)pgstat_report_activity(STATE_RUNNING, buf.data);
+    (void)SPI_execute_and_commit(buf.data, false, 0, schema_callback);
+    /*(void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
     elog(LOG, "init_schema buf.data=%s", buf.data);
@@ -318,8 +323,12 @@ static inline void init_schema() {
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, buf.data);
-    (void)pgstat_report_stat(true);
+    (void)pgstat_report_stat(true);*/
     if (buf.data != NULL) (void)pfree(buf.data);
+}
+
+static inline void table_callback(int res) {
+    if (res != SPI_OK_UTILITY) elog(FATAL, "res != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
 }
 
 static inline void init_table() {
@@ -338,7 +347,8 @@ static inline void init_table() {
     "    state TEXT NOT NULL DEFAULT 'QUEUE',\n"
     "    timeout INTERVAL"
     ")");
-    (void)pgstat_report_activity(STATE_RUNNING, buf.data);
+    (void)SPI_execute_and_commit(buf.data, false, 0, table_callback);
+    /*(void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
     elog(LOG, "init_table buf.data=%s", buf.data);
@@ -347,7 +357,7 @@ static inline void init_table() {
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, buf.data);
-    (void)pgstat_report_stat(true);
+    (void)pgstat_report_stat(true);*/
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
