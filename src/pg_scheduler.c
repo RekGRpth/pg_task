@@ -310,7 +310,7 @@ static inline void schema_callback(int res) {
 
 static inline void init_schema() {
     StringInfoData buf;
-    elog(LOG, "init database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
+    elog(LOG, "init_schema database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", quote_identifier(schema));
     (void)SPI_execute_and_commit(buf.data, false, 0, schema_callback);
@@ -333,7 +333,7 @@ static inline void table_callback(int res) {
 
 static inline void init_table() {
     StringInfoData buf;
-    elog(LOG, "init database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
+    elog(LOG, "init_table database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
     if (schema != NULL) (void)appendStringInfo(&buf, "CREATE TABLE IF NOT EXISTS %s.%s (\n", quote_identifier(schema), quote_identifier(table));
     else (void)appendStringInfo(&buf, "CREATE TABLE IF NOT EXISTS %s (\n", quote_identifier(table));
@@ -361,15 +361,20 @@ static inline void init_table() {
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
+static inline void index_callback(int res) {
+    if (res != SPI_OK_UTILITY) elog(FATAL, "res != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
+}
+
 static inline void init_index(const char *index) {
     StringInfoData buf, name;
-    elog(LOG, "init database=%s, username=%s, period=%i, schema=%s, table=%s, index=%s", database, username, period, schema, table, index);
+    elog(LOG, "init_index database=%s, username=%s, period=%i, schema=%s, table=%s, index=%s", database, username, period, schema, table, index);
     (void)initStringInfo(&buf);
     (void)initStringInfo(&name);
     (void)appendStringInfo(&name, "%s_%s_idx", table, index);
     if (schema != NULL) (void)appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON %s.%s USING btree (%s)", quote_identifier(name.data), quote_identifier(schema), quote_identifier(table), quote_identifier(index));
     else (void)appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON %s USING btree (%s)", quote_identifier(name.data), quote_identifier(table), quote_identifier(index));
-    (void)pgstat_report_activity(STATE_RUNNING, buf.data);
+    (void)SPI_execute_and_commit(buf.data, false, 0, index_callback);
+    /*(void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
     elog(LOG, "init_schema buf.data=%s", buf.data);
@@ -378,7 +383,7 @@ static inline void init_index(const char *index) {
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, buf.data);
-    (void)pgstat_report_stat(true);
+    (void)pgstat_report_stat(true);*/
     if (buf.data != NULL) (void)pfree(buf.data);
     if (name.data != NULL) (void)pfree(name.data);
 }
