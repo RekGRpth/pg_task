@@ -382,8 +382,9 @@ static inline void init_index(const char *index) {
     (void)initStringInfo(&buf);
     (void)initStringInfo(&name);
     (void)appendStringInfo(&name, "%s_%s_idx", table, index);
-    if (schema != NULL) (void)appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON %s.%s USING btree (%s)", quote_identifier(name.data), quote_identifier(schema), quote_identifier(table), quote_identifier(index));
-    else (void)appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON %s USING btree (%s)", quote_identifier(name.data), quote_identifier(table), quote_identifier(index));
+    (void)appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON ", quote_identifier(name.data));
+    if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    (void)appendStringInfo(&buf, "%s USING btree (%s)", quote_identifier(table), quote_identifier(index));
     (void)SPI_execute_and_commit(buf.data, false, 0, index_callback);
     /*(void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
