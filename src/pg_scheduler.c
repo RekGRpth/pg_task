@@ -533,6 +533,10 @@ static inline void work(Datum arg, char **data, int *timeout) {
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
+static inline void done_callback(int res) {
+    if (res != SPI_OK_UPDATE) elog(FATAL, "res != SPI_OK_UPDATE %s %i", __FILE__, __LINE__);
+}
+
 static inline void done(Datum arg, const char *data, const char *state) {
     Oid argtypes[] = {TEXTOID, TEXTOID, INT8OID};
     Datum Values[] = {CStringGetTextDatum(state), CStringGetTextDatum(data!=NULL?data:"(null)"), arg};
@@ -541,7 +545,8 @@ static inline void done(Datum arg, const char *data, const char *state) {
     if (schema != NULL) (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(schema), quote_identifier(table));
     else (void)appendStringInfo(&buf, "UPDATE %s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(table));
     elog(LOG, "done buf.data=%s", buf.data);
-    (void)pgstat_report_activity(STATE_RUNNING, buf.data);
+    (void)SPI_execute_with_args_and_commit(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0, done_callback);
+    /*(void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
 //    elog(LOG, "done buf.data=%s", buf.data);
@@ -550,7 +555,7 @@ static inline void done(Datum arg, const char *data, const char *state) {
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, buf.data);
-    (void)pgstat_report_stat(true);
+    (void)pgstat_report_stat(true);*/
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
