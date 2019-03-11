@@ -435,15 +435,14 @@ void tick(Datum arg) {
     (void)proc_exit(0);
 }
 
-static inline char *work(Datum arg) {
+static inline void work(Datum arg, char **data, uint64 *timeout) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
-    char *data;
     StringInfoData buf;
     elog(LOG, "work database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
     (void)initStringInfo(&buf);
     if (schema != NULL) (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request", quote_identifier(schema), quote_identifier(table));
-    else (void)appendStringInfo(&buf, "UPDATE %s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request", quote_identifier(table));
+    else (void)appendStringInfo(&buf, "UPDATE %s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request, COALESCE(EXTRACT(milliseconds FROM timeout), 0) AS timeout", quote_identifier(table));
     elog(LOG, "work buf.data=%s", buf.data);
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
@@ -451,8 +450,10 @@ static inline char *work(Datum arg) {
 //    elog(LOG, "work buf.data=%s", buf.data);
     if (SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__); else {
+        bool isnull;
         char *value = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
-        data = strdup(value);
+        *timeout = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &isnull));
+        *data = strdup(value);
         if (value != NULL) (void)pfree(value);
     }
     (void)SPI_commit();
@@ -461,7 +462,6 @@ static inline char *work(Datum arg) {
     (void)pgstat_report_activity(STATE_IDLE, buf.data);
     (void)pgstat_report_stat(true);
     if (buf.data != NULL) (void)pfree(buf.data);
-    return data;
 }
 
 static inline void done(Datum arg, const char *data, const char *status) {
@@ -578,9 +578,11 @@ static inline char *error() {
 }
 
 static inline void execute(Datum arg) {
-    char *src = work(arg);
+    char *src;
+    uint64 timeout;
+    (void)work(arg, &src, &timeout);
 //    elog(LOG, "execute src=%s", src);
-    elog(LOG, "execute database=%s, username=%s, schema=%s, table=%s, src=\n%s", database, username, schema, table, src);
+    elog(LOG, "execute database=%s, username=%s, schema=%s, table=%s, timeout=%lu, src=\n%s", database, username, schema, table, timeout, src);
 //    elog(LOG, "src=%s", src);
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
