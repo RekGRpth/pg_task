@@ -442,7 +442,7 @@ static inline void work(Datum arg, char **data, int *timeout) {
     elog(LOG, "work database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
     (void)initStringInfo(&buf);
     if (schema != NULL) (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request", quote_identifier(schema), quote_identifier(table));
-    else (void)appendStringInfo(&buf, "UPDATE %s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request, COALESCE(EXTRACT(milliseconds FROM timeout), 0) AS timeout", quote_identifier(table));
+    else (void)appendStringInfo(&buf, "UPDATE %s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request, COALESCE(EXTRACT(milliseconds FROM timeout), 0)::INT AS timeout", quote_identifier(table));
     elog(LOG, "work buf.data=%s", buf.data);
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
@@ -454,6 +454,7 @@ static inline void work(Datum arg, char **data, int *timeout) {
         char *value = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
         *timeout = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &isnull));
         *data = strdup(value);
+        elog(LOG, "work timeout=%i, data=\n%s", *timeout, *data);
         if (value != NULL) (void)pfree(value);
     }
     (void)SPI_commit();
@@ -581,7 +582,7 @@ static inline void execute(Datum arg) {
     char *src;
     int timeout;
     (void)work(arg, &src, &timeout);
-    if (StatementTimeout < timeout) timeout = StatementTimeout;
+    if ((StatementTimeout > 0) && (StatementTimeout < timeout)) timeout = StatementTimeout;
 //    elog(LOG, "execute src=%s", src);
     elog(LOG, "execute database=%s, username=%s, schema=%s, table=%s, timeout=%i, src=\n%s", database, username, schema, table, timeout, src);
 //    elog(LOG, "src=%s", src);
