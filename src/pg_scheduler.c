@@ -190,10 +190,7 @@ static inline void check() {
         "    INNER JOIN  pg_user AS i ON d.datdba = i.usesysid\n"
         "    WHERE       NOT datistemplate\n"
         "    AND         datallowconn\n");
-    if (databases == NULL) {
-        (void)appendStringInfoString(&buf,
-            "    AND         i.usesysid = u.usesysid\n");
-    } else{
+    if (databases == NULL) (void)appendStringInfoString(&buf, "    AND         i.usesysid = u.usesysid\n"); else {
         char *rawstring = pstrdup(databases);
         if (!SplitGUCList(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
         if ((argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "argtypes == NULL %s %i", __FILE__, __LINE__);
