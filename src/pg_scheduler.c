@@ -451,7 +451,8 @@ static inline void work(Datum arg, char **data, int *timeout) {
     if (SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__); else {
         bool isnull;
-        char *value = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
+//        char *value = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
+        char *value = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"), &isnull));
         *timeout = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &isnull));
         *data = strdup(value);
         elog(LOG, "work timeout=%i, data=\n%s", *timeout, *data);
@@ -579,8 +580,8 @@ static inline char *error() {
 }
 
 static inline void execute(Datum arg) {
-    char *src;
-    int timeout;
+    char *src = NULL;
+    int timeout = 0;
     (void)work(arg, &src, &timeout);
     if ((StatementTimeout > 0) && (StatementTimeout < timeout)) timeout = StatementTimeout;
 //    elog(LOG, "execute src=%s", src);
