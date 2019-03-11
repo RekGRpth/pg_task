@@ -108,9 +108,11 @@ static inline void SPI_execute_and_commit(const char *src, bool read_only, long 
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
+    if (StatementTimeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //    elog(LOG, "SPI_execute_and_commit src=\n%s", src);
     (void)callback(SPI_execute(src, read_only, tcount));
     (void)SPI_commit();
+    (void)disable_timeout(STATEMENT_TIMEOUT, false);
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, src);
@@ -121,9 +123,11 @@ static inline void SPI_execute_with_args_and_commit(const char *src, int nargs, 
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
+    if (StatementTimeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //    elog(LOG, "SPI_execute_with_args_and_commit src=\n%s", src);
     (void)callback(SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount));
     (void)SPI_commit();
+    (void)disable_timeout(STATEMENT_TIMEOUT, false);
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, src);
