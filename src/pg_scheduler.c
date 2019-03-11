@@ -224,24 +224,23 @@ static inline void check() {
             if (elemlist != NULL) (void)list_free(elemlist);
             i++;
         }
-        (void)appendStringInfoString(&buf,
-        "\n    )\n");
+        (void)appendStringInfoString(&buf, "\n    )\n");
         if (rawstring != NULL) (void)pfree(rawstring);
         if (elemlist != NULL) (void)list_free(elemlist);
     }
     (void)appendStringInfoString(&buf,
-    "), l AS (\n"
-    "    SELECT * FROM pg_locks WHERE locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
-    ")\n"
-    "SELECT      datname, usename, TRUE AS start\n"
-    "FROM        s\n"
-    "WHERE       NOT EXISTS (SELECT pid FROM l WHERE classid = oid AND objid = usesysid AND database = oid)\n"
-    "UNION\n"
-    "SELECT      datname, usename, NOT pg_terminate_backend(pid) AS start\n"
-    "FROM        pg_stat_activity\n"
-    "INNER JOIN  l USING (pid)\n"
-    "WHERE       (datname, usename) NOT IN (SELECT datname, usename FROM s)\n"
-    "AND         classid = datid AND objid = usesysid AND database = datid");
+        "), l AS (\n"
+        "    SELECT * FROM pg_locks WHERE locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
+        ")\n"
+        "SELECT      datname, usename, TRUE AS start\n"
+        "FROM        s\n"
+        "WHERE       NOT EXISTS (SELECT pid FROM l WHERE classid = oid AND objid = usesysid AND database = oid)\n"
+        "UNION\n"
+        "SELECT      datname, usename, NOT pg_terminate_backend(pid) AS start\n"
+        "FROM        pg_stat_activity\n"
+        "INNER JOIN  l USING (pid)\n"
+        "WHERE       (datname, usename) NOT IN (SELECT datname, usename FROM s)\n"
+        "AND         classid = datid AND objid = usesysid AND database = datid");
     (void)SPI_execute_with_args_and_commit(buf.data, i * 2, argtypes, Values, Nulls, false, 0, StatementTimeout, NULL, check_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
     if (argtypes != NULL) (void)pfree(argtypes);
