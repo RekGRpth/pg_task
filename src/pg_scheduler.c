@@ -442,7 +442,7 @@ static inline void work(Datum arg, char **data, int *timeout) {
     elog(LOG, "work database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
     (void)initStringInfo(&buf);
     if (schema != NULL) (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request", quote_identifier(schema), quote_identifier(table));
-    else (void)appendStringInfo(&buf, "UPDATE %s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request, COALESCE(EXTRACT(milliseconds FROM timeout), 0)::INT AS timeout", quote_identifier(table));
+    else (void)appendStringInfo(&buf, "UPDATE %s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
     elog(LOG, "work buf.data=%s", buf.data);
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
