@@ -600,33 +600,12 @@ static inline void execute(Datum arg) {
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
     PG_TRY(); {
 //        elog(LOG, "execute try SPI_commit_or_rollback_and_finish 1 src=%s", src);
-        if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0 %s %i", __FILE__, __LINE__);// else {
+        if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0 %s %i", __FILE__, __LINE__);
         (void)success(&data, &state);
-//            state = "DONE";
-//            data = success();
-//            (void)disable_timeout(STATEMENT_TIMEOUT, false);
-//            elog(LOG, "execute try SPI_commit_or_rollback_and_finish 2 src=%s", src);
         (void)SPI_commit();
-//            if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-//            (void)ProcessCompletedNotifies();
-//            (void)pgstat_report_activity(STATE_IDLE, src);
-//            (void)pgstat_report_stat(true);
-//            (void)done(arg, data, "DONE");
-//            if (data != NULL) (void)pfree(data);
-//        }
     } PG_CATCH(); {
         (void)error(&data, &state);
-//        state = "FAIL";
-//        data = error();
-//        (void)disable_timeout(STATEMENT_TIMEOUT, false);
-//        elog(LOG, "execute catch SPI_commit_or_rollback_and_finish src=%s", src);
         (void)SPI_rollback();
-//        if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-//        (void)ProcessCompletedNotifies();
-//        (void)pgstat_report_activity(STATE_IDLE, src);
-//        (void)pgstat_report_stat(true);
-//        (void)done(arg, data, "FAIL");
-//        if (data != NULL) (void)pfree(data);
     } PG_END_TRY();
     (void)disable_timeout(STATEMENT_TIMEOUT, false);
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
