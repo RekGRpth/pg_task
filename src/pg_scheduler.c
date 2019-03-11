@@ -122,6 +122,29 @@ static inline void SPI_execute_and_commit(const char *src, bool read_only, long 
     (void)pgstat_report_stat(true);
 }
 
+static inline void SPI_execute_and_commit_or_rollback(const char *src, bool read_only, long tcount, int timeout, ExecuteCallback error, ExecuteCallback callback, ...) {
+    va_list args;
+    (void)pgstat_report_activity(STATE_RUNNING, src);
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
+    (void)SPI_start_transaction();
+    if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
+//    elog(LOG, "SPI_execute_and_commit src=\n%s", src);
+    va_start(args, callback);
+    PG_TRY(); {
+        (void)callback(SPI_execute(src, read_only, tcount), args);
+        (void)SPI_commit();
+    } PG_CATCH(); {
+        (void)error(0, args);
+        (void)SPI_rollback();
+    } PG_END_TRY();
+    va_end(args);
+    (void)disable_timeout(STATEMENT_TIMEOUT, false);
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
+    (void)ProcessCompletedNotifies();
+    (void)pgstat_report_activity(STATE_IDLE, src);
+    (void)pgstat_report_stat(true);
+}
+
 static inline void SPI_execute_with_args_and_commit(const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount, int timeout, ExecuteCallback callback, ...) {
     va_list args;
     (void)pgstat_report_activity(STATE_RUNNING, src);
@@ -585,29 +608,6 @@ static inline void error(char **data, char **state) {
 //    return buf.data;
     *data = buf.data;
     *state = "FAIL";
-}
-
-static inline void SPI_execute_and_commit_or_rollback(const char *src, bool read_only, long tcount, int timeout, ExecuteCallback error, ExecuteCallback callback, ...) {
-    va_list args;
-    (void)pgstat_report_activity(STATE_RUNNING, src);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
-    (void)SPI_start_transaction();
-    if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
-//    elog(LOG, "SPI_execute_and_commit src=\n%s", src);
-    va_start(args, callback);
-    PG_TRY(); {
-        (void)callback(SPI_execute(src, read_only, tcount), args);
-        (void)SPI_commit();
-    } PG_CATCH(); {
-        (void)error(0, args);
-        (void)SPI_rollback();
-    } PG_END_TRY();
-    va_end(args);
-    (void)disable_timeout(STATEMENT_TIMEOUT, false);
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-    (void)ProcessCompletedNotifies();
-    (void)pgstat_report_activity(STATE_IDLE, src);
-    (void)pgstat_report_stat(true);
 }
 
 static inline void execute_callback(int res, va_list args) {
