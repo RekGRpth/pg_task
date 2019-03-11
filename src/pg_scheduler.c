@@ -532,7 +532,6 @@ static inline void success(char **data, char **state) {
     }
     *data = buf.data;
     *state = "DONE";
-//    return buf.data;
 }
 
 static inline void error(char **data, char **state) {
@@ -597,7 +596,6 @@ static inline void error(char **data, char **state) {
     );
     (void)FreeErrorData(edata);
     elog(LOG, "error\n%s", buf.data);
-//    return buf.data;
     *data = buf.data;
     *state = "FAIL";
 }
