@@ -583,8 +583,9 @@ static inline void done(Datum arg, const char *data, const char *state) {
     Datum Values[] = {CStringGetTextDatum(state), CStringGetTextDatum(data!=NULL?data:"(null)"), arg};
     StringInfoData buf;
     (void)initStringInfo(&buf);
-    if (schema != NULL) (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(schema), quote_identifier(table));
-    else (void)appendStringInfo(&buf, "UPDATE %s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(table));
+    (void)appendStringInfoString(&buf, "UPDATE ");
+    if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    (void)appendStringInfo(&buf, "%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(table));
     elog(LOG, "done buf.data=%s", buf.data);
     (void)SPI_execute_with_args_and_commit(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0, done_callback);
     /*(void)pgstat_report_activity(STATE_RUNNING, buf.data);
