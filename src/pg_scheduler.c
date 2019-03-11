@@ -466,9 +466,9 @@ static inline void work(Datum arg, char **data, int *timeout) {
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
-static inline void done(Datum arg, const char *data, const char *status) {
+static inline void done(Datum arg, const char *data, const char *state) {
     Oid argtypes[] = {TEXTOID, TEXTOID, INT8OID};
-    Datum Values[] = {CStringGetTextDatum(status), CStringGetTextDatum(data!=NULL?data:"(null)"), arg};
+    Datum Values[] = {CStringGetTextDatum(state), CStringGetTextDatum(data!=NULL?data:"(null)"), arg};
     StringInfoData buf;
     (void)initStringInfo(&buf);
     if (schema != NULL) (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(schema), quote_identifier(table));
@@ -487,7 +487,7 @@ static inline void done(Datum arg, const char *data, const char *status) {
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
-static inline char *success() {
+static inline void success(char **data, char **state) {
     StringInfoData buf;
     (void)initStringInfo(&buf);
     if ((SPI_tuptable != NULL) && (SPI_processed > 0)) {
@@ -511,10 +511,12 @@ static inline char *success() {
         }
         elog(LOG, "success\n%s", buf.data);
     }
-    return buf.data;
+    *data = buf.data;
+    *state = "DONE";
+//    return buf.data;
 }
 
-static inline char *error() {
+static inline void error(char **data, char **state) {
     ErrorData *edata = CopyErrorData();
     StringInfoData buf;
     (void)initStringInfo(&buf);
@@ -576,11 +578,15 @@ static inline char *error() {
     );
     (void)FreeErrorData(edata);
     elog(LOG, "error\n%s", buf.data);
-    return buf.data;
+//    return buf.data;
+    *data = buf.data;
+    *state = "FAIL";
 }
 
 static inline void execute(Datum arg) {
     char *src = NULL;
+    char *data = NULL;
+    char *state;
     int timeout = 0;
     (void)work(arg, &src, &timeout);
     if ((StatementTimeout > 0) && (StatementTimeout < timeout)) timeout = StatementTimeout;
@@ -594,31 +600,42 @@ static inline void execute(Datum arg) {
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
     PG_TRY(); {
 //        elog(LOG, "execute try SPI_commit_or_rollback_and_finish 1 src=%s", src);
-        if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0 %s %i", __FILE__, __LINE__); else {
-            char *data = success();
-            (void)disable_timeout(STATEMENT_TIMEOUT, false);
+        if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0 %s %i", __FILE__, __LINE__);// else {
+        (void)success(&data, &state);
+//            state = "DONE";
+//            data = success();
+//            (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //            elog(LOG, "execute try SPI_commit_or_rollback_and_finish 2 src=%s", src);
-            (void)SPI_commit();
-            if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-            (void)ProcessCompletedNotifies();
-            (void)pgstat_report_activity(STATE_IDLE, src);
-            (void)pgstat_report_stat(true);
-            (void)done(arg, data, "DONE");
-            if (data != NULL) (void)pfree(data);
-        }
+        (void)SPI_commit();
+//            if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
+//            (void)ProcessCompletedNotifies();
+//            (void)pgstat_report_activity(STATE_IDLE, src);
+//            (void)pgstat_report_stat(true);
+//            (void)done(arg, data, "DONE");
+//            if (data != NULL) (void)pfree(data);
+//        }
     } PG_CATCH(); {
-        char *data = error();
-        (void)disable_timeout(STATEMENT_TIMEOUT, false);
+        (void)error(&data, &state);
+//        state = "FAIL";
+//        data = error();
+//        (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //        elog(LOG, "execute catch SPI_commit_or_rollback_and_finish src=%s", src);
         (void)SPI_rollback();
-        if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-        (void)ProcessCompletedNotifies();
-        (void)pgstat_report_activity(STATE_IDLE, src);
-        (void)pgstat_report_stat(true);
-        (void)done(arg, data, "FAIL");
-        if (data != NULL) (void)pfree(data);
+//        if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
+//        (void)ProcessCompletedNotifies();
+//        (void)pgstat_report_activity(STATE_IDLE, src);
+//        (void)pgstat_report_stat(true);
+//        (void)done(arg, data, "FAIL");
+//        if (data != NULL) (void)pfree(data);
     } PG_END_TRY();
+    (void)disable_timeout(STATEMENT_TIMEOUT, false);
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
+    (void)ProcessCompletedNotifies();
+    (void)pgstat_report_activity(STATE_IDLE, src);
+    (void)pgstat_report_stat(true);
+    (void)done(arg, data, state);
     if (src != NULL) (void)free(src);
+    if (data != NULL) (void)pfree(data);
 }
 
 void task(Datum arg) {
