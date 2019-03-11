@@ -451,8 +451,9 @@ static inline void assign_callback(int res, va_list args) {
 static inline void assign() {
     StringInfoData buf;
     (void)initStringInfo(&buf);
-    if (schema != NULL) (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", quote_identifier(schema), quote_identifier(table));
-    else (void)appendStringInfo(&buf, "UPDATE %s SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", quote_identifier(table));
+    (void)appendStringInfoString(&buf, "UPDATE ");
+    if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    (void)appendStringInfo(&buf, "%s SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", quote_identifier(table));
     (void)SPI_execute_and_commit(buf.data, false, 0, assign_callback);
     /*(void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
