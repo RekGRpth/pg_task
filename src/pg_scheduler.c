@@ -17,6 +17,8 @@
 #include <utils/timeout.h>
 #include "utils/varlena.h"
 
+typedef void (*ExecuteCallback) (int res);
+
 PG_MODULE_MAGIC;
 
 void _PG_init(void);
@@ -102,13 +104,51 @@ static inline void launch_tick(const char *database, const char *username) {
     if (handle != NULL) (void)pfree(handle);
 }
 
+static inline void SPI_execute_and_commit(const char *src, bool read_only, long tcount, ExecuteCallback callback) {
+    (void)pgstat_report_activity(STATE_RUNNING, src);
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
+    (void)SPI_start_transaction();
+    elog(LOG, "SPI_execute_and_commit src=\n%s", src);
+    (void)callback(SPI_execute(src, read_only, tcount));
+    (void)SPI_commit();
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
+    (void)ProcessCompletedNotifies();
+    (void)pgstat_report_activity(STATE_IDLE, src);
+    (void)pgstat_report_stat(true);
+}
+
+static inline void SPI_execute_with_args_and_commit(const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount, ExecuteCallback callback) {
+    (void)pgstat_report_activity(STATE_RUNNING, src);
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
+    (void)SPI_start_transaction();
+    elog(LOG, "SPI_execute_with_args_and_commit src=\n%s", src);
+    (void)callback(SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount));
+    (void)SPI_commit();
+    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
+    (void)ProcessCompletedNotifies();
+    (void)pgstat_report_activity(STATE_IDLE, src);
+    (void)pgstat_report_stat(true);
+}
+
+static inline void check_callback(int res) {
+    if (res != SPI_OK_SELECT) elog(FATAL, "res != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
+    for (uint64 row = 0; row < SPI_processed; row++) {
+        bool isnull;
+        char *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &isnull));
+        char *username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &isnull));
+        bool start = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "start"), &isnull));
+        elog(LOG, "check_callback row=%lu, database=%s, username=%s, start=%s", row, database, username, start?"true":"false");
+        if (start) (void)launch_tick(database, username);
+    }
+}
+
 static inline void check() {
     int i = 0;
     List *elemlist;
     StringInfoData buf;
     Oid *argtypes = NULL;
     Datum *Values = NULL;
-    char *nulls = NULL;
+    char *Nulls = NULL;
     char **str = NULL;
     elog(LOG, "check database=%s", databases);
     (void)initStringInfo(&buf);
@@ -128,7 +168,7 @@ static inline void check() {
         if (!SplitGUCList(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
         if ((argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "argtypes == NULL %s %i", __FILE__, __LINE__);
         if ((Values = palloc(sizeof(Datum) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "Values == NULL %s %i", __FILE__, __LINE__);
-        if ((nulls = palloc(sizeof(char) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "nulls == NULL %s %i", __FILE__, __LINE__);
+        if ((Nulls = palloc(sizeof(char) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "Nulls == NULL %s %i", __FILE__, __LINE__);
         if ((str = palloc(sizeof(char *) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "str == NULL %s %i", __FILE__, __LINE__);
         (void)appendStringInfoString(&buf,
             "    AND         (d.datname, u.usename) IN (\n        ");
@@ -140,10 +180,10 @@ static inline void check() {
                 ListCell *cell = list_head(elemlist);
                 const char *database = (const char *)lfirst(cell);
                 const char *username = database;
-                nulls[2 * i] = ' ';
-                nulls[2 * i + 1] = ' ';
+                Nulls[2 * i] = ' ';
+                Nulls[2 * i + 1] = ' ';
                 if ((cell = lnext(cell)) != NULL) username = (const char *)lfirst(cell);
-                else nulls[2 * i + 1] = 'n';
+                else Nulls[2 * i + 1] = 'n';
                 elog(LOG, "check database=%s, username=%s", database, username);
                 if (i > 0) (void)appendStringInfoString(&buf, ", ");
                 (void)appendStringInfo(&buf, "($%i, COALESCE($%i, i.usename))", 2 * i + 1, 2 * i + 1 + 1);
@@ -176,11 +216,12 @@ static inline void check() {
     "INNER JOIN  l USING (pid)\n"
     "WHERE       (datname, usename) NOT IN (SELECT datname, usename FROM s)\n"
     "AND         classid = datid AND objid = usesysid AND database = datid");
-    (void)pgstat_report_activity(STATE_RUNNING, buf.data);
+    (void)SPI_execute_with_args_and_commit(buf.data, i * 2, argtypes, Values, Nulls, false, 0, check_callback);
+/*    (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
     elog(LOG, "check buf.data=\n%s", buf.data);
-    if (SPI_execute_with_args(buf.data, i * 2, argtypes, Values, nulls, false, 0) != SPI_OK_SELECT) elog(FATAL, "SPI_execute_with_args != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
+    if (SPI_execute_with_args(buf.data, i * 2, argtypes, Values, Nulls, false, 0) != SPI_OK_SELECT) elog(FATAL, "SPI_execute_with_args != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
@@ -193,11 +234,11 @@ static inline void check() {
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, buf.data);
-    (void)pgstat_report_stat(true);
+    (void)pgstat_report_stat(true);*/
     if (buf.data != NULL) (void)pfree(buf.data);
     if (argtypes != NULL) (void)pfree(argtypes);
     if (Values != NULL) (void)pfree(Values);
-    if (nulls != NULL) (void)pfree(nulls);
+    if (Nulls != NULL) (void)pfree(Nulls);
     for (int j = 0; j < i * 2; j++) if (str[j] != NULL) (void)pfree(str[j]);
     if (str != NULL) (void)pfree(str);
 }
@@ -232,9 +273,20 @@ void loop(Datum arg) {
     (void)proc_exit(0);
 }
 
+static inline void lock_callback(int res) {
+    if (res != SPI_OK_SELECT) elog(FATAL, "res != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
+    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__); else {
+        bool isnull;
+        bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "pg_try_advisory_lock"), &isnull));
+        if (isnull) elog(FATAL, "isnull %s %i", __FILE__, __LINE__);
+        if (!lock) elog(FATAL, "already running database=%s, username=%s %s %i", database, username, __FILE__, __LINE__);
+    }
+}
+
 static inline void lock() {
     const char *src = "SELECT pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) FROM pg_database, pg_user WHERE datname = current_catalog AND usename = current_user";
-    (void)pgstat_report_activity(STATE_RUNNING, src);
+    (void)SPI_execute_and_commit(src, false, 0, lock_callback);
+    /*(void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
     elog(LOG, "lock src=%s", src);
@@ -249,7 +301,7 @@ static inline void lock() {
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, src);
-    (void)pgstat_report_stat(true);
+    (void)pgstat_report_stat(true);*/
 }
 
 static inline void init_schema() {
