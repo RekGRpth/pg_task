@@ -158,7 +158,6 @@ static inline void SPI_execute_with_args_and_commit(const char *src, int nargs, 
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //    elog(LOG, "SPI_execute_with_args_and_commit src=\n%s", src);
     va_start(args, success_callback);
-//  (void)callback(SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount), args);
     if (error_callback != NULL) {
         PG_TRY(); {
             (void)success_callback(SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount), args);
