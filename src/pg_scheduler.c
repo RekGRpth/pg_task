@@ -589,22 +589,16 @@ static inline void error(char **data, char **state) {
 
 static inline void SPI_execute_and_commit_or_rollback(const char *src, bool read_only, long tcount, int timeout, ExecuteCallback error, ExecuteCallback callback, ...) {
     va_list args;
-//    char **data;
-//    char **state;
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //    elog(LOG, "SPI_execute_and_commit src=\n%s", src);
     va_start(args, callback);
-//    data = va_arg(args, char **);
-//    state = va_arg(args, char **);
     PG_TRY(); {
         (void)callback(SPI_execute(src, read_only, tcount), args);
-//        (void)success(data, state);
         (void)SPI_commit();
     } PG_CATCH(); {
-//        (void)error(data, state);
         (void)error(0, args);
         (void)SPI_rollback();
     } PG_END_TRY();
