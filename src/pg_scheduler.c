@@ -320,15 +320,15 @@ static inline void init_table() {
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s (\n", quote_identifier(table));
     (void)appendStringInfo(&buf,
-    "    id BIGSERIAL NOT NULL PRIMARY KEY,\n"
-    "    dt TIMESTAMP NOT NULL DEFAULT NOW(),\n"
-    "    start TIMESTAMP,\n"
-    "    stop TIMESTAMP,\n"
-    "    request TEXT NOT NULL,\n"
-    "    response TEXT,\n"
-    "    state TEXT NOT NULL DEFAULT 'QUEUE',\n"
-    "    timeout INTERVAL"
-    ")");
+        "    id BIGSERIAL NOT NULL PRIMARY KEY,\n"
+        "    dt TIMESTAMP NOT NULL DEFAULT NOW(),\n"
+        "    start TIMESTAMP,\n"
+        "    stop TIMESTAMP,\n"
+        "    request TEXT NOT NULL,\n"
+        "    response TEXT,\n"
+        "    state TEXT NOT NULL DEFAULT 'QUEUE',\n"
+        "    timeout INTERVAL"
+        ")");
     (void)SPI_execute_and_commit(buf.data, false, 0, StatementTimeout, NULL, table_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
 }
