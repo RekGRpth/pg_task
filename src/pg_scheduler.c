@@ -104,24 +104,6 @@ static inline void launch_tick(const char *database, const char *username) {
     if (handle != NULL) (void)pfree(handle);
 }
 
-/*static inline void SPI_execute_and_commit(const char *src, bool read_only, long tcount, int timeout, ExecuteCallback callback, ...) {
-    va_list args;
-    (void)pgstat_report_activity(STATE_RUNNING, src);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
-    (void)SPI_start_transaction();
-    if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
-//    elog(LOG, "SPI_execute_and_commit src=\n%s", src);
-    va_start(args, callback);
-    (void)callback(SPI_execute(src, read_only, tcount), args);
-    va_end(args);
-    (void)SPI_commit();
-    (void)disable_timeout(STATEMENT_TIMEOUT, false);
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
-    (void)ProcessCompletedNotifies();
-    (void)pgstat_report_activity(STATE_IDLE, src);
-    (void)pgstat_report_stat(true);
-}*/
-
 static inline void SPI_execute_and_commit(const char *src, bool read_only, long tcount, int timeout, ExecuteCallback error_callback, ExecuteCallback success_callback, ...) {
     va_list args;
     (void)pgstat_report_activity(STATE_RUNNING, src);
