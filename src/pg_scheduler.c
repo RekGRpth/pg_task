@@ -197,8 +197,7 @@ static inline void check() {
         if ((Values = palloc(sizeof(Datum) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "Values == NULL %s %i", __FILE__, __LINE__);
         if ((Nulls = palloc(sizeof(char) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "Nulls == NULL %s %i", __FILE__, __LINE__);
         if ((str = palloc(sizeof(char *) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "str == NULL %s %i", __FILE__, __LINE__);
-        (void)appendStringInfoString(&buf,
-            "    AND         (d.datname, u.usename) IN (\n        ");
+        (void)appendStringInfoString(&buf, "    AND         (d.datname, u.usename) IN (\n        ");
         for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
             const char *database_username = (const char *)lfirst(cell);
             char *rawstring = pstrdup(database_username);
