@@ -14,4 +14,5 @@ by default postgres scheduler use schema in search path and table task
 to specify schema and/or table use lines
 
 pg_scheduler_schema.database1 = schema3
+
 pg_scheduler_table.database1 = table3
