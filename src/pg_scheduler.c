@@ -17,6 +17,7 @@
 #include <utils/builtins.h>
 #include <utils/lsyscache.h>
 #include "utils/varlena.h"
+#include <utils/timeout.h>
 
 PG_MODULE_MAGIC;
 
@@ -284,7 +285,8 @@ static inline void init_table() {
     "    stop TIMESTAMP,\n"
     "    request TEXT NOT NULL,\n"
     "    response TEXT,\n"
-    "    state TEXT NOT NULL DEFAULT 'QUEUE'\n"
+    "    state TEXT NOT NULL DEFAULT 'QUEUE',\n"
+    "    timeout INTERVAL"
     ")");
     (void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
@@ -586,10 +588,12 @@ static inline void execute(Datum arg) {
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
 //    elog(LOG, "execute src=%s", src);
+    if (StatementTimeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
     PG_TRY(); {
 //        elog(LOG, "execute try SPI_commit_or_rollback_and_finish 1 src=%s", src);
         if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0 %s %i", __FILE__, __LINE__); else {
             char *data = success();
+            (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //            elog(LOG, "execute try SPI_commit_or_rollback_and_finish 2 src=%s", src);
             (void)SPI_commit();
             if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
@@ -601,6 +605,7 @@ static inline void execute(Datum arg) {
         }
     } PG_CATCH(); {
         char *data = error();
+        (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //        elog(LOG, "execute catch SPI_commit_or_rollback_and_finish src=%s", src);
         (void)SPI_rollback();
         if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
