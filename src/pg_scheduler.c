@@ -345,8 +345,9 @@ static inline void init_table() {
     StringInfoData buf;
     elog(LOG, "init_table database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
-    if (schema != NULL) (void)appendStringInfo(&buf, "CREATE TABLE IF NOT EXISTS %s.%s (\n", quote_identifier(schema), quote_identifier(table));
-    else (void)appendStringInfo(&buf, "CREATE TABLE IF NOT EXISTS %s (\n", quote_identifier(table));
+    (void)appendStringInfoString(&buf, "CREATE TABLE IF NOT EXISTS ");
+    if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    (void)appendStringInfo(&buf, "%s (\n", quote_identifier(table));
     (void)appendStringInfo(&buf,
     "    id BIGSERIAL NOT NULL PRIMARY KEY,\n"
     "    dt TIMESTAMP NOT NULL DEFAULT NOW(),\n"
