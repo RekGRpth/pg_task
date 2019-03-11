@@ -108,7 +108,7 @@ static inline void SPI_execute_and_commit(const char *src, bool read_only, long 
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
-    elog(LOG, "SPI_execute_and_commit src=\n%s", src);
+//    elog(LOG, "SPI_execute_and_commit src=\n%s", src);
     (void)callback(SPI_execute(src, read_only, tcount));
     (void)SPI_commit();
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
@@ -121,7 +121,7 @@ static inline void SPI_execute_with_args_and_commit(const char *src, int nargs, 
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
-    elog(LOG, "SPI_execute_with_args_and_commit src=\n%s", src);
+//    elog(LOG, "SPI_execute_with_args_and_commit src=\n%s", src);
     (void)callback(SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount));
     (void)SPI_commit();
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
@@ -425,12 +425,24 @@ static inline void launch_task(Datum arg) {
     if (handle != NULL) (void)pfree(handle);
 }
 
+static inline void assign_callback(int res) {
+    if (res != SPI_OK_UPDATE_RETURNING) elog(FATAL, "res != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
+    for (uint64 row = 0; row < SPI_processed; row++) {
+        bool isnull;
+        Datum value = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
+        if (isnull) elog(FATAL, "isnull %s %i", __FILE__, __LINE__);
+        elog(LOG, "assign_callback row=%lu", row);
+        (void)launch_task(value);
+    }
+}
+
 static inline void assign() {
     StringInfoData buf;
     (void)initStringInfo(&buf);
     if (schema != NULL) (void)appendStringInfo(&buf, "UPDATE %s.%s SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", quote_identifier(schema), quote_identifier(table));
     else (void)appendStringInfo(&buf, "UPDATE %s SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", quote_identifier(table));
-    (void)pgstat_report_activity(STATE_RUNNING, buf.data);
+    (void)SPI_execute_and_commit(buf.data, false, 0, assign_callback);
+    /*(void)pgstat_report_activity(STATE_RUNNING, buf.data);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
 //    elog(LOG, "assign buf.data=%s", buf.data);
@@ -446,7 +458,7 @@ static inline void assign() {
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, buf.data);
-    (void)pgstat_report_stat(true);
+    (void)pgstat_report_stat(true);*/
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
