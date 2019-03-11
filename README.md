@@ -18,3 +18,11 @@ to specify schema and/or table use lines
 pg_scheduler_schema.database1 = schema3
 pg_scheduler_table.database1 = table3
 ```
+
+by default postgres scheduler runs every 1000 ms
+
+to specify other use lines
+```conf
+pg_scheduler_period.database1 = 100
+pg_scheduler_period.database2 = 10
+```
