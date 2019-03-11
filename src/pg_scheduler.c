@@ -130,13 +130,18 @@ static inline void SPI_execute_and_commit_or_rollback(const char *src, bool read
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //    elog(LOG, "SPI_execute_and_commit src=\n%s", src);
     va_start(args, callback);
-    PG_TRY(); {
+    if (error != NULL) {
+        PG_TRY(); {
+            (void)callback(SPI_execute(src, read_only, tcount), args);
+            (void)SPI_commit();
+        } PG_CATCH(); {
+            (void)error(0, args);
+            (void)SPI_rollback();
+        } PG_END_TRY();
+    } else {
         (void)callback(SPI_execute(src, read_only, tcount), args);
         (void)SPI_commit();
-    } PG_CATCH(); {
-        (void)error(0, args);
-        (void)SPI_rollback();
-    } PG_END_TRY();
+    }
     va_end(args);
     (void)disable_timeout(STATEMENT_TIMEOUT, false);
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
