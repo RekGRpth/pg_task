@@ -150,17 +150,28 @@ static inline void SPI_execute_and_commit(const char *src, bool read_only, long 
     (void)pgstat_report_stat(true);
 }
 
-static inline void SPI_execute_with_args_and_commit(const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount, int timeout, ExecuteCallback callback, ...) {
+static inline void SPI_execute_with_args_and_commit(const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount, int timeout, ExecuteCallback error_callback, ExecuteCallback success_callback, ...) {
     va_list args;
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //    elog(LOG, "SPI_execute_with_args_and_commit src=\n%s", src);
-    va_start(args, callback);
-    (void)callback(SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount), args);
+    va_start(args, success_callback);
+//  (void)callback(SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount), args);
+    if (error_callback != NULL) {
+        PG_TRY(); {
+            (void)success_callback(SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount), args);
+            (void)SPI_commit();
+        } PG_CATCH(); {
+            (void)error_callback(0, args);
+            (void)SPI_rollback();
+        } PG_END_TRY();
+    } else {
+        (void)success_callback(SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount), args);
+        (void)SPI_commit();
+    }
     va_end(args);
-    (void)SPI_commit();
     (void)disable_timeout(STATEMENT_TIMEOUT, false);
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
@@ -254,7 +265,7 @@ static inline void check() {
     "INNER JOIN  l USING (pid)\n"
     "WHERE       (datname, usename) NOT IN (SELECT datname, usename FROM s)\n"
     "AND         classid = datid AND objid = usesysid AND database = datid");
-    (void)SPI_execute_with_args_and_commit(buf.data, i * 2, argtypes, Values, Nulls, false, 0, StatementTimeout, check_callback);
+    (void)SPI_execute_with_args_and_commit(buf.data, i * 2, argtypes, Values, Nulls, false, 0, StatementTimeout, NULL, check_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
     if (argtypes != NULL) (void)pfree(argtypes);
     if (Values != NULL) (void)pfree(Values);
@@ -498,7 +509,7 @@ static inline void work(Datum arg, char **data, int *timeout) {
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
     elog(LOG, "work buf.data=%s", buf.data);
-    (void)SPI_execute_with_args_and_commit(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0, StatementTimeout, work_callback, data, timeout);
+    (void)SPI_execute_with_args_and_commit(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0, StatementTimeout, NULL, work_callback, data, timeout);
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
@@ -515,7 +526,7 @@ static inline void done(Datum arg, const char *data, const char *state) {
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(table));
     elog(LOG, "done buf.data=%s", buf.data);
-    (void)SPI_execute_with_args_and_commit(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0, StatementTimeout, done_callback);
+    (void)SPI_execute_with_args_and_commit(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0, StatementTimeout, NULL, done_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
