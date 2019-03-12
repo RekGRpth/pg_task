@@ -17,7 +17,10 @@
 #include <utils/timeout.h>
 #include "utils/varlena.h"
 
-typedef void (*ExecuteCallback) (int res, va_list args);
+#define EXECUTECALLBACK const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount, va_list args
+#define EXECUTE SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount)
+
+typedef void (*ExecuteCallback) (EXECUTECALLBACK);
 
 PG_MODULE_MAGIC;
 
@@ -104,26 +107,15 @@ static inline void launch_tick(const char *database, const char *username) {
     if (handle != NULL) (void)pfree(handle);
 }
 
-static inline void SPI_execute_with_args_and_commit(const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount, int timeout, ExecuteCallback error_callback, ExecuteCallback success_callback, ...) {
+static inline void SPI_execute_with_args_and_commit(const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount, int timeout, ExecuteCallback callback, ...) {
     va_list args;
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //    elog(LOG, "SPI_execute_with_args_and_commit src=\n%s", src);
-    va_start(args, success_callback);
-    if (error_callback != NULL) {
-        PG_TRY(); {
-            (void)success_callback(SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount), args);
-            (void)SPI_commit();
-        } PG_CATCH(); {
-            (void)error_callback(0, args);
-            (void)SPI_rollback();
-        } PG_END_TRY();
-    } else {
-        (void)success_callback(SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount), args);
-        (void)SPI_commit();
-    }
+    va_start(args, callback);
+    (void)callback(src, nargs, argtypes, Values, Nulls, read_only, tcount, args);
     va_end(args);
     (void)disable_timeout(STATEMENT_TIMEOUT, false);
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
@@ -132,8 +124,9 @@ static inline void SPI_execute_with_args_and_commit(const char *src, int nargs, 
     (void)pgstat_report_stat(true);
 }
 
-static inline void check_callback(int res, va_list args) {
-    if (res != SPI_OK_SELECT) elog(FATAL, "res != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
+static inline void check_callback(EXECUTECALLBACK) {
+    if (EXECUTE != SPI_OK_SELECT) elog(FATAL, "EXECUTE != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
+    (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
         char *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &isnull));
@@ -213,7 +206,7 @@ static inline void check() {
         "INNER JOIN  l USING (pid)\n"
         "WHERE       (datname, usename) NOT IN (SELECT datname, usename FROM s)\n"
         "AND         classid = datid AND objid = usesysid AND database = datid");
-    (void)SPI_execute_with_args_and_commit(buf.data, i * 2, argtypes, Values, Nulls, false, 0, StatementTimeout, NULL, check_callback);
+    (void)SPI_execute_with_args_and_commit(buf.data, i * 2, argtypes, Values, Nulls, false, 0, StatementTimeout, check_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
     if (argtypes != NULL) (void)pfree(argtypes);
     if (Values != NULL) (void)pfree(Values);
@@ -252,8 +245,9 @@ void loop(Datum arg) {
     (void)proc_exit(0);
 }
 
-static inline void lock_callback(int res, va_list args) {
-    if (res != SPI_OK_SELECT) elog(FATAL, "res != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
+static inline void lock_callback(EXECUTECALLBACK) {
+    if (EXECUTE != SPI_OK_SELECT) elog(FATAL, "EXECUTE != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
+    (void)SPI_commit();
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__); else {
         bool isnull;
         bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "pg_try_advisory_lock"), &isnull));
@@ -264,11 +258,12 @@ static inline void lock_callback(int res, va_list args) {
 
 static inline void lock() {
     const char *src = "SELECT pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) FROM pg_database, pg_user WHERE datname = current_catalog AND usename = current_user";
-    (void)SPI_execute_with_args_and_commit(src, 0, NULL, NULL, NULL, false, 0, StatementTimeout, NULL, lock_callback);
+    (void)SPI_execute_with_args_and_commit(src, 0, NULL, NULL, NULL, false, 0, StatementTimeout, lock_callback);
 }
 
-static inline void schema_callback(int res, va_list args) {
-    if (res != SPI_OK_UTILITY) elog(FATAL, "res != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
+static inline void schema_callback(EXECUTECALLBACK) {
+    if (EXECUTE != SPI_OK_UTILITY) elog(FATAL, "EXECUTE != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
+    (void)SPI_commit();
 }
 
 static inline void init_schema() {
@@ -276,12 +271,13 @@ static inline void init_schema() {
     elog(LOG, "init_schema database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", quote_identifier(schema));
-    (void)SPI_execute_with_args_and_commit(buf.data, 0, NULL, NULL, NULL, false, 0, StatementTimeout, NULL, schema_callback);
+    (void)SPI_execute_with_args_and_commit(buf.data, 0, NULL, NULL, NULL, false, 0, StatementTimeout, schema_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
-static inline void table_callback(int res, va_list args) {
-    if (res != SPI_OK_UTILITY) elog(FATAL, "res != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
+static inline void table_callback(EXECUTECALLBACK) {
+    if (EXECUTE != SPI_OK_UTILITY) elog(FATAL, "EXECUTE != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
+    (void)SPI_commit();
 }
 
 static inline void init_table() {
@@ -301,12 +297,13 @@ static inline void init_table() {
         "    state TEXT NOT NULL DEFAULT 'QUEUE',\n"
         "    timeout INTERVAL"
         ")");
-    (void)SPI_execute_with_args_and_commit(buf.data, 0, NULL, NULL, NULL, false, 0, StatementTimeout, NULL, table_callback);
+    (void)SPI_execute_with_args_and_commit(buf.data, 0, NULL, NULL, NULL, false, 0, StatementTimeout, table_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
-static inline void index_callback(int res, va_list args) {
-    if (res != SPI_OK_UTILITY) elog(FATAL, "res != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
+static inline void index_callback(EXECUTECALLBACK) {
+    if (EXECUTE != SPI_OK_UTILITY) elog(FATAL, "EXECUTE != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
+    (void)SPI_commit();
 }
 
 static inline void init_index(const char *index) {
@@ -318,7 +315,7 @@ static inline void init_index(const char *index) {
     (void)appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON ", quote_identifier(name.data));
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s USING btree (%s)", quote_identifier(table), quote_identifier(index));
-    (void)SPI_execute_with_args_and_commit(buf.data, 0, NULL, NULL, NULL, false, 0, StatementTimeout, NULL, index_callback);
+    (void)SPI_execute_with_args_and_commit(buf.data, 0, NULL, NULL, NULL, false, 0, StatementTimeout, index_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
     if (name.data != NULL) (void)pfree(name.data);
 }
@@ -360,8 +357,9 @@ static inline void launch_task(Datum arg) {
     if (handle != NULL) (void)pfree(handle);
 }
 
-static inline void assign_callback(int res, va_list args) {
-    if (res != SPI_OK_UPDATE_RETURNING) elog(FATAL, "res != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
+static inline void assign_callback(EXECUTECALLBACK) {
+    if (EXECUTE != SPI_OK_UPDATE_RETURNING) elog(FATAL, "EXECUTE != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
+    (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
         Datum value = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
@@ -377,7 +375,7 @@ static inline void assign() {
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", quote_identifier(table));
-    (void)SPI_execute_with_args_and_commit(buf.data, 0, NULL, NULL, NULL, false, 0, StatementTimeout, NULL, assign_callback);
+    (void)SPI_execute_with_args_and_commit(buf.data, 0, NULL, NULL, NULL, false, 0, StatementTimeout, assign_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
@@ -433,8 +431,9 @@ void tick(Datum arg) {
     (void)proc_exit(0);
 }
 
-static inline void work_callback(int res, va_list args) {
-    if (res != SPI_OK_UPDATE_RETURNING) elog(FATAL, "res != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
+static inline void work_callback(EXECUTECALLBACK) {
+    if (EXECUTE != SPI_OK_UPDATE_RETURNING) elog(FATAL, "EXECUTE != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
+    (void)SPI_commit();
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__); else {
         char **data = va_arg(args, char **);
         int *timeout = va_arg(args, int *);
@@ -457,12 +456,13 @@ static inline void work(Datum arg, char **data, int *timeout) {
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
     elog(LOG, "work buf.data=%s", buf.data);
-    (void)SPI_execute_with_args_and_commit(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0, StatementTimeout, NULL, work_callback, data, timeout);
+    (void)SPI_execute_with_args_and_commit(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0, StatementTimeout, work_callback, data, timeout);
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
-static inline void done_callback(int res, va_list args) {
-    if (res != SPI_OK_UPDATE) elog(FATAL, "res != SPI_OK_UPDATE %s %i", __FILE__, __LINE__);
+static inline void done_callback(EXECUTECALLBACK) {
+    if (EXECUTE != SPI_OK_UPDATE) elog(FATAL, "EXECUTE != SPI_OK_UPDATE %s %i", __FILE__, __LINE__);
+    (void)SPI_commit();
 }
 
 static inline void done(Datum arg, const char *data, const char *state) {
@@ -474,7 +474,7 @@ static inline void done(Datum arg, const char *data, const char *state) {
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(table));
     elog(LOG, "done buf.data=%s", buf.data);
-    (void)SPI_execute_with_args_and_commit(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0, StatementTimeout, NULL, done_callback);
+    (void)SPI_execute_with_args_and_commit(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0, StatementTimeout, done_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
@@ -572,18 +572,20 @@ static inline void error(char **data, char **state) {
     *state = "FAIL";
 }
 
-static inline void execute_callback(int res, va_list args) {
-    if (res < 0) elog(FATAL, "SPI_execute < 0 %s %i", __FILE__, __LINE__); else {
+static inline void execute_callback(EXECUTECALLBACK) {
+    PG_TRY(); {
+        if (EXECUTE < 0) elog(FATAL, "EXECUTE < 0 %s %i", __FILE__, __LINE__); else {
+            char **data = va_arg(args, char **);
+            char **state = va_arg(args, char **);
+            (void)success(data, state);
+            (void)SPI_commit();
+        }
+    } PG_CATCH(); {
         char **data = va_arg(args, char **);
         char **state = va_arg(args, char **);
-        (void)success(data, state);
-    }
-}
-
-static inline void error_callback(int res, va_list args) {
-    char **data = va_arg(args, char **);
-    char **state = va_arg(args, char **);
-    (void)error(data, state);
+        (void)error(data, state);
+        (void)SPI_rollback();
+    } PG_END_TRY();
 }
 
 static inline void execute(Datum arg) {
@@ -595,7 +597,7 @@ static inline void execute(Datum arg) {
     if ((StatementTimeout > 0) && (StatementTimeout < timeout)) timeout = StatementTimeout;
 //    elog(LOG, "execute src=%s", src);
     elog(LOG, "execute database=%s, username=%s, schema=%s, table=%s, timeout=%i, src=\n%s", database, username, schema, table, timeout, src);
-    (void)SPI_execute_with_args_and_commit(src, 0, NULL, NULL, NULL, false, 0, timeout, error_callback, execute_callback, &data, &state);
+    (void)SPI_execute_with_args_and_commit(src, 0, NULL, NULL, NULL, false, 0, timeout, execute_callback, &data, &state);
 //    elog(LOG, "src=%s", src);
     (void)done(arg, data, state);
     if (src != NULL) (void)free(src);
