@@ -369,8 +369,6 @@ static inline void assign_callback(EXECUTECALLBACK) {
         bool isnull;
         Datum id = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
         char *queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &isnull));
-//        int max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &isnull));
-//        if (isnull) elog(FATAL, "isnull %s %i", __FILE__, __LINE__);
         elog(LOG, "assign_callback row=%lu, id=%lu, queue=%s", row, DatumGetInt64(id), queue);
         (void)launch_task(id, queue);
         if (queue != NULL) (void)pfree(queue);
@@ -389,7 +387,7 @@ static inline void assign() {
         "    WHERE       state = 'QUEUE'\n"
         "    AND         dt <= now()\n"
         "    AND         COALESCE(max, ~(1<<31)) > (SELECT count(pid) FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND backend_type = 'pg_scheduler task '||queue)\n"
-        "    ORDER BY    max DESC, id DESC\n"
+        "    ORDER BY    max DESC, id\n"
         ") SELECT id, queue FROM s LIMIT (SELECT max FROM s LIMIT 1)", quote_identifier(table));
     (void)SPI_connect_execute_finish(buf.data, 0, NULL, NULL, NULL, false, 0, StatementTimeout, assign_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
