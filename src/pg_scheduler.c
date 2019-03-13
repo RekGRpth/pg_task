@@ -322,12 +322,13 @@ static inline void init_index(const char *index) {
     if (name.data != NULL) (void)pfree(name.data);
 }
 
-static inline void launch_task(Datum arg) {
+static inline void launch_task(Datum arg, const char *queue, int max) {
     BackgroundWorker worker;
     BackgroundWorkerHandle *handle;
     pid_t pid;
     int len, len2, len3, len4;
-    elog(LOG, "launch_task database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
+    uint64 id = DatumGetInt64(arg);
+    elog(LOG, "launch_task database=%s, username=%s, schema=%s, table=%s, id=%lu, queue=%s, max=%i", database, username, schema, table, id, queue, max);
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -339,8 +340,9 @@ static inline void launch_task(Datum arg) {
 //    if (snprintf(worker.bgw_type, sizeof("pg_scheduler task"), "pg_scheduler task") != sizeof("pg_scheduler task") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     len = sizeof("%s %s pg_scheduler task") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2;
     if (snprintf(worker.bgw_type, len + 1, "%s %s pg_scheduler task", database, username) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    len = sizeof("%s %s pg_scheduler task") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2;
-    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task", database, username) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    len = sizeof("%s %s pg_scheduler task %s %lu") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2 + strlen(queue) - 1 - 3;
+    for (int number = id; number /= 10; len++);
+    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task %s %lu", database, username, queue, id) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     len = sizeof("%s") - 1 + strlen(database) - 1 - 1;
     if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     len2 = sizeof("%s") - 1 + strlen(username) - 1 - 1;
@@ -366,17 +368,20 @@ static inline void assign_callback(EXECUTECALLBACK) {
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
-        Datum value = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
-        if (isnull) elog(FATAL, "isnull %s %i", __FILE__, __LINE__);
-        elog(LOG, "assign_callback row=%lu", row);
-        (void)launch_task(value);
+        Datum id = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
+        char *queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &isnull));
+        int max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &isnull));
+//        if (isnull) elog(FATAL, "isnull %s %i", __FILE__, __LINE__);
+        elog(LOG, "assign_callback row=%lu, id=%lu, queue=%s, max=%i", row, DatumGetInt64(id), queue, max);
+        (void)launch_task(id, queue, max);
+        if (queue != NULL) (void)pfree(queue);
     }
 }
 
 static inline void assign() {
     StringInfoData buf;
     (void)initStringInfo(&buf);
-    (void)appendStringInfoString(&buf, "SELECT id FROM ");
+    (void)appendStringInfoString(&buf, "SELECT id, queue, max FROM ");
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s WHERE state = 'QUEUE' AND dt <= now()", quote_identifier(table));
     (void)SPI_connect_execute_finish(buf.data, 0, NULL, NULL, NULL, false, 0, StatementTimeout, assign_callback);
@@ -454,7 +459,7 @@ static inline void work(Datum arg, char **data, int *timeout) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
     StringInfoData buf;
-    elog(LOG, "work database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
+    elog(LOG, "work database=%s, username=%s, schema=%s, table=%s, id=%lu", database, username, schema, table, DatumGetInt64(arg));
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
@@ -614,7 +619,7 @@ void task(Datum arg) {
     table = username + strlen(username) + 1;
     schema = table + strlen(table) + 1;
     if (strlen(schema) == 0) schema = NULL;
-    elog(LOG, "task database=%s, username=%s, schema=%s, table=%s, id=%li", database, username, schema, table, DatumGetInt64(arg));
+    elog(LOG, "task database=%s, username=%s, schema=%s, table=%s, id=%lu", database, username, schema, table, DatumGetInt64(arg));
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
     (void)execute(arg);
