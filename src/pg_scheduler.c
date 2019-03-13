@@ -358,7 +358,7 @@ static inline void launch_task(Datum arg) {
 }
 
 static inline void assign_callback(EXECUTECALLBACK) {
-    if (EXECUTE != SPI_OK_UPDATE_RETURNING) elog(FATAL, "EXECUTE != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
+    if (EXECUTE != SPI_OK_SELECT) elog(FATAL, "EXECUTE != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
@@ -372,9 +372,9 @@ static inline void assign_callback(EXECUTECALLBACK) {
 static inline void assign() {
     StringInfoData buf;
     (void)initStringInfo(&buf);
-    (void)appendStringInfoString(&buf, "UPDATE ");
+    (void)appendStringInfoString(&buf, "SELECT id FROM ");
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s SET state = 'ASSIGN' WHERE state = 'QUEUE' AND dt <= now() RETURNING id", quote_identifier(table));
+    (void)appendStringInfo(&buf, "%s WHERE state = 'QUEUE' AND dt <= now()", quote_identifier(table));
     (void)SPI_connect_execute_finish(buf.data, 0, NULL, NULL, NULL, false, 0, StatementTimeout, assign_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
 }
