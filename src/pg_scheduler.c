@@ -293,7 +293,7 @@ static inline void init_table() {
         "    start TIMESTAMP,\n"
         "    stop TIMESTAMP,\n"
         "    queue TEXT NOT NULL DEFAULT 'default',\n"
-        "    max INT NOT NULL DEFAULT 0,\n"
+        "    max INT,\n"
         "    request TEXT NOT NULL,\n"
         "    response TEXT,\n"
         "    state TEXT NOT NULL DEFAULT 'QUEUE',\n"
@@ -380,9 +380,17 @@ static inline void assign_callback(EXECUTECALLBACK) {
 static inline void assign() {
     StringInfoData buf;
     (void)initStringInfo(&buf);
-    (void)appendStringInfoString(&buf, "SELECT id, queue FROM ");
+    (void)appendStringInfoString(&buf,
+        "WITH s AS (\n"
+        "    SELECT      id, queue, COALESCE(max, ~(1<<31)) AS max\n"
+        "    FROM        ");
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s WHERE state = 'QUEUE' AND dt <= now()", quote_identifier(table));
+    (void)appendStringInfo(&buf, "%s\n"
+        "    WHERE       state = 'QUEUE'\n"
+        "    AND         dt <= now()\n"
+        "    AND         COALESCE(max, ~(1<<31)) > (SELECT count(pid) FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND backend_type = 'pg_scheduler task '||queue)\n"
+        "    ORDER BY    max DESC, id DESC\n"
+        ") SELECT id, queue FROM s LIMIT (SELECT max FROM s LIMIT 1)", quote_identifier(table));
     (void)SPI_connect_execute_finish(buf.data, 0, NULL, NULL, NULL, false, 0, StatementTimeout, assign_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
 }
