@@ -23,7 +23,7 @@
 #define EXECUTE SPI_execute(src, read_only, tcount)
 #define EXECUTE_WITH_ARGS SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount)
 
-typedef void (*CallbackWithArgs) (CALLBACK_WITH_ARGS);
+typedef void (*Callback) (CALLBACK_WITH_ARGS);
 
 PG_MODULE_MAGIC;
 
@@ -110,7 +110,7 @@ static inline void launch_tick(const char *database, const char *username) {
     if (handle != NULL) (void)pfree(handle);
 }
 
-static inline void SPI_connect_execute_finish(const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount, int timeout, CallbackWithArgs callback, ...) {
+static inline void SPI_connect_execute_finish(const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount, int timeout, Callback callback, ...) {
     va_list args;
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
