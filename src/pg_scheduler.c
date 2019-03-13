@@ -292,6 +292,8 @@ static inline void init_table() {
         "    dt TIMESTAMP NOT NULL DEFAULT NOW(),\n"
         "    start TIMESTAMP,\n"
         "    stop TIMESTAMP,\n"
+        "    queue TEXT NOT NULL DEFAULT 'default',\n"
+        "    max INT NOT NULL DEFAULT 0,\n"
         "    request TEXT NOT NULL,\n"
         "    response TEXT,\n"
         "    state TEXT NOT NULL DEFAULT 'QUEUE',\n"
@@ -334,7 +336,9 @@ static inline void launch_task(Datum arg) {
     worker.bgw_main_arg = arg;
     if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     if (snprintf(worker.bgw_function_name, sizeof("task"), "task") != sizeof("task") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    if (snprintf(worker.bgw_type, sizeof("pg_scheduler task"), "pg_scheduler task") != sizeof("pg_scheduler task") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+//    if (snprintf(worker.bgw_type, sizeof("pg_scheduler task"), "pg_scheduler task") != sizeof("pg_scheduler task") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    len = sizeof("%s %s pg_scheduler task") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2;
+    if (snprintf(worker.bgw_type, len + 1, "%s %s pg_scheduler task", database, username) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     len = sizeof("%s %s pg_scheduler task") - 1 + strlen(database) - 1 + strlen(username) - 1 - 2;
     if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task", database, username) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     len = sizeof("%s") - 1 + strlen(database) - 1 - 1;
