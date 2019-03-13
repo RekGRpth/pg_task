@@ -17,8 +17,8 @@
 #include <utils/timeout.h>
 #include "utils/varlena.h"
 
-#define CALLBACK const char *src, int nargs, va_list args
-#define CALLBACK_WITH_ARGS const char *src, int nargs, va_list args
+#define CALLBACK const char *src, va_list args
+#define CALLBACK_WITH_ARGS const char *src, va_list args
 
 #define EXECUTE SPI_execute(src, false, 0)
 #define EXECUTE_WITH_ARGS SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0)
@@ -110,7 +110,7 @@ static inline void launch_tick(const char *database, const char *username) {
     if (handle != NULL) (void)pfree(handle);
 }
 
-static inline void SPI_connect_execute_finish(const char *src, int nargs, int timeout, Callback callback, ...) {
+static inline void SPI_connect_execute_finish(const char *src, int timeout, Callback callback, ...) {
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
@@ -119,7 +119,7 @@ static inline void SPI_connect_execute_finish(const char *src, int nargs, int ti
     {
         va_list args;
         va_start(args, callback);
-        (void)callback(src, nargs, args);
+        (void)callback(src, args);
         va_end(args);
     }
     (void)disable_timeout(STATEMENT_TIMEOUT, false);
@@ -130,6 +130,7 @@ static inline void SPI_connect_execute_finish(const char *src, int nargs, int ti
 }
 
 static inline void check_callback(CALLBACK_WITH_ARGS) {
+    int nargs = va_arg(args, int);
     Oid *argtypes = va_arg(args, Oid *);
     Datum *Values = va_arg(args, Datum *);
     const char *Nulls = va_arg(args, const char *);
@@ -214,7 +215,7 @@ static inline void check() {
         "INNER JOIN  l USING (pid)\n"
         "WHERE       (datname, usename) NOT IN (SELECT datname, usename FROM s)\n"
         "AND         classid = datid AND objid = usesysid AND database = datid");
-    (void)SPI_connect_execute_finish(buf.data, i * 2, StatementTimeout, check_callback, argtypes, Values, Nulls);
+    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, check_callback, i * 2, argtypes, Values, Nulls);
     if (buf.data != NULL) (void)pfree(buf.data);
     if (argtypes != NULL) (void)pfree(argtypes);
     if (Values != NULL) (void)pfree(Values);
@@ -266,7 +267,7 @@ static inline void lock_callback(CALLBACK) {
 
 static inline void lock() {
     const char *src = "SELECT pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) FROM pg_database, pg_user WHERE datname = current_catalog AND usename = current_user";
-    (void)SPI_connect_execute_finish(src, 0, StatementTimeout, lock_callback);
+    (void)SPI_connect_execute_finish(src, StatementTimeout, lock_callback);
 }
 
 static inline void schema_callback(CALLBACK) {
@@ -279,7 +280,7 @@ static inline void init_schema() {
     elog(LOG, "init_schema database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", quote_identifier(schema));
-    (void)SPI_connect_execute_finish(buf.data, 0, StatementTimeout, schema_callback);
+    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, schema_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
@@ -307,7 +308,7 @@ static inline void init_table() {
         "    state TEXT NOT NULL DEFAULT 'QUEUE',\n"
         "    timeout INTERVAL"
         ")");
-    (void)SPI_connect_execute_finish(buf.data, 0, StatementTimeout, table_callback);
+    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, table_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
@@ -325,7 +326,7 @@ static inline void init_index(const char *index) {
     (void)appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON ", quote_identifier(name.data));
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s USING btree (%s)", quote_identifier(table), quote_identifier(index));
-    (void)SPI_connect_execute_finish(buf.data, 0, StatementTimeout, index_callback);
+    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, index_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
     if (name.data != NULL) (void)pfree(name.data);
 }
@@ -397,7 +398,7 @@ static inline void assign() {
         "    AND         COALESCE(max, ~(1<<31)) > (SELECT count(pid) FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND backend_type = 'pg_scheduler task '||queue)\n"
         "    ORDER BY    max DESC, id\n"
         ") SELECT id, queue FROM s LIMIT (SELECT max FROM s LIMIT 1)", quote_identifier(table));
-    (void)SPI_connect_execute_finish(buf.data, 0, StatementTimeout, assign_callback);
+    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, assign_callback);
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
@@ -454,6 +455,7 @@ void tick(Datum arg) {
 }
 
 static inline void work_callback(CALLBACK_WITH_ARGS) {
+    int nargs = va_arg(args, int);
     Oid *argtypes = va_arg(args, Oid *);
     Datum *Values = va_arg(args, Datum *);
     const char *Nulls = va_arg(args, const char *);
@@ -481,11 +483,12 @@ static inline void work(Datum arg, char **data, int *timeout) {
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
     elog(LOG, "work buf.data=%s", buf.data);
-    (void)SPI_connect_execute_finish(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), StatementTimeout, work_callback, argtypes, Values, NULL, data, timeout);
+    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, work_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, data, timeout);
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
 static inline void done_callback(CALLBACK_WITH_ARGS) {
+    int nargs = va_arg(args, int);
     Oid *argtypes = va_arg(args, Oid *);
     Datum *Values = va_arg(args, Datum *);
     const char *Nulls = va_arg(args, const char *);
@@ -502,7 +505,7 @@ static inline void done(Datum arg, const char *data, const char *state) {
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(table));
     elog(LOG, "done buf.data=%s", buf.data);
-    (void)SPI_connect_execute_finish(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), StatementTimeout, done_callback, argtypes, Values, NULL);
+    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, done_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL);
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
@@ -625,7 +628,7 @@ static inline void execute(Datum arg) {
     if ((StatementTimeout > 0) && (StatementTimeout < timeout)) timeout = StatementTimeout;
 //    elog(LOG, "execute src=%s", src);
     elog(LOG, "execute database=%s, username=%s, schema=%s, table=%s, timeout=%i, src=\n%s", database, username, schema, table, timeout, src);
-    (void)SPI_connect_execute_finish(src, 0, timeout, execute_callback, &data, &state);
+    (void)SPI_connect_execute_finish(src, timeout, execute_callback, &data, &state);
 //    elog(LOG, "src=%s", src);
     (void)done(arg, data, state);
     if (src != NULL) (void)free(src);
