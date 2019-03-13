@@ -337,8 +337,8 @@ static inline void launch_task(Datum arg, const char *queue) {
     worker.bgw_main_arg = arg;
     if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     if (snprintf(worker.bgw_function_name, sizeof("task"), "task") != sizeof("task") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    len = (sizeof("%s %s pg_scheduler task %s") - 1) + (strlen(database) - 1) + (strlen(username) - 1) + (strlen(queue) - 1) - 1 - 1 - 1;
-    if (snprintf(worker.bgw_type, len + 1, "%s %s pg_scheduler task %s", database, username, queue) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    len = (sizeof("pg_scheduler task %s") - 1) + (strlen(queue) - 1) - 1;
+    if (snprintf(worker.bgw_type, len + 1, "pg_scheduler task %s", queue) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     len = (sizeof("%s %s pg_scheduler task %s %lu") - 1) + (strlen(database) - 1) + (strlen(username) - 1) + (strlen(queue) - 1) - 1 - 1 - 1 - 2;
     for (int number = id; number /= 10; len++);
     if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task %s %lu", database, username, queue, id) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
