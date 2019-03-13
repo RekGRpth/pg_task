@@ -111,15 +111,17 @@ static inline void launch_tick(const char *database, const char *username) {
 }
 
 static inline void SPI_connect_execute_finish(const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount, int timeout, Callback callback, ...) {
-    va_list args;
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //    elog(LOG, "SPI_connect_execute_finish src=\n%s", src);
-    va_start(args, callback);
-    (void)callback(src, nargs, argtypes, Values, Nulls, read_only, tcount, args);
-    va_end(args);
+    {
+        va_list args;
+        va_start(args, callback);
+        (void)callback(src, nargs, argtypes, Values, Nulls, read_only, tcount, args);
+        va_end(args);
+    }
     (void)disable_timeout(STATEMENT_TIMEOUT, false);
     if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
     (void)ProcessCompletedNotifies();
