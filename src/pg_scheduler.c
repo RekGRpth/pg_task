@@ -17,8 +17,8 @@
 #include <utils/timeout.h>
 #include "utils/varlena.h"
 
-#define CALLBACK const char *src, int nargs, /*Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount,*/ va_list args
-#define CALLBACK_WITH_ARGS const char *src, int nargs, /*Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount,*/ va_list args
+#define CALLBACK const char *src, int nargs, va_list args
+#define CALLBACK_WITH_ARGS const char *src, int nargs, va_list args
 
 #define EXECUTE SPI_execute(src, false, 0)
 #define EXECUTE_WITH_ARGS SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0)
@@ -110,8 +110,7 @@ static inline void launch_tick(const char *database, const char *username) {
     if (handle != NULL) (void)pfree(handle);
 }
 
-//static inline void SPI_connect_execute_finish(const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount, int timeout, Callback callback, ...) {
-static inline void SPI_connect_execute_finish(const char *src, int nargs, /*Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount,*/ int timeout, Callback callback, ...) {
+static inline void SPI_connect_execute_finish(const char *src, int nargs, int timeout, Callback callback, ...) {
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
     (void)SPI_start_transaction();
@@ -120,7 +119,7 @@ static inline void SPI_connect_execute_finish(const char *src, int nargs, /*Oid 
     {
         va_list args;
         va_start(args, callback);
-        (void)callback(src, nargs, /*argtypes, Values, Nulls, read_only, tcount,*/ args);
+        (void)callback(src, nargs, args);
         va_end(args);
     }
     (void)disable_timeout(STATEMENT_TIMEOUT, false);
