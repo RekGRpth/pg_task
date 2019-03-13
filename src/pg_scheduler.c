@@ -131,7 +131,7 @@ static inline void check_callback(const char *src, va_list args) {
     Oid *argtypes = va_arg(args, Oid *);
     Datum *Values = va_arg(args, Datum *);
     const char *Nulls = va_arg(args, const char *);
-    if (EXECUTE_WITH_ARGS != SPI_OK_SELECT) elog(FATAL, "EXECUTE_WITH_ARGS != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
+    if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_SELECT) elog(FATAL, "SPI_execute_with_args != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
@@ -456,7 +456,7 @@ static inline void work_callback(const char *src, va_list args) {
     Oid *argtypes = va_arg(args, Oid *);
     Datum *Values = va_arg(args, Datum *);
     const char *Nulls = va_arg(args, const char *);
-    if (EXECUTE_WITH_ARGS != SPI_OK_UPDATE_RETURNING) elog(FATAL, "EXECUTE_WITH_ARGS != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
+    if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__); else {
         char **data = va_arg(args, char **);
@@ -489,7 +489,7 @@ static inline void done_callback(const char *src, va_list args) {
     Oid *argtypes = va_arg(args, Oid *);
     Datum *Values = va_arg(args, Datum *);
     const char *Nulls = va_arg(args, const char *);
-    if (EXECUTE_WITH_ARGS != SPI_OK_UPDATE) elog(FATAL, "EXECUTE_WITH_ARGS != SPI_OK_UPDATE %s %i", __FILE__, __LINE__);
+    if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
 }
 
