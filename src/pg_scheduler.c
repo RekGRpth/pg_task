@@ -17,10 +17,13 @@
 #include <utils/timeout.h>
 #include "utils/varlena.h"
 
-#define EXECUTECALLBACK const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount, va_list args
-#define EXECUTE SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount)
+#define CALLBACK const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount, va_list args
+#define CALLBACK_WITH_ARGS const char *src, int nargs, Oid *argtypes, Datum *Values, const char *Nulls, bool read_only, long tcount, va_list args
 
-typedef void (*ExecuteCallback) (EXECUTECALLBACK);
+#define EXECUTE SPI_execute(src, read_only, tcount)
+#define EXECUTE_WITH_ARGS SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, read_only, tcount)
+
+typedef void (*ExecuteCallback) (CALLBACK_WITH_ARGS);
 
 PG_MODULE_MAGIC;
 
@@ -124,8 +127,8 @@ static inline void SPI_connect_execute_finish(const char *src, int nargs, Oid *a
     (void)pgstat_report_stat(true);
 }
 
-static inline void check_callback(EXECUTECALLBACK) {
-    if (EXECUTE != SPI_OK_SELECT) elog(FATAL, "EXECUTE != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
+static inline void check_callback(CALLBACK_WITH_ARGS) {
+    if (EXECUTE_WITH_ARGS != SPI_OK_SELECT) elog(FATAL, "EXECUTE_WITH_ARGS != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
@@ -245,7 +248,7 @@ void loop(Datum arg) {
     (void)proc_exit(0);
 }
 
-static inline void lock_callback(EXECUTECALLBACK) {
+static inline void lock_callback(CALLBACK) {
     if (EXECUTE != SPI_OK_SELECT) elog(FATAL, "EXECUTE != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__); else {
@@ -261,7 +264,7 @@ static inline void lock() {
     (void)SPI_connect_execute_finish(src, 0, NULL, NULL, NULL, false, 0, StatementTimeout, lock_callback);
 }
 
-static inline void schema_callback(EXECUTECALLBACK) {
+static inline void schema_callback(CALLBACK) {
     if (EXECUTE != SPI_OK_UTILITY) elog(FATAL, "EXECUTE != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
 }
@@ -275,7 +278,7 @@ static inline void init_schema() {
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
-static inline void table_callback(EXECUTECALLBACK) {
+static inline void table_callback(CALLBACK) {
     if (EXECUTE != SPI_OK_UTILITY) elog(FATAL, "EXECUTE != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
 }
@@ -303,7 +306,7 @@ static inline void init_table() {
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
-static inline void index_callback(EXECUTECALLBACK) {
+static inline void index_callback(CALLBACK) {
     if (EXECUTE != SPI_OK_UTILITY) elog(FATAL, "EXECUTE != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
 }
@@ -362,7 +365,7 @@ static inline void launch_task(Datum arg, const char *queue) {
     if (handle != NULL) (void)pfree(handle);
 }
 
-static inline void assign_callback(EXECUTECALLBACK) {
+static inline void assign_callback(CALLBACK) {
     if (EXECUTE != SPI_OK_SELECT) elog(FATAL, "EXECUTE != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
@@ -445,8 +448,8 @@ void tick(Datum arg) {
     (void)proc_exit(0);
 }
 
-static inline void work_callback(EXECUTECALLBACK) {
-    if (EXECUTE != SPI_OK_UPDATE_RETURNING) elog(FATAL, "EXECUTE != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
+static inline void work_callback(CALLBACK_WITH_ARGS) {
+    if (EXECUTE_WITH_ARGS != SPI_OK_UPDATE_RETURNING) elog(FATAL, "EXECUTE_WITH_ARGS != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
     if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__); else {
         char **data = va_arg(args, char **);
@@ -474,8 +477,8 @@ static inline void work(Datum arg, char **data, int *timeout) {
     if (buf.data != NULL) (void)pfree(buf.data);
 }
 
-static inline void done_callback(EXECUTECALLBACK) {
-    if (EXECUTE != SPI_OK_UPDATE) elog(FATAL, "EXECUTE != SPI_OK_UPDATE %s %i", __FILE__, __LINE__);
+static inline void done_callback(CALLBACK_WITH_ARGS) {
+    if (EXECUTE_WITH_ARGS != SPI_OK_UPDATE) elog(FATAL, "EXECUTE_WITH_ARGS != SPI_OK_UPDATE %s %i", __FILE__, __LINE__);
     (void)SPI_commit();
 }
 
@@ -586,7 +589,7 @@ static inline void error(char **data, char **state) {
     *state = "FAIL";
 }
 
-static inline void execute_callback(EXECUTECALLBACK) {
+static inline void execute_callback(CALLBACK) {
     PG_TRY(); {
         if (EXECUTE < 0) elog(FATAL, "EXECUTE < 0 %s %i", __FILE__, __LINE__); else {
             char **data = va_arg(args, char **);
