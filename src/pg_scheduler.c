@@ -322,13 +322,13 @@ static inline void init_index(const char *index) {
     if (name.data != NULL) (void)pfree(name.data);
 }
 
-static inline void launch_task(Datum arg, const char *queue, int max) {
+static inline void launch_task(Datum arg, const char *queue) {
     BackgroundWorker worker;
     BackgroundWorkerHandle *handle;
     pid_t pid;
     int len, len2, len3, len4;
     uint64 id = DatumGetInt64(arg);
-    elog(LOG, "launch_task database=%s, username=%s, schema=%s, table=%s, id=%lu, queue=%s, max=%i", database, username, schema, table, id, queue, max);
+    elog(LOG, "launch_task database=%s, username=%s, schema=%s, table=%s, id=%lu, queue=%s", database, username, schema, table, id, queue);
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -337,8 +337,8 @@ static inline void launch_task(Datum arg, const char *queue, int max) {
     worker.bgw_main_arg = arg;
     if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     if (snprintf(worker.bgw_function_name, sizeof("task"), "task") != sizeof("task") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    len = (sizeof("%s %s pg_scheduler task") - 1) + (strlen(database) - 1) + (strlen(username) - 1) - 1 - 1;
-    if (snprintf(worker.bgw_type, len + 1, "%s %s pg_scheduler task", database, username) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    len = (sizeof("%s %s pg_scheduler task %s") - 1) + (strlen(database) - 1) + (strlen(username) - 1) + (strlen(queue) - 1) - 1 - 1 - 1;
+    if (snprintf(worker.bgw_type, len + 1, "%s %s pg_scheduler task %s", database, username, queue) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
     len = (sizeof("%s %s pg_scheduler task %s %lu") - 1) + (strlen(database) - 1) + (strlen(username) - 1) + (strlen(queue) - 1) - 1 - 1 - 1 - 2;
     for (int number = id; number /= 10; len++);
     if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task %s %lu", database, username, queue, id) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
@@ -369,10 +369,10 @@ static inline void assign_callback(EXECUTECALLBACK) {
         bool isnull;
         Datum id = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
         char *queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &isnull));
-        int max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &isnull));
+//        int max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &isnull));
 //        if (isnull) elog(FATAL, "isnull %s %i", __FILE__, __LINE__);
-        elog(LOG, "assign_callback row=%lu, id=%lu, queue=%s, max=%i", row, DatumGetInt64(id), queue, max);
-        (void)launch_task(id, queue, max);
+        elog(LOG, "assign_callback row=%lu, id=%lu, queue=%s", row, DatumGetInt64(id), queue);
+        (void)launch_task(id, queue);
         if (queue != NULL) (void)pfree(queue);
     }
 }
@@ -380,7 +380,7 @@ static inline void assign_callback(EXECUTECALLBACK) {
 static inline void assign() {
     StringInfoData buf;
     (void)initStringInfo(&buf);
-    (void)appendStringInfoString(&buf, "SELECT id, queue, max FROM ");
+    (void)appendStringInfoString(&buf, "SELECT id, queue FROM ");
     if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s WHERE state = 'QUEUE' AND dt <= now()", quote_identifier(table));
     (void)SPI_connect_execute_finish(buf.data, 0, NULL, NULL, NULL, false, 0, StatementTimeout, assign_callback);
