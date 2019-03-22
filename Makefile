@@ -12,7 +12,7 @@ else
     PG_CPPFLAGS = -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-implicit-fallthrough -Iinclude -I$(libpq_srcdir)
 endif
 SHLIB_LINK = $(libpq)
-EXTRA_CLEAN += $(addprefix *.gcno *.gcda) # clean up after profiling runs
+EXTRA_CLEAN += $(addprefix ,*.gcno *.gcda) # clean up after profiling runs
 
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
