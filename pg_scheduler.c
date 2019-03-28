@@ -632,7 +632,7 @@ static inline void execute_callback(const char *src, va_list args) {
 
 static inline void execute(Datum arg) {
     char *src = NULL;
-    char *data = NULL;
+    char *data;
     char *state;
     int timeout = 0;
     (void)work(arg, &src, &timeout);
@@ -643,7 +643,7 @@ static inline void execute(Datum arg) {
 //    elog(LOG, "src=%s", src);
     (void)done(arg, data, state);
     if (src != NULL) (void)free(src);
-    if (data != NULL) (void)pfree(data);
+    (void)pfree(data);
 }
 
 void task(Datum arg) {
