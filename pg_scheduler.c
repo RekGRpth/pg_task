@@ -489,11 +489,11 @@ static inline void work(Datum arg, char **data, int *timeout) {
     elog(LOG, "work database=%s, username=%s, schema=%s, table=%s, id=%lu", database, username, schema, table, DatumGetInt64(arg));
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
-    if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
     elog(LOG, "work buf.data=%s", buf.data);
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, work_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, data, timeout);
-    if (buf.data != NULL) (void)pfree(buf.data);
+    (void)pfree(buf.data);
 }
 
 static inline void done_callback(const char *src, va_list args) {
@@ -507,21 +507,21 @@ static inline void done_callback(const char *src, va_list args) {
 
 static inline void done(Datum arg, const char *data, const char *state) {
     Oid argtypes[] = {TEXTOID, TEXTOID, INT8OID};
-    Datum Values[] = {CStringGetTextDatum(state), CStringGetTextDatum(data!=NULL?data:"(null)"), arg};
+    Datum Values[] = {CStringGetTextDatum(state), CStringGetTextDatum(data ? data : "(null)"), arg};
     StringInfoData buf;
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
-    if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(table));
     elog(LOG, "done buf.data=%s", buf.data);
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, done_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL);
-    if (buf.data != NULL) (void)pfree(buf.data);
+    (void)pfree(buf.data);
 }
 
 static inline void success(char **data, char **state) {
     StringInfoData buf;
     (void)initStringInfo(&buf);
-    if ((SPI_tuptable != NULL) && (SPI_processed > 0)) {
+    if ((SPI_tuptable) && (SPI_processed > 0)) {
         for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
             char *name = SPI_fname(SPI_tuptable->tupdesc, col);
             char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
