@@ -141,7 +141,7 @@ static inline void check_callback(const char *src, va_list args) {
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         start = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "start"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-        elog(LOG, "check_callback row=%lu, database=%s, username=%s, start=%s", row, database, username, start?"true":"false");
+        elog(LOG, "check_callback row=%lu, database=%s, username=%s, start=%s", row, database, username, start ? "true" : "false");
         if (start) (void)launch_tick(database, username);
     }
 }
@@ -517,7 +517,8 @@ static inline void done(Datum arg, const char *data, const char *state) {
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(table));
-    elog(LOG, "done buf.data=%s, data=\n%s", buf.data, data);
+//    elog(LOG, "done buf.data=%s, data=\n%s", buf.data, data);
+    elog(LOG, "done buf.data=%s", buf.data);
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, done_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL);
     (void)pfree(buf.data);
 }
@@ -557,62 +558,33 @@ static inline void error(MemoryContext oldMemoryContext, char **data, char **sta
     ErrorData *edata = CopyErrorData();
     StringInfoData buf;
     (void)initStringInfo(&buf);
-    (void)appendStringInfo(&buf,
-        "elevel::int4\t%i\n"
-        "output_to_server::bool\t%s\n"
-        "output_to_client::bool\t%s\n"
-        "show_funcname::bool\t%s\n"
-        "hide_stmt::bool\t%s\n"
-        "hide_ctx::bool\t%s\n"
-        "filename::text\t%s\n"
-        "lineno::int4\t%i\n"
-        "funcname::text\t%s\n"
-        "domain::text\t%s\n"
-        "context_domain::text\t%s\n"
-        "sqlerrcode::int4\t%i\n"
-        "message::text\t%s\n"
-        "detail::text\t%s\n"
-        "detail_log::text\t%s\n"
-        "hint::text\t%s\n"
-        "context::text\t%s\n"
-        "message_id::text\t%s\n"
-        "schema_name::text\t%s\n"
-        "table_name::text\t%s\n"
-        "column_name::text\t%s\n"
-        "datatype_name::text\t%s\n"
-        "constraint_name::text\t%s\n"
-        "cursorpos::int4\t%i\n"
-        "internalpos::int4\t%i\n"
-        "internalquery::text\t%s\n"
-        "saved_errno::int4\t%i",
-        edata->elevel,
-        edata->output_to_server?"true":"false",
-        edata->output_to_client?"true":"false",
-        edata->show_funcname?"true":"false",
-        edata->hide_stmt?"true":"false",
-        edata->hide_ctx?"true":"false",
-        edata->filename,
-        edata->lineno,
-        edata->funcname,
-        edata->domain,
-        edata->context_domain,
-        edata->sqlerrcode,
-        edata->message,
-        edata->detail,
-        edata->detail_log,
-        edata->hint,
-        edata->context,
-        edata->message_id,
-        edata->schema_name,
-        edata->table_name,
-        edata->column_name,
-        edata->datatype_name,
-        edata->constraint_name,
-        edata->cursorpos,
-        edata->internalpos,
-        edata->internalquery,
-        edata->saved_errno
-    );
+    (void)appendStringInfo(&buf, "elevel::int4\t%i", edata->elevel);
+    (void)appendStringInfo(&buf, "\noutput_to_server::bool\t%s", edata->output_to_server ? "true" : "false");
+    (void)appendStringInfo(&buf, "\noutput_to_client::bool\t%s", edata->output_to_client ? "true" : "false");
+    (void)appendStringInfo(&buf, "\nshow_funcname::bool\t%s", edata->show_funcname ? "true" : "false");
+    (void)appendStringInfo(&buf, "\nhide_stmt::bool\t%s", edata->hide_stmt ? "true" : "false");
+    (void)appendStringInfo(&buf, "\nhide_ctx::bool\t%s", edata->hide_ctx ? "true" : "false");
+    if (edata->filename) (void)appendStringInfo(&buf, "\nfilename::text\t%s", edata->filename);
+    if (edata->lineno) (void)appendStringInfo(&buf, "\nlineno::int4\t%i", edata->lineno);
+    if (edata->funcname) (void)appendStringInfo(&buf, "\nfuncname::text\t%s", edata->funcname);
+    if (edata->domain) (void)appendStringInfo(&buf, "\ndomain::text\t%s", edata->domain);
+    if (edata->context_domain) (void)appendStringInfo(&buf, "\ncontext_domain::text\t%s", edata->context_domain);
+    if (edata->sqlerrcode) (void)appendStringInfo(&buf, "\nsqlerrcode::int4\t%i", edata->sqlerrcode);
+    if (edata->message) (void)appendStringInfo(&buf, "\nmessage::text\t%s", edata->message);
+    if (edata->detail) (void)appendStringInfo(&buf, "\ndetail::text\t%s", edata->detail);
+    if (edata->detail_log) (void)appendStringInfo(&buf, "\ndetail_log::text\t%s", edata->detail_log);
+    if (edata->hint) (void)appendStringInfo(&buf, "\nhint::text\t%s", edata->hint);
+    if (edata->context) (void)appendStringInfo(&buf, "\ncontext::text\t%s", edata->context);
+    if (edata->message_id) (void)appendStringInfo(&buf, "\nmessage_id::text\t%s", edata->message_id);
+    if (edata->schema_name) (void)appendStringInfo(&buf, "\nschema_name::text\t%s", edata->schema_name);
+    if (edata->table_name) (void)appendStringInfo(&buf, "\ntable_name::text\t%s", edata->table_name);
+    if (edata->column_name) (void)appendStringInfo(&buf, "\ncolumn_name::text\t%s", edata->column_name);
+    if (edata->datatype_name) (void)appendStringInfo(&buf, "\ndatatype_name::text\t%s", edata->datatype_name);
+    if (edata->constraint_name) (void)appendStringInfo(&buf, "\nconstraint_name::text\t%s", edata->constraint_name);
+    if (edata->cursorpos) (void)appendStringInfo(&buf, "\ncursorpos::int4\t%i", edata->cursorpos);
+    if (edata->internalpos) (void)appendStringInfo(&buf, "\ninternalpos::int4\t%i", edata->internalpos);
+    if (edata->internalquery) (void)appendStringInfo(&buf, "\ninternalquery::text\t%s", edata->internalquery);
+    if (edata->saved_errno) (void)appendStringInfo(&buf, "\nsaved_errno::int4\t%i", edata->saved_errno);
     (void)FreeErrorData(edata);
     elog(LOG, "error\n%s", buf.data);
     *state = "FAIL";
