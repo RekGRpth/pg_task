@@ -106,7 +106,7 @@ static inline void launch_tick(const char *database, const char *username) {
 
 static inline void SPI_connect_execute_finish(const char *src, int timeout, Callback callback, ...) {
     (void)pgstat_report_activity(STATE_RUNNING, src);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT")));
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("SPI_connect_ext != SPI_OK_CONNECT")));
     (void)SPI_start_transaction();
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //    elog(LOG, "SPI_connect_execute_finish src=\n%s", src);
@@ -117,7 +117,7 @@ static inline void SPI_connect_execute_finish(const char *src, int timeout, Call
         va_end(args);
     }
     (void)disable_timeout(STATEMENT_TIMEOUT, false);
-    if (SPI_finish() != SPI_OK_FINISH) ereport(ERROR, (errmsg("SPI_finish() != SPI_OK_FINISH")));
+    if (SPI_finish() != SPI_OK_FINISH) ereport(ERROR, (errmsg("SPI_finish != SPI_OK_FINISH")));
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, src);
     (void)pgstat_report_stat(true);
@@ -128,7 +128,7 @@ static inline void check_callback(const char *src, va_list args) {
     Oid *argtypes = va_arg(args, Oid *);
     Datum *Values = va_arg(args, Datum *);
     const char *Nulls = va_arg(args, const char *);
-    if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_SELECT")));
+    if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute_with_args != SPI_OK_SELECT")));
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
@@ -249,7 +249,7 @@ void loop(Datum arg) {
 }
 
 static inline void lock_callback(const char *src, va_list args) {
-    if (SPI_execute(src, false, 0) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute(src, false, 0) != SPI_OK_SELECT")));
+    if (SPI_execute(src, false, 0) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute != SPI_OK_SELECT")));
     (void)SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
         bool isnull;
@@ -265,7 +265,7 @@ static inline void lock() {
 }
 
 static inline void schema_callback(const char *src, va_list args) {
-    if (SPI_execute(src, false, 0) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute(src, false, 0) != SPI_OK_UTILITY")));
+    if (SPI_execute(src, false, 0) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute != SPI_OK_UTILITY")));
     (void)SPI_commit();
 }
 
@@ -279,7 +279,7 @@ static inline void init_schema() {
 }
 
 static inline void table_callback(const char *src, va_list args) {
-    if (SPI_execute(src, false, 0) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute(src, false, 0) != SPI_OK_UTILITY")));
+    if (SPI_execute(src, false, 0) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute != SPI_OK_UTILITY")));
     (void)SPI_commit();
 }
 
@@ -307,7 +307,7 @@ static inline void init_table() {
 }
 
 static inline void index_callback(const char *src, va_list args) {
-    if (SPI_execute(src, false, 0) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute(src, false, 0) != SPI_OK_UTILITY")));
+    if (SPI_execute(src, false, 0) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute != SPI_OK_UTILITY")));
     (void)SPI_commit();
 }
 
@@ -366,7 +366,7 @@ static inline void launch_task(Datum arg, const char *queue) {
 }
 
 static inline void assign_callback(const char *src, va_list args) {
-    if (SPI_execute(src, false, 0) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute(src, false, 0) != SPI_OK_SELECT")));
+    if (SPI_execute(src, false, 0) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute != SPI_OK_SELECT")));
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
@@ -453,7 +453,7 @@ static inline void work_callback(const char *src, va_list args) {
     Oid *argtypes = va_arg(args, Oid *);
     Datum *Values = va_arg(args, Datum *);
     const char *Nulls = va_arg(args, const char *);
-    if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE_RETURNING")));
+    if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_with_args != SPI_OK_UPDATE_RETURNING")));
     (void)SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
         char **data = va_arg(args, char **);
@@ -486,7 +486,7 @@ static inline void done_callback(const char *src, va_list args) {
     Oid *argtypes = va_arg(args, Oid *);
     Datum *Values = va_arg(args, Datum *);
     const char *Nulls = va_arg(args, const char *);
-    if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE")));
+    if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("SPI_execute_with_args != SPI_OK_UPDATE")));
     (void)SPI_commit();
 }
 
@@ -599,7 +599,7 @@ static inline void error(char **data, char **state) {
 
 static inline void execute_callback(const char *src, va_list args) {
     PG_TRY(); {
-        if (SPI_execute(src, false, 0) < 0) ereport(ERROR, (errmsg("SPI_execute(src, false, 0) < 0"))); else {
+        if (SPI_execute(src, false, 0) < 0) ereport(ERROR, (errmsg("SPI_execute < 0"))); else {
             char **data = va_arg(args, char **);
             char **state = va_arg(args, char **);
             (void)success(data, state);
