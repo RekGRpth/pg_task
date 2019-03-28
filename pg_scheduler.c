@@ -191,8 +191,8 @@ static inline void check() {
                 (void)appendStringInfo(&buf, "($%i, COALESCE($%i, i.usename))", 2 * i + 1, 2 * i + 1 + 1);
                 argtypes[2 * i] = TEXTOID;
                 argtypes[2 * i + 1] = TEXTOID;
-                str[2 * i] = pstrdup(database);
-                str[2 * i + 1] = pstrdup(username);
+                if (!(str[2 * i] = pstrdup(database))) ereport(ERROR, (errmsg("!str")));
+                if (!(str[2 * i + 1] = pstrdup(username))) ereport(ERROR, (errmsg("!str")));
                 Values[2 * i] = CStringGetTextDatum(str[2 * i]);
                 Values[2 * i + 1] = CStringGetTextDatum(str[2 * i + 1]);
             }
@@ -218,12 +218,12 @@ static inline void check() {
         "WHERE       (datname, usename) NOT IN (SELECT datname, usename FROM s)\n"
         "AND         classid = datid AND objid = usesysid AND database = datid");
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, check_callback, i * 2, argtypes, Values, Nulls);
-    if (buf.data != NULL) (void)pfree(buf.data);
-    if (argtypes != NULL) (void)pfree(argtypes);
-    if (Values != NULL) (void)pfree(Values);
-    if (Nulls != NULL) (void)pfree(Nulls);
-    for (int j = 0; j < i * 2; j++) if (str[j] != NULL) (void)pfree(str[j]);
-    if (str != NULL) (void)pfree(str);
+    (void)pfree(buf.data);
+    (void)pfree(argtypes);
+    (void)pfree(Values);
+    (void)pfree(Nulls);
+    for (int j = 0; j < i * 2; j++) (void)pfree(str[j]);
+    (void)pfree(str);
 }
 
 void loop(Datum arg) {
