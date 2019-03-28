@@ -397,7 +397,7 @@ static inline void assign() {
         "WITH s AS (\n"
         "    SELECT      id, queue, COALESCE(max, ~(1<<31)) AS max\n"
         "    FROM        ");
-    if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s\n"
         "    WHERE       state = 'QUEUE'\n"
         "    AND         dt <= now()\n"
@@ -405,11 +405,11 @@ static inline void assign() {
         "    ORDER BY    max DESC, id\n"
         ") SELECT id, queue FROM s LIMIT (SELECT max FROM s LIMIT 1)", quote_identifier(table));
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, assign_callback);
-    if (buf.data != NULL) (void)pfree(buf.data);
+    (void)pfree(buf.data);
 }
 
 static inline void init() {
-    if (schema != NULL) (void)init_schema();
+    if (schema) (void)init_schema();
     (void)init_table();
     (void)init_index("dt");
     (void)init_index("state");
@@ -428,7 +428,7 @@ void tick(Datum arg) {
     (void)resetStringInfo(&buf);
     (void)appendStringInfo(&buf, "pg_scheduler_table.%s", database);
     (void)DefineCustomStringVariable(buf.data, "pg_scheduler table", NULL, &table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    if (buf.data != NULL) (void)pfree(buf.data);
+    (void)pfree(buf.data);
     elog(LOG, "tick database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
@@ -471,13 +471,14 @@ static inline void work_callback(const char *src, va_list args) {
         char **data = va_arg(args, char **);
         int *timeout = va_arg(args, int *);
         bool isnull;
-        char *value = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"), &isnull));
+        char *value;
+        if (!(value = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"), &isnull)))) ereport(ERROR, (errmsg("!value")));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         *timeout = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         *data = strdup(value);
         elog(LOG, "work timeout=%i, data=\n%s", *timeout, *data);
-        if (value != NULL) (void)pfree(value);
+        (void)pfree(value);
     }
 }
 
