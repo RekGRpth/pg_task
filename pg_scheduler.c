@@ -95,7 +95,6 @@ static inline void launch_tick(const char *database, const char *username) {
     len2 = (sizeof("%s") - 1) + (strlen(username) - 1) - 1;
     if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
-    if (!handle) ereport(ERROR, (errmsg("!handle")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background process"), errhint("More details may be available in the server log.")));
@@ -108,7 +107,6 @@ static inline void launch_tick(const char *database, const char *username) {
 static inline void SPI_connect_execute_finish(const char *src, int timeout, Callback callback, ...) {
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("SPI_connect_ext != SPI_OK_CONNECT")));
-//    (void)PushActiveSnapshot(GetTransactionSnapshot());
     (void)SPI_start_transaction();
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //    elog(LOG, "SPI_connect_execute_finish src=%s", src);
@@ -120,7 +118,6 @@ static inline void SPI_connect_execute_finish(const char *src, int timeout, Call
     }
     (void)disable_timeout(STATEMENT_TIMEOUT, false);
     if (SPI_finish() != SPI_OK_FINISH) ereport(ERROR, (errmsg("SPI_finish != SPI_OK_FINISH")));
-//    (void)PopActiveSnapshot();
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, src);
     (void)pgstat_report_stat(true);
@@ -165,22 +162,18 @@ static inline void check() {
         "    WHERE       NOT datistemplate\n"
         "    AND         datallowconn\n");
     if (!databases) (void)appendStringInfoString(&buf, "    AND         i.usesysid = u.usesysid\n"); else {
-        char *rawstring;
-        if (!(rawstring = pstrdup(databases))) ereport(ERROR, (errmsg("!rawstring")));
+        char *rawstring = pstrdup(databases);
         if (!SplitGUCList(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
-        if (!elemlist) ereport(ERROR, (errmsg("!elemlist")));
-        if (!(argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2))) ereport(ERROR, (errmsg("!argtypes")));
-        if (!(Values = palloc(sizeof(Datum) * list_length(elemlist) * 2))) ereport(ERROR, (errmsg("!Values")));
-        if (!(Nulls = palloc(sizeof(char) * list_length(elemlist) * 2))) ereport(ERROR, (errmsg("!Nulls")));
-        if (!(str = palloc(sizeof(char *) * list_length(elemlist) * 2))) ereport(ERROR, (errmsg("!str")));
+        argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2);
+        Values = palloc(sizeof(Datum) * list_length(elemlist) * 2);
+        Nulls = palloc(sizeof(char) * list_length(elemlist) * 2);
+        str = palloc(sizeof(char *) * list_length(elemlist) * 2);
         (void)appendStringInfoString(&buf, "    AND         (d.datname, u.usename) IN (\n        ");
         for (ListCell *cell = list_head(elemlist); cell; cell = lnext(cell)) {
             const char *database_username = (const char *)lfirst(cell);
-            char *rawstring;
+            char *rawstring = pstrdup(database_username);
             List *elemlist;
-            if (!(rawstring = pstrdup(database_username))) ereport(ERROR, (errmsg("!rawstring")));
-            if (!SplitIdentifierString(rawstring, ':', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
-            if (!elemlist) ereport(ERROR, (errmsg("!elemlist"))); else {
+            if (!SplitIdentifierString(rawstring, ':', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf"))); else {
                 ListCell *cell = list_head(elemlist);
                 const char *database = (const char *)lfirst(cell);
                 const char *username = database;
@@ -193,8 +186,8 @@ static inline void check() {
                 (void)appendStringInfo(&buf, "($%i, COALESCE($%i, i.usename))", 2 * i + 1, 2 * i + 1 + 1);
                 argtypes[2 * i] = TEXTOID;
                 argtypes[2 * i + 1] = TEXTOID;
-                if (!(str[2 * i] = pstrdup(database))) ereport(ERROR, (errmsg("!str")));
-                if (!(str[2 * i + 1] = pstrdup(username))) ereport(ERROR, (errmsg("!str")));
+                str[2 * i] = pstrdup(database);
+                str[2 * i + 1] = pstrdup(username);
                 Values[2 * i] = CStringGetTextDatum(str[2 * i]);
                 Values[2 * i + 1] = CStringGetTextDatum(str[2 * i + 1]);
             }
@@ -221,11 +214,13 @@ static inline void check() {
         "AND         classid = datid AND objid = usesysid AND database = datid");
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, check_callback, i * 2, argtypes, Values, Nulls);
     (void)pfree(buf.data);
-    (void)pfree(argtypes);
-    (void)pfree(Values);
-    (void)pfree(Nulls);
-    for (int j = 0; j < i * 2; j++) (void)pfree(str[j]);
-    (void)pfree(str);
+    if (argtypes) (void)pfree(argtypes);
+    if (Values) (void)pfree(Values);
+    if (Nulls) (void)pfree(Nulls);
+    if (str) {
+        for (int j = 0; j < i * 2; j++) (void)pfree(str[j]);
+        (void)pfree(str);
+    }
 }
 
 void loop(Datum arg) {
@@ -366,7 +361,6 @@ static inline void launch_task(Datum arg, const char *queue) {
         if (snprintf(worker.bgw_extra + len + 1 + len2 + 1 + len3 + 1, len4 + 1, "%s", schema) != len4) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     }
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
-    if (!handle) ereport(ERROR, (errmsg("!handle")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background process"), errhint("More details may be available in the server log.")));
@@ -384,7 +378,7 @@ static inline void assign_callback(const char *src, va_list args) {
         char *queue;
         Datum id = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-        if (!(queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &isnull)))) ereport(ERROR, (errmsg("!queue")));
+        queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         elog(LOG, "assign_callback row=%lu, id=%lu, queue=%s", row, DatumGetInt64(id), queue);
         (void)launch_task(id, queue);
@@ -474,13 +468,11 @@ static inline void work_callback(const char *src, va_list args) {
         char **data = va_arg(args, char **);
         int *timeout = va_arg(args, int *);
         bool isnull;
-        char *value;
-        if (!(value = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"), &isnull)))) ereport(ERROR, (errmsg("!value")));
+        char *value = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         *timeout = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-//        elog(LOG, "work timeout=%i, value=%s", *timeout, value);
-        if (!(*data = MemoryContextStrdup(oldMemoryContext, value))) ereport(ERROR, (errmsg("!*data")));
+        *data = MemoryContextStrdup(oldMemoryContext, value);
         elog(LOG, "work timeout=%i, data=%s", *timeout, *data);
         (void)pfree(value);
     }
@@ -528,9 +520,8 @@ static inline void success(MemoryContext oldMemoryContext, char **data, char **s
     (void)initStringInfo(&buf);
     if ((SPI_tuptable) && (SPI_processed > 0)) {
         for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-            char *name, *type;
-            if (!(name = SPI_fname(SPI_tuptable->tupdesc, col))) ereport(ERROR, (errmsg("!name")));
-            if (!(type = SPI_gettype(SPI_tuptable->tupdesc, col))) ereport(ERROR, (errmsg("!type")));
+            char *name = SPI_fname(SPI_tuptable->tupdesc, col);
+            char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
             (void)appendStringInfo(&buf, "%s::%s", name, type);
             if (col > 1) (void)appendStringInfoString(&buf, "\t");
             (void)pfree(name);
@@ -539,8 +530,7 @@ static inline void success(MemoryContext oldMemoryContext, char **data, char **s
         (void)appendStringInfoString(&buf, "\n");
         for (uint64 row = 0; row < SPI_processed; row++) {
             for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-                char *value;
-                if (!(value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col))) ereport(ERROR, (errmsg("!value")));
+                char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
                 (void)appendStringInfo(&buf, "%s", value);
                 if (col > 1) (void)appendStringInfoString(&buf, "\t");
                 (void)pfree(value);
@@ -550,7 +540,7 @@ static inline void success(MemoryContext oldMemoryContext, char **data, char **s
         elog(LOG, "success\n%s", buf.data);
     }
     *state = "DONE";
-    if (!(*data = MemoryContextStrdup(oldMemoryContext, buf.data))) ereport(ERROR, (errmsg("!*data")));
+    *data = MemoryContextStrdup(oldMemoryContext, buf.data);
     (void)pfree(buf.data);
 }
 
@@ -588,7 +578,7 @@ static inline void error(MemoryContext oldMemoryContext, char **data, char **sta
     (void)FreeErrorData(edata);
     elog(LOG, "error\n%s", buf.data);
     *state = "FAIL";
-    if (!(*data = MemoryContextStrdup(oldMemoryContext, buf.data))) ereport(ERROR, (errmsg("!*data")));
+    *data = MemoryContextStrdup(oldMemoryContext, buf.data);
     (void)pfree(buf.data);
 }
 
