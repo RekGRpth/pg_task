@@ -467,7 +467,9 @@ static inline void work_callback(const char *src, va_list args) {
         int *timeout = va_arg(args, int *);
         bool isnull;
         char *value = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"), &isnull));
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
         *timeout = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &isnull));
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
         *data = strdup(value);
         elog(LOG, "work timeout=%i, data=\n%s", *timeout, *data);
         if (value != NULL) (void)pfree(value);
