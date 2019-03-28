@@ -170,7 +170,7 @@ static inline void check() {
         if (!(Nulls = palloc(sizeof(char) * list_length(elemlist) * 2))) ereport(ERROR, (errmsg("!Nulls")));
         if (!(str = palloc(sizeof(char *) * list_length(elemlist) * 2))) ereport(ERROR, (errmsg("!str")));
         (void)appendStringInfoString(&buf, "    AND         (d.datname, u.usename) IN (\n        ");
-        for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
+        for (ListCell *cell = list_head(elemlist); cell; cell = lnext(cell)) {
             const char *database_username = (const char *)lfirst(cell);
             char *rawstring = pstrdup(database_username);
             List *elemlist;
@@ -180,7 +180,7 @@ static inline void check() {
                 const char *username = database;
                 Nulls[2 * i] = ' ';
                 Nulls[2 * i + 1] = ' ';
-                if ((cell = lnext(cell)) != NULL) username = (const char *)lfirst(cell);
+                if ((cell = lnext(cell))) username = (const char *)lfirst(cell);
                 else Nulls[2 * i + 1] = 'n';
                 elog(LOG, "check database=%s, username=%s", database, username);
                 if (i > 0) (void)appendStringInfoString(&buf, ", ");
