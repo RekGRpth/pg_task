@@ -651,7 +651,7 @@ void task(Datum arg) {
     username = database + strlen(database) + 1;
     table = username + strlen(username) + 1;
     schema = table + strlen(table) + 1;
-    if (strlen(schema) == 0) schema = NULL;
+    if (!strlen(schema)) schema = NULL;
     elog(LOG, "task database=%s, username=%s, schema=%s, table=%s, id=%lu", database, username, schema, table, DatumGetInt64(arg));
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
