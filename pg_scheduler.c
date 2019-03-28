@@ -172,8 +172,9 @@ static inline void check() {
         (void)appendStringInfoString(&buf, "    AND         (d.datname, u.usename) IN (\n        ");
         for (ListCell *cell = list_head(elemlist); cell; cell = lnext(cell)) {
             const char *database_username = (const char *)lfirst(cell);
-            char *rawstring = pstrdup(database_username);
+            char *rawstring;
             List *elemlist;
+            if (!(rawstring = pstrdup(database_username))) ereport(ERROR, (errmsg("!rawstring")));
             if (!SplitIdentifierString(rawstring, ':', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf"))); else {
                 ListCell *cell = list_head(elemlist);
                 const char *database = (const char *)lfirst(cell);
@@ -192,7 +193,7 @@ static inline void check() {
                 Values[2 * i] = CStringGetTextDatum(str[2 * i]);
                 Values[2 * i + 1] = CStringGetTextDatum(str[2 * i + 1]);
             }
-            if (rawstring != NULL) (void)pfree(rawstring);
+            (void)pfree(rawstring);
             if (elemlist != NULL) (void)list_free(elemlist);
             i++;
         }
