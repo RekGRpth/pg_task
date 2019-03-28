@@ -108,9 +108,10 @@ static inline void launch_tick(const char *database, const char *username) {
 static inline void SPI_connect_execute_finish(const char *src, int timeout, Callback callback, ...) {
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("SPI_connect_ext != SPI_OK_CONNECT")));
+//    (void)PushActiveSnapshot(GetTransactionSnapshot());
     (void)SPI_start_transaction();
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
-//    elog(LOG, "SPI_connect_execute_finish src=\n%s", src);
+//    elog(LOG, "SPI_connect_execute_finish src=%s", src);
     {
         va_list args;
         va_start(args, callback);
@@ -119,6 +120,7 @@ static inline void SPI_connect_execute_finish(const char *src, int timeout, Call
     }
     (void)disable_timeout(STATEMENT_TIMEOUT, false);
     if (SPI_finish() != SPI_OK_FINISH) ereport(ERROR, (errmsg("SPI_finish != SPI_OK_FINISH")));
+//    (void)PopActiveSnapshot();
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, src);
     (void)pgstat_report_stat(true);
@@ -468,6 +470,7 @@ static inline void work_callback(const char *src, va_list args) {
     if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_with_args != SPI_OK_UPDATE_RETURNING")));
     (void)SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
+        MemoryContext oldMemoryContext = va_arg(args, MemoryContext);
         char **data = va_arg(args, char **);
         int *timeout = va_arg(args, int *);
         bool isnull;
@@ -476,8 +479,9 @@ static inline void work_callback(const char *src, va_list args) {
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         *timeout = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-        *data = strdup(value);
-        elog(LOG, "work timeout=%i, data=\n%s", *timeout, *data);
+//        elog(LOG, "work timeout=%i, value=%s", *timeout, value);
+        if (!(*data = MemoryContextStrdup(oldMemoryContext, value))) ereport(ERROR, (errmsg("!*data")));
+        elog(LOG, "work timeout=%i, data=%s", *timeout, *data);
         (void)pfree(value);
     }
 }
@@ -492,7 +496,7 @@ static inline void work(Datum arg, char **data, int *timeout) {
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
     elog(LOG, "work buf.data=%s", buf.data);
-    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, work_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, data, timeout);
+    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, work_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, CurrentMemoryContext, data, timeout);
     (void)pfree(buf.data);
 }
 
@@ -513,12 +517,12 @@ static inline void done(Datum arg, const char *data, const char *state) {
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(table));
-    elog(LOG, "done buf.data=%s", buf.data);
+    elog(LOG, "done buf.data=%s, data=\n%s", buf.data, data);
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, done_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL);
     (void)pfree(buf.data);
 }
 
-static inline void success(char **data, char **state) {
+static inline void success(MemoryContext oldMemoryContext, char **data, char **state) {
     StringInfoData buf;
     (void)initStringInfo(&buf);
     if ((SPI_tuptable) && (SPI_processed > 0)) {
@@ -544,11 +548,12 @@ static inline void success(char **data, char **state) {
         }
         elog(LOG, "success\n%s", buf.data);
     }
-    *data = buf.data;
     *state = "DONE";
+    if (!(*data = MemoryContextStrdup(oldMemoryContext, buf.data))) ereport(ERROR, (errmsg("!*data")));
+    (void)pfree(buf.data);
 }
 
-static inline void error(char **data, char **state) {
+static inline void error(MemoryContext oldMemoryContext, char **data, char **state) {
     ErrorData *edata = CopyErrorData();
     StringInfoData buf;
     (void)initStringInfo(&buf);
@@ -610,39 +615,45 @@ static inline void error(char **data, char **state) {
     );
     (void)FreeErrorData(edata);
     elog(LOG, "error\n%s", buf.data);
-    *data = buf.data;
     *state = "FAIL";
+    if (!(*data = MemoryContextStrdup(oldMemoryContext, buf.data))) ereport(ERROR, (errmsg("!*data")));
+    (void)pfree(buf.data);
 }
 
 static inline void execute_callback(const char *src, va_list args) {
     PG_TRY(); {
         if (SPI_execute(src, false, 0) < 0) ereport(ERROR, (errmsg("SPI_execute < 0"))); else {
+            MemoryContext oldMemoryContext = va_arg(args, MemoryContext);
             char **data = va_arg(args, char **);
             char **state = va_arg(args, char **);
-            (void)success(data, state);
+            (void)success(oldMemoryContext, data, state);
             (void)SPI_commit();
         }
     } PG_CATCH(); {
+        MemoryContext oldMemoryContext = va_arg(args, MemoryContext);
         char **data = va_arg(args, char **);
         char **state = va_arg(args, char **);
-        (void)error(data, state);
+        (void)error(oldMemoryContext, data, state);
         (void)SPI_rollback();
     } PG_END_TRY();
 }
 
 static inline void execute(Datum arg) {
-    char *src = NULL;
+    char *src;
     char *data;
     char *state;
     int timeout = 0;
     (void)work(arg, &src, &timeout);
     if ((StatementTimeout > 0) && (StatementTimeout < timeout)) timeout = StatementTimeout;
-//    elog(LOG, "execute src=%s", src);
-    elog(LOG, "execute database=%s, username=%s, schema=%s, table=%s, timeout=%i, src=\n%s", database, username, schema, table, timeout, src);
-    (void)SPI_connect_execute_finish(src, timeout, execute_callback, &data, &state);
-//    elog(LOG, "src=%s", src);
+//    elog(LOG, "execute 1 src=%s", src);
+    elog(LOG, "execute database=%s, username=%s, schema=%s, table=%s, timeout=%i, src=%s", database, username, schema, table, timeout, src);
+    (void)SPI_connect_execute_finish(src, timeout, execute_callback, CurrentMemoryContext, &data, &state);
+//    elog(LOG, "execute 2 src=%s", src);
+//    elog(LOG, "execute 1 data=%s", data);
     (void)done(arg, data, state);
-    if (src != NULL) (void)free(src);
+//    elog(LOG, "execute 3 src=%s", src);
+//    elog(LOG, "execute 2 data=%s", data);
+    (void)pfree(src);
     (void)pfree(data);
 }
 
