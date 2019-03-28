@@ -60,16 +60,16 @@ static inline void launch_loop() {
     worker.bgw_notify_pid = 0;
     worker.bgw_main_arg = (Datum) 0;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
-    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    if (snprintf(worker.bgw_function_name, sizeof("loop"), "loop") != sizeof("loop") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    if (snprintf(worker.bgw_type, sizeof("pg_scheduler loop"), "pg_scheduler loop") != sizeof("pg_scheduler loop") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    if (snprintf(worker.bgw_name, sizeof("postgres postgres pg_scheduler loop"), "postgres postgres pg_scheduler loop") != sizeof("postgres postgres pg_scheduler loop") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_function_name, sizeof("loop"), "loop") != sizeof("loop") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_type, sizeof("pg_scheduler loop"), "pg_scheduler loop") != sizeof("pg_scheduler loop") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_name, sizeof("postgres postgres pg_scheduler loop"), "postgres postgres pg_scheduler loop") != sizeof("postgres postgres pg_scheduler loop") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     (void)RegisterBackgroundWorker(&worker);
 }
 
 void _PG_init(void) {
     if (IsBinaryUpgrade) return;
-    if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errmsg("pg_scheduler can only be loaded via shared_preload_libraries"), errhint("Add pg_scheduler to the shared_preload_libraries configuration variable in postgresql.conf.")));
+    if (!process_shared_preload_libraries_in_progress) ereport(FATAL, (errmsg("pg_scheduler can only be loaded via shared_preload_libraries"), errhint("Add pg_scheduler to the shared_preload_libraries configuration variable in postgresql.conf.")));
     (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &databases, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
     (void)launch_loop();
 }
@@ -85,28 +85,28 @@ static inline void launch_tick(const char *database, const char *username) {
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_main_arg = (Datum) 0;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
-    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    if (snprintf(worker.bgw_function_name, sizeof("tick"), "tick") != sizeof("tick") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    if (snprintf(worker.bgw_type, sizeof("pg_scheduler tick"), "pg_scheduler tick") != sizeof("pg_scheduler tick") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_function_name, sizeof("tick"), "tick") != sizeof("tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_type, sizeof("pg_scheduler tick"), "pg_scheduler tick") != sizeof("pg_scheduler tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len = (sizeof("%s %s pg_scheduler tick") - 1) + (strlen(database) - 1) + (strlen(username) - 1) - 1 - 1;
-    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler tick", database, username) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler tick", database, username) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len = (sizeof("%s") - 1) + (strlen(database) - 1) - 1;
-    if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len2 = (sizeof("%s") - 1) + (strlen(username) - 1) - 1;
-    if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background process"), errhint("More details may be available in the server log.")));
         case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background processes without postmaster"), errhint("Kill all remaining database processes and restart the database.")));
-        default: elog(ERROR, "unexpected bgworker handle status");
+        default: ereport(ERROR, (errmsg("Unexpected bgworker handle status")));
     }
     if (handle != NULL) (void)pfree(handle);
 }
 
 static inline void SPI_connect_execute_finish(const char *src, int timeout, Callback callback, ...) {
     (void)pgstat_report_activity(STATE_RUNNING, src);
-    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) elog(FATAL, "SPI_connect_ext != SPI_OK_CONNECT %s %i", __FILE__, __LINE__);
+    if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT")));
     (void)SPI_start_transaction();
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //    elog(LOG, "SPI_connect_execute_finish src=\n%s", src);
@@ -117,7 +117,7 @@ static inline void SPI_connect_execute_finish(const char *src, int timeout, Call
         va_end(args);
     }
     (void)disable_timeout(STATEMENT_TIMEOUT, false);
-    if (SPI_finish() != SPI_OK_FINISH) elog(FATAL, "SPI_finish != SPI_OK_FINISH %s %i", __FILE__, __LINE__);
+    if (SPI_finish() != SPI_OK_FINISH) ereport(ERROR, (errmsg("SPI_finish() != SPI_OK_FINISH")));
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, src);
     (void)pgstat_report_stat(true);
@@ -128,7 +128,7 @@ static inline void check_callback(const char *src, va_list args) {
     Oid *argtypes = va_arg(args, Oid *);
     Datum *Values = va_arg(args, Datum *);
     const char *Nulls = va_arg(args, const char *);
-    if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_SELECT) elog(FATAL, "SPI_execute_with_args != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
+    if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_SELECT")));
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
@@ -161,10 +161,10 @@ static inline void check() {
     if (databases == NULL) (void)appendStringInfoString(&buf, "    AND         i.usesysid = u.usesysid\n"); else {
         char *rawstring = pstrdup(databases);
         if (!SplitGUCList(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
-        if ((argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "argtypes == NULL %s %i", __FILE__, __LINE__);
-        if ((Values = palloc(sizeof(Datum) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "Values == NULL %s %i", __FILE__, __LINE__);
-        if ((Nulls = palloc(sizeof(char) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "Nulls == NULL %s %i", __FILE__, __LINE__);
-        if ((str = palloc(sizeof(char *) * list_length(elemlist) * 2)) == NULL) elog(FATAL, "str == NULL %s %i", __FILE__, __LINE__);
+        if ((argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2)) == NULL) ereport(ERROR, (errmsg("!argtypes")));
+        if ((Values = palloc(sizeof(Datum) * list_length(elemlist) * 2)) == NULL) ereport(ERROR, (errmsg("!Values")));
+        if ((Nulls = palloc(sizeof(char) * list_length(elemlist) * 2)) == NULL) ereport(ERROR, (errmsg("!Nulls")));
+        if ((str = palloc(sizeof(char *) * list_length(elemlist) * 2)) == NULL) ereport(ERROR, (errmsg("!str")));
         (void)appendStringInfoString(&buf, "    AND         (d.datname, u.usename) IN (\n        ");
         for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
             const char *database_username = (const char *)lfirst(cell);
@@ -249,13 +249,13 @@ void loop(Datum arg) {
 }
 
 static inline void lock_callback(const char *src, va_list args) {
-    if (SPI_execute(src, false, 0) != SPI_OK_SELECT) elog(FATAL, "SPI_execute != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
+    if (SPI_execute(src, false, 0) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute(src, false, 0) != SPI_OK_SELECT")));
     (void)SPI_commit();
-    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__); else {
+    if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
         bool isnull;
         bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "pg_try_advisory_lock"), &isnull));
-        if (isnull) elog(FATAL, "isnull %s %i", __FILE__, __LINE__);
-        if (!lock) elog(FATAL, "already running database=%s, username=%s %s %i", database, username, __FILE__, __LINE__);
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
+        if (!lock) ereport(ERROR, (errmsg("Already running database=%s, username=%s", database, username)));
     }
 }
 
@@ -265,7 +265,7 @@ static inline void lock() {
 }
 
 static inline void schema_callback(const char *src, va_list args) {
-    if (SPI_execute(src, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
+    if (SPI_execute(src, false, 0) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute(src, false, 0) != SPI_OK_UTILITY")));
     (void)SPI_commit();
 }
 
@@ -279,7 +279,7 @@ static inline void init_schema() {
 }
 
 static inline void table_callback(const char *src, va_list args) {
-    if (SPI_execute(src, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
+    if (SPI_execute(src, false, 0) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute(src, false, 0) != SPI_OK_UTILITY")));
     (void)SPI_commit();
 }
 
@@ -307,7 +307,7 @@ static inline void init_table() {
 }
 
 static inline void index_callback(const char *src, va_list args) {
-    if (SPI_execute(src, false, 0) != SPI_OK_UTILITY) elog(FATAL, "SPI_execute != SPI_OK_UTILITY %s %i", __FILE__, __LINE__);
+    if (SPI_execute(src, false, 0) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute(src, false, 0) != SPI_OK_UTILITY")));
     (void)SPI_commit();
 }
 
@@ -338,35 +338,35 @@ static inline void launch_task(Datum arg, const char *queue) {
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_main_arg = arg;
-    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
-    if (snprintf(worker.bgw_function_name, sizeof("task"), "task") != sizeof("task") - 1) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_function_name, sizeof("task"), "task") != sizeof("task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len = (sizeof("pg_scheduler task %s") - 1) + (strlen(queue) - 1) - 1;
-    if (snprintf(worker.bgw_type, len + 1, "pg_scheduler task %s", queue) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_type, len + 1, "pg_scheduler task %s", queue) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len = (sizeof("%s %s pg_scheduler task %s %lu") - 1) + (strlen(database) - 1) + (strlen(username) - 1) + (strlen(queue) - 1) - 1 - 1 - 1 - 2;
     for (int number = id; number /= 10; len++);
-    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task %s %lu", database, username, queue, id) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task %s %lu", database, username, queue, id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len = (sizeof("%s") - 1) + (strlen(database) - 1) - 1;
-    if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len2 = (sizeof("%s") - 1) + (strlen(username) - 1) - 1;
-    if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len3 = (sizeof("%s") - 1) + (strlen(table) - 1) - 1;
-    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1, len3 + 1, "%s", table) != len3) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1, len3 + 1, "%s", table) != len3) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     if (schema != NULL) {
         len4 = (sizeof("%s") - 1) + (strlen(schema) - 1) - 1;
-        if (snprintf(worker.bgw_extra + len + 1 + len2 + 1 + len3 + 1, len4 + 1, "%s", schema) != len4) elog(FATAL, "snprintf %s %i", __FILE__, __LINE__);
+        if (snprintf(worker.bgw_extra + len + 1 + len2 + 1 + len3 + 1, len4 + 1, "%s", schema) != len4) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     }
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background process"), errhint("More details may be available in the server log.")));
         case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background processes without postmaster"), errhint("Kill all remaining database processes and restart the database.")));
-        default: elog(ERROR, "unexpected bgworker handle status");
+        default: ereport(ERROR, (errmsg("Unexpected bgworker handle status")));
     }
     if (handle != NULL) (void)pfree(handle);
 }
 
 static inline void assign_callback(const char *src, va_list args) {
-    if (SPI_execute(src, false, 0) != SPI_OK_SELECT) elog(FATAL, "SPI_execute != SPI_OK_SELECT %s %i", __FILE__, __LINE__);
+    if (SPI_execute(src, false, 0) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute(src, false, 0) != SPI_OK_SELECT")));
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
@@ -453,9 +453,9 @@ static inline void work_callback(const char *src, va_list args) {
     Oid *argtypes = va_arg(args, Oid *);
     Datum *Values = va_arg(args, Datum *);
     const char *Nulls = va_arg(args, const char *);
-    if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE_RETURNING) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE_RETURNING %s %i", __FILE__, __LINE__);
+    if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE_RETURNING")));
     (void)SPI_commit();
-    if (SPI_processed != 1) elog(FATAL, "SPI_processed != 1 %s %i", __FILE__, __LINE__); else {
+    if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
         char **data = va_arg(args, char **);
         int *timeout = va_arg(args, int *);
         bool isnull;
@@ -486,7 +486,7 @@ static inline void done_callback(const char *src, va_list args) {
     Oid *argtypes = va_arg(args, Oid *);
     Datum *Values = va_arg(args, Datum *);
     const char *Nulls = va_arg(args, const char *);
-    if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE) elog(FATAL, "SPI_execute_with_args != SPI_OK_UPDATE %s %i", __FILE__, __LINE__);
+    if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_UPDATE")));
     (void)SPI_commit();
 }
 
@@ -599,7 +599,7 @@ static inline void error(char **data, char **state) {
 
 static inline void execute_callback(const char *src, va_list args) {
     PG_TRY(); {
-        if (SPI_execute(src, false, 0) < 0) elog(FATAL, "SPI_execute < 0 %s %i", __FILE__, __LINE__); else {
+        if (SPI_execute(src, false, 0) < 0) ereport(ERROR, (errmsg("SPI_execute(src, false, 0) < 0"))); else {
             char **data = va_arg(args, char **);
             char **state = va_arg(args, char **);
             (void)success(data, state);
