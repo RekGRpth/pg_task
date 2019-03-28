@@ -163,8 +163,10 @@ static inline void check() {
         "    WHERE       NOT datistemplate\n"
         "    AND         datallowconn\n");
     if (!databases) (void)appendStringInfoString(&buf, "    AND         i.usesysid = u.usesysid\n"); else {
-        char *rawstring = pstrdup(databases);
+        char *rawstring;
+        if (!(rawstring = pstrdup(databases))) ereport(ERROR, (errmsg("!rawstring")));
         if (!SplitGUCList(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
+        if (!elemlist) ereport(ERROR, (errmsg("!elemlist")));
         if (!(argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2))) ereport(ERROR, (errmsg("!argtypes")));
         if (!(Values = palloc(sizeof(Datum) * list_length(elemlist) * 2))) ereport(ERROR, (errmsg("!Values")));
         if (!(Nulls = palloc(sizeof(char) * list_length(elemlist) * 2))) ereport(ERROR, (errmsg("!Nulls")));
@@ -199,8 +201,8 @@ static inline void check() {
             i++;
         }
         (void)appendStringInfoString(&buf, "\n    )\n");
-        if (rawstring != NULL) (void)pfree(rawstring);
-        if (elemlist != NULL) (void)list_free(elemlist);
+        (void)pfree(rawstring);
+        (void)list_free(elemlist);
     }
     (void)appendStringInfoString(&buf,
         "), l AS (\n"
