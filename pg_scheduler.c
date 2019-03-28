@@ -95,13 +95,14 @@ static inline void launch_tick(const char *database, const char *username) {
     len2 = (sizeof("%s") - 1) + (strlen(username) - 1) - 1;
     if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
+    if (!handle) ereport(ERROR, (errmsg("!handle")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background process"), errhint("More details may be available in the server log.")));
         case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background processes without postmaster"), errhint("Kill all remaining database processes and restart the database.")));
         default: ereport(ERROR, (errmsg("Unexpected bgworker handle status")));
     }
-    if (handle != NULL) (void)pfree(handle);
+    (void)pfree(handle);
 }
 
 static inline void SPI_connect_execute_finish(const char *src, int timeout, Callback callback, ...) {
@@ -131,10 +132,13 @@ static inline void check_callback(const char *src, va_list args) {
     if (SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute_with_args != SPI_OK_SELECT")));
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
-        bool isnull;
-        char *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &isnull));
-        char *username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &isnull));
-        bool start = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "start"), &isnull));
+        bool isnull, start;
+        char *username, *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &isnull));
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
+        username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &isnull));
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
+        start = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "start"), &isnull));
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
         elog(LOG, "check_callback row=%lu, database=%s, username=%s, start=%s", row, database, username, start?"true":"false");
         if (start) (void)launch_tick(database, username);
     }
