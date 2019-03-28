@@ -283,7 +283,7 @@ static inline void init_schema() {
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", quote_identifier(schema));
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, schema_callback);
-    if (buf.data != NULL) (void)pfree(buf.data);
+    (void)pfree(buf.data);
 }
 
 static inline void table_callback(const char *src, va_list args) {
@@ -296,7 +296,7 @@ static inline void init_table() {
     elog(LOG, "init_table database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "CREATE TABLE IF NOT EXISTS ");
-    if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s (\n", quote_identifier(table));
     (void)appendStringInfo(&buf,
         "    id BIGSERIAL NOT NULL PRIMARY KEY,\n"
@@ -311,7 +311,7 @@ static inline void init_table() {
         "    timeout INTERVAL"
         ")");
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, table_callback);
-    if (buf.data != NULL) (void)pfree(buf.data);
+    (void)pfree(buf.data);
 }
 
 static inline void index_callback(const char *src, va_list args) {
@@ -326,11 +326,11 @@ static inline void init_index(const char *index) {
     (void)initStringInfo(&name);
     (void)appendStringInfo(&name, "%s_%s_idx", table, index);
     (void)appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON ", quote_identifier(name.data));
-    if (schema != NULL) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s USING btree (%s)", quote_identifier(table), quote_identifier(index));
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, index_callback);
-    if (buf.data != NULL) (void)pfree(buf.data);
-    if (name.data != NULL) (void)pfree(name.data);
+    (void)pfree(buf.data);
+    (void)pfree(name.data);
 }
 
 static inline void launch_task(Datum arg, const char *queue) {
@@ -359,18 +359,19 @@ static inline void launch_task(Datum arg, const char *queue) {
     if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len3 = (sizeof("%s") - 1) + (strlen(table) - 1) - 1;
     if (snprintf(worker.bgw_extra + len + 1 + len2 + 1, len3 + 1, "%s", table) != len3) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    if (schema != NULL) {
+    if (schema) {
         len4 = (sizeof("%s") - 1) + (strlen(schema) - 1) - 1;
         if (snprintf(worker.bgw_extra + len + 1 + len2 + 1 + len3 + 1, len4 + 1, "%s", schema) != len4) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     }
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
+    if (!handle) ereport(ERROR, (errmsg("!handle")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background process"), errhint("More details may be available in the server log.")));
         case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background processes without postmaster"), errhint("Kill all remaining database processes and restart the database.")));
         default: ereport(ERROR, (errmsg("Unexpected bgworker handle status")));
     }
-    if (handle != NULL) (void)pfree(handle);
+    (void)pfree(handle);
 }
 
 static inline void assign_callback(const char *src, va_list args) {
@@ -381,11 +382,11 @@ static inline void assign_callback(const char *src, va_list args) {
         char *queue;
         Datum id = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-        queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &isnull));
+        if (!(queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &isnull)))) ereport(ERROR, (errmsg("!queue")));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         elog(LOG, "assign_callback row=%lu, id=%lu, queue=%s", row, DatumGetInt64(id), queue);
         (void)launch_task(id, queue);
-        if (queue != NULL) (void)pfree(queue);
+        (void)pfree(queue);
     }
 }
 
