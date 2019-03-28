@@ -175,7 +175,8 @@ static inline void check() {
             char *rawstring;
             List *elemlist;
             if (!(rawstring = pstrdup(database_username))) ereport(ERROR, (errmsg("!rawstring")));
-            if (!SplitIdentifierString(rawstring, ':', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf"))); else {
+            if (!SplitIdentifierString(rawstring, ':', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
+            if (!elemlist) ereport(ERROR, (errmsg("!elemlist"))); else {
                 ListCell *cell = list_head(elemlist);
                 const char *database = (const char *)lfirst(cell);
                 const char *username = database;
@@ -194,7 +195,7 @@ static inline void check() {
                 Values[2 * i + 1] = CStringGetTextDatum(str[2 * i + 1]);
             }
             (void)pfree(rawstring);
-            if (elemlist != NULL) (void)list_free(elemlist);
+            (void)list_free(elemlist);
             i++;
         }
         (void)appendStringInfoString(&buf, "\n    )\n");
