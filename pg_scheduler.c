@@ -523,12 +523,13 @@ static inline void success(char **data, char **state) {
     (void)initStringInfo(&buf);
     if ((SPI_tuptable) && (SPI_processed > 0)) {
         for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-            char *name = SPI_fname(SPI_tuptable->tupdesc, col);
-            char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
+            char *name, *type;
+            if (!(name = SPI_fname(SPI_tuptable->tupdesc, col))) ereport(ERROR, (errmsg("!name")));
+            if (!(type = SPI_gettype(SPI_tuptable->tupdesc, col))) ereport(ERROR, (errmsg("!type")));
             (void)appendStringInfo(&buf, "%s::%s", name, type);
             if (col > 1) (void)appendStringInfoString(&buf, "\t");
-            if (name != NULL) (void)pfree(name);
-            if (type != NULL) (void)pfree(type);
+            (void)pfree(name);
+            (void)pfree(type);
         }
         (void)appendStringInfoString(&buf, "\n");
         for (uint64 row = 0; row < SPI_processed; row++) {
