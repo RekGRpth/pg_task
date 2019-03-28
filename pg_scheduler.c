@@ -162,13 +162,13 @@ static inline void check() {
         "    INNER JOIN  pg_user AS i ON d.datdba = i.usesysid\n"
         "    WHERE       NOT datistemplate\n"
         "    AND         datallowconn\n");
-    if (databases == NULL) (void)appendStringInfoString(&buf, "    AND         i.usesysid = u.usesysid\n"); else {
+    if (!databases) (void)appendStringInfoString(&buf, "    AND         i.usesysid = u.usesysid\n"); else {
         char *rawstring = pstrdup(databases);
         if (!SplitGUCList(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
-        if ((argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2)) == NULL) ereport(ERROR, (errmsg("!argtypes")));
-        if ((Values = palloc(sizeof(Datum) * list_length(elemlist) * 2)) == NULL) ereport(ERROR, (errmsg("!Values")));
-        if ((Nulls = palloc(sizeof(char) * list_length(elemlist) * 2)) == NULL) ereport(ERROR, (errmsg("!Nulls")));
-        if ((str = palloc(sizeof(char *) * list_length(elemlist) * 2)) == NULL) ereport(ERROR, (errmsg("!str")));
+        if (!(argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2))) ereport(ERROR, (errmsg("!argtypes")));
+        if (!(Values = palloc(sizeof(Datum) * list_length(elemlist) * 2))) ereport(ERROR, (errmsg("!Values")));
+        if (!(Nulls = palloc(sizeof(char) * list_length(elemlist) * 2))) ereport(ERROR, (errmsg("!Nulls")));
+        if (!(str = palloc(sizeof(char *) * list_length(elemlist) * 2))) ereport(ERROR, (errmsg("!str")));
         (void)appendStringInfoString(&buf, "    AND         (d.datname, u.usename) IN (\n        ");
         for (ListCell *cell = list_head(elemlist); cell != NULL; cell = lnext(cell)) {
             const char *database_username = (const char *)lfirst(cell);
