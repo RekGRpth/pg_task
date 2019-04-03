@@ -260,7 +260,10 @@ static inline void lock_callback(const char *src, va_list args) {
         bool isnull;
         bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "pg_try_advisory_lock"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-        if (!lock) ereport(ERROR, (errmsg("Already running database=%s, username=%s", database, username)));
+        if (!lock) {
+            MyBgworkerEntry->bgw_restart_time = BGW_NEVER_RESTART;
+            ereport(ERROR, (errmsg("Already running database=%s, username=%s", database, username)));
+        }
     }
 }
 
