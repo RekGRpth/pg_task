@@ -484,19 +484,18 @@ static inline void work_callback(const char *src, va_list args) {
 static inline void work(Datum arg, char **data, int *timeout) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
-    StringInfoData buf, value;
+    StringInfoData buf;
     elog(LOG, "work database=%s, username=%s, schema=%s, table=%s, id=%lu", database, username, schema, table, DatumGetInt64(arg));
-    (void)initStringInfo(&value);
-    (void)appendStringInfo(&value, "%lu", DatumGetInt64(arg));
-    (int)set_config_option("pg_scheduler.task_id", value.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SAVE, true, 0, false);
     (void)initStringInfo(&buf);
+    (void)appendStringInfo(&buf, "%lu", DatumGetInt64(arg));
+    (int)set_config_option("pg_scheduler.task_id", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SAVE, true, 0, false);
+    (void)resetStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
     elog(LOG, "work buf.data=%s", buf.data);
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, work_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, CurrentMemoryContext, data, timeout);
     (void)pfree(buf.data);
-    (void)pfree(value.data);
 }
 
 static inline void done_callback(const char *src, va_list args) {
