@@ -84,7 +84,7 @@ static inline void launch_tick(const char *database, const char *username) {
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_main_arg = (Datum) 0;
-    worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
+    worker.bgw_restart_time = BGW_NEVER_RESTART;
     if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     if (snprintf(worker.bgw_function_name, sizeof("tick"), "tick") != sizeof("tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     if (snprintf(worker.bgw_type, sizeof("pg_scheduler tick"), "pg_scheduler tick") != sizeof("pg_scheduler tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
@@ -260,10 +260,8 @@ static inline void lock_callback(const char *src, va_list args) {
         bool isnull;
         bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "pg_try_advisory_lock"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-        if (!lock) {
-            MyBgworkerEntry->bgw_restart_time = BGW_NEVER_RESTART;
-            ereport(ERROR, (errmsg("Already running database=%s, username=%s", database, username)));
-        }
+        if (!lock) ereport(ERROR, (errmsg("Already running database=%s, username=%s", database, username)));
+        MyBgworkerEntry->bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     }
 }
 
