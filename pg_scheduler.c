@@ -229,6 +229,7 @@ void loop(Datum arg) {
     elog(LOG, "loop database=%s", databases);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
+    (void)pgstat_report_appname(MyBgworkerEntry->bgw_name);
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     (void)check();
@@ -430,6 +431,7 @@ void tick(Datum arg) {
     elog(LOG, "tick database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
+    (void)pgstat_report_appname(MyBgworkerEntry->bgw_name);
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
     (void)lock();
@@ -631,6 +633,7 @@ void task(Datum arg) {
     schema = table + strlen(table) + 1;
     if (!strlen(schema)) schema = NULL;
     elog(LOG, "task database=%s, username=%s, schema=%s, table=%s, id=%lu", database, username, schema, table, DatumGetInt64(arg));
+    (void)pgstat_report_appname(MyBgworkerEntry->bgw_name);
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
     (void)execute(arg);
