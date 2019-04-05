@@ -526,15 +526,17 @@ static inline void success(MemoryContext oldMemoryContext, char **data, char **s
     StringInfoData buf;
     (void)initStringInfo(&buf);
     if ((SPI_tuptable) && (SPI_processed > 0)) {
-        for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-            char *name = SPI_fname(SPI_tuptable->tupdesc, col);
-            char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
-            (void)appendStringInfo(&buf, "%s::%s", name, type);
-            if (col > 1) (void)appendStringInfoString(&buf, "\t");
-            (void)pfree(name);
-            (void)pfree(type);
+        if (SPI_tuptable->tupdesc->natts > 1) {
+            for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
+                char *name = SPI_fname(SPI_tuptable->tupdesc, col);
+                char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
+                (void)appendStringInfo(&buf, "%s::%s", name, type);
+                if (col > 1) (void)appendStringInfoString(&buf, "\t");
+                (void)pfree(name);
+                (void)pfree(type);
+            }
+            (void)appendStringInfoString(&buf, "\n");
         }
-        (void)appendStringInfoString(&buf, "\n");
         for (uint64 row = 0; row < SPI_processed; row++) {
             for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
                 char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
