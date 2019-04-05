@@ -105,34 +105,12 @@ static inline void launch_tick(const char *database, const char *username) {
     }
     (void)pfree(handle);
 }
-/*
-static inline void SPI_start_transactionMy(void) {
-    MemoryContext oldcontext = CurrentMemoryContext;
-    (void)StartTransactionCommand();
-    (MemoryContext)MemoryContextSwitchTo(oldcontext);
-}
-
-static inline void SPI_commitMy(void) {
-    MemoryContext oldcontext = CurrentMemoryContext;
-    if (IsSubTransaction()) ereport(ERROR, (errcode(ERRCODE_INVALID_TRANSACTION_TERMINATION), errmsg("cannot commit while a subtransaction is active")));
-    while (ActiveSnapshotSet()) (void)PopActiveSnapshot();
-    (void)CommitTransactionCommand();
-    (MemoryContext)MemoryContextSwitchTo(oldcontext);
-}
-
-static inline void SPI_rollbackMy(void) {
-//    MemoryContext oldcontext = CurrentMemoryContext;
-//    if (IsSubTransaction()) ereport(ERROR, (errcode(ERRCODE_INVALID_TRANSACTION_TERMINATION), errmsg("cannot roll back while a subtransaction is active")));
-    (void)AbortCurrentTransaction();
-//    (MemoryContext)MemoryContextSwitchTo(oldcontext);
-}*/
 
 static inline void SPI_connect_execute_finish(const char *src, int timeout, Callback callback, ...) {
     int rc;
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("SPI_connect_ext = %s", SPI_result_code_string(rc))));
     (void)SPI_start_transaction();
-//    (void)PushActiveSnapshot(GetTransactionSnapshot());
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //    elog(LOG, "SPI_connect_execute_finish src = %s", src);
     {
@@ -628,22 +606,22 @@ static inline void execute_callback(const char *src, va_list args) {
     MemoryContext oldMemoryContext = va_arg(args, MemoryContext);
     char **data = va_arg(args, char **);
     char **state = va_arg(args, char **);
-    elog(LOG, "execute_callback 1 SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
-    elog(LOG, "execute_callback 1 get_SPI_connected = %i", get_SPI_connected());
+//    elog(LOG, "execute_callback 1 SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
+//    elog(LOG, "execute_callback 1 get_SPI_connected = %i", get_SPI_connected());
     PG_TRY(); if ((rc = SPI_execute(src, false, 0) < 0)) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc)))); else {
-        elog(LOG, "execute_callback 2 SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
-        elog(LOG, "execute_callback 2 get_SPI_connected = %i", get_SPI_connected());
+//        elog(LOG, "execute_callback 2 SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
+//        elog(LOG, "execute_callback 2 get_SPI_connected = %i", get_SPI_connected());
         (void)success(oldMemoryContext, data, state);
-        elog(LOG, "execute_callback 3 SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
-        elog(LOG, "execute_callback 3 get_SPI_connected = %i", get_SPI_connected());
+//        elog(LOG, "execute_callback 3 SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
+//        elog(LOG, "execute_callback 3 get_SPI_connected = %i", get_SPI_connected());
         (void)SPI_commit();
     } PG_CATCH(); {
 //        char *tmp = SPI_palloc(1024);
-        elog(LOG, "execute_callback 4 SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
-        elog(LOG, "execute_callback 4 get_SPI_connected = %i", get_SPI_connected());
+//        elog(LOG, "execute_callback 4 SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
+//        elog(LOG, "execute_callback 4 get_SPI_connected = %i", get_SPI_connected());
         (void)error(oldMemoryContext, data, state);
-        elog(LOG, "execute_callback 5 SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
-        elog(LOG, "execute_callback 5 get_SPI_connected = %i", get_SPI_connected());
+//        elog(LOG, "execute_callback 5 SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
+//        elog(LOG, "execute_callback 5 get_SPI_connected = %i", get_SPI_connected());
 //        (void)EmitErrorReport();
 //        (void)SPI_rollbackMy();
         (void)AbortCurrentTransaction();
