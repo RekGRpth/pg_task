@@ -106,6 +106,27 @@ static inline void launch_tick(const char *database, const char *username) {
     (void)pfree(handle);
 }
 
+static inline void SPI_start_transactionMy(void) {
+    MemoryContext oldcontext = CurrentMemoryContext;
+    (void)StartTransactionCommand();
+    (MemoryContext)MemoryContextSwitchTo(oldcontext);
+}
+
+static inline void SPI_commitMy(void) {
+    MemoryContext oldcontext = CurrentMemoryContext;
+    if (IsSubTransaction()) ereport(ERROR, (errcode(ERRCODE_INVALID_TRANSACTION_TERMINATION), errmsg("cannot commit while a subtransaction is active")));
+    while (ActiveSnapshotSet()) (void)PopActiveSnapshot();
+    (void)CommitTransactionCommand();
+    (MemoryContext)MemoryContextSwitchTo(oldcontext);
+}
+
+static inline void SPI_rollbackMy(void) {
+    MemoryContext oldcontext = CurrentMemoryContext;
+    if (IsSubTransaction()) ereport(ERROR, (errcode(ERRCODE_INVALID_TRANSACTION_TERMINATION), errmsg("cannot roll back while a subtransaction is active")));
+    (void)AbortCurrentTransaction();
+    (MemoryContext)MemoryContextSwitchTo(oldcontext);
+}
+
 static inline void SPI_connect_execute_finish(const char *src, int timeout, Callback callback, ...) {
     int rc;
     (void)pgstat_report_activity(STATE_RUNNING, src);
@@ -600,13 +621,6 @@ static inline void error(MemoryContext oldMemoryContext, char **data, char **sta
     *data = MemoryContextStrdup(oldMemoryContext, buf.data);
     (void)pfree(buf.data);
 }
-
-/*static inline void SPI_rollbackMy(void) {
-    MemoryContext oldcontext = CurrentMemoryContext;
-    if (IsSubTransaction()) ereport(ERROR, (errcode(ERRCODE_INVALID_TRANSACTION_TERMINATION), errmsg("cannot roll back while a subtransaction is active")));
-    (void)AbortCurrentTransaction();
-    (MemoryContext)MemoryContextSwitchTo(oldcontext);
-}*/
 
 static inline void execute_callback(const char *src, va_list args) {
     int rc;
