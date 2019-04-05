@@ -111,7 +111,7 @@ static inline void SPI_connect_execute_finish(const char *src, int timeout, Call
     if (SPI_connect_ext(SPI_OPT_NONATOMIC) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("SPI_connect_ext != SPI_OK_CONNECT")));
     (void)SPI_start_transaction();
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
-//    elog(LOG, "SPI_connect_execute_finish src=%s", src);
+//    elog(LOG, "SPI_connect_execute_finish src = %s", src);
     {
         va_list args;
         va_start(args, callback);
@@ -140,7 +140,7 @@ static inline void check_callback(const char *src, va_list args) {
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         start = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "start"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-        elog(LOG, "check_callback row=%lu, database=%s, username=%s, start=%s", row, database, username, start ? "true" : "false");
+        elog(LOG, "check_callback row = %lu, database = %s, username = %s, start = %s", row, database, username, start ? "true" : "false");
         if (start) (void)launch_tick(database, username);
     }
 }
@@ -153,7 +153,7 @@ static inline void check() {
     Datum *Values = NULL;
     char *Nulls = NULL;
     char **str = NULL;
-    elog(LOG, "check database=%s", databases);
+    elog(LOG, "check database = %s", databases);
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf,
         "WITH s AS (\n"
@@ -183,7 +183,7 @@ static inline void check() {
                 Nulls[2 * i + 1] = ' ';
                 if ((cell = lnext(cell))) username = (const char *)lfirst(cell);
                 else Nulls[2 * i + 1] = 'n';
-                elog(LOG, "check database=%s, username=%s", database, username);
+                elog(LOG, "check database = %s, username = %s", database, username);
                 if (i > 0) (void)appendStringInfoString(&buf, ", ");
                 (void)appendStringInfo(&buf, "($%i, COALESCE($%i, i.usename))", 2 * i + 1, 2 * i + 1 + 1);
                 argtypes[2 * i] = TEXTOID;
@@ -226,7 +226,7 @@ static inline void check() {
 }
 
 void loop(Datum arg) {
-    elog(LOG, "loop database=%s", databases);
+    elog(LOG, "loop database = %s", databases);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
     (void)pgstat_report_appname(MyBgworkerEntry->bgw_name);
@@ -263,7 +263,7 @@ static inline void lock_callback(const char *src, va_list args) {
         bool isnull;
         bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "pg_try_advisory_lock"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-        if (!lock) ereport(ERROR, (errmsg("Already running database=%s, username=%s", database, username)));
+        if (!lock) ereport(ERROR, (errmsg("Already running database = %s, username = %s", database, username)));
         MyBgworkerEntry->bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     }
 }
@@ -280,7 +280,7 @@ static inline void schema_callback(const char *src, va_list args) {
 
 static inline void init_schema() {
     StringInfoData buf;
-    elog(LOG, "init_schema database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
+    elog(LOG, "init_schema database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", quote_identifier(schema));
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, schema_callback);
@@ -294,7 +294,7 @@ static inline void table_callback(const char *src, va_list args) {
 
 static inline void init_table() {
     StringInfoData buf;
-    elog(LOG, "init_table database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
+    elog(LOG, "init_table database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "CREATE TABLE IF NOT EXISTS ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
@@ -322,7 +322,7 @@ static inline void index_callback(const char *src, va_list args) {
 
 static inline void init_index(const char *index) {
     StringInfoData buf, name;
-    elog(LOG, "init_index database=%s, username=%s, period=%i, schema=%s, table=%s, index=%s", database, username, period, schema, table, index);
+    elog(LOG, "init_index database = %s, username = %s, period = %i, schema = %s, table = %s, index = %s", database, username, period, schema, table, index);
     (void)initStringInfo(&buf);
     (void)initStringInfo(&name);
     (void)appendStringInfo(&name, "%s_%s_idx", table, index);
@@ -340,7 +340,7 @@ static inline void launch_task(Datum arg, const char *queue) {
     pid_t pid;
     int len, len2, len3, len4;
     uint64 id = DatumGetInt64(arg);
-    elog(LOG, "launch_task database=%s, username=%s, schema=%s, table=%s, id=%lu, queue=%s", database, username, schema, table, id, queue);
+    elog(LOG, "launch_task database = %s, username = %s, schema = %s, table = %s, id = %lu, queue = %s", database, username, schema, table, id, queue);
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -383,7 +383,7 @@ static inline void assign_callback(const char *src, va_list args) {
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-        elog(LOG, "assign_callback row=%lu, id=%lu, queue=%s", row, DatumGetInt64(id), queue);
+        elog(LOG, "assign_callback row = %lu, id = %lu, queue = %s", row, DatumGetInt64(id), queue);
         (void)launch_task(id, queue);
         (void)pfree(queue);
     }
@@ -428,7 +428,7 @@ void tick(Datum arg) {
     (void)appendStringInfo(&buf, "pg_scheduler_table.%s", database);
     (void)DefineCustomStringVariable(buf.data, "pg_scheduler table", NULL, &table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     (void)pfree(buf.data);
-    elog(LOG, "tick database=%s, username=%s, period=%i, schema=%s, table=%s", database, username, period, schema, table);
+    elog(LOG, "tick database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
     (void)pgstat_report_appname(MyBgworkerEntry->bgw_name);
@@ -477,7 +477,7 @@ static inline void work_callback(const char *src, va_list args) {
         *timeout = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         *data = MemoryContextStrdup(oldMemoryContext, value);
-        elog(LOG, "work timeout=%i, data=%s", *timeout, *data);
+        elog(LOG, "work timeout = %i, data = %s", *timeout, *data);
         (void)pfree(value);
     }
 }
@@ -486,7 +486,7 @@ static inline void work(Datum arg, char **data, int *timeout) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
     StringInfoData buf;
-    elog(LOG, "work database=%s, username=%s, schema=%s, table=%s, id=%lu", database, username, schema, table, DatumGetInt64(arg));
+    elog(LOG, "work database = %s, username = %s, schema = %s, table = %s, id = %lu", database, username, schema, table, DatumGetInt64(arg));
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "%lu", DatumGetInt64(arg));
     if (set_config_option("pg_scheduler.task_id", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SAVE, true, 0, false) <= 0) ereport(ERROR, (errmsg("set_config_option <= 0")));
@@ -494,7 +494,7 @@ static inline void work(Datum arg, char **data, int *timeout) {
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
-    elog(LOG, "work buf.data=%s", buf.data);
+    elog(LOG, "work buf.data = %s", buf.data);
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, work_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, CurrentMemoryContext, data, timeout);
     (void)pfree(buf.data);
 }
@@ -515,9 +515,9 @@ static inline void done(Datum arg, const char *data, const char *state) {
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s SET state = $1, stop = now(), response=$2 WHERE id = $3", quote_identifier(table));
-//    elog(LOG, "done buf.data=%s, data=\n%s", buf.data, data);
-    elog(LOG, "done buf.data=%s", buf.data);
+    (void)appendStringInfo(&buf, "%s SET state = $1, stop = now(), response = $2 WHERE id = $3", quote_identifier(table));
+//    elog(LOG, "done buf.data = %s, data = \n%s", buf.data, data);
+    elog(LOG, "done buf.data = %s", buf.data);
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, done_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL);
     (void)pfree(buf.data);
 }
@@ -595,6 +595,7 @@ static inline void execute_callback(const char *src, va_list args) {
     MemoryContext oldMemoryContext = va_arg(args, MemoryContext);
     char **data = va_arg(args, char **);
     char **state = va_arg(args, char **);
+//    elog(LOG, "execute_callback SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
     PG_TRY(); if (SPI_execute(src, false, 0) < 0) ereport(ERROR, (errmsg("SPI_execute < 0"))); else {
         (void)success(oldMemoryContext, data, state);
         (void)SPI_commit();
@@ -611,14 +612,14 @@ static inline void execute(Datum arg) {
     int timeout = 0;
     (void)work(arg, &src, &timeout);
     if ((StatementTimeout > 0) && (StatementTimeout < timeout)) timeout = StatementTimeout;
-//    elog(LOG, "execute 1 src=%s", src);
-    elog(LOG, "execute database=%s, username=%s, schema=%s, table=%s, timeout=%i, src=%s", database, username, schema, table, timeout, src);
+//    elog(LOG, "execute 1 src = %s", src);
+    elog(LOG, "execute database = %s, username = %s, schema = %s, table = %s, timeout = %i, src = %s", database, username, schema, table, timeout, src);
     (void)SPI_connect_execute_finish(src, timeout, execute_callback, CurrentMemoryContext, &data, &state);
-//    elog(LOG, "execute 2 src=%s", src);
-//    elog(LOG, "execute 1 data=%s", data);
+//    elog(LOG, "execute 2 src = %s", src);
+//    elog(LOG, "execute 1 data = %s", data);
     (void)done(arg, data, state);
-//    elog(LOG, "execute 3 src=%s", src);
-//    elog(LOG, "execute 2 data=%s", data);
+//    elog(LOG, "execute 3 src = %s", src);
+//    elog(LOG, "execute 2 data = %s", data);
     (void)pfree(src);
     (void)pfree(data);
 }
@@ -629,7 +630,7 @@ void task(Datum arg) {
     table = username + strlen(username) + 1;
     schema = table + strlen(table) + 1;
     if (!strlen(schema)) schema = NULL;
-    elog(LOG, "task database=%s, username=%s, schema=%s, table=%s, id=%lu", database, username, schema, table, DatumGetInt64(arg));
+    elog(LOG, "task database = %s, username = %s, schema = %s, table = %s, id = %lu", database, username, schema, table, DatumGetInt64(arg));
     (void)pgstat_report_appname(MyBgworkerEntry->bgw_name);
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
