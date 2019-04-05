@@ -592,14 +592,12 @@ static inline void error(MemoryContext oldMemoryContext, char **data, char **sta
 }
 
 static inline void execute_callback(const char *src, va_list args) {
-    PG_TRY(); {
-        if (SPI_execute(src, false, 0) < 0) ereport(ERROR, (errmsg("SPI_execute < 0"))); else {
-            MemoryContext oldMemoryContext = va_arg(args, MemoryContext);
-            char **data = va_arg(args, char **);
-            char **state = va_arg(args, char **);
-            (void)success(oldMemoryContext, data, state);
-            (void)SPI_commit();
-        }
+    PG_TRY(); if (SPI_execute(src, false, 0) < 0) ereport(ERROR, (errmsg("SPI_execute < 0"))); else {
+        MemoryContext oldMemoryContext = va_arg(args, MemoryContext);
+        char **data = va_arg(args, char **);
+        char **state = va_arg(args, char **);
+        (void)success(oldMemoryContext, data, state);
+        (void)SPI_commit();
     } PG_CATCH(); {
         MemoryContext oldMemoryContext = va_arg(args, MemoryContext);
         char **data = va_arg(args, char **);
