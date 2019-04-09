@@ -231,7 +231,7 @@ void loop(Datum arg) {
     elog(LOG, "loop database = %s", databases);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
-    (void)pgstat_report_appname(MyBgworkerEntry->bgw_name);
+    (void)pgstat_report_appname(MyBgworkerEntry->bgw_type);
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     (void)check();
@@ -355,9 +355,11 @@ static inline void launch_task(Datum arg, const char *queue) {
     worker.bgw_main_arg = arg;
     if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     if (snprintf(worker.bgw_function_name, sizeof("task"), "task") != sizeof("task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    len = (sizeof("pg_scheduler task %s %lu") - 1) + (strlen(queue) - 1) - 1 - 2;
+    for (int number = id; number /= 10; len++);
+    if (snprintf(worker.bgw_type, len + 1, "pg_scheduler task %s %lu", queue, id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len = (sizeof("%s %s pg_scheduler task %s %lu") - 1) + (strlen(database) - 1) + (strlen(username) - 1) + (strlen(queue) - 1) - 1 - 1 - 1 - 2;
     for (int number = id; number /= 10; len++);
-    if (snprintf(worker.bgw_type, len + 1, "%s %s pg_scheduler task %s %lu", database, username, queue, id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task %s %lu", database, username, queue, id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len = (sizeof("%s") - 1) + (strlen(database) - 1) - 1;
     if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
@@ -438,7 +440,7 @@ void tick(Datum arg) {
     elog(LOG, "tick database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
-    (void)pgstat_report_appname(MyBgworkerEntry->bgw_name);
+    (void)pgstat_report_appname(MyBgworkerEntry->bgw_type);
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
     (void)lock();
@@ -656,7 +658,7 @@ void task(Datum arg) {
     schema = table + strlen(table) + 1;
     if (!strlen(schema)) schema = NULL;
     elog(LOG, "task database = %s, username = %s, schema = %s, table = %s, id = %lu", database, username, schema, table, DatumGetInt64(arg));
-    (void)pgstat_report_appname(MyBgworkerEntry->bgw_name);
+    (void)pgstat_report_appname(MyBgworkerEntry->bgw_type);
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
     (void)execute(arg);
