@@ -314,7 +314,8 @@ static inline void init_table(void) {
         "    request TEXT NOT NULL,\n"
         "    response TEXT,\n"
         "    state TEXT NOT NULL DEFAULT 'QUEUE',\n"
-        "    timeout INTERVAL"
+        "    timeout INTERVAL,\n"
+        "    delete BOOLEAN NOT NULL DEFAULT false"
         ")");
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, table_callback);
     (void)pfree(buf.data);
@@ -515,19 +516,34 @@ static inline void done_callback(const char *src, va_list args) {
     Oid *argtypes = va_arg(args, Oid *);
     Datum *Values = va_arg(args, Datum *);
     const char *Nulls = va_arg(args, const char *);
-    if ((rc = SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
+    if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
+        bool isnull;
+        bool delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &isnull));
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
+        if (delete) {
+            StringInfoData buf;
+            (void)initStringInfo(&buf);
+            (void)appendStringInfoString(&buf, "DELETE FROM ");
+            if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+            (void)appendStringInfo(&buf, "%s WHERE id = $1", quote_identifier(table));
+            elog(LOG, "done_callback buf.data = %s", buf.data);
+            if ((rc = SPI_execute_with_args(buf.data, nargs, argtypes, Values, Nulls, false, 0)) != SPI_OK_DELETE) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
+            (void)pfree(buf.data);
+        }
+    }
     (void)SPI_commit();
 }
 
 static inline void done(Datum arg, const char *data, const char *state) {
-    Oid argtypes[] = {TEXTOID, TEXTOID, INT8OID};
-    Datum Values[] = {CStringGetTextDatum(state), CStringGetTextDatum(data ? data : "(null)"), arg};
-    char Nulls[] = {' ', data ? ' ' : 'n', ' '};
+    Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
+    Datum Values[] = {arg, CStringGetTextDatum(state), CStringGetTextDatum(data ? data : "(null)")};
+    char Nulls[] = {' ', ' ', data ? ' ' : 'n'};
     StringInfoData buf;
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s SET state = $1, stop = now(), response = $2 WHERE id = $3", quote_identifier(table));
+    (void)appendStringInfo(&buf, "%s SET state = $2, stop = now(), response = $3 WHERE id = $1 RETURNING delete", quote_identifier(table));
 //    elog(LOG, "done buf.data = %s, data = \n%s", buf.data, data);
     elog(LOG, "done buf.data = %s", buf.data);
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, done_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, Nulls);
