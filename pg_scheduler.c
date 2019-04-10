@@ -522,6 +522,7 @@ static inline void done_callback(const char *src, va_list args) {
 static inline void done(Datum arg, const char *data, const char *state) {
     Oid argtypes[] = {TEXTOID, TEXTOID, INT8OID};
     Datum Values[] = {CStringGetTextDatum(state), CStringGetTextDatum(data ? data : "(null)"), arg};
+    char Nulls[] = {' ', data ? ' ' : 'n', ' '};
     StringInfoData buf;
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
@@ -529,7 +530,7 @@ static inline void done(Datum arg, const char *data, const char *state) {
     (void)appendStringInfo(&buf, "%s SET state = $1, stop = now(), response = $2 WHERE id = $3", quote_identifier(table));
 //    elog(LOG, "done buf.data = %s, data = \n%s", buf.data, data);
     elog(LOG, "done buf.data = %s", buf.data);
-    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, done_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL);
+    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, done_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, Nulls);
     (void)pfree(buf.data);
 }
 
@@ -558,9 +559,9 @@ static inline void success(MemoryContext oldMemoryContext, char **data, char **s
             if (row < SPI_processed - 1) (void)appendStringInfoString(&buf, "\n");
         }
         elog(LOG, "success\n%s", buf.data);
+        *data = MemoryContextStrdup(oldMemoryContext, buf.data);
     }
     *state = "DONE";
-    *data = MemoryContextStrdup(oldMemoryContext, buf.data);
     (void)pfree(buf.data);
 }
 
@@ -634,7 +635,7 @@ static inline void execute_callback(const char *src, va_list args) {
 
 static inline void execute(Datum arg) {
     char *src;
-    char *data;
+    char *data = NULL;
     char *state;
     int timeout = 0;
     (void)work(arg, &src, &timeout);
@@ -648,7 +649,7 @@ static inline void execute(Datum arg) {
 //    elog(LOG, "execute 3 src = %s", src);
 //    elog(LOG, "execute 2 data = %s", data);
     (void)pfree(src);
-    (void)pfree(data);
+    if (data) (void)pfree(data);
 }
 
 void task(Datum arg) {
