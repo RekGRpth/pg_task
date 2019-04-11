@@ -517,7 +517,8 @@ static inline void done_callback(const char *src, va_list args) {
     Datum *Values = va_arg(args, Datum *);
     const char *Nulls = va_arg(args, const char *);
     if ((rc = SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
-    if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
+    if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1")));
+    if (Nulls[2] == 'n') {
         bool isnull;
         bool delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
