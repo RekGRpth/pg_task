@@ -521,11 +521,10 @@ static inline void done_callback(const char *src, va_list args) {
     if ((rc = SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
     if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
         bool isnull;
-        Datum repeat;
         bool delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-        repeat = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &isnull);
-        if (!isnull && repeat) {
+        (Datum)SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &isnull);
+        if (!isnull) {
             bool drift = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "drift"), &isnull));
             if (isnull) ereport(ERROR, (errmsg("isnull"))); else {
                 StringInfoData buf;
