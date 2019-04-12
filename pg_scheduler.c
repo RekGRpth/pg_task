@@ -532,8 +532,7 @@ static inline void done_callback(const char *src, va_list args) {
                 (void)appendStringInfoString(&buf, "INSERT INTO ");
                 if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
                 (void)appendStringInfo(&buf, "%s (dt, queue, max, request, state, timeout, delete, repeat, drift) (SELECT ", quote_identifier(table));
-                if (drift) (void)appendStringInfoString(&buf, "now()");
-                else (void)appendStringInfoString(&buf, "dt");
+                (void)appendStringInfoString(&buf, drift ? "now()" : "dt");
                 (void)appendStringInfoString(&buf, " + repeat AS dt, queue, max, request, 'QUEUE' as state, timeout, delete, repeat, drift FROM ");
                 if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
                 (void)appendStringInfo(&buf, "%s WHERE id = $1)", quote_identifier(table));
