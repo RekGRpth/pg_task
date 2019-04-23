@@ -90,8 +90,8 @@ static inline void launch_tick(const char *database, const char *username) {
     if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     if (snprintf(worker.bgw_function_name, sizeof("tick"), "tick") != sizeof("tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     if (snprintf(worker.bgw_type, sizeof("pg_scheduler tick"), "pg_scheduler tick") != sizeof("pg_scheduler tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    len = (sizeof("%s %s pg_scheduler tick") - 1) + (strlen(database) - 1) + (strlen(username) - 1) - 1 - 1;
-    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler tick", database, username) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    len = (sizeof("%s %s pg_scheduler tick") - 1) + (strlen(username) - 1) + (strlen(database) - 1) - 1 - 1;
+    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler tick", username, database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len = (sizeof("%s") - 1) + (strlen(database) - 1) - 1;
     if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len2 = (sizeof("%s") - 1) + (strlen(username) - 1) - 1;
@@ -361,9 +361,9 @@ static inline void launch_task(Datum arg, const char *queue) {
     len = (sizeof("pg_scheduler task %s %lu") - 1) + (strlen(queue) - 1) - 1 - 2;
     for (int number = id; number /= 10; len++);
     if (snprintf(worker.bgw_type, len + 1, "pg_scheduler task %s %lu", queue, id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    len = (sizeof("%s %s pg_scheduler task %s %lu") - 1) + (strlen(database) - 1) + (strlen(username) - 1) + (strlen(queue) - 1) - 1 - 1 - 1 - 2;
+    len = (sizeof("%s %s pg_scheduler task %s %lu") - 1) + (strlen(username) - 1) + (strlen(database) - 1) + (strlen(queue) - 1) - 1 - 1 - 1 - 2;
     for (int number = id; number /= 10; len++);
-    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task %s %lu", database, username, queue, id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task %s %lu", username, database, queue, id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len = (sizeof("%s") - 1) + (strlen(database) - 1) - 1;
     if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len2 = (sizeof("%s") - 1) + (strlen(username) - 1) - 1;
