@@ -412,7 +412,7 @@ static inline void assign(void) {
     (void)appendStringInfo(&buf, "%s\n"
         "    WHERE       state = 'QUEUE'\n"
         "    AND         dt <= now()\n"
-        "    AND         COALESCE(max, ~(1<<31)) > (SELECT count(pid) FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND backend_type ilike 'pg_scheduler task ' || queue || '%%')\n"
+        "    AND         COALESCE(max, ~(1<<31)) > (SELECT count(pid) FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND backend_type ilike 'pg_scheduler task ' || queue || ' %%')\n"
         "    ORDER BY    max DESC, id\n"
         ") SELECT id, queue FROM s LIMIT (SELECT max FROM s LIMIT 1)", quote_identifier(table));
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, assign_callback);
