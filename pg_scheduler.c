@@ -110,6 +110,7 @@ static inline void SPI_connect_execute_finish(const char *src, int timeout, Call
     int rc;
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("SPI_connect_ext = %s", SPI_result_code_string(rc))));
+    (void)pgstat_report_appname(MyBgworkerEntry->bgw_type);
     (void)SPI_start_transaction();
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
 //    elog(LOG, "SPI_connect_execute_finish src = %s", src);
@@ -231,7 +232,6 @@ void loop(Datum arg) {
     elog(LOG, "loop database = %s", databases);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
-    (void)pgstat_report_appname(MyBgworkerEntry->bgw_type);
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     (void)check();
@@ -412,7 +412,7 @@ static inline void assign(void) {
     (void)appendStringInfo(&buf, "%s\n"
         "    WHERE       state = 'QUEUE'\n"
         "    AND         dt <= now()\n"
-        "    AND         COALESCE(max, ~(1<<31)) > (SELECT count(pid) FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND backend_type ilike 'pg_scheduler task ' || queue || ' %%')\n"
+        "    AND         COALESCE(max, ~(1<<31)) > (SELECT count(pid) FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND backend_type ILIKE 'pg_scheduler task ' || queue || ' %%')\n"
         "    ORDER BY    max DESC, id\n"
         ") SELECT id, queue FROM s LIMIT (SELECT max FROM s LIMIT 1)", quote_identifier(table));
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, assign_callback);
@@ -443,7 +443,6 @@ void tick(Datum arg) {
     elog(LOG, "tick database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
-    (void)pgstat_report_appname(MyBgworkerEntry->bgw_type);
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
     (void)lock();
@@ -726,7 +725,6 @@ void task(Datum arg) {
     schema = table + strlen(table) + 1;
     if (!strlen(schema)) schema = NULL;
     elog(LOG, "task database = %s, username = %s, schema = %s, table = %s, id = %lu", database, username, schema, table, DatumGetInt64(arg));
-    (void)pgstat_report_appname(MyBgworkerEntry->bgw_type);
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
     (void)execute(arg);
