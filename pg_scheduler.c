@@ -360,9 +360,8 @@ static inline void launch_task(Datum arg, const char *queue) {
     worker.bgw_main_arg = arg;
     if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     if (snprintf(worker.bgw_function_name, sizeof("task"), "task") != sizeof("task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    len = (sizeof("pg_scheduler task %s %lu") - 1) + (strlen(queue) - 1) - 1 - 2;
-    for (int number = id; number /= 10; len++);
-    if (snprintf(worker.bgw_type, len + 1, "pg_scheduler task %s %lu", queue, id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    len = (sizeof("pg_scheduler task %s") - 1) + (strlen(queue) - 1) - 1;
+    if (snprintf(worker.bgw_type, len + 1, "pg_scheduler task %s", queue) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len = (sizeof("%s %s pg_scheduler task %s %lu") - 1) + (strlen(username) - 1) + (strlen(database) - 1) + (strlen(queue) - 1) - 1 - 1 - 1 - 2;
     for (int number = id; number /= 10; len++);
     if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task %s %lu", username, database, queue, id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
@@ -412,7 +411,7 @@ static inline void assign(void) {
         "    FROM        ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s AS t\n"
-        "    LEFT JOIN   pg_stat_activity AS a ON datname = current_catalog AND usename = current_user AND backend_type ILIKE 'pg_scheduler task ' || queue || ' %%'\n"
+        "    LEFT JOIN   pg_stat_activity AS a ON datname = current_catalog AND usename = current_user AND backend_type = concat('pg_scheduler task ', queue)\n"
         "    WHERE       t.state = 'QUEUE'\n"
         "    AND         dt <= now()\n"
         "    GROUP BY    1, 2, 3\n"
