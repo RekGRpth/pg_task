@@ -406,16 +406,16 @@ static inline void assign(void) {
     StringInfoData buf;
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf,
-        "WITH s AS (WITH s AS (\n"
-        "    SELECT      id, queue, COALESCE(max, ~(1<<31)) AS max\n"
+        "WITH s AS (\n"
+        "    SELECT      id, queue, COALESCE(max, ~(1<<31)) AS max, count(a.pid)\n"
         "    FROM        ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s\n"
-        "    WHERE       state = 'QUEUE'\n"
+    (void)appendStringInfo(&buf, "%s AS t\n"
+        "    LEFT JOIN   pg_stat_activity AS a ON datname = current_catalog AND usename = current_user AND backend_type ILIKE 'pg_scheduler task ' || queue || ' %%'\n"
+        "    WHERE       t.state = 'QUEUE'\n"
         "    AND         dt <= now()\n"
-        ") SELECT * FROM s WHERE max > (\n"
-        "    SELECT count(pid) FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND backend_type ILIKE 'pg_scheduler task ' || queue || ' %%'\n"
-        ") ORDER BY max DESC, id) SELECT * FROM s LIMIT (SELECT max FROM s LIMIT 1)", quote_identifier(table));
+        "    GROUP BY    1, 2, 3\n"
+        ") SELECT * FROM s WHERE max > count ORDER BY max DESC, id LIMIT (SELECT max FROM s LIMIT 1)", quote_identifier(table));
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, assign_callback);
     (void)pfree(buf.data);
 }
