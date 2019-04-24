@@ -537,7 +537,7 @@ static inline void done_callback(const char *src, va_list args) {
 
 static inline void done(Datum arg, const char *data, const char *state, bool *delete, bool *repeat_isnull, bool *drift) {
     Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
-    Datum Values[] = {arg, CStringGetTextDatum(state), CStringGetTextDatum(data ? data : "(null)")};
+    Datum Values[] = {arg, CStringGetTextDatum(state), data ? CStringGetTextDatum(data) : (Datum)NULL};
     char Nulls[] = {' ', ' ', data ? ' ' : 'n'};
     StringInfoData buf;
     (void)initStringInfo(&buf);
