@@ -311,6 +311,7 @@ static inline void init_table(void) {
         "    stop TIMESTAMP,\n"
         "    queue TEXT NOT NULL DEFAULT 'default',\n"
         "    max INT,\n"
+        "    pid INT,\n"
         "    request TEXT NOT NULL,\n"
         "    response TEXT,\n"
         "    state TEXT NOT NULL DEFAULT 'QUEUE',\n"
@@ -495,8 +496,8 @@ static inline void work_callback(const char *src, va_list args) {
 }
 
 static inline void work(Datum arg, char **data, int *timeout) {
-    Oid argtypes[] = {INT8OID};
-    Datum Values[] = {arg};
+    Oid argtypes[] = {INT8OID, INT8OID};
+    Datum Values[] = {arg, MyProcPid};
     StringInfoData buf;
     elog(LOG, "work database = %s, username = %s, schema = %s, table = %s, id = %lu", database, username, schema, table, DatumGetInt64(arg));
     (void)initStringInfo(&buf);
@@ -505,7 +506,7 @@ static inline void work(Datum arg, char **data, int *timeout) {
     (void)resetStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s SET state = 'WORK', start = now() WHERE id = $1 RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
+    (void)appendStringInfo(&buf, "%s SET state = 'WORK', start = now(), pid = $2 WHERE id = $1 RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
     elog(LOG, "work buf.data = %s", buf.data);
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, work_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, CurrentMemoryContext, data, timeout);
     (void)pfree(buf.data);
