@@ -415,8 +415,8 @@ static inline void assign(void) {
         "    WHERE       t.state = 'QUEUE'\n"
         "    AND         dt <= now()\n"
         "    GROUP BY    1, 2, 3\n"
-        "    ORDER BY    max DESC, id\n"
-        ") SELECT * FROM s WHERE max > count LIMIT (SELECT greatest(max - count, 0) FROM s LIMIT 1)", quote_identifier(table));
+        "    ORDER BY    3 DESC, 1\n"
+        ") SELECT unnest((array_agg(id))[:GREATEST(max(max) - count, 0)]) AS id, queue FROM s GROUP BY queue, count", quote_identifier(table));
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, assign_callback);
     (void)pfree(buf.data);
 }
