@@ -416,7 +416,7 @@ static inline void assign(void) {
         "    AND         dt <= now()\n"
         "    GROUP BY    1, 2, 3\n"
         "    ORDER BY    max DESC, id\n"
-        ") SELECT * FROM s WHERE max > count ORDER BY max DESC, id LIMIT (SELECT greatest(max - count, 0) FROM s ORDER BY max DESC, id LIMIT 1)", quote_identifier(table));
+        ") SELECT * FROM s WHERE max > count LIMIT (SELECT greatest(max - count, 0) FROM s LIMIT 1)", quote_identifier(table));
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, assign_callback);
     (void)pfree(buf.data);
 }
