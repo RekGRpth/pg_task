@@ -181,7 +181,7 @@ static inline void check(void) {
             if (!SplitIdentifierString(rawstring, ':', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf"))); else {
                 ListCell *cell = list_head(elemlist);
                 const char *database = (const char *)lfirst(cell);
-                const char *username = database;
+                const char *username = NULL;
                 Nulls[2 * i] = ' ';
                 Nulls[2 * i + 1] = ' ';
                 if ((cell = lnext(cell))) username = (const char *)lfirst(cell);
@@ -192,9 +192,9 @@ static inline void check(void) {
                 argtypes[2 * i] = TEXTOID;
                 argtypes[2 * i + 1] = TEXTOID;
                 str[2 * i] = pstrdup(database);
-                str[2 * i + 1] = pstrdup(username);
+                str[2 * i + 1] = username ? pstrdup(username) : NULL;
                 Values[2 * i] = CStringGetTextDatum(str[2 * i]);
-                Values[2 * i + 1] = CStringGetTextDatum(str[2 * i + 1]);
+                Values[2 * i + 1] = username ? CStringGetTextDatum(str[2 * i + 1]) : (Datum)NULL;
             }
             (void)pfree(rawstring);
             (void)list_free(elemlist);
@@ -217,13 +217,14 @@ static inline void check(void) {
         "INNER JOIN  l USING (pid)\n"
         "WHERE       (datname, usename) NOT IN (SELECT datname, usename FROM s)\n"
         "AND         classid = datid AND objid = usesysid AND database = datid");
+//    elog(LOG, "check buf.data = %s", buf.data);
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, check_callback, i * 2, argtypes, Values, Nulls);
     (void)pfree(buf.data);
     if (argtypes) (void)pfree(argtypes);
     if (Values) (void)pfree(Values);
     if (Nulls) (void)pfree(Nulls);
     if (str) {
-        for (int j = 0; j < i * 2; j++) (void)pfree(str[j]);
+        for (int j = 0; j < i * 2; j++) if (str[j]) (void)pfree(str[j]);
         (void)pfree(str);
     }
 }
