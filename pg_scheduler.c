@@ -357,7 +357,7 @@ static inline void init_fix(void) {
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s SET state = 'QUEUE' WHERE state = 'WORK' AND pid NOT IN (SELECT pid FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND backend_type = concat('pg_scheduler task ', queue))", quote_identifier(table));
+    (void)appendStringInfo(&buf, "%s SET state = 'QUEUE' WHERE state = 'WORK' AND pid NOT IN (SELECT pid FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND application_name = concat_ws(' ', 'pg_scheduler task', queue, id))", quote_identifier(table));
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, fix_callback);
     (void)pfree(buf.data);
 }
