@@ -738,6 +738,13 @@ static inline void execute(Datum arg) {
     if (delete) (void)delete_task(arg);
 }
 
+static inline void update_bgw_type(Datum arg) {
+    uint64 id = DatumGetInt64(arg);
+    int len = (sizeof(" %lu") - 1) - 2;
+    for (int number = id; number /= 10; len++);
+    if (snprintf(MyBgworkerEntry->bgw_type + strlen(MyBgworkerEntry->bgw_type), len + 1, " %lu", id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+}
+
 void task(Datum arg) {
     database = MyBgworkerEntry->bgw_extra;
     username = database + strlen(database) + 1;
@@ -747,5 +754,6 @@ void task(Datum arg) {
     elog(LOG, "task database = %s, username = %s, schema = %s, table = %s, id = %lu", database, username, schema, table, DatumGetInt64(arg));
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
+    (void)update_bgw_type(arg);
     (void)execute(arg);
 }
