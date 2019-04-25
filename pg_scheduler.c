@@ -239,7 +239,7 @@ void loop(Datum arg) {
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | /*WL_TIMEOUT |*/ WL_POSTMASTER_DEATH, LONG_MAX, PG_WAIT_EXTENSION);
         if (rc & WL_LATCH_SET) elog(LOG, "loop WL_LATCH_SET");
-        //if (rc & WL_TIMEOUT) elog(LOG, "loop WL_TIMEOUT");
+//        if (rc & WL_TIMEOUT) elog(LOG, "loop WL_TIMEOUT");
         if (rc & WL_POSTMASTER_DEATH) elog(LOG, "loop WL_POSTMASTER_DEATH");
         if (got_sigterm) elog(LOG, "loop got_sigterm");
         if (got_sighup) elog(LOG, "loop got_sighup");
@@ -470,7 +470,7 @@ void tick(Datum arg) {
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
         if (rc & WL_LATCH_SET) elog(LOG, "tick WL_LATCH_SET");
-        //if (rc & WL_TIMEOUT) elog(LOG, "tick WL_TIMEOUT");
+//        if (rc & WL_TIMEOUT) elog(LOG, "tick WL_TIMEOUT");
         if (rc & WL_POSTMASTER_DEATH) elog(LOG, "tick WL_POSTMASTER_DEATH");
         if (got_sigterm) elog(LOG, "tick got_sigterm");
         if (got_sighup) elog(LOG, "tick got_sighup");
@@ -543,16 +543,13 @@ static inline void done_callback(const char *src, va_list args) {
         bool isnull;
         bool *delete = va_arg(args, bool *);
         bool *repeat_isnull = va_arg(args, bool *);
-//        bool *drift = va_arg(args, bool *);
         *delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &isnull)) && (Nulls[2] == 'n');
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         (Datum)SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), repeat_isnull);
-//        *drift = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "drift"), &isnull));
-//        if (isnull) ereport(ERROR, (errmsg("isnull")));
     }
 }
 
-static inline void done(Datum arg, const char *data, const char *state, bool *delete, bool *repeat_isnull/*, bool *drift*/) {
+static inline void done(Datum arg, const char *data, const char *state, bool *delete, bool *repeat_isnull) {
     Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
     Datum Values[] = {arg, CStringGetTextDatum(state), data ? CStringGetTextDatum(data) : (Datum)NULL};
     char Nulls[] = {' ', ' ', data ? ' ' : 'n'};
@@ -560,10 +557,9 @@ static inline void done(Datum arg, const char *data, const char *state, bool *de
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s SET state = $2, stop = now(), response = $3 WHERE id = $1 RETURNING delete, repeat/*, drift*/", quote_identifier(table));
-//    elog(LOG, "done buf.data = %s, data = \n%s", buf.data, data);
+    (void)appendStringInfo(&buf, "%s SET state = $2, stop = now(), response = $3 WHERE id = $1 RETURNING delete, repeat", quote_identifier(table));
     elog(LOG, "done buf.data = %s", buf.data);
-    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, done_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, Nulls, delete, repeat_isnull/*, drift*/);
+    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, done_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, Nulls, delete, repeat_isnull);
     (void)pfree(buf.data);
 }
 
@@ -601,7 +597,6 @@ static inline void success(MemoryContext oldMemoryContext, char **data, char **s
 static inline void error(MemoryContext oldMemoryContext, char **data, char **state) {
     ErrorData *edata = CopyErrorData();
     StringInfoData buf;
-//    (void)FlushErrorState();
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "elevel::int4\t%i", edata->elevel);
     (void)appendStringInfo(&buf, "\noutput_to_server::bool\t%s", edata->output_to_server ? "true" : "false");
@@ -642,27 +637,12 @@ static inline void execute_callback(const char *src, va_list args) {
     MemoryContext oldMemoryContext = va_arg(args, MemoryContext);
     char **data = va_arg(args, char **);
     char **state = va_arg(args, char **);
-//    elog(LOG, "execute_callback 1 SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
-//    elog(LOG, "execute_callback 1 get_SPI_connected = %i", get_SPI_connected());
     PG_TRY(); if ((rc = SPI_execute(src, false, 0) < 0)) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc)))); else {
-//        elog(LOG, "execute_callback 2 SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
-//        elog(LOG, "execute_callback 2 get_SPI_connected = %i", get_SPI_connected());
         (void)success(oldMemoryContext, data, state);
-//        elog(LOG, "execute_callback 3 SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
-//        elog(LOG, "execute_callback 3 get_SPI_connected = %i", get_SPI_connected());
         (void)SPI_commit();
     } PG_CATCH(); {
-//        char *tmp = SPI_palloc(1024);
-//        elog(LOG, "execute_callback 4 SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
-//        elog(LOG, "execute_callback 4 get_SPI_connected = %i", get_SPI_connected());
         (void)error(oldMemoryContext, data, state);
-//        elog(LOG, "execute_callback 5 SPI_inside_nonatomic_context = %s", SPI_inside_nonatomic_context() ? "true" : "false");
-//        elog(LOG, "execute_callback 5 get_SPI_connected = %i", get_SPI_connected());
-//        (void)EmitErrorReport();
-//        (void)SPI_rollbackMy();
         (void)AbortCurrentTransaction();
-//        (void)FlushErrorState();
-//        (void)SPI_pfree(tmp);
     } PG_END_TRY();
 }
 
@@ -676,7 +656,7 @@ static inline void repeat_callback(const char *src, va_list args) {
     (void)SPI_commit();
 }
 
-static inline void repeat_task(Datum arg/*, bool drift*/) {
+static inline void repeat_task(Datum arg) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
     StringInfoData buf;
@@ -688,7 +668,6 @@ static inline void repeat_task(Datum arg/*, bool drift*/) {
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s WHERE id = $1)", quote_identifier(table));
     elog(LOG, "repeat_task buf.data = %s", buf.data);
-//    if ((rc = SPI_execute_with_args(buf.data, nargs, argtypes, Values, NULL, false, 0)) != SPI_OK_INSERT) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, repeat_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL);
     (void)pfree(buf.data);
 }
@@ -712,28 +691,22 @@ static inline void delete_task(Datum arg) {
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s WHERE id = $1", quote_identifier(table));
     elog(LOG, "delete_task buf.data = %s", buf.data);
-//    if ((rc = SPI_execute_with_args(buf.data, nargs, argtypes, Values, NULL, false, 0)) != SPI_OK_DELETE) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, delete_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL);
     (void)pfree(buf.data);
 }
 
 static inline void execute(Datum arg) {
-    bool delete, repeat_isnull/*, drift*/;
+    bool delete, repeat_isnull;
     char *src, *data = NULL, *state;
     int timeout = 0;
     (void)work(arg, &src, &timeout);
     if ((StatementTimeout > 0) && (StatementTimeout < timeout)) timeout = StatementTimeout;
-//    elog(LOG, "execute 1 src = %s", src);
     elog(LOG, "execute database = %s, username = %s, schema = %s, table = %s, timeout = %i, src = %s", database, username, schema, table, timeout, src);
     (void)SPI_connect_execute_finish(src, timeout, execute_callback, CurrentMemoryContext, &data, &state);
-//    elog(LOG, "execute 2 src = %s", src);
-//    elog(LOG, "execute 1 data = %s", data);
-    (void)done(arg, data, state, &delete, &repeat_isnull/*, &drift*/);
-//    elog(LOG, "execute 3 src = %s", src);
-//    elog(LOG, "execute 2 data = %s", data);
+    (void)done(arg, data, state, &delete, &repeat_isnull);
     (void)pfree(src);
     if (data) (void)pfree(data);
-    if (!repeat_isnull) (void)repeat_task(arg/*, drift*/);
+    if (!repeat_isnull) (void)repeat_task(arg);
     if (delete) (void)delete_task(arg);
 }
 
