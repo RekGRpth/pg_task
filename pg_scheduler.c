@@ -345,6 +345,23 @@ static inline void init_index(const char *index) {
     (void)pfree(name.data);
 }
 
+static inline void fix_callback(const char *src, va_list args) {
+    int rc;
+    if ((rc = SPI_execute(src, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
+    (void)SPI_commit();
+}
+
+static inline void init_fix(void) {
+    StringInfoData buf;
+    elog(LOG, "init_fix database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
+    (void)initStringInfo(&buf);
+    (void)appendStringInfoString(&buf, "UPDATE ");
+    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    (void)appendStringInfo(&buf, "%s SET state = 'QUEUE' WHERE state = 'WORK' AND pid NOT IN (SELECT pid FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND backend_type = concat('pg_scheduler task ', queue))", quote_identifier(table));
+    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, fix_callback);
+    (void)pfree(buf.data);
+}
+
 static inline void launch_task(Datum arg, const char *queue) {
     BackgroundWorker worker;
     BackgroundWorkerHandle *handle;
@@ -426,6 +443,7 @@ static inline void init(void) {
     (void)init_table();
     (void)init_index("dt");
     (void)init_index("state");
+    (void)init_fix();
 }
 
 void tick(Datum arg) {
