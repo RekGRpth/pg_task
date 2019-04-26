@@ -121,7 +121,7 @@ static inline void SPI_connect_execute_finish(const char *src, int timeout, Call
         va_end(args);
     }
     (void)disable_timeout(STATEMENT_TIMEOUT, false);
-    if (SPI_inside_nonatomic_context()) if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(ERROR, (errmsg("SPI_finish = %s", SPI_result_code_string(rc))));
+    if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(ERROR, (errmsg("SPI_finish = %s", SPI_result_code_string(rc))));
     (void)ProcessCompletedNotifies();
     (void)pgstat_report_activity(STATE_IDLE, src);
     (void)pgstat_report_stat(true);
@@ -643,8 +643,7 @@ static inline void execute_callback(const char *src, va_list args) {
         (void)SPI_commit();
     } PG_CATCH(); {
         (void)error(oldMemoryContext, data, state);
-        if (SPI_inside_nonatomic_context()) (void)SPI_rollback();
-        else (void)AbortCurrentTransaction();
+        (void)SPI_rollback();
     } PG_END_TRY();
 }
 
