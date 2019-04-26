@@ -643,7 +643,8 @@ static inline void execute_callback(const char *src, va_list args) {
         (void)SPI_commit();
     } PG_CATCH(); {
         (void)error(oldMemoryContext, data, state);
-        (void)AbortCurrentTransaction();
+        if (SPI_inside_nonatomic_context()) (void)SPI_rollback();
+        else (void)AbortCurrentTransaction();
     } PG_END_TRY();
 }
 
