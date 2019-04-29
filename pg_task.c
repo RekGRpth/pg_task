@@ -61,18 +61,18 @@ static inline void launch_loop(void) {
     worker.bgw_notify_pid = 0;
     worker.bgw_main_arg = (Datum) 0;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
-    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task") != sizeof("pg_task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     if (snprintf(worker.bgw_function_name, sizeof("loop"), "loop") != sizeof("loop") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    if (snprintf(worker.bgw_type, sizeof("pg_scheduler loop"), "pg_scheduler loop") != sizeof("pg_scheduler loop") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    if (snprintf(worker.bgw_name, sizeof("postgres postgres pg_scheduler loop"), "postgres postgres pg_scheduler loop") != sizeof("postgres postgres pg_scheduler loop") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_type, sizeof("pg_task loop"), "pg_task loop") != sizeof("pg_task loop") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_name, sizeof("postgres postgres pg_task loop"), "postgres postgres pg_task loop") != sizeof("postgres postgres pg_task loop") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     (void)RegisterBackgroundWorker(&worker);
 }
 
 void _PG_init(void) {
     if (IsBinaryUpgrade) return;
-    if (!process_shared_preload_libraries_in_progress) ereport(FATAL, (errmsg("pg_scheduler can only be loaded via shared_preload_libraries"), errhint("Add pg_scheduler to the shared_preload_libraries configuration variable in postgresql.conf.")));
-    (void)DefineCustomStringVariable("pg_scheduler.database", "pg_scheduler database", NULL, &databases, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    (void)DefineCustomIntVariable("pg_scheduler.task_id", "pg_scheduler task_id", NULL, &task_id, 0, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
+    if (!process_shared_preload_libraries_in_progress) ereport(FATAL, (errmsg("pg_task can only be loaded via shared_preload_libraries"), errhint("Add pg_task to the shared_preload_libraries configuration variable in postgresql.conf.")));
+    (void)DefineCustomStringVariable("pg_task.database", "pg_task database", NULL, &databases, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    (void)DefineCustomIntVariable("pg_task.task_id", "pg_task task_id", NULL, &task_id, 0, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     (void)launch_loop();
 }
 
@@ -87,11 +87,11 @@ static inline void launch_tick(const char *database, const char *username) {
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_main_arg = (Datum) 0;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
-    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task") != sizeof("pg_task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     if (snprintf(worker.bgw_function_name, sizeof("tick"), "tick") != sizeof("tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    if (snprintf(worker.bgw_type, sizeof("pg_scheduler tick"), "pg_scheduler tick") != sizeof("pg_scheduler tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    len = (sizeof("%s %s pg_scheduler tick") - 1) + (strlen(username) - 1) + (strlen(database) - 1) - 1 - 1;
-    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler tick", username, database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_type, sizeof("pg_task tick"), "pg_task tick") != sizeof("pg_task tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    len = (sizeof("%s %s pg_task tick") - 1) + (strlen(username) - 1) + (strlen(database) - 1) - 1 - 1;
+    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_task tick", username, database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len = (sizeof("%s") - 1) + (strlen(database) - 1) - 1;
     if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len2 = (sizeof("%s") - 1) + (strlen(username) - 1) - 1;
@@ -168,7 +168,7 @@ static inline void check(void) {
         "    AND         datallowconn\n");
     if (!databases) (void)appendStringInfoString(&buf, "    AND         i.usesysid = u.usesysid\n"); else {
         char *rawstring = pstrdup(databases);
-        if (!SplitGUCList(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf")));
+        if (!SplitGUCList(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_task.database\" in postgresql.conf")));
         argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2);
         Values = palloc(sizeof(Datum) * list_length(elemlist) * 2);
         Nulls = palloc(sizeof(char) * list_length(elemlist) * 2);
@@ -178,7 +178,7 @@ static inline void check(void) {
             const char *database_username = (const char *)lfirst(cell);
             char *rawstring = pstrdup(database_username);
             List *elemlist;
-            if (!SplitIdentifierString(rawstring, ':', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_scheduler.database\" in postgresql.conf"))); else {
+            if (!SplitIdentifierString(rawstring, ':', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("invalid list syntax in parameter \"pg_task.database\" in postgresql.conf"))); else {
                 ListCell *cell = list_head(elemlist);
                 const char *database = (const char *)lfirst(cell);
                 const char *username = NULL;
@@ -357,7 +357,7 @@ static inline void init_fix(void) {
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s SET state = 'QUEUE' WHERE state = 'WORK' AND pid NOT IN (SELECT pid FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND application_name = concat_ws(' ', 'pg_scheduler task', queue, id))", quote_identifier(table));
+    (void)appendStringInfo(&buf, "%s SET state = 'QUEUE' WHERE state = 'WORK' AND pid NOT IN (SELECT pid FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND application_name = concat_ws(' ', 'pg_task task', queue, id))", quote_identifier(table));
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, fix_callback);
     (void)pfree(buf.data);
 }
@@ -375,13 +375,13 @@ static inline void launch_task(Datum arg, const char *queue) {
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_main_arg = arg;
-    if (snprintf(worker.bgw_library_name, sizeof("pg_scheduler"), "pg_scheduler") != sizeof("pg_scheduler") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task") != sizeof("pg_task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     if (snprintf(worker.bgw_function_name, sizeof("task"), "task") != sizeof("task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    len = (sizeof("pg_scheduler task %s") - 1) + (strlen(queue) - 1) - 1;
-    if (snprintf(worker.bgw_type, len + 1, "pg_scheduler task %s", queue) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    len = (sizeof("%s %s pg_scheduler task %s %lu") - 1) + (strlen(username) - 1) + (strlen(database) - 1) + (strlen(queue) - 1) - 1 - 1 - 1 - 2;
+    len = (sizeof("pg_task task %s") - 1) + (strlen(queue) - 1) - 1;
+    if (snprintf(worker.bgw_type, len + 1, "pg_task task %s", queue) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    len = (sizeof("%s %s pg_task task %s %lu") - 1) + (strlen(username) - 1) + (strlen(database) - 1) + (strlen(queue) - 1) - 1 - 1 - 1 - 2;
     for (int number = id; number /= 10; len++);
-    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_scheduler task %s %lu", username, database, queue, id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_task task %s %lu", username, database, queue, id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len = (sizeof("%s") - 1) + (strlen(database) - 1) - 1;
     if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     len2 = (sizeof("%s") - 1) + (strlen(username) - 1) - 1;
@@ -428,7 +428,7 @@ static inline void assign(void) {
         "    FROM        ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s AS t\n"
-        "    LEFT JOIN   pg_stat_activity AS a ON datname = current_catalog AND usename = current_user AND backend_type = concat('pg_scheduler task ', queue)\n"
+        "    LEFT JOIN   pg_stat_activity AS a ON datname = current_catalog AND usename = current_user AND backend_type = concat('pg_task task ', queue)\n"
         "    WHERE       t.state = 'QUEUE'\n"
         "    AND         dt <= now()\n"
         "    GROUP BY    1, 2, 3\n"
@@ -451,14 +451,14 @@ void tick(Datum arg) {
     database = MyBgworkerEntry->bgw_extra;
     username = database + strlen(database) + 1;
     (void)initStringInfo(&buf);
-    (void)appendStringInfo(&buf, "pg_scheduler_period.%s", database);
+    (void)appendStringInfo(&buf, "pg_task_period.%s", database);
     (void)DefineCustomIntVariable(buf.data, "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     (void)resetStringInfo(&buf);
-    (void)appendStringInfo(&buf, "pg_scheduler_schema.%s", database);
-    (void)DefineCustomStringVariable(buf.data, "pg_scheduler schema", NULL, &schema, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    (void)appendStringInfo(&buf, "pg_task_schema.%s", database);
+    (void)DefineCustomStringVariable(buf.data, "pg_task schema", NULL, &schema, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
     (void)resetStringInfo(&buf);
-    (void)appendStringInfo(&buf, "pg_scheduler_table.%s", database);
-    (void)DefineCustomStringVariable(buf.data, "pg_scheduler table", NULL, &table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    (void)appendStringInfo(&buf, "pg_task_table.%s", database);
+    (void)DefineCustomStringVariable(buf.data, "pg_task table", NULL, &table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     (void)pfree(buf.data);
     elog(LOG, "tick database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
@@ -521,7 +521,7 @@ static inline void work(Datum arg, char **data, int *timeout) {
     elog(LOG, "work database = %s, username = %s, schema = %s, table = %s, id = %lu", database, username, schema, table, DatumGetInt64(arg));
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "%lu", DatumGetInt64(arg));
-    if (set_config_option("pg_scheduler.task_id", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SAVE, true, 0, false) <= 0) ereport(ERROR, (errmsg("set_config_option <= 0")));
+    if (set_config_option("pg_task.task_id", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SAVE, true, 0, false) <= 0) ereport(ERROR, (errmsg("set_config_option <= 0")));
     (void)resetStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
