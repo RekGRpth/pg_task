@@ -667,7 +667,7 @@ static inline void repeat_task(Datum arg) {
     (void)appendStringInfo(&buf, "%s (dt, queue, max, request, state, timeout, delete, repeat, drift) (SELECT ", quote_identifier(table));
     (void)appendStringInfoString(&buf, "CASE WHEN drift THEN now() + repeat ELSE (WITH RECURSIVE s(t) AS (SELECT dt + repeat UNION ALL SELECT t + repeat FROM s WHERE t <= now()) SELECT * FROM s ORDER BY 1 DESC LIMIT 1) END AS dt, queue, max, request, 'QUEUE' as state, timeout, delete, repeat, drift FROM ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s WHERE id = $1)", quote_identifier(table));
+    (void)appendStringInfo(&buf, "%s WHERE id = $1 AND state IN ('DONE', 'FAIL'))", quote_identifier(table));
     elog(LOG, "repeat_task buf.data = %s", buf.data);
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, repeat_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL);
     (void)pfree(buf.data);
