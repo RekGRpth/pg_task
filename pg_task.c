@@ -143,7 +143,7 @@ static inline void check_callback(const char *src, va_list args) {
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         start = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "start"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-        elog(LOG, "check_callback row = %lu, database = %s, username = %s, start = %s", row, database, username, start ? "true" : "false");
+//        elog(LOG, "check_callback row = %lu, database = %s, username = %s, start = %s", row, database, username, start ? "true" : "false");
         if (start) (void)launch_tick(database, username);
     }
 }
@@ -156,7 +156,7 @@ static inline void check(void) {
     Datum *Values = NULL;
     char *Nulls = NULL;
     char **str = NULL;
-    elog(LOG, "check database = %s", databases);
+//    elog(LOG, "check database = %s", databases);
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf,
         "WITH s AS (\n"
@@ -186,7 +186,7 @@ static inline void check(void) {
                 Nulls[2 * i + 1] = ' ';
                 if ((cell = lnext(cell))) username = (const char *)lfirst(cell);
                 else Nulls[2 * i + 1] = 'n';
-                elog(LOG, "check database = %s, username = %s", database, username);
+//                elog(LOG, "check database = %s, username = %s", database, username);
                 if (i > 0) (void)appendStringInfoString(&buf, ", ");
                 (void)appendStringInfo(&buf, "($%i, COALESCE($%i, i.usename))", 2 * i + 1, 2 * i + 1 + 1);
                 argtypes[2 * i] = TEXTOID;
@@ -230,7 +230,7 @@ static inline void check(void) {
 }
 
 void loop(Datum arg) {
-    elog(LOG, "loop database = %s", databases);
+//    elog(LOG, "loop database = %s", databases);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
     (void)BackgroundWorkerUnblockSignals();
@@ -238,11 +238,11 @@ void loop(Datum arg) {
     (void)check();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | /*WL_TIMEOUT |*/ WL_POSTMASTER_DEATH, LONG_MAX, PG_WAIT_EXTENSION);
-        if (rc & WL_LATCH_SET) elog(LOG, "loop WL_LATCH_SET");
+//        if (rc & WL_LATCH_SET) elog(LOG, "loop WL_LATCH_SET");
 //        if (rc & WL_TIMEOUT) elog(LOG, "loop WL_TIMEOUT");
-        if (rc & WL_POSTMASTER_DEATH) elog(LOG, "loop WL_POSTMASTER_DEATH");
-        if (got_sigterm) elog(LOG, "loop got_sigterm");
-        if (got_sighup) elog(LOG, "loop got_sighup");
+//        if (rc & WL_POSTMASTER_DEATH) elog(LOG, "loop WL_POSTMASTER_DEATH");
+//        if (got_sigterm) elog(LOG, "loop got_sigterm");
+//        if (got_sighup) elog(LOG, "loop got_sighup");
 //        if (ProcDiePending) elog(LOG, "loop ProcDiePending");
         if (rc & WL_POSTMASTER_DEATH) (void)proc_exit(1);
         if (rc & WL_LATCH_SET) {
@@ -285,7 +285,7 @@ static inline void schema_callback(const char *src, va_list args) {
 
 static inline void init_schema(void) {
     StringInfoData buf;
-    elog(LOG, "init_schema database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
+//    elog(LOG, "init_schema database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", quote_identifier(schema));
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, schema_callback);
@@ -300,7 +300,7 @@ static inline void table_callback(const char *src, va_list args) {
 
 static inline void init_table(void) {
     StringInfoData buf;
-    elog(LOG, "init_table database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
+//    elog(LOG, "init_table database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "CREATE TABLE IF NOT EXISTS ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
@@ -333,7 +333,7 @@ static inline void index_callback(const char *src, va_list args) {
 
 static inline void init_index(const char *index) {
     StringInfoData buf, name;
-    elog(LOG, "init_index database = %s, username = %s, period = %i, schema = %s, table = %s, index = %s", database, username, period, schema, table, index);
+//    elog(LOG, "init_index database = %s, username = %s, period = %i, schema = %s, table = %s, index = %s", database, username, period, schema, table, index);
     (void)initStringInfo(&buf);
     (void)initStringInfo(&name);
     (void)appendStringInfo(&name, "%s_%s_idx", table, index);
@@ -353,7 +353,7 @@ static inline void fix_callback(const char *src, va_list args) {
 
 static inline void init_fix(void) {
     StringInfoData buf;
-    elog(LOG, "init_fix database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
+//    elog(LOG, "init_fix database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
@@ -368,7 +368,7 @@ static inline void launch_task(Datum arg, const char *queue) {
     pid_t pid;
     int len, len2, len3, len4;
     uint64 id = DatumGetInt64(arg);
-    elog(LOG, "launch_task database = %s, username = %s, schema = %s, table = %s, id = %lu, queue = %s", database, username, schema, table, id, queue);
+//    elog(LOG, "launch_task database = %s, username = %s, schema = %s, table = %s, id = %lu, queue = %s", database, username, schema, table, id, queue);
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -413,7 +413,7 @@ static inline void assign_callback(const char *src, va_list args) {
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-        elog(LOG, "assign_callback row = %lu, id = %lu, queue = %s", row, DatumGetInt64(id), queue);
+//        elog(LOG, "assign_callback row = %lu, id = %lu, queue = %s", row, DatumGetInt64(id), queue);
         (void)launch_task(id, queue);
         (void)pfree(queue);
     }
@@ -460,7 +460,7 @@ void tick(Datum arg) {
     (void)appendStringInfo(&buf, "pg_task_table.%s", database);
     (void)DefineCustomStringVariable(buf.data, "pg_task table", NULL, &table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     (void)pfree(buf.data);
-    elog(LOG, "tick database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
+//    elog(LOG, "tick database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
     (void)BackgroundWorkerUnblockSignals();
@@ -469,11 +469,11 @@ void tick(Datum arg) {
     (void)init();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
-        if (rc & WL_LATCH_SET) elog(LOG, "tick WL_LATCH_SET");
+//        if (rc & WL_LATCH_SET) elog(LOG, "tick WL_LATCH_SET");
 //        if (rc & WL_TIMEOUT) elog(LOG, "tick WL_TIMEOUT");
-        if (rc & WL_POSTMASTER_DEATH) elog(LOG, "tick WL_POSTMASTER_DEATH");
-        if (got_sigterm) elog(LOG, "tick got_sigterm");
-        if (got_sighup) elog(LOG, "tick got_sighup");
+//        if (rc & WL_POSTMASTER_DEATH) elog(LOG, "tick WL_POSTMASTER_DEATH");
+//        if (got_sigterm) elog(LOG, "tick got_sigterm");
+//        if (got_sighup) elog(LOG, "tick got_sighup");
 //        if (ProcDiePending) elog(LOG, "loop ProcDiePending");
         if (rc & WL_POSTMASTER_DEATH) (void)proc_exit(1);
         if (rc & WL_LATCH_SET) {
@@ -509,7 +509,7 @@ static inline void work_callback(const char *src, va_list args) {
         *timeout = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         *data = MemoryContextStrdup(oldMemoryContext, value);
-        elog(LOG, "work timeout = %i, data = %s", *timeout, *data);
+//        elog(LOG, "work timeout = %i, data = %s", *timeout, *data);
         (void)pfree(value);
     }
 }
@@ -518,7 +518,7 @@ static inline void work(Datum arg, char **data, int *timeout) {
     Oid argtypes[] = {INT8OID, INT8OID};
     Datum Values[] = {arg, MyProcPid};
     StringInfoData buf;
-    elog(LOG, "work database = %s, username = %s, schema = %s, table = %s, id = %lu", database, username, schema, table, DatumGetInt64(arg));
+//    elog(LOG, "work database = %s, username = %s, schema = %s, table = %s, id = %lu", database, username, schema, table, DatumGetInt64(arg));
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "%lu", DatumGetInt64(arg));
     if (set_config_option("pg_task.task_id", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SAVE, true, 0, false) <= 0) ereport(ERROR, (errmsg("set_config_option <= 0")));
@@ -526,7 +526,7 @@ static inline void work(Datum arg, char **data, int *timeout) {
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = 'WORK', start = now(), pid = $2 WHERE id = $1 RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
-    elog(LOG, "work buf.data = %s", buf.data);
+//    elog(LOG, "work buf.data = %s", buf.data);
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, work_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, CurrentMemoryContext, data, timeout);
     (void)pfree(buf.data);
 }
@@ -559,7 +559,7 @@ static inline void done(Datum arg, const char *data, const char *state, bool *de
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = $2, stop = now(), response = $3 WHERE id = $1 RETURNING delete, repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", quote_identifier(table));
-    elog(LOG, "done buf.data = %s", buf.data);
+//    elog(LOG, "done buf.data = %s", buf.data);
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, done_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, Nulls, delete, repeat);
     (void)pfree(buf.data);
 }
@@ -588,7 +588,7 @@ static inline void success(MemoryContext oldMemoryContext, char **data, char **s
             }
             if (row < SPI_processed - 1) (void)appendStringInfoString(&buf, "\n");
         }
-        elog(LOG, "success\n%s", buf.data);
+//        elog(LOG, "success\n%s", buf.data);
         *data = MemoryContextStrdup(oldMemoryContext, buf.data);
     }
     *state = "DONE";
@@ -627,7 +627,7 @@ static inline void error(MemoryContext oldMemoryContext, char **data, char **sta
     if (edata->internalquery) (void)appendStringInfo(&buf, "\ninternalquery::text\t%s", edata->internalquery);
     if (edata->saved_errno) (void)appendStringInfo(&buf, "\nsaved_errno::int4\t%i", edata->saved_errno);
     (void)FreeErrorData(edata);
-    elog(LOG, "error\n%s", buf.data);
+//    elog(LOG, "error\n%s", buf.data);
     *state = "FAIL";
     *data = MemoryContextStrdup(oldMemoryContext, buf.data);
     (void)pfree(buf.data);
@@ -669,7 +669,7 @@ static inline void repeat_task(Datum arg) {
     (void)appendStringInfoString(&buf, "CASE WHEN drift THEN now() + repeat ELSE (WITH RECURSIVE s(t) AS (SELECT dt + repeat UNION ALL SELECT t + repeat FROM s WHERE t <= now()) SELECT * FROM s ORDER BY 1 DESC LIMIT 1) END AS dt, queue, max, request, 'QUEUE' as state, timeout, delete, repeat, drift FROM ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s WHERE id = $1 AND state IN ('DONE', 'FAIL'))", quote_identifier(table));
-    elog(LOG, "repeat_task buf.data = %s", buf.data);
+//    elog(LOG, "repeat_task buf.data = %s", buf.data);
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, repeat_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL);
     (void)pfree(buf.data);
 }
@@ -692,7 +692,7 @@ static inline void delete_task(Datum arg) {
     (void)appendStringInfoString(&buf, "DELETE FROM ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s WHERE id = $1", quote_identifier(table));
-    elog(LOG, "delete_task buf.data = %s", buf.data);
+//    elog(LOG, "delete_task buf.data = %s", buf.data);
     (void)SPI_connect_execute_finish(buf.data, StatementTimeout, delete_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL);
     (void)pfree(buf.data);
 }
@@ -703,7 +703,7 @@ static inline void execute(Datum arg) {
     int timeout = 0;
     (void)work(arg, &src, &timeout);
     if ((StatementTimeout > 0) && (StatementTimeout < timeout)) timeout = StatementTimeout;
-    elog(LOG, "execute database = %s, username = %s, schema = %s, table = %s, timeout = %i, src = %s", database, username, schema, table, timeout, src);
+//    elog(LOG, "execute database = %s, username = %s, schema = %s, table = %s, timeout = %i, src = %s", database, username, schema, table, timeout, src);
     (void)SPI_connect_execute_finish(src, timeout, execute_callback, CurrentMemoryContext, &data, &state);
     (void)done(arg, data, state, &delete, &repeat);
     (void)pfree(src);
@@ -725,7 +725,7 @@ void task(Datum arg) {
     table = username + strlen(username) + 1;
     schema = table + strlen(table) + 1;
     if (!strlen(schema)) schema = NULL;
-    elog(LOG, "task database = %s, username = %s, schema = %s, table = %s, id = %lu", database, username, schema, table, DatumGetInt64(arg));
+//    elog(LOG, "task database = %s, username = %s, schema = %s, table = %s, id = %lu", database, username, schema, table, DatumGetInt64(arg));
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
     (void)update_bgw_type(arg);
