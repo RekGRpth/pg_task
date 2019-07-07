@@ -39,21 +39,21 @@ char *username;
 char *schema;
 char *table;
 
-static inline void sighup(SIGNAL_ARGS) {
+static void sighup(SIGNAL_ARGS) {
     int save_errno = errno;
     got_sighup = true;
     (void)SetLatch(MyLatch);
     errno = save_errno;
 }
 
-static inline void sigterm(SIGNAL_ARGS) {
+static void sigterm(SIGNAL_ARGS) {
     int save_errno = errno;
     got_sigterm = true;
     (void)SetLatch(MyLatch);
     errno = save_errno;
 }
 
-static inline void launch_loop(void) {
+static void launch_loop(void) {
     BackgroundWorker worker;
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -76,7 +76,7 @@ void _PG_init(void) {
     (void)launch_loop();
 }
 
-static inline void launch_tick(const char *database, const char *username) {
+static void launch_tick(const char *database, const char *username) {
     int len, len2;
     pid_t pid;
     BackgroundWorkerHandle *handle;
@@ -106,7 +106,7 @@ static inline void launch_tick(const char *database, const char *username) {
     (void)pfree(handle);
 }
 
-static inline void SPI_connect_execute_finish(const char *src, int timeout, Callback callback, ...) {
+static void SPI_connect_execute_finish(const char *src, int timeout, Callback callback, ...) {
     int rc;
     (void)pgstat_report_activity(STATE_RUNNING, src);
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("SPI_connect_ext = %s", SPI_result_code_string(rc))));
@@ -127,7 +127,7 @@ static inline void SPI_connect_execute_finish(const char *src, int timeout, Call
     (void)pgstat_report_stat(true);
 }
 
-static inline void check_callback(const char *src, va_list args) {
+static void check_callback(const char *src, va_list args) {
     int rc;
     int nargs = va_arg(args, int);
     Oid *argtypes = va_arg(args, Oid *);
@@ -148,7 +148,7 @@ static inline void check_callback(const char *src, va_list args) {
     }
 }
 
-static inline void check(void) {
+static void check(void) {
     int i = 0;
     List *elemlist;
     StringInfoData buf;
@@ -259,7 +259,7 @@ void loop(Datum arg) {
     (void)proc_exit(0);
 }
 
-static inline void lock_callback(const char *src, va_list args) {
+static void lock_callback(const char *src, va_list args) {
     int rc;
     if ((rc = SPI_execute(src, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
     (void)SPI_commit();
@@ -272,18 +272,18 @@ static inline void lock_callback(const char *src, va_list args) {
     }
 }
 
-static inline void lock(void) {
+static void lock(void) {
     const char *src = "SELECT pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) FROM pg_database, pg_user WHERE datname = current_catalog AND usename = current_user";
     (void)SPI_connect_execute_finish(src, StatementTimeout, lock_callback);
 }
 
-static inline void schema_callback(const char *src, va_list args) {
+static void schema_callback(const char *src, va_list args) {
     int rc;
     if ((rc = SPI_execute(src, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
     (void)SPI_commit();
 }
 
-static inline void init_schema(void) {
+static void init_schema(void) {
     StringInfoData buf;
 //    elog(LOG, "init_schema database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
@@ -292,13 +292,13 @@ static inline void init_schema(void) {
     (void)pfree(buf.data);
 }
 
-static inline void table_callback(const char *src, va_list args) {
+static void table_callback(const char *src, va_list args) {
     int rc;
     if ((rc = SPI_execute(src, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
     (void)SPI_commit();
 }
 
-static inline void init_table(void) {
+static void init_table(void) {
     StringInfoData buf;
 //    elog(LOG, "init_table database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
@@ -325,13 +325,13 @@ static inline void init_table(void) {
     (void)pfree(buf.data);
 }
 
-static inline void index_callback(const char *src, va_list args) {
+static void index_callback(const char *src, va_list args) {
     int rc;
     if ((rc = SPI_execute(src, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
     (void)SPI_commit();
 }
 
-static inline void init_index(const char *index) {
+static void init_index(const char *index) {
     StringInfoData buf, name;
 //    elog(LOG, "init_index database = %s, username = %s, period = %i, schema = %s, table = %s, index = %s", database, username, period, schema, table, index);
     (void)initStringInfo(&buf);
@@ -345,13 +345,13 @@ static inline void init_index(const char *index) {
     (void)pfree(name.data);
 }
 
-static inline void fix_callback(const char *src, va_list args) {
+static void fix_callback(const char *src, va_list args) {
     int rc;
     if ((rc = SPI_execute(src, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
     (void)SPI_commit();
 }
 
-static inline void init_fix(void) {
+static void init_fix(void) {
     StringInfoData buf;
 //    elog(LOG, "init_fix database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
@@ -362,7 +362,7 @@ static inline void init_fix(void) {
     (void)pfree(buf.data);
 }
 
-static inline void launch_task(Datum arg, const char *queue) {
+static void launch_task(Datum arg, const char *queue) {
     BackgroundWorker worker;
     BackgroundWorkerHandle *handle;
     pid_t pid;
@@ -402,7 +402,7 @@ static inline void launch_task(Datum arg, const char *queue) {
     (void)pfree(handle);
 }
 
-static inline void assign_callback(const char *src, va_list args) {
+static void assign_callback(const char *src, va_list args) {
     int rc;
     if ((rc = SPI_execute(src, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
     (void)SPI_commit();
@@ -419,7 +419,7 @@ static inline void assign_callback(const char *src, va_list args) {
     }
 }
 
-static inline void assign(void) {
+static void assign(void) {
     StringInfoData buf;
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf,
@@ -438,7 +438,7 @@ static inline void assign(void) {
     (void)pfree(buf.data);
 }
 
-static inline void init(void) {
+static void init(void) {
     if (schema) (void)init_schema();
     (void)init_table();
     (void)init_index("dt");
@@ -491,7 +491,7 @@ void tick(Datum arg) {
     (void)proc_exit(0);
 }
 
-static inline void work_callback(const char *src, va_list args) {
+static void work_callback(const char *src, va_list args) {
     int rc;
     int nargs = va_arg(args, int);
     Oid *argtypes = va_arg(args, Oid *);
@@ -514,7 +514,7 @@ static inline void work_callback(const char *src, va_list args) {
     }
 }
 
-static inline void work(Datum arg, char **data, int *timeout) {
+static void work(Datum arg, char **data, int *timeout) {
     Oid argtypes[] = {INT8OID, INT8OID};
     Datum Values[] = {arg, MyProcPid};
     StringInfoData buf;
@@ -531,7 +531,7 @@ static inline void work(Datum arg, char **data, int *timeout) {
     (void)pfree(buf.data);
 }
 
-static inline void done_callback(const char *src, va_list args) {
+static void done_callback(const char *src, va_list args) {
     int rc;
     int nargs = va_arg(args, int);
     Oid *argtypes = va_arg(args, Oid *);
@@ -550,7 +550,7 @@ static inline void done_callback(const char *src, va_list args) {
     }
 }
 
-static inline void done(Datum arg, const char *data, const char *state, bool *delete, bool *repeat) {
+static void done(Datum arg, const char *data, const char *state, bool *delete, bool *repeat) {
     Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
     Datum Values[] = {arg, CStringGetTextDatum(state), data ? CStringGetTextDatum(data) : (Datum)NULL};
     char Nulls[] = {' ', ' ', data ? ' ' : 'n'};
@@ -564,7 +564,7 @@ static inline void done(Datum arg, const char *data, const char *state, bool *de
     (void)pfree(buf.data);
 }
 
-static inline void success(MemoryContext oldMemoryContext, char **data, char **state) {
+static void success(MemoryContext oldMemoryContext, char **data, char **state) {
     StringInfoData buf;
     (void)initStringInfo(&buf);
     if ((SPI_tuptable) && (SPI_processed > 0)) {
@@ -595,7 +595,7 @@ static inline void success(MemoryContext oldMemoryContext, char **data, char **s
     (void)pfree(buf.data);
 }
 
-static inline void error(MemoryContext oldMemoryContext, char **data, char **state) {
+static void error(MemoryContext oldMemoryContext, char **data, char **state) {
     ErrorData *edata = CopyErrorData();
     StringInfoData buf;
     (void)initStringInfo(&buf);
@@ -633,7 +633,7 @@ static inline void error(MemoryContext oldMemoryContext, char **data, char **sta
     (void)pfree(buf.data);
 }
 
-static inline void execute_callback(const char *src, va_list args) {
+static void execute_callback(const char *src, va_list args) {
     MemoryContext oldMemoryContext = va_arg(args, MemoryContext);
     char **data = va_arg(args, char **);
     char **state = va_arg(args, char **);
@@ -648,7 +648,7 @@ static inline void execute_callback(const char *src, va_list args) {
     } PG_END_TRY();
 }
 
-static inline void repeat_callback(const char *src, va_list args) {
+static void repeat_callback(const char *src, va_list args) {
     int rc;
     int nargs = va_arg(args, int);
     Oid *argtypes = va_arg(args, Oid *);
@@ -658,7 +658,7 @@ static inline void repeat_callback(const char *src, va_list args) {
     (void)SPI_commit();
 }
 
-static inline void repeat_task(Datum arg) {
+static void repeat_task(Datum arg) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
     StringInfoData buf;
@@ -674,7 +674,7 @@ static inline void repeat_task(Datum arg) {
     (void)pfree(buf.data);
 }
 
-static inline void delete_callback(const char *src, va_list args) {
+static void delete_callback(const char *src, va_list args) {
     int rc;
     int nargs = va_arg(args, int);
     Oid *argtypes = va_arg(args, Oid *);
@@ -684,7 +684,7 @@ static inline void delete_callback(const char *src, va_list args) {
     (void)SPI_commit();
 }
 
-static inline void delete_task(Datum arg) {
+static void delete_task(Datum arg) {
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
     StringInfoData buf;
@@ -697,7 +697,7 @@ static inline void delete_task(Datum arg) {
     (void)pfree(buf.data);
 }
 
-static inline void execute(Datum arg) {
+static void execute(Datum arg) {
     bool delete, repeat;
     char *src, *data = NULL, *state;
     int timeout = 0;
@@ -712,7 +712,7 @@ static inline void execute(Datum arg) {
     if (delete) (void)delete_task(arg);
 }
 
-static inline void update_bgw_type(Datum arg) {
+static void update_bgw_type(Datum arg) {
     uint64 id = DatumGetInt64(arg);
     int len = (sizeof(" %lu") - 1) - 2;
     for (int number = id; number /= 10; len++);
