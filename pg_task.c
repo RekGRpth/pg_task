@@ -21,12 +21,6 @@ typedef void (*Callback) (const char *src, va_list args);
 
 PG_MODULE_MAGIC;
 
-void _PG_init(void);
-
-void loop(Datum arg);
-void tick(Datum arg);
-void task(Datum arg);
-
 static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
 
@@ -68,7 +62,7 @@ static void launch_loop(void) {
     (void)RegisterBackgroundWorker(&worker);
 }
 
-void _PG_init(void) {
+void _PG_init(void); void _PG_init(void) {
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) ereport(FATAL, (errmsg("pg_task can only be loaded via shared_preload_libraries"), errhint("Add pg_task to the shared_preload_libraries configuration variable in postgresql.conf.")));
     (void)DefineCustomStringVariable("pg_task.database", "pg_task database", NULL, &databases, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
@@ -229,7 +223,7 @@ static void check(void) {
     }
 }
 
-void loop(Datum arg) {
+void loop(Datum arg); void loop(Datum arg) {
 //    elog(LOG, "loop database = %s", databases);
     (pqsigfunc)pqsignal(SIGHUP, sighup);
     (pqsigfunc)pqsignal(SIGTERM, sigterm);
@@ -446,7 +440,7 @@ static void init(void) {
     (void)init_fix();
 }
 
-void tick(Datum arg) {
+void tick(Datum arg); void tick(Datum arg) {
     StringInfoData buf;
     database = MyBgworkerEntry->bgw_extra;
     username = database + strlen(database) + 1;
@@ -719,7 +713,7 @@ static void update_bgw_type(Datum arg) {
     if (snprintf(MyBgworkerEntry->bgw_type + strlen(MyBgworkerEntry->bgw_type), len + 1, " %lu", id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
 }
 
-void task(Datum arg) {
+void task(Datum arg); void task(Datum arg) {
     database = MyBgworkerEntry->bgw_extra;
     username = database + strlen(database) + 1;
     table = username + strlen(username) + 1;
