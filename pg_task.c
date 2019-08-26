@@ -15,7 +15,7 @@
 #include <utils/memutils.h>
 #include <utils/snapmgr.h>
 #include <utils/timeout.h>
-#include "utils/varlena.h"
+#include <utils/varlena.h>
 
 typedef void (*Callback) (const char *src, va_list args);
 
