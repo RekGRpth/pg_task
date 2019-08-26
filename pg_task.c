@@ -1,10 +1,10 @@
 #include <postgres.h>
-#include <fmgr.h>
 
 #include <access/xact.h>
 #include <catalog/pg_type.h>
 #include <commands/async.h>
 #include <executor/spi.h>
+#include <fmgr.h>
 #include <miscadmin.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
