@@ -33,6 +33,9 @@ char *username;
 char *schema;
 char *table;
 
+SPIPlanPtr plan = NULL;
+char *command = NULL;
+
 static void sighup(SIGNAL_ARGS) {
     int save_errno = errno;
     got_sighup = true;
@@ -374,22 +377,30 @@ static void launch_task(Datum arg, const char *queue) {
 
 static void assign(void) {
     int rc;
-    StringInfoData buf;
-    (void)initStringInfo(&buf);
-    (void)appendStringInfoString(&buf,
-        "WITH s AS (\n"
-        "    SELECT      id, queue, COALESCE(max, ~(1<<31)) AS max, count(a.pid)\n"
-        "    FROM        ");
-    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s AS t\n"
-        "    LEFT JOIN   pg_stat_activity AS a ON datname = current_catalog AND usename = current_user AND backend_type = concat('pg_task task ', queue)\n"
-        "    WHERE       t.state = 'QUEUE'\n"
-        "    AND         dt <= now()\n"
-        "    GROUP BY    1, 2, 3\n"
-        "    ORDER BY    3 DESC, 1\n"
-        ") SELECT unnest((array_agg(id))[:GREATEST(max(max) - count, 0)]) AS id, queue FROM s GROUP BY queue, count", quote_identifier(table));
-    (void)SPI_connect_my(buf.data, StatementTimeout);
-    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
+    if (!command) {
+        StringInfoData buf;
+        (void)initStringInfo(&buf);
+        (void)appendStringInfoString(&buf,
+            "WITH s AS (\n"
+            "    SELECT      id, queue, COALESCE(max, ~(1<<31)) AS max, count(a.pid)\n"
+            "    FROM        ");
+        if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+        (void)appendStringInfo(&buf, "%s AS t\n"
+            "    LEFT JOIN   pg_stat_activity AS a ON datname = current_catalog AND usename = current_user AND backend_type = concat('pg_task task ', queue)\n"
+            "    WHERE       t.state = 'QUEUE'\n"
+            "    AND         dt <= now()\n"
+            "    GROUP BY    1, 2, 3\n"
+            "    ORDER BY    3 DESC, 1\n"
+            ") SELECT unnest((array_agg(id))[:GREATEST(max(max) - count, 0)]) AS id, queue FROM s GROUP BY queue, count", quote_identifier(table));
+        command = pstrdup(buf.data);
+        (void)pfree(buf.data);
+    }
+    (void)SPI_connect_my(command, StatementTimeout);
+    if (!plan) {
+        if(!(plan = SPI_prepare(command, 0, NULL))) ereport(ERROR, (errmsg("SPI_prepare = %s", SPI_result_code_string(SPI_result))));
+        if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("SPI_keepplan = %s", SPI_result_code_string(rc))));
+    }
+    if ((rc = SPI_execute_plan(plan, NULL, NULL, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute_plan = %s", SPI_result_code_string(rc))));
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
@@ -402,8 +413,7 @@ static void assign(void) {
         (void)launch_task(id, queue);
         (void)pfree(queue);
     }
-    (void)SPI_finish_my(buf.data);
-    (void)pfree(buf.data);
+    (void)SPI_finish_my(command);
 }
 
 static void init(void) {
