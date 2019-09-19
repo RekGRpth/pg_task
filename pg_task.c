@@ -492,8 +492,46 @@ static void work(Datum arg, char **src, int *timeout) {
     (void)pfree(buf.data);
 }
 
-static void done(Datum arg, const char *data, const char *state, bool *delete, bool *repeat) {
+static void repeat_task(Datum arg) {
     int rc;
+    Oid argtypes[] = {INT8OID};
+    Datum Values[] = {arg};
+    StringInfoData buf;
+    (void)initStringInfo(&buf);
+    (void)appendStringInfoString(&buf, "INSERT INTO ");
+    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    (void)appendStringInfo(&buf, "%s (dt, queue, max, request, state, timeout, delete, repeat, drift) (SELECT ", quote_identifier(table));
+    (void)appendStringInfoString(&buf, "CASE WHEN drift THEN now() + repeat ELSE (WITH RECURSIVE s(t) AS (SELECT dt + repeat UNION ALL SELECT t + repeat FROM s WHERE t <= now()) SELECT * FROM s ORDER BY 1 DESC LIMIT 1) END AS dt, queue, max, request, 'QUEUE' as state, timeout, delete, repeat, drift FROM ");
+    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    (void)appendStringInfo(&buf, "%s WHERE id = $1 AND state IN ('DONE', 'FAIL'))", quote_identifier(table));
+//    elog(LOG, "repeat_task buf.data = %s", buf.data);
+    (void)SPI_connect_my(buf.data, StatementTimeout);
+    if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0)) != SPI_OK_INSERT) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
+    (void)SPI_commit();
+    (void)SPI_finish_my(buf.data);
+    (void)pfree(buf.data);
+}
+
+static void delete_task(Datum arg) {
+    int rc;
+    Oid argtypes[] = {INT8OID};
+    Datum Values[] = {arg};
+    StringInfoData buf;
+    (void)initStringInfo(&buf);
+    (void)appendStringInfoString(&buf, "DELETE FROM ");
+    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    (void)appendStringInfo(&buf, "%s WHERE id = $1", quote_identifier(table));
+//    elog(LOG, "delete_task buf.data = %s", buf.data);
+    (void)SPI_connect_my(buf.data, StatementTimeout);
+    if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0)) != SPI_OK_DELETE) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
+    (void)SPI_commit();
+    (void)SPI_finish_my(buf.data);
+    (void)pfree(buf.data);
+}
+
+static void done(Datum arg, const char *data, const char *state) {
+    int rc;
+    bool delete, repeat;
     Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
     Datum Values[] = {arg, CStringGetTextDatum(state), data ? CStringGetTextDatum(data) : (Datum)NULL};
     char Nulls[] = {' ', ' ', data ? ' ' : 'n'};
@@ -508,13 +546,15 @@ static void done(Datum arg, const char *data, const char *state, bool *delete, b
     (void)SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
         bool isnull;
-        *delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &isnull)) && (Nulls[2] == 'n');
+        delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &isnull)) && (Nulls[2] == 'n');
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-        *repeat = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &isnull));
+        repeat = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
     }
     (void)SPI_finish_my(buf.data);
     (void)pfree(buf.data);
+    if (repeat) (void)repeat_task(arg);
+    if (delete) (void)delete_task(arg);
 }
 
 static void success(MemoryContext oldMemoryContext, char **data, char **state) {
@@ -586,46 +626,8 @@ static void error(MemoryContext oldMemoryContext, char **data, char **state) {
     (void)pfree(buf.data);
 }
 
-static void repeat_task(Datum arg) {
-    int rc;
-    Oid argtypes[] = {INT8OID};
-    Datum Values[] = {arg};
-    StringInfoData buf;
-    (void)initStringInfo(&buf);
-    (void)appendStringInfoString(&buf, "INSERT INTO ");
-    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s (dt, queue, max, request, state, timeout, delete, repeat, drift) (SELECT ", quote_identifier(table));
-    (void)appendStringInfoString(&buf, "CASE WHEN drift THEN now() + repeat ELSE (WITH RECURSIVE s(t) AS (SELECT dt + repeat UNION ALL SELECT t + repeat FROM s WHERE t <= now()) SELECT * FROM s ORDER BY 1 DESC LIMIT 1) END AS dt, queue, max, request, 'QUEUE' as state, timeout, delete, repeat, drift FROM ");
-    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s WHERE id = $1 AND state IN ('DONE', 'FAIL'))", quote_identifier(table));
-//    elog(LOG, "repeat_task buf.data = %s", buf.data);
-    (void)SPI_connect_my(buf.data, StatementTimeout);
-    if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0)) != SPI_OK_INSERT) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
-    (void)SPI_commit();
-    (void)SPI_finish_my(buf.data);
-    (void)pfree(buf.data);
-}
-
-static void delete_task(Datum arg) {
-    int rc;
-    Oid argtypes[] = {INT8OID};
-    Datum Values[] = {arg};
-    StringInfoData buf;
-    (void)initStringInfo(&buf);
-    (void)appendStringInfoString(&buf, "DELETE FROM ");
-    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s WHERE id = $1", quote_identifier(table));
-//    elog(LOG, "delete_task buf.data = %s", buf.data);
-    (void)SPI_connect_my(buf.data, StatementTimeout);
-    if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0)) != SPI_OK_DELETE) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
-    (void)SPI_commit();
-    (void)SPI_finish_my(buf.data);
-    (void)pfree(buf.data);
-}
-
 static void execute(Datum arg) {
     int rc;
-    bool delete, repeat;
     char *src, *data = NULL, *state;
     int timeout = 0;
     MemoryContext oldMemoryContext = CurrentMemoryContext;
@@ -642,11 +644,9 @@ static void execute(Datum arg) {
         (void)SPI_rollback();
     } PG_END_TRY();
     (void)SPI_finish_my(src);
-    (void)done(arg, data, state, &delete, &repeat);
+    (void)done(arg, data, state);
     (void)pfree(src);
     if (data) (void)pfree(data);
-    if (repeat) (void)repeat_task(arg);
-    if (delete) (void)delete_task(arg);
 }
 
 static void update_bgw_type(Datum arg) {
