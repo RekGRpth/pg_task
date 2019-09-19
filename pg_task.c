@@ -119,8 +119,7 @@ static void SPI_finish_my(const char *command) {
 }
 
 static void check(void) {
-    int i = 0;
-    int rc;
+    int rc, i = 0;
     List *elemlist;
     StringInfoData buf;
     Oid *argtypes = NULL;
