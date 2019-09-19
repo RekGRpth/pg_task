@@ -494,7 +494,7 @@ static void work(Datum arg, char **src, int *timeout) {
         *timeout = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         *src = MemoryContextStrdup(oldMemoryContext, value);
-//        elog(LOG, "work timeout = %i, data = %s", *timeout, *data);
+//        elog(LOG, "work timeout = %i, src = %s", *timeout, *src);
         (void)pfree(value);
     }
     (void)SPI_finish_my(buf.data);
