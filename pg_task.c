@@ -100,50 +100,27 @@ static void launch_tick(const char *database, const char *username) {
     (void)pfree(handle);
 }
 
-static void SPI_connect_execute_finish(const char *src, int timeout, Callback callback, ...) {
+static void SPI_connect_my(const char *command, int timeout) {
     int rc;
-    (void)pgstat_report_activity(STATE_RUNNING, src);
+    (void)pgstat_report_activity(STATE_RUNNING, command);
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("SPI_connect_ext = %s", SPI_result_code_string(rc))));
     (void)pgstat_report_appname(MyBgworkerEntry->bgw_type);
     (void)SPI_start_transaction();
     if (timeout > 0) (void)enable_timeout_after(STATEMENT_TIMEOUT, timeout); else (void)disable_timeout(STATEMENT_TIMEOUT, false);
-//    elog(LOG, "SPI_connect_execute_finish src = %s", src);
-    {
-        va_list args;
-        va_start(args, callback);
-        (void)callback(src, args);
-        va_end(args);
-    }
+}
+
+static void SPI_finish_my(const char *command) {
+    int rc;
     (void)disable_timeout(STATEMENT_TIMEOUT, false);
     if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(ERROR, (errmsg("SPI_finish = %s", SPI_result_code_string(rc))));
     (void)ProcessCompletedNotifies();
-    (void)pgstat_report_activity(STATE_IDLE, src);
+    (void)pgstat_report_activity(STATE_IDLE, command);
     (void)pgstat_report_stat(true);
-}
-
-static void check_callback(const char *src, va_list args) {
-    int rc;
-    int nargs = va_arg(args, int);
-    Oid *argtypes = va_arg(args, Oid *);
-    Datum *Values = va_arg(args, Datum *);
-    const char *Nulls = va_arg(args, const char *);
-    if ((rc = SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
-    (void)SPI_commit();
-    for (uint64 row = 0; row < SPI_processed; row++) {
-        bool isnull, start;
-        char *username, *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &isnull));
-        if (isnull) ereport(ERROR, (errmsg("isnull")));
-        username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &isnull));
-        if (isnull) ereport(ERROR, (errmsg("isnull")));
-        start = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "start"), &isnull));
-        if (isnull) ereport(ERROR, (errmsg("isnull")));
-//        elog(LOG, "check_callback row = %lu, database = %s, username = %s, start = %s", row, database, username, start ? "true" : "false");
-        if (start) (void)launch_tick(database, username);
-    }
 }
 
 static void check(void) {
     int i = 0;
+    int rc;
     List *elemlist;
     StringInfoData buf;
     Oid *argtypes = NULL;
@@ -212,15 +189,25 @@ static void check(void) {
         "WHERE       (datname, usename) NOT IN (SELECT datname, usename FROM s)\n"
         "AND         classid = datid AND objid = usesysid AND database = datid");
 //    elog(LOG, "check buf.data = %s", buf.data);
-    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, check_callback, i * 2, argtypes, Values, Nulls);
+    (void)SPI_connect_my(buf.data, StatementTimeout);
+    if ((rc = SPI_execute_with_args(buf.data, i * 2, argtypes, Values, Nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
+    (void)SPI_commit();
+    for (uint64 row = 0; row < SPI_processed; row++) {
+        bool isnull, start;
+        char *username, *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &isnull));
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
+        username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &isnull));
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
+        start = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "start"), &isnull));
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
+        if (start) (void)launch_tick(database, username);
+    }
+    (void)SPI_finish_my(buf.data);
     (void)pfree(buf.data);
     if (argtypes) (void)pfree(argtypes);
     if (Values) (void)pfree(Values);
     if (Nulls) (void)pfree(Nulls);
-    if (str) {
-        for (int j = 0; j < i * 2; j++) if (str[j]) (void)pfree(str[j]);
-        (void)pfree(str);
-    }
+    if (str) { for (int j = 0; j < i * 2; j++) if (str[j]) (void)pfree(str[j]); (void)pfree(str); }
 }
 
 void loop(Datum arg); void loop(Datum arg) {
@@ -253,9 +240,11 @@ void loop(Datum arg); void loop(Datum arg) {
     (void)proc_exit(0);
 }
 
-static void lock_callback(const char *src, va_list args) {
+static void lock(void) {
     int rc;
-    if ((rc = SPI_execute(src, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
+    const char *command = "SELECT pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) FROM pg_database, pg_user WHERE datname = current_catalog AND usename = current_user";
+    (void)SPI_connect_my(command, StatementTimeout);
+    if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
     (void)SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
         bool isnull;
@@ -264,35 +253,24 @@ static void lock_callback(const char *src, va_list args) {
         if (!lock) ereport(ERROR, (errmsg("Already running database = %s, username = %s", database, username)));
         MyBgworkerEntry->bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     }
-}
-
-static void lock(void) {
-    const char *src = "SELECT pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) FROM pg_database, pg_user WHERE datname = current_catalog AND usename = current_user";
-    (void)SPI_connect_execute_finish(src, StatementTimeout, lock_callback);
-}
-
-static void schema_callback(const char *src, va_list args) {
-    int rc;
-    if ((rc = SPI_execute(src, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
-    (void)SPI_commit();
+    (void)SPI_finish_my(command);
 }
 
 static void init_schema(void) {
+    int rc;
     StringInfoData buf;
 //    elog(LOG, "init_schema database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
     (void)appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", quote_identifier(schema));
-    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, schema_callback);
+    (void)SPI_connect_my(buf.data, StatementTimeout);
+    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
+    (void)SPI_commit();
+    (void)SPI_finish_my(buf.data);
     (void)pfree(buf.data);
 }
 
-static void table_callback(const char *src, va_list args) {
-    int rc;
-    if ((rc = SPI_execute(src, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
-    (void)SPI_commit();
-}
-
 static void init_table(void) {
+    int rc;
     StringInfoData buf;
 //    elog(LOG, "init_table database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
@@ -315,17 +293,15 @@ static void init_table(void) {
         "    repeat INTERVAL,\n"
         "    drift BOOLEAN NOT NULL DEFAULT true"
         ")");
-    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, table_callback);
+    (void)SPI_connect_my(buf.data, StatementTimeout);
+    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
+    (void)SPI_commit();
+    (void)SPI_finish_my(buf.data);
     (void)pfree(buf.data);
 }
 
-static void index_callback(const char *src, va_list args) {
-    int rc;
-    if ((rc = SPI_execute(src, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
-    (void)SPI_commit();
-}
-
 static void init_index(const char *index) {
+    int rc;
     StringInfoData buf, name;
 //    elog(LOG, "init_index database = %s, username = %s, period = %i, schema = %s, table = %s, index = %s", database, username, period, schema, table, index);
     (void)initStringInfo(&buf);
@@ -334,25 +310,26 @@ static void init_index(const char *index) {
     (void)appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON ", quote_identifier(name.data));
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s USING btree (%s)", quote_identifier(table), quote_identifier(index));
-    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, index_callback);
+    (void)SPI_connect_my(buf.data, StatementTimeout);
+    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
+    (void)SPI_commit();
+    (void)SPI_finish_my(buf.data);
     (void)pfree(buf.data);
     (void)pfree(name.data);
 }
 
-static void fix_callback(const char *src, va_list args) {
-    int rc;
-    if ((rc = SPI_execute(src, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
-    (void)SPI_commit();
-}
-
 static void init_fix(void) {
+    int rc;
     StringInfoData buf;
 //    elog(LOG, "init_fix database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = 'QUEUE' WHERE state = 'WORK' AND pid NOT IN (SELECT pid FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND application_name = concat_ws(' ', 'pg_task task', queue, id))", quote_identifier(table));
-    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, fix_callback);
+    (void)SPI_connect_my(buf.data, StatementTimeout);
+    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
+    (void)SPI_commit();
+    (void)SPI_finish_my(buf.data);
     (void)pfree(buf.data);
 }
 
@@ -396,24 +373,8 @@ static void launch_task(Datum arg, const char *queue) {
     (void)pfree(handle);
 }
 
-static void assign_callback(const char *src, va_list args) {
-    int rc;
-    if ((rc = SPI_execute(src, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
-    (void)SPI_commit();
-    for (uint64 row = 0; row < SPI_processed; row++) {
-        bool isnull;
-        char *queue;
-        Datum id = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
-        if (isnull) ereport(ERROR, (errmsg("isnull")));
-        queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &isnull));
-        if (isnull) ereport(ERROR, (errmsg("isnull")));
-//        elog(LOG, "assign_callback row = %lu, id = %lu, queue = %s", row, DatumGetInt64(id), queue);
-        (void)launch_task(id, queue);
-        (void)pfree(queue);
-    }
-}
-
 static void assign(void) {
+    int rc;
     StringInfoData buf;
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf,
@@ -428,7 +389,21 @@ static void assign(void) {
         "    GROUP BY    1, 2, 3\n"
         "    ORDER BY    3 DESC, 1\n"
         ") SELECT unnest((array_agg(id))[:GREATEST(max(max) - count, 0)]) AS id, queue FROM s GROUP BY queue, count", quote_identifier(table));
-    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, assign_callback);
+    (void)SPI_connect_my(buf.data, StatementTimeout);
+    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
+    (void)SPI_commit();
+    for (uint64 row = 0; row < SPI_processed; row++) {
+        bool isnull;
+        char *queue;
+        Datum id = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
+        queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &isnull));
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
+//        elog(LOG, "assign_callback row = %lu, id = %lu, queue = %s", row, DatumGetInt64(id), queue);
+        (void)launch_task(id, queue);
+        (void)pfree(queue);
+    }
+    (void)SPI_finish_my(buf.data);
     (void)pfree(buf.data);
 }
 
@@ -485,32 +460,11 @@ void tick(Datum arg); void tick(Datum arg) {
     (void)proc_exit(0);
 }
 
-static void work_callback(const char *src, va_list args) {
+static void work(Datum arg, char **src, int *timeout) {
     int rc;
-    int nargs = va_arg(args, int);
-    Oid *argtypes = va_arg(args, Oid *);
-    Datum *Values = va_arg(args, Datum *);
-    const char *Nulls = va_arg(args, const char *);
-    if ((rc = SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
-    (void)SPI_commit();
-    if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
-        MemoryContext oldMemoryContext = va_arg(args, MemoryContext);
-        char **data = va_arg(args, char **);
-        int *timeout = va_arg(args, int *);
-        bool isnull;
-        char *value = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"), &isnull));
-        if (isnull) ereport(ERROR, (errmsg("isnull")));
-        *timeout = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &isnull));
-        if (isnull) ereport(ERROR, (errmsg("isnull")));
-        *data = MemoryContextStrdup(oldMemoryContext, value);
-//        elog(LOG, "work timeout = %i, data = %s", *timeout, *data);
-        (void)pfree(value);
-    }
-}
-
-static void work(Datum arg, char **data, int *timeout) {
     Oid argtypes[] = {INT8OID, INT8OID};
     Datum Values[] = {arg, MyProcPid};
+    MemoryContext oldMemoryContext = CurrentMemoryContext;
     StringInfoData buf;
 //    elog(LOG, "work database = %s, username = %s, schema = %s, table = %s, id = %lu", database, username, schema, table, DatumGetInt64(arg));
     (void)initStringInfo(&buf);
@@ -521,30 +475,25 @@ static void work(Datum arg, char **data, int *timeout) {
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = 'WORK', start = now(), pid = $2 WHERE id = $1 RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
 //    elog(LOG, "work buf.data = %s", buf.data);
-    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, work_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, CurrentMemoryContext, data, timeout);
-    (void)pfree(buf.data);
-}
-
-static void done_callback(const char *src, va_list args) {
-    int rc;
-    int nargs = va_arg(args, int);
-    Oid *argtypes = va_arg(args, Oid *);
-    Datum *Values = va_arg(args, Datum *);
-    const char *Nulls = va_arg(args, const char *);
-    if ((rc = SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
+    (void)SPI_connect_my(buf.data, StatementTimeout);
+    if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
     (void)SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
         bool isnull;
-        bool *delete = va_arg(args, bool *);
-        bool *repeat = va_arg(args, bool *);
-        *delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &isnull)) && (Nulls[2] == 'n');
+        char *value = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-        *repeat = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &isnull));
+        *timeout = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
+        *src = MemoryContextStrdup(oldMemoryContext, value);
+//        elog(LOG, "work timeout = %i, data = %s", *timeout, *data);
+        (void)pfree(value);
     }
+    (void)SPI_finish_my(buf.data);
+    (void)pfree(buf.data);
 }
 
 static void done(Datum arg, const char *data, const char *state, bool *delete, bool *repeat) {
+    int rc;
     Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
     Datum Values[] = {arg, CStringGetTextDatum(state), data ? CStringGetTextDatum(data) : (Datum)NULL};
     char Nulls[] = {' ', ' ', data ? ' ' : 'n'};
@@ -554,7 +503,17 @@ static void done(Datum arg, const char *data, const char *state, bool *delete, b
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s SET state = $2, stop = now(), response = $3 WHERE id = $1 RETURNING delete, repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", quote_identifier(table));
 //    elog(LOG, "done buf.data = %s", buf.data);
-    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, done_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, Nulls, delete, repeat);
+    (void)SPI_connect_my(buf.data, StatementTimeout);
+    if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, Nulls, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
+    (void)SPI_commit();
+    if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
+        bool isnull;
+        *delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &isnull)) && (Nulls[2] == 'n');
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
+        *repeat = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &isnull));
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
+    }
+    (void)SPI_finish_my(buf.data);
     (void)pfree(buf.data);
 }
 
@@ -627,32 +586,8 @@ static void error(MemoryContext oldMemoryContext, char **data, char **state) {
     (void)pfree(buf.data);
 }
 
-static void execute_callback(const char *src, va_list args) {
-    MemoryContext oldMemoryContext = va_arg(args, MemoryContext);
-    char **data = va_arg(args, char **);
-    char **state = va_arg(args, char **);
-    PG_TRY(); {
-        int rc;
-        if ((rc = SPI_execute(src, false, 0)) < 0) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
-        (void)success(oldMemoryContext, data, state);
-        (void)SPI_commit();
-    } PG_CATCH(); {
-        (void)error(oldMemoryContext, data, state);
-        (void)SPI_rollback();
-    } PG_END_TRY();
-}
-
-static void repeat_callback(const char *src, va_list args) {
-    int rc;
-    int nargs = va_arg(args, int);
-    Oid *argtypes = va_arg(args, Oid *);
-    Datum *Values = va_arg(args, Datum *);
-    const char *Nulls = va_arg(args, const char *);
-    if ((rc = SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0)) != SPI_OK_INSERT) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
-    (void)SPI_commit();
-}
-
 static void repeat_task(Datum arg) {
+    int rc;
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
     StringInfoData buf;
@@ -664,21 +599,15 @@ static void repeat_task(Datum arg) {
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s WHERE id = $1 AND state IN ('DONE', 'FAIL'))", quote_identifier(table));
 //    elog(LOG, "repeat_task buf.data = %s", buf.data);
-    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, repeat_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL);
+    (void)SPI_connect_my(buf.data, StatementTimeout);
+    if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0)) != SPI_OK_INSERT) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
+    (void)SPI_commit();
+    (void)SPI_finish_my(buf.data);
     (void)pfree(buf.data);
 }
 
-static void delete_callback(const char *src, va_list args) {
-    int rc;
-    int nargs = va_arg(args, int);
-    Oid *argtypes = va_arg(args, Oid *);
-    Datum *Values = va_arg(args, Datum *);
-    const char *Nulls = va_arg(args, const char *);
-    if ((rc = SPI_execute_with_args(src, nargs, argtypes, Values, Nulls, false, 0)) != SPI_OK_DELETE) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
-    (void)SPI_commit();
-}
-
 static void delete_task(Datum arg) {
+    int rc;
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
     StringInfoData buf;
@@ -687,18 +616,32 @@ static void delete_task(Datum arg) {
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s WHERE id = $1", quote_identifier(table));
 //    elog(LOG, "delete_task buf.data = %s", buf.data);
-    (void)SPI_connect_execute_finish(buf.data, StatementTimeout, delete_callback, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL);
+    (void)SPI_connect_my(buf.data, StatementTimeout);
+    if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0)) != SPI_OK_DELETE) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
+    (void)SPI_commit();
+    (void)SPI_finish_my(buf.data);
     (void)pfree(buf.data);
 }
 
 static void execute(Datum arg) {
+    int rc;
     bool delete, repeat;
     char *src, *data = NULL, *state;
     int timeout = 0;
+    MemoryContext oldMemoryContext = CurrentMemoryContext;
     (void)work(arg, &src, &timeout);
     if ((StatementTimeout > 0) && (StatementTimeout < timeout)) timeout = StatementTimeout;
 //    elog(LOG, "execute database = %s, username = %s, schema = %s, table = %s, timeout = %i, src = %s", database, username, schema, table, timeout, src);
-    (void)SPI_connect_execute_finish(src, timeout, execute_callback, CurrentMemoryContext, &data, &state);
+    (void)SPI_connect_my(src, timeout);
+    PG_TRY(); {
+        if ((rc = SPI_execute(src, false, 0)) < 0) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
+        (void)success(oldMemoryContext, &data, &state);
+        (void)SPI_commit();
+    } PG_CATCH(); {
+        (void)error(oldMemoryContext, &data, &state);
+        (void)SPI_rollback();
+    } PG_END_TRY();
+    (void)SPI_finish_my(src);
     (void)done(arg, data, state, &delete, &repeat);
     (void)pfree(src);
     if (data) (void)pfree(data);
