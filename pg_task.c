@@ -557,7 +557,8 @@ static void done(Datum arg, const char *data, const char *state) {
     if (delete) (void)delete_task(arg);
 }
 
-static void success(MemoryContext oldMemoryContext, char **data, char **state) {
+static char *success(MemoryContext oldMemoryContext) {
+    char *data = NULL;
     StringInfoData buf;
     (void)initStringInfo(&buf);
     if ((SPI_tuptable) && (SPI_processed > 0)) {
@@ -582,13 +583,14 @@ static void success(MemoryContext oldMemoryContext, char **data, char **state) {
             if (row < SPI_processed - 1) (void)appendStringInfoString(&buf, "\n");
         }
 //        elog(LOG, "success\n%s", buf.data);
-        *data = MemoryContextStrdup(oldMemoryContext, buf.data);
+        data = MemoryContextStrdup(oldMemoryContext, buf.data);
     }
-    *state = "DONE";
     (void)pfree(buf.data);
+    return data;
 }
 
-static void error(MemoryContext oldMemoryContext, char **data, char **state) {
+static char *error(MemoryContext oldMemoryContext) {
+    char *data = NULL;
     ErrorData *edata = CopyErrorData();
     StringInfoData buf;
     (void)initStringInfo(&buf);
@@ -621,9 +623,9 @@ static void error(MemoryContext oldMemoryContext, char **data, char **state) {
     if (edata->saved_errno) (void)appendStringInfo(&buf, "\nsaved_errno::int4\t%i", edata->saved_errno);
     (void)FreeErrorData(edata);
 //    elog(LOG, "error\n%s", buf.data);
-    *state = "FAIL";
-    *data = MemoryContextStrdup(oldMemoryContext, buf.data);
+    data = MemoryContextStrdup(oldMemoryContext, buf.data);
     (void)pfree(buf.data);
+    return data;
 }
 
 static void execute(Datum arg) {
@@ -637,10 +639,12 @@ static void execute(Datum arg) {
     (void)SPI_connect_my(src, timeout);
     PG_TRY(); {
         if ((rc = SPI_execute(src, false, 0)) < 0) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
-        (void)success(oldMemoryContext, &data, &state);
+        state = "DONE";
+        data = success(oldMemoryContext);
         (void)SPI_commit();
     } PG_CATCH(); {
-        (void)error(oldMemoryContext, &data, &state);
+        state = "FAIL";
+        data = error(oldMemoryContext);
         (void)SPI_rollback();
     } PG_END_TRY();
     (void)SPI_finish_my(src);
