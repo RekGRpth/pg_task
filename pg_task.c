@@ -273,14 +273,17 @@ static void init_schema(void) {
 
 static void init_table(void) {
     int rc;
-    StringInfoData buf;
+    StringInfoData buf, name;
 //    elog(LOG, "init_table database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
     (void)initStringInfo(&buf);
+    (void)initStringInfo(&name);
+    (void)appendStringInfo(&name, "%s_parent_fkey", table);
     (void)appendStringInfoString(&buf, "CREATE TABLE IF NOT EXISTS ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s (\n", quote_identifier(table));
     (void)appendStringInfo(&buf,
         "    id BIGSERIAL NOT NULL PRIMARY KEY,\n"
+        "    parent BIGINT,\n"
         "    dt TIMESTAMP NOT NULL DEFAULT NOW(),\n"
         "    start TIMESTAMP,\n"
         "    stop TIMESTAMP,\n"
@@ -293,8 +296,10 @@ static void init_table(void) {
         "    timeout INTERVAL,\n"
         "    delete BOOLEAN NOT NULL DEFAULT false,\n"
         "    repeat INTERVAL,\n"
-        "    drift BOOLEAN NOT NULL DEFAULT true"
-        ")");
+        "    drift BOOLEAN NOT NULL DEFAULT true,\n"
+        "    CONSTRAINT %s FOREIGN KEY (parent) REFERENCES ", quote_identifier(name.data));
+    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    (void)appendStringInfo(&buf, "%s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n)", quote_identifier(table));
     (void)SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
     (void)SPI_commit();
@@ -509,8 +514,8 @@ static void repeat_task(Datum arg) {
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "INSERT INTO ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s (dt, queue, max, request, state, timeout, delete, repeat, drift) (SELECT ", quote_identifier(table));
-    (void)appendStringInfoString(&buf, "CASE WHEN drift THEN now() + repeat ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= now()) SELECT * FROM s ORDER BY 1 DESC LIMIT 1) END AS dt, queue, max, request, 'QUEUE' as state, timeout, delete, repeat, drift FROM ");
+    (void)appendStringInfo(&buf, "%s (parent, dt, queue, max, request, state, timeout, delete, repeat, drift) (SELECT ", quote_identifier(table));
+    (void)appendStringInfoString(&buf, "id AS parent, CASE WHEN drift THEN now() + repeat ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= now()) SELECT * FROM s ORDER BY 1 DESC LIMIT 1) END AS dt, queue, max, request, 'QUEUE' as state, timeout, delete, repeat, drift FROM ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s WHERE id = $1 AND state IN ('DONE', 'FAIL') LIMIT 1)", quote_identifier(table));
 //    elog(LOG, "repeat_task buf.data = %s", buf.data);
