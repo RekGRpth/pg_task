@@ -577,7 +577,13 @@ static void done(Datum arg, const char *data, const char *state) {
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s SET state = $2, stop = now(), response = $3 WHERE id = $1 RETURNING delete, repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", quote_identifier(table));
+    (void)appendStringInfo(&buf, "%s\n"
+        "    SET state = $2,\n"
+        "    stop = now(),\n"
+        "    response = $3\n"
+        "    WHERE id = $1\n"
+        "    RETURNING delete,\n"
+        "    repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", quote_identifier(table));
 //    elog(LOG, "done buf.data = %s", buf.data);
     (void)SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, Nulls, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
