@@ -380,7 +380,7 @@ static void launch_task(Datum arg, const char *queue) {
     (void)pfree(handle);
 }
 
-static void assign(void) {
+static void take(void) {
     int rc;
     if (!command) {
         StringInfoData buf;
@@ -414,7 +414,7 @@ static void assign(void) {
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-//        elog(LOG, "assign_callback row = %lu, id = %lu, queue = %s", row, DatumGetInt64(id), queue);
+//        elog(LOG, "take_callback row = %lu, id = %lu, queue = %s", row, DatumGetInt64(id), queue);
         (void)launch_task(id, queue);
         (void)pfree(queue);
     }
@@ -469,7 +469,7 @@ void tick(Datum arg); void tick(Datum arg) {
             (void)init();
         }
         if (got_sigterm) (void)proc_exit(0);
-        if (rc & WL_TIMEOUT) (void)assign();
+        if (rc & WL_TIMEOUT) (void)take();
     } while (!got_sigterm);
     (void)proc_exit(0);
 }
