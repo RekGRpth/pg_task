@@ -588,6 +588,7 @@ static void done(Datum arg, const char *data, const char *state) {
         "    stop = now(),\n"
         "    response = $3\n"
 //        "    WHERE id = $1\n"
+        "    FROM s\n"
         "    WHERE u.id = s.id\n"
         "    RETURNING delete,\n"
         "    repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", quote_identifier(table));
