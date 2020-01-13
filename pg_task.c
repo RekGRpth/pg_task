@@ -292,7 +292,7 @@ static void init_table(void) {
         "    pid INT,\n"
         "    request TEXT NOT NULL,\n"
         "    response TEXT,\n"
-        "    state TEXT NOT NULL DEFAULT 'QUEUE',\n"
+        "    state TEXT NOT NULL DEFAULT 'PLAN',\n"
         "    timeout INTERVAL,\n"
         "    delete BOOLEAN NOT NULL DEFAULT false,\n"
         "    repeat INTERVAL,\n"
@@ -332,7 +332,7 @@ static void init_fix(void) {
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s SET state = 'QUEUE' WHERE state = 'WORK' AND pid NOT IN (SELECT pid FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND application_name = concat_ws(' ', 'pg_task task', queue, id))", quote_identifier(table));
+    (void)appendStringInfo(&buf, "%s SET state = 'PLAN' WHERE state = 'WORK' AND pid NOT IN (SELECT pid FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND application_name = concat_ws(' ', 'pg_task task', queue, id))", quote_identifier(table));
     (void)SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
     (void)SPI_commit();
@@ -392,7 +392,7 @@ static void assign(void) {
         if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
         (void)appendStringInfo(&buf, "%s AS t\n"
             "    LEFT JOIN   pg_stat_activity AS a ON datname = current_catalog AND usename = current_user AND backend_type = concat('pg_task task ', queue)\n"
-            "    WHERE       t.state = 'QUEUE'\n"
+            "    WHERE       t.state = 'PLAN'\n"
             "    AND         dt <= now()\n"
             "    GROUP BY    1, 2, 3\n"
             "    ORDER BY    3 DESC, 1\n"
@@ -515,7 +515,7 @@ static void repeat_task(Datum arg) {
     (void)appendStringInfoString(&buf, "INSERT INTO ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s (parent, dt, queue, max, request, state, timeout, delete, repeat, drift) (SELECT ", quote_identifier(table));
-    (void)appendStringInfoString(&buf, "id AS parent, CASE WHEN drift THEN now() + repeat ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= now()) SELECT * FROM s ORDER BY 1 DESC LIMIT 1) END AS dt, queue, max, request, 'QUEUE' as state, timeout, delete, repeat, drift FROM ");
+    (void)appendStringInfoString(&buf, "id AS parent, CASE WHEN drift THEN now() + repeat ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= now()) SELECT * FROM s ORDER BY 1 DESC LIMIT 1) END AS dt, queue, max, request, 'PLAN' as state, timeout, delete, repeat, drift FROM ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s WHERE id = $1 AND state IN ('DONE', 'FAIL') LIMIT 1)", quote_identifier(table));
 //    elog(LOG, "repeat_task buf.data = %s", buf.data);
