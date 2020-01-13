@@ -500,7 +500,7 @@ static void work(Datum arg, char **src, int *timeout) {
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s\n"
         "    WHERE id = $1\n"
-        "    AND state = 'TAKE'\n"
+//        "    AND state = 'TAKE'\n"
         "    FOR UPDATE SKIP LOCKED\n)\n", quote_identifier(table));
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
@@ -575,13 +575,20 @@ static void done(Datum arg, const char *data, const char *state) {
     char Nulls[] = {' ', ' ', data ? ' ' : 'n'};
     StringInfoData buf;
     (void)initStringInfo(&buf);
-    (void)appendStringInfoString(&buf, "UPDATE ");
+    (void)appendStringInfoString(&buf, "WITH s AS (\n    SELECT id FROM ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s\n"
+        "    WHERE id = $1\n"
+//        "    AND state = 'TAKE'\n"
+        "    FOR UPDATE SKIP LOCKED\n)\n", quote_identifier(table));
+    (void)appendStringInfoString(&buf, "UPDATE ");
+    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    (void)appendStringInfo(&buf, "%s AS u\n"
         "    SET state = $2,\n"
         "    stop = now(),\n"
         "    response = $3\n"
-        "    WHERE id = $1\n"
+//        "    WHERE id = $1\n"
+        "    WHERE u.id = s.id\n"
         "    RETURNING delete,\n"
         "    repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", quote_identifier(table));
 //    elog(LOG, "done buf.data = %s", buf.data);
