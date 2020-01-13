@@ -496,14 +496,20 @@ static void work(Datum arg, char **src, int *timeout) {
     (void)appendStringInfo(&buf, "%lu", DatumGetInt64(arg));
     if (set_config_option("pg_task.task_id", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SAVE, true, 0, false) <= 0) ereport(ERROR, (errmsg("set_config_option <= 0")));
     (void)resetStringInfo(&buf);
-    (void)appendStringInfoString(&buf, "UPDATE ");
+    (void)appendStringInfoString(&buf, "WITH s AS (\n    SELECT id FROM ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s\n"
+        "    WHERE id = $1\n"
+        "    AND state = 'TAKE'\n"
+        "    FOR UPDATE SKIP LOCKED\n)\n", quote_identifier(table));
+    (void)appendStringInfoString(&buf, "UPDATE ");
+    if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+    (void)appendStringInfo(&buf, "%s AS u\n"
         "    SET state = 'WORK',\n"
         "    start = now(),\n"
         "    pid = $2\n"
-        "    WHERE id = $1\n"
-        "    AND state = 'TAKE'\n"
+        "    FROM s\n"
+        "    WHERE u.id = s.id\n"
         "    RETURNING request,\n"
         "    COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
 //    elog(LOG, "work buf.data = %s", buf.data);
