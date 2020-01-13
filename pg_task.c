@@ -332,7 +332,18 @@ static void init_fix(void) {
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    (void)appendStringInfo(&buf, "%s SET state = 'PLAN' WHERE state = 'WORK' AND pid NOT IN (SELECT pid FROM pg_stat_activity WHERE datname = current_catalog AND usename = current_user AND application_name = concat_ws(' ', 'pg_task task', queue, id))", quote_identifier(table));
+    (void)appendStringInfo(&buf,
+        "%s\n"
+        "    SET state = 'PLAN'\n"
+        "    WHERE state IN ('TAKE', 'WORK')\n"
+        "    AND pid NOT IN (\n"
+        "        SELECT pid\n"
+        "        FROM pg_stat_activity\n"
+        "        WHERE datname = current_catalog\n"
+        "        AND usename = current_user\n"
+        "        AND application_name = concat_ws(' ', 'pg_task task', queue, id)\n"
+        "    )",
+        quote_identifier(table));
     (void)SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
     (void)SPI_commit();
