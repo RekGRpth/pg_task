@@ -407,7 +407,7 @@ static void take(void) {
             "    AND         dt <= current_timestamp\n"
             "    GROUP BY    1, 2, 3\n"
             "    ORDER BY    3 DESC, 1\n"
-            ") SELECT unnest((array_agg(id))[:GREATEST(max(max) - count, 0)]) AS id, queue FROM s GROUP BY queue, count", quote_identifier(table));
+            ") SELECT unnest((array_agg(id ORDER BY id))[:GREATEST(max(max) - count, 0)]) AS id, queue FROM s GROUP BY queue, count", quote_identifier(table));
         command = pstrdup(buf.data);
         (void)pfree(buf.data);
     }
