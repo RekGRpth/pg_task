@@ -284,7 +284,7 @@ static void init_table(void) {
     (void)appendStringInfo(&buf,
         "    id BIGSERIAL NOT NULL PRIMARY KEY,\n"
         "    parent BIGINT,\n"
-        "    dt TIMESTAMP NOT NULL DEFAULT NOW(),\n"
+        "    dt TIMESTAMP NOT NULL DEFAULT current_timestamp,\n"
         "    start TIMESTAMP,\n"
         "    stop TIMESTAMP,\n"
         "    queue TEXT NOT NULL DEFAULT 'default',\n"
@@ -404,7 +404,7 @@ static void take(void) {
         (void)appendStringInfo(&buf, "%s AS t\n"
             "    LEFT JOIN   pg_stat_activity AS a ON datname = current_catalog AND usename = current_user AND backend_type = concat('pg_task task ', queue)\n"
             "    WHERE       t.state = 'PLAN'\n"
-            "    AND         dt <= now()\n"
+            "    AND         dt <= current_timestamp\n"
             "    GROUP BY    1, 2, 3\n"
             "    ORDER BY    3 DESC, 1\n"
             ") SELECT unnest((array_agg(id))[:GREATEST(max(max) - count, 0)]) AS id, queue FROM s GROUP BY queue, count", quote_identifier(table));
@@ -506,7 +506,7 @@ static void work(Datum arg, char **src, int *timeout) {
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s AS u\n"
         "SET state = 'WORK',\n"
-        "start = now(),\n"
+        "start = current_timestamp,\n"
         "pid = $2\n"
         "FROM s\n"
         "WHERE u.id = s.id\n"
@@ -539,7 +539,7 @@ static void repeat_task(Datum arg) {
     (void)appendStringInfoString(&buf, "INSERT INTO ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s (parent, dt, queue, max, request, state, timeout, delete, repeat, drift) (SELECT ", quote_identifier(table));
-    (void)appendStringInfoString(&buf, "id AS parent, CASE WHEN drift THEN now() + repeat ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= now()) SELECT * FROM s ORDER BY 1 DESC LIMIT 1) END AS dt, queue, max, request, 'PLAN' as state, timeout, delete, repeat, drift FROM ");
+    (void)appendStringInfoString(&buf, "id AS parent, CASE WHEN drift THEN current_timestamp + repeat ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1) END AS dt, queue, max, request, 'PLAN' as state, timeout, delete, repeat, drift FROM ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s WHERE id = $1 AND state IN ('DONE', 'FAIL') LIMIT 1)", quote_identifier(table));
 //    elog(LOG, "repeat_task buf.data = %s", buf.data);
@@ -585,7 +585,7 @@ static void done(Datum arg, const char *data, const char *state) {
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s AS u\n"
         "SET state = $2,\n"
-        "stop = now(),\n"
+        "stop = current_timestamp,\n"
         "response = $3\n"
         "FROM s\n"
         "WHERE u.id = s.id\n"
