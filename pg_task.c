@@ -505,13 +505,13 @@ static void work(Datum arg, char **src, int *timeout) {
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s AS u\n"
-        "    SET state = 'WORK',\n"
-        "    start = now(),\n"
-        "    pid = $2\n"
-        "    FROM s\n"
-        "    WHERE u.id = s.id\n"
-        "    RETURNING request,\n"
-        "    COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
+        "SET state = 'WORK',\n"
+        "start = now(),\n"
+        "pid = $2\n"
+        "FROM s\n"
+        "WHERE u.id = s.id\n"
+        "RETURNING request,\n"
+        "COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
 //    elog(LOG, "work buf.data = %s", buf.data);
     (void)SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
@@ -584,14 +584,13 @@ static void done(Datum arg, const char *data, const char *state) {
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s AS u\n"
-        "    SET state = $2,\n"
-        "    stop = now(),\n"
-        "    response = $3\n"
-//        "    WHERE id = $1\n"
-        "    FROM s\n"
-        "    WHERE u.id = s.id\n"
-        "    RETURNING delete,\n"
-        "    repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", quote_identifier(table));
+        "SET state = $2,\n"
+        "stop = now(),\n"
+        "response = $3\n"
+        "FROM s\n"
+        "WHERE u.id = s.id\n"
+        "RETURNING delete,\n"
+        "repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", quote_identifier(table));
 //    elog(LOG, "done buf.data = %s", buf.data);
     (void)SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, Nulls, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
