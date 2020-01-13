@@ -396,6 +396,9 @@ static void take(void) {
     if (!command) {
         StringInfoData buf;
         (void)initStringInfo(&buf);
+        (void)appendStringInfoString(&buf, "WITH s AS (SELECT id, COALESCE(max, ~(1<<31)) AS max FROM ");
+        if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+        (void)appendStringInfo(&buf, "%s WHERE id IN (\n", quote_identifier(table));
         (void)appendStringInfoString(&buf,
             "WITH s AS (\n"
             "    SELECT      id, queue, COALESCE(max, ~(1<<31)) AS max, count(a.pid)\n"
@@ -407,7 +410,10 @@ static void take(void) {
             "    AND         dt <= current_timestamp\n"
             "    GROUP BY    1, 2, 3\n"
             "    ORDER BY    3 DESC, 1\n"
-            ") SELECT unnest((array_agg(id ORDER BY id))[:GREATEST(max(max) - count, 0)]) AS id, queue FROM s GROUP BY queue, count", quote_identifier(table));
+            ") SELECT unnest((array_agg(id ORDER BY id))[:GREATEST(max(max) - count, 0)]) AS id FROM s GROUP BY queue, count\n", quote_identifier(table));
+        (void)appendStringInfoString(&buf, ") ORDER BY 2 DESC, 1 FOR UPDATE SKIP LOCKED) UPDATE ");
+        if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
+        (void)appendStringInfo(&buf, "%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id, queue", quote_identifier(table));
         command = pstrdup(buf.data);
         (void)pfree(buf.data);
     }
@@ -416,7 +422,7 @@ static void take(void) {
         if(!(plan = SPI_prepare(command, 0, NULL))) ereport(ERROR, (errmsg("SPI_prepare = %s", SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("SPI_keepplan = %s", SPI_result_code_string(rc))));
     }
-    if ((rc = SPI_execute_plan(plan, NULL, NULL, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("SPI_execute_plan = %s", SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_plan(plan, NULL, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_plan = %s", SPI_result_code_string(rc))));
     (void)SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool isnull;
@@ -500,8 +506,7 @@ static void work(Datum arg, char **src, int *timeout) {
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s\n"
         "    WHERE id = $1\n"
-//        "    AND state = 'TAKE'\n"
-        "    FOR UPDATE SKIP LOCKED\n)\n", quote_identifier(table));
+        "    FOR UPDATE\n)\n", quote_identifier(table));
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s AS u\n"
@@ -579,8 +584,7 @@ static void done(Datum arg, const char *data, const char *state) {
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s\n"
         "    WHERE id = $1\n"
-//        "    AND state = 'TAKE'\n"
-        "    FOR UPDATE SKIP LOCKED\n)\n", quote_identifier(table));
+        "    FOR UPDATE\n)\n", quote_identifier(table));
     (void)appendStringInfoString(&buf, "UPDATE ");
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s AS u\n"
