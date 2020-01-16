@@ -283,7 +283,7 @@ static void init_table(void) {
     (void)appendStringInfo(&buf, "%s (\n", quote_identifier(table));
     (void)appendStringInfo(&buf,
         "    id BIGSERIAL NOT NULL PRIMARY KEY,\n"
-        "    parent BIGINT,\n"
+        "    parent BIGINT DEFAULT NULLIF((current_setting('pg_scheduler.task_id'::TEXT, true))::BIGINT, 0),\n"
         "    dt TIMESTAMP NOT NULL DEFAULT current_timestamp,\n"
         "    start TIMESTAMP,\n"
         "    stop TIMESTAMP,\n"
