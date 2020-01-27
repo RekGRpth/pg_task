@@ -100,7 +100,7 @@ static void launch_tick(const char *database, const char *username) {
     (void)pfree(handle);
 }
 
-static void SPI_connect_my(const char *command, int timeout) {
+static void SPI_connect_my(const char *command, const int timeout) {
     int rc;
     (void)pgstat_report_activity(STATE_RUNNING, command);
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("SPI_connect_ext = %s", SPI_result_code_string(rc))));
@@ -294,6 +294,8 @@ static void init_table(void) {
         "    delete BOOLEAN NOT NULL DEFAULT false,\n"
         "    repeat INTERVAL,\n"
         "    drift BOOLEAN NOT NULL DEFAULT true,\n"
+        "    count INT,\n"
+        "    live INTERVAL,\n"
         "    CONSTRAINT %s FOREIGN KEY (parent) REFERENCES ", quote_identifier(name.data));
     if (schema) (void)appendStringInfo(&buf, "%s.", quote_identifier(schema));
     (void)appendStringInfo(&buf, "%s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n)", quote_identifier(table));
@@ -348,7 +350,7 @@ static void init_fix(void) {
     (void)pfree(buf.data);
 }
 
-static void launch_task(Datum arg, const char *queue) {
+static void launch_task(const Datum arg, const char *queue) {
     BackgroundWorker worker;
     BackgroundWorkerHandle *handle;
     pid_t pid;
@@ -490,7 +492,7 @@ void tick(Datum arg); void tick(Datum arg) {
     (void)proc_exit(0);
 }
 
-static void work(Datum arg, char **src, int *timeout) {
+static void work(const Datum arg, char **request, int *timeout) {
     int rc;
     Oid argtypes[] = {INT8OID, INT8OID};
     Datum Values[] = {arg, MyProcPid};
@@ -526,15 +528,15 @@ static void work(Datum arg, char **src, int *timeout) {
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         *timeout = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
-        *src = MemoryContextStrdup(oldMemoryContext, value);
-//        elog(LOG, "work timeout = %i, src = %s", *timeout, *src);
+        *request = MemoryContextStrdup(oldMemoryContext, value);
+//        elog(LOG, "work timeout = %i, request = %s", *timeout, *request);
         (void)pfree(value);
     }
     (void)SPI_finish_my(buf.data);
     (void)pfree(buf.data);
 }
 
-static void repeat_task(Datum arg) {
+static void repeat_task(const Datum arg) {
     int rc;
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
@@ -554,7 +556,7 @@ static void repeat_task(Datum arg) {
     (void)pfree(buf.data);
 }
 
-static void delete_task(Datum arg) {
+static void delete_task(const Datum arg) {
     int rc;
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
@@ -571,12 +573,18 @@ static void delete_task(Datum arg) {
     (void)pfree(buf.data);
 }
 
-static void done(Datum arg, const char *data, const char *state) {
+static void more_task(const char *queue) {
+}
+
+static void done(const Datum arg, const char *data, const char *state) {
     int rc;
-    bool delete, repeat;
-    Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
-    Datum Values[] = {arg, CStringGetTextDatum(state), data ? CStringGetTextDatum(data) : (Datum)NULL};
-    char Nulls[] = {' ', ' ', data ? ' ' : 'n'};
+    static uint64 count = 0;
+    static TimestampTz start;
+    bool delete, repeat, more;
+    char *queue = NULL;
+    Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID, INT8OID, TIMESTAMPTZOID};
+    Datum Values[] = {arg, CStringGetTextDatum(state), data ? CStringGetTextDatum(data) : (Datum)NULL, UInt64GetDatum(count), TimestampTzGetDatum(count ? start : (start = GetCurrentTimestamp()))};
+    char Nulls[] = {' ', ' ', data ? ' ' : 'n', ' ', ' '};
     StringInfoData buf;
     (void)initStringInfo(&buf);
     (void)appendStringInfoString(&buf, "WITH s AS (\n    SELECT id FROM ");
@@ -592,7 +600,8 @@ static void done(Datum arg, const char *data, const char *state) {
         "response = $3\n"
         "FROM s\n"
         "WHERE u.id = s.id\n"
-        "RETURNING delete,\n"
+        "RETURNING delete, queue,\n"
+        "COALESCE(count, 0) > $4 AND $5 + COALESCE(live, '0 sec'::INTERVAL) > current_timestamp AS more,\n"
         "repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", quote_identifier(table));
 //    elog(LOG, "done buf.data = %s", buf.data);
     (void)SPI_connect_my(buf.data, StatementTimeout);
@@ -600,19 +609,29 @@ static void done(Datum arg, const char *data, const char *state) {
     (void)SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
         bool isnull;
-        delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &isnull)) && (Nulls[2] == 'n');
+        delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &isnull)) && !data;//(Nulls[2] == 'n');
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         repeat = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
+        more = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "more"), &isnull));
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
+        if (more) {
+            queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &isnull));
+            if (isnull) ereport(ERROR, (errmsg("isnull")));
+        }
     }
     (void)SPI_finish_my(buf.data);
     (void)pfree(buf.data);
     if (repeat) (void)repeat_task(arg);
     if (delete) (void)delete_task(arg);
+    if (queue) {
+        (void)more_task(queue);
+        (void)pfree(queue);
+    }
+    count++;
 }
 
-static char *success(MemoryContext oldMemoryContext) {
-    char *data = NULL;
+static void success(const MemoryContext oldMemoryContext, char **data, char **state) {
     StringInfoData buf;
     (void)initStringInfo(&buf);
     if ((SPI_tuptable) && (SPI_processed > 0)) {
@@ -637,14 +656,13 @@ static char *success(MemoryContext oldMemoryContext) {
             if (row < SPI_processed - 1) (void)appendStringInfoString(&buf, "\n");
         }
 //        elog(LOG, "success\n%s", buf.data);
-        data = MemoryContextStrdup(oldMemoryContext, buf.data);
+        *data = MemoryContextStrdup(oldMemoryContext, buf.data);
     }
     (void)pfree(buf.data);
-    return data;
+    *state = "DONE";
 }
 
-static char *error(MemoryContext oldMemoryContext) {
-    char *data = NULL;
+static void error(const MemoryContext oldMemoryContext, char **data, char **state) {
     ErrorData *edata = CopyErrorData();
     StringInfoData buf;
     (void)initStringInfo(&buf);
@@ -677,41 +695,41 @@ static char *error(MemoryContext oldMemoryContext) {
     if (edata->saved_errno) (void)appendStringInfo(&buf, "\nsaved_errno::int4\t%i", edata->saved_errno);
     (void)FreeErrorData(edata);
 //    elog(LOG, "error\n%s", buf.data);
-    data = MemoryContextStrdup(oldMemoryContext, buf.data);
+    *data = MemoryContextStrdup(oldMemoryContext, buf.data);
     (void)pfree(buf.data);
-    return data;
+    *state = "FAIL";
 }
 
-static void execute(Datum arg) {
-    int rc;
-    char *src, *data = NULL, *state;
-    int timeout = 0;
-    MemoryContext oldMemoryContext = CurrentMemoryContext;
-    (void)work(arg, &src, &timeout);
-    if ((StatementTimeout > 0) && (StatementTimeout < timeout)) timeout = StatementTimeout;
-//    elog(LOG, "execute database = %s, username = %s, schema = %s, table = %s, timeout = %i, src = %s", database, username, schema, table, timeout, src);
-    (void)SPI_connect_my(src, timeout);
-    PG_TRY(); {
-        if ((rc = SPI_execute(src, false, 0)) < 0) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
-        state = "DONE";
-        data = success(oldMemoryContext);
-        (void)SPI_commit();
-    } PG_CATCH(); {
-        state = "FAIL";
-        data = error(oldMemoryContext);
-        (void)SPI_rollback();
-    } PG_END_TRY();
-    (void)SPI_finish_my(src);
-    (void)done(arg, data, state);
-    (void)pfree(src);
-    if (data) (void)pfree(data);
-}
-
-static void update_bgw_type(Datum arg) {
+static void update_bgw_type(const Datum arg) {
     uint64 id = DatumGetInt64(arg);
+    static int bgw_type_len = 0;
     int len = (sizeof(" %lu") - 1) - 2;
     for (int number = id; number /= 10; len++);
-    if (snprintf(MyBgworkerEntry->bgw_type + strlen(MyBgworkerEntry->bgw_type), len + 1, " %lu", id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (!bgw_type_len) bgw_type_len = strlen(MyBgworkerEntry->bgw_type);
+    if (snprintf(MyBgworkerEntry->bgw_type + bgw_type_len, len + 1, " %lu", id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+}
+
+static void execute(const Datum arg) {
+    int rc, timeout = 0;
+    char *request, *data = NULL, *state;
+    MemoryContext oldMemoryContext = CurrentMemoryContext;
+    (void)update_bgw_type(arg);
+    (void)work(arg, &request, &timeout);
+    if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
+//    elog(LOG, "execute database = %s, username = %s, schema = %s, table = %s, timeout = %i, request = %s", database, username, schema, table, timeout, request);
+    (void)SPI_connect_my(request, timeout);
+    PG_TRY(); {
+        if ((rc = SPI_execute(request, false, 0)) < 0) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
+        (void)success(oldMemoryContext, &data, &state);
+        (void)SPI_commit();
+    } PG_CATCH(); {
+        (void)error(oldMemoryContext, &data, &state);
+        (void)SPI_rollback();
+    } PG_END_TRY();
+    (void)SPI_finish_my(request);
+    (void)done(arg, data, state);
+    (void)pfree(request);
+    if (data) (void)pfree(data);
 }
 
 void task(Datum arg); void task(Datum arg) {
@@ -723,6 +741,5 @@ void task(Datum arg); void task(Datum arg) {
 //    elog(LOG, "task database = %s, username = %s, schema = %s, table = %s, id = %lu", database, username, schema, table, DatumGetInt64(arg));
     (void)BackgroundWorkerUnblockSignals();
     (void)BackgroundWorkerInitializeConnection(database, username, 0);
-    (void)update_bgw_type(arg);
     (void)execute(arg);
 }
