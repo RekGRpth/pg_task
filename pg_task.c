@@ -641,13 +641,13 @@ static void more_task(const char *queue) {
     }
     if ((rc = SPI_execute_plan(plan, Values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_plan = %s", SPI_result_code_string(rc))));
     SPI_commit();
-    if (SPI_processed == 1) {
+    if (SPI_processed != 1) SPI_finish_my(command); else {
         bool isnull;
         Datum id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
         if (isnull) ereport(ERROR, (errmsg("isnull")));
+        SPI_finish_my(command);
         execute(id);
     }
-    SPI_finish_my(command);
 }
 
 static void done(const Datum arg, const char *data, const char *state) {
