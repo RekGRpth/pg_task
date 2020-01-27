@@ -792,7 +792,7 @@ static void update_bgw_type(const Datum arg) {
     if (!bgw_type_len) bgw_type_len = strlen(MyBgworkerEntry->bgw_type);
     if (snprintf(MyBgworkerEntry->bgw_type + bgw_type_len, len + 1, " %lu", id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
     MyBgworkerEntry->bgw_type[bgw_type_len + len + 1] = '\0';
-    elog(LOG, "%s(%s:%d): MyBgworkerEntry->bgw_type = %s", __func__, __FILE__, __LINE__, MyBgworkerEntry->bgw_type);
+    elog(LOG, "%s(%s:%d): MyBgworkerEntry->bgw_type = %s, MyBgworkerEntry->bgw_name = %s", __func__, __FILE__, __LINE__, MyBgworkerEntry->bgw_type, MyBgworkerEntry->bgw_name);
 }
 
 static void execute(const Datum arg) {
