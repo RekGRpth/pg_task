@@ -618,17 +618,16 @@ static void more_task(const char *queue) {
         appendStringInfo(&buf, "%s WHERE id IN (\n", quote_identifier(table));
         appendStringInfoString(&buf,
             "WITH s AS (\n"
-            "    SELECT      id, COALESCE(max, ~(1<<31)) AS max, count(a.pid)\n"
+            "    SELECT      id, COALESCE(max, ~(1<<31)) AS max\n"
             "    FROM        ");
         if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
         appendStringInfo(&buf, "%s AS t\n"
-            "    LEFT JOIN   pg_stat_activity AS a ON datname = current_catalog AND usename = current_user AND backend_type = concat('pg_task task ', queue)\n"
             "    WHERE       t.state = 'PLAN'\n"
             "    AND         dt <= current_timestamp\n"
             "    AND         queue = $1\n"
             "    GROUP BY    1, 2\n"
             "    ORDER BY    2 DESC, 1\n"
-            ") SELECT unnest((array_agg(id ORDER BY id))[:GREATEST(max(max) - count, 0)]) AS id FROM s GROUP BY count\n", quote_identifier(table));
+            ") SELECT unnest((array_agg(id ORDER BY id))[:GREATEST(max(max), 0)]) AS id FROM s\n", quote_identifier(table));
         appendStringInfoString(&buf, ") ORDER BY 2 DESC, 1 LIMIT 1 FOR UPDATE SKIP LOCKED\n) UPDATE ");
         if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
         appendStringInfo(&buf, "%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id", quote_identifier(table));
