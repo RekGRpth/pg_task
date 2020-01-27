@@ -497,30 +497,42 @@ static void work(const Datum arg, char **request, int *timeout) {
     Oid argtypes[] = {INT8OID, INT8OID};
     Datum Values[] = {arg, MyProcPid};
     MemoryContext oldMemoryContext = CurrentMemoryContext;
+    static SPIPlanPtr plan = NULL;
+    static char *command = NULL;
     StringInfoData buf;
 //    elog(LOG, "work database = %s, username = %s, schema = %s, table = %s, id = %lu", database, username, schema, table, DatumGetInt64(arg));
     initStringInfo(&buf);
     appendStringInfo(&buf, "%lu", DatumGetInt64(arg));
     if (set_config_option("pg_task.task_id", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SAVE, true, 0, false) <= 0) ereport(ERROR, (errmsg("set_config_option <= 0")));
-    resetStringInfo(&buf);
-    appendStringInfoString(&buf, "WITH s AS (\n    SELECT id FROM ");
-    if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    appendStringInfo(&buf, "%s\n"
-        "    WHERE id = $1\n"
-        "    FOR UPDATE\n)\n", quote_identifier(table));
-    appendStringInfoString(&buf, "UPDATE ");
-    if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    appendStringInfo(&buf, "%s AS u\n"
-        "SET state = 'WORK',\n"
-        "start = current_timestamp,\n"
-        "pid = $2\n"
-        "FROM s\n"
-        "WHERE u.id = s.id\n"
-        "RETURNING request,\n"
-        "COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
-//    elog(LOG, "work buf.data = %s", buf.data);
-    SPI_connect_my(buf.data, StatementTimeout);
-    if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
+    pfree(buf.data);
+    if (!command) {
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfoString(&buf, "WITH s AS (\n    SELECT id FROM ");
+        if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
+        appendStringInfo(&buf, "%s\n"
+            "    WHERE id = $1\n"
+            "    FOR UPDATE\n)\n", quote_identifier(table));
+        appendStringInfoString(&buf, "UPDATE ");
+        if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
+        appendStringInfo(&buf, "%s AS u\n"
+            "SET state = 'WORK',\n"
+            "start = current_timestamp,\n"
+            "pid = $2\n"
+            "FROM s\n"
+            "WHERE u.id = s.id\n"
+            "RETURNING request,\n"
+            "COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", quote_identifier(table));
+    //    elog(LOG, "work buf.data = %s", buf.data);
+        command = pstrdup(buf.data);
+        pfree(buf.data);
+    }
+    SPI_connect_my(command, StatementTimeout);
+    if (!plan) {
+        if(!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("SPI_prepare = %s", SPI_result_code_string(SPI_result))));
+        if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("SPI_keepplan = %s", SPI_result_code_string(rc))));
+    }
+    if ((rc = SPI_execute_plan(plan, Values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_plan = %s", SPI_result_code_string(rc))));
     SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
         bool isnull;
@@ -532,8 +544,7 @@ static void work(const Datum arg, char **request, int *timeout) {
 //        elog(LOG, "work timeout = %i, request = %s", *timeout, *request);
         pfree(value);
     }
-    SPI_finish_my(buf.data);
-    pfree(buf.data);
+    SPI_finish_my(command);
 }
 
 static void repeat_task(const Datum arg) {
