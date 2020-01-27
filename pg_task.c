@@ -397,7 +397,7 @@ static void take(void) {
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
-        appendStringInfoString(&buf, "WITH s AS (SELECT id, COALESCE(max, ~(1<<31)) AS max FROM ");
+        appendStringInfoString(&buf, "WITH s AS (\nSELECT id, COALESCE(max, ~(1<<31)) AS max FROM ");
         if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
         appendStringInfo(&buf, "%s WHERE id IN (\n", quote_identifier(table));
         appendStringInfoString(&buf,
@@ -412,7 +412,7 @@ static void take(void) {
             "    GROUP BY    1, 2, 3\n"
             "    ORDER BY    3 DESC, 1\n"
             ") SELECT unnest((array_agg(id ORDER BY id))[:GREATEST(max(max) - count, 0)]) AS id FROM s GROUP BY queue, count\n", quote_identifier(table));
-        appendStringInfoString(&buf, ") ORDER BY 2 DESC, 1 FOR UPDATE SKIP LOCKED) UPDATE ");
+        appendStringInfoString(&buf, ") ORDER BY 2 DESC, 1 FOR UPDATE SKIP LOCKED\n) UPDATE ");
         if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
         appendStringInfo(&buf, "%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id, queue", quote_identifier(table));
         command = pstrdup(buf.data);
@@ -612,7 +612,7 @@ static void more_task(const char *queue) {
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
-        appendStringInfoString(&buf, "WITH s AS (SELECT id, COALESCE(max, ~(1<<31)) AS max FROM ");
+        appendStringInfoString(&buf, "WITH s AS (\nSELECT id, COALESCE(max, ~(1<<31)) AS max FROM ");
         if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
         appendStringInfo(&buf, "%s WHERE id IN (\n", quote_identifier(table));
         appendStringInfoString(&buf,
@@ -628,7 +628,7 @@ static void more_task(const char *queue) {
             "    GROUP BY    1, 2\n"
             "    ORDER BY    2 DESC, 1\n"
             ") SELECT unnest((array_agg(id ORDER BY id))[:GREATEST(max(max) - count, 0)]) AS id FROM s GROUP BY count\n", quote_identifier(table));
-        appendStringInfoString(&buf, ") ORDER BY 2 DESC, 1 LIMIT 1 FOR UPDATE SKIP LOCKED) UPDATE ");
+        appendStringInfoString(&buf, ") ORDER BY 2 DESC, 1 LIMIT 1 FOR UPDATE SKIP LOCKED\n) UPDATE ");
         if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
         appendStringInfo(&buf, "%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id", quote_identifier(table));
         command = pstrdup(buf.data);
@@ -799,7 +799,7 @@ static void execute(const Datum arg) {
     update_bgw_type(arg);
     work(arg, &request, &timeout);
     if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
-//    elog(LOG, "execute database = %s, username = %s, schema = %s, table = %s, timeout = %i, request = %s", database, username, schema, table, timeout, request);
+//    elog(LOG, "execute database = %s, username = %s, schema = %s, table = %s, id = %lu, timeout = %i, request = %s", database, username, schema, table, DatumGetInt64(arg), timeout, request);
     SPI_connect_my(request, timeout);
     PG_TRY(); {
         if ((rc = SPI_execute(request, false, 0)) < 0) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
