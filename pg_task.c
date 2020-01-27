@@ -580,17 +580,26 @@ static void delete_task(const Datum arg) {
     int rc;
     Oid argtypes[] = {INT8OID};
     Datum Values[] = {arg};
-    StringInfoData buf;
-    initStringInfo(&buf);
-    appendStringInfoString(&buf, "DELETE FROM ");
-    if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
-    appendStringInfo(&buf, "%s WHERE id = $1", quote_identifier(table));
-//    elog(LOG, "delete_task buf.data = %s", buf.data);
-    SPI_connect_my(buf.data, StatementTimeout);
-    if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, Values, NULL, false, 0)) != SPI_OK_DELETE) ereport(ERROR, (errmsg("SPI_execute_with_args = %s", SPI_result_code_string(rc))));
+    static SPIPlanPtr plan = NULL;
+    static char *command = NULL;
+    if (!command) {
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfoString(&buf, "DELETE FROM ");
+        if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
+        appendStringInfo(&buf, "%s WHERE id = $1", quote_identifier(table));
+    //    elog(LOG, "delete_task buf.data = %s", buf.data);
+        command = pstrdup(buf.data);
+        pfree(buf.data);
+    }
+    SPI_connect_my(command, StatementTimeout);
+    if (!plan) {
+        if(!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("SPI_prepare = %s", SPI_result_code_string(SPI_result))));
+        if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("SPI_keepplan = %s", SPI_result_code_string(rc))));
+    }
+    if ((rc = SPI_execute_plan(plan, Values, NULL, false, 0)) != SPI_OK_DELETE) ereport(ERROR, (errmsg("SPI_execute_plan = %s", SPI_result_code_string(rc))));
     SPI_commit();
-    SPI_finish_my(buf.data);
-    pfree(buf.data);
+    SPI_finish_my(command);
 }
 
 static void more_task(const char *queue) {
