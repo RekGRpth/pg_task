@@ -211,8 +211,8 @@ static void check(void) {
 
 void loop(Datum arg); void loop(Datum arg) {
 //    elog(LOG, "loop database = %s", databases);
-    (pqsigfunc)pqsignal(SIGHUP, sighup);
-    (pqsigfunc)pqsignal(SIGTERM, sigterm);
+    pqsignal(SIGHUP, sighup);
+    pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     check();
@@ -462,8 +462,8 @@ void tick(Datum arg); void tick(Datum arg) {
     DefineCustomStringVariable(buf.data, "pg_task table", NULL, &table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     pfree(buf.data);
 //    elog(LOG, "tick database = %s, username = %s, period = %i, schema = %s, table = %s", database, username, period, schema, table);
-    (pqsigfunc)pqsignal(SIGHUP, sighup);
-    (pqsigfunc)pqsignal(SIGTERM, sigterm);
+    pqsignal(SIGHUP, sighup);
+    pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(database, username, 0);
     lock();
