@@ -558,8 +558,8 @@ static void repeat_task(const Datum arg) {
         initStringInfo(&buf);
         appendStringInfoString(&buf, "INSERT INTO ");
         if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
-        appendStringInfo(&buf, "%s (parent, dt, queue, max, request, state, timeout, delete, repeat, drift) (SELECT ", quote_identifier(table));
-        appendStringInfoString(&buf, "id AS parent, CASE WHEN drift THEN current_timestamp + repeat ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1) END AS dt, queue, max, request, 'PLAN' as state, timeout, delete, repeat, drift FROM ");
+        appendStringInfo(&buf, "%s (parent, dt, queue, max, request, state, timeout, delete, repeat, drift, count, live) (SELECT ", quote_identifier(table));
+        appendStringInfoString(&buf, "id AS parent, CASE WHEN drift THEN current_timestamp + repeat ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1) END AS dt, queue, max, request, 'PLAN' as state, timeout, delete, repeat, drift, count, live FROM ");
         if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
         appendStringInfo(&buf, "%s WHERE id = $1 AND state IN ('DONE', 'FAIL') LIMIT 1)", quote_identifier(table));
     //    elog(LOG, "repeat_task buf.data = %s", buf.data);
