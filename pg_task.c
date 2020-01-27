@@ -609,6 +609,7 @@ static void more_task(const char *queue) {
     Datum Values[] = {CStringGetTextDatum(queue)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
+    elog(LOG, "%s(%s:%d): queue = %s", __func__, __FILE__, __LINE__, queue);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -661,6 +662,7 @@ static void done(const Datum arg, const char *data, const char *state) {
     char Nulls[] = {' ', ' ', data ? ' ' : 'n', ' ', ' '};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
+    elog(LOG, "%s(%s:%d): arg = %lu, data = %s, state = %s", __func__, __FILE__, __LINE__, DatumGetInt64(arg), data ? data : "(null)", state);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -693,7 +695,7 @@ static void done(const Datum arg, const char *data, const char *state) {
     SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed != 1"))); else {
         bool isnull;
-        delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &isnull)) && !data;//(Nulls[2] == 'n');
+        delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &isnull)) && !data;
         if (isnull) ereport(ERROR, (errmsg("isnull")));
         repeat = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &isnull));
         if (isnull) ereport(ERROR, (errmsg("isnull")));
@@ -715,9 +717,9 @@ static void done(const Datum arg, const char *data, const char *state) {
 }
 
 static void success(const MemoryContext oldMemoryContext, char **data, char **state) {
-    StringInfoData buf;
-    initStringInfo(&buf);
     if ((SPI_tuptable) && (SPI_processed > 0)) {
+        StringInfoData buf;
+        initStringInfo(&buf);
         if (SPI_tuptable->tupdesc->natts > 1) {
             for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
                 char *name = SPI_fname(SPI_tuptable->tupdesc, col);
@@ -738,10 +740,10 @@ static void success(const MemoryContext oldMemoryContext, char **data, char **st
             }
             if (row < SPI_processed - 1) appendStringInfoString(&buf, "\n");
         }
-//        elog(LOG, "success\n%s", buf.data);
         *data = MemoryContextStrdup(oldMemoryContext, buf.data);
+        pfree(buf.data);
+//        elog(LOG, "%s(%s:%d): data = %s", __func__, __FILE__, __LINE__, *data);
     }
-    pfree(buf.data);
     *state = "DONE";
 }
 
@@ -777,9 +779,9 @@ static void error(const MemoryContext oldMemoryContext, char **data, char **stat
     if (edata->internalquery) appendStringInfo(&buf, "\ninternalquery::text\t%s", edata->internalquery);
     if (edata->saved_errno) appendStringInfo(&buf, "\nsaved_errno::int4\t%i", edata->saved_errno);
     FreeErrorData(edata);
-//    elog(LOG, "error\n%s", buf.data);
     *data = MemoryContextStrdup(oldMemoryContext, buf.data);
     pfree(buf.data);
+//    elog(LOG, "%s(%s:%d): data = %s", __func__, __FILE__, __LINE__, *data);
     *state = "FAIL";
 }
 
@@ -790,6 +792,8 @@ static void update_bgw_type(const Datum arg) {
     for (int number = id; number /= 10; len++);
     if (!bgw_type_len) bgw_type_len = strlen(MyBgworkerEntry->bgw_type);
     if (snprintf(MyBgworkerEntry->bgw_type + bgw_type_len, len + 1, " %lu", id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    MyBgworkerEntry->bgw_type[bgw_type_len + len + 1] = '\0';
+    elog(LOG, "%s(%s:%d): MyBgworkerEntry->bgw_type = %s", __func__, __FILE__, __LINE__, MyBgworkerEntry->bgw_type);
 }
 
 static void execute(const Datum arg) {
@@ -799,7 +803,7 @@ static void execute(const Datum arg) {
     update_bgw_type(arg);
     work(arg, &request, &timeout);
     if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
-//    elog(LOG, "execute database = %s, username = %s, schema = %s, table = %s, id = %lu, timeout = %i, request = %s", database, username, schema, table, DatumGetInt64(arg), timeout, request);
+    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu, timeout = %i, request = %s", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetInt64(arg), timeout, request);
     SPI_connect_my(request, timeout);
     PG_TRY(); {
         if ((rc = SPI_execute(request, false, 0)) < 0) ereport(ERROR, (errmsg("SPI_execute = %s", SPI_result_code_string(rc))));
@@ -821,7 +825,9 @@ void task(Datum arg); void task(Datum arg) {
     table = username + strlen(username) + 1;
     schema = table + strlen(table) + 1;
     if (!strlen(schema)) schema = NULL;
-//    elog(LOG, "task database = %s, username = %s, schema = %s, table = %s, id = %lu", database, username, schema, table, DatumGetInt64(arg));
+//    elog(LOG, "%s(%s:%d): %lu", __func__, __FILE__, __LINE__, DatumGetInt64(arg));
+    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetInt64(arg));
+//    ereport(LOG, (errmsg("%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu", __func__, __FILE__, __LINE__, database, username, schema, table, DatumGetInt64(arg))));
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(database, username, 0);
     execute(arg);
