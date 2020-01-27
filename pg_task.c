@@ -602,7 +602,52 @@ static void delete_task(const Datum arg) {
     SPI_finish_my(command);
 }
 
+static void execute(const Datum arg);
 static void more_task(const char *queue) {
+    int rc;
+    Oid argtypes[] = {TEXTOID};
+    Datum Values[] = {CStringGetTextDatum(queue)};
+    static SPIPlanPtr plan = NULL;
+    static char *command = NULL;
+    if (!command) {
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfoString(&buf, "WITH s AS (SELECT id, COALESCE(max, ~(1<<31)) AS max FROM ");
+        if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
+        appendStringInfo(&buf, "%s WHERE id IN (\n", quote_identifier(table));
+        appendStringInfoString(&buf,
+            "WITH s AS (\n"
+            "    SELECT      id, COALESCE(max, ~(1<<31)) AS max, count(a.pid)\n"
+            "    FROM        ");
+        if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
+        appendStringInfo(&buf, "%s AS t\n"
+            "    LEFT JOIN   pg_stat_activity AS a ON datname = current_catalog AND usename = current_user AND backend_type = concat('pg_task task ', queue)\n"
+            "    WHERE       t.state = 'PLAN'\n"
+            "    AND         dt <= current_timestamp\n"
+            "    AND         queue = $1\n"
+            "    GROUP BY    1, 2\n"
+            "    ORDER BY    2 DESC, 1\n"
+            ") SELECT unnest((array_agg(id ORDER BY id))[:GREATEST(max(max) - count, 0)]) AS id FROM s GROUP BY count\n", quote_identifier(table));
+        appendStringInfoString(&buf, ") ORDER BY 2 DESC, 1 LIMIT 1 FOR UPDATE SKIP LOCKED) UPDATE ");
+        if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
+        appendStringInfo(&buf, "%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id", quote_identifier(table));
+        command = pstrdup(buf.data);
+        pfree(buf.data);
+    }
+    SPI_connect_my(command, StatementTimeout);
+    if (!plan) {
+        if(!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("SPI_prepare = %s", SPI_result_code_string(SPI_result))));
+        if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("SPI_keepplan = %s", SPI_result_code_string(rc))));
+    }
+    if ((rc = SPI_execute_plan(plan, Values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("SPI_execute_plan = %s", SPI_result_code_string(rc))));
+    SPI_commit();
+    if (SPI_processed == 1) {
+        bool isnull;
+        Datum id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
+        if (isnull) ereport(ERROR, (errmsg("isnull")));
+        execute(id);
+    }
+    SPI_finish_my(command);
 }
 
 static void done(const Datum arg, const char *data, const char *state) {
@@ -765,8 +810,8 @@ static void execute(const Datum arg) {
         SPI_rollback();
     } PG_END_TRY();
     SPI_finish_my(request);
-    done(arg, data, state);
     pfree(request);
+    done(arg, data, state);
     if (data) pfree(data);
 }
 
