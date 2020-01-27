@@ -33,9 +33,6 @@ char *username;
 char *schema;
 char *table;
 
-SPIPlanPtr plan = NULL;
-char *command = NULL;
-
 static void sighup(SIGNAL_ARGS) {
     int save_errno = errno;
     got_sighup = true;
@@ -393,6 +390,8 @@ static void launch_task(Datum arg, const char *queue) {
 
 static void take(void) {
     int rc;
+    static SPIPlanPtr plan = NULL;
+    static char *command = NULL;
     if (!command) {
         StringInfoData buf;
         (void)initStringInfo(&buf);
