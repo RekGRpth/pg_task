@@ -55,10 +55,10 @@ static void launch_loop(void) {
     worker.bgw_notify_pid = 0;
     worker.bgw_main_arg = (Datum) 0;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
-    if (snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task") != sizeof("pg_task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    if (snprintf(worker.bgw_function_name, sizeof("loop"), "loop") != sizeof("loop") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    if (snprintf(worker.bgw_type, sizeof("pg_task loop"), "pg_task loop") != sizeof("pg_task loop") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    if (snprintf(worker.bgw_name, sizeof("postgres postgres pg_task loop"), "postgres postgres pg_task loop") != sizeof("postgres postgres pg_task loop") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task") != sizeof("pg_task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", sizeof("pg_task") - 1)));
+    if (snprintf(worker.bgw_function_name, sizeof("loop"), "loop") != sizeof("loop") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", sizeof("loop") - 1)));
+    if (snprintf(worker.bgw_type, sizeof("pg_task loop"), "pg_task loop") != sizeof("pg_task loop") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", sizeof("pg_task loop") - 1)));
+    if (snprintf(worker.bgw_name, sizeof("postgres postgres pg_task loop"), "postgres postgres pg_task loop") != sizeof("postgres postgres pg_task loop") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", sizeof("postgres postgres pg_task loop") - 1)));
     RegisterBackgroundWorker(&worker);
 }
 
@@ -71,7 +71,7 @@ void _PG_init(void); void _PG_init(void) {
 }
 
 static void launch_tick(const char *database, const char *username) {
-    int len, len2;
+    size_t len, database_len, username_len;
     pid_t pid;
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker;
@@ -81,15 +81,17 @@ static void launch_tick(const char *database, const char *username) {
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_main_arg = (Datum) 0;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
-    if (snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task") != sizeof("pg_task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    if (snprintf(worker.bgw_function_name, sizeof("tick"), "tick") != sizeof("tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    if (snprintf(worker.bgw_type, sizeof("pg_task tick"), "pg_task tick") != sizeof("pg_task tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    len = (sizeof("%s %s pg_task tick") - 1) + (strlen(username) - 1) + (strlen(database) - 1) - 1 - 1;
-    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_task tick", username, database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    len = (sizeof("%s") - 1) + (strlen(database) - 1) - 1;
-    if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    len2 = (sizeof("%s") - 1) + (strlen(username) - 1) - 1;
-    if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task") != sizeof("pg_task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", sizeof("pg_task") - 1)));
+    if (snprintf(worker.bgw_function_name, sizeof("tick"), "tick") != sizeof("tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", sizeof("tick") - 1)));
+    if (snprintf(worker.bgw_type, sizeof("pg_task tick"), "pg_task tick") != sizeof("pg_task tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", sizeof("pg_task tick") - 1)));
+    len = (sizeof("%s %s pg_task tick") - 1) + (strlen(username) - 1) - 1 + (strlen(database) - 1) - 1;
+    if (len + 1 > BGW_MAXLEN) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%ld > BGW_MAXLEN", len + 1)));
+    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_task tick", username, database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", len)));
+    database_len = (sizeof("%s") - 1) + (strlen(database) - 1) - 1;
+    username_len = (sizeof("%s") - 1) + (strlen(username) - 1) - 1;
+    if (database_len + 1 + username_len + 1 > BGW_EXTRALEN) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%ld > BGW_EXTRALEN", database_len + 1 + username_len + 1)));
+    if (snprintf(worker.bgw_extra                   , database_len + 1, "%s", database) != database_len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", database_len)));
+    if (snprintf(worker.bgw_extra + database_len + 1, username_len + 1, "%s", username) != username_len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", username_len)));
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
@@ -354,7 +356,7 @@ static void launch_task(const Datum arg, const char *queue) {
     BackgroundWorker worker;
     BackgroundWorkerHandle *handle;
     pid_t pid;
-    int len, len2, len3, len4;
+    size_t len, database_len, username_len, table_len, schema_len = 0;
     uint64 id = DatumGetInt64(arg);
 //    elog(LOG, "launch_task database = %s, username = %s, schema = %s, table = %s, id = %lu, queue = %s", database, username, schema, table, id, queue);
     MemSet(&worker, 0, sizeof(BackgroundWorker));
@@ -363,23 +365,24 @@ static void launch_task(const Datum arg, const char *queue) {
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_main_arg = arg;
-    if (snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task") != sizeof("pg_task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    if (snprintf(worker.bgw_function_name, sizeof("task"), "task") != sizeof("task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task") != sizeof("pg_task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", sizeof("pg_task") - 1)));
+    if (snprintf(worker.bgw_function_name, sizeof("task"), "task") != sizeof("task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", sizeof("task") - 1)));
     len = (sizeof("pg_task task %s") - 1) + (strlen(queue) - 1) - 1;
-    if (snprintf(worker.bgw_type, len + 1, "pg_task task %s", queue) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (len + 1 > BGW_MAXLEN) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%ld > BGW_MAXLEN", len + 1)));
+    if (snprintf(worker.bgw_type, len + 1, "pg_task task %s", queue) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", len)));
     len = (sizeof("%s %s pg_task task %s %lu") - 1) + (strlen(username) - 1) + (strlen(database) - 1) + (strlen(queue) - 1) - 1 - 1 - 1 - 2;
     for (int number = id; number /= 10; len++);
-    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_task task %s %lu", username, database, queue, id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    len = (sizeof("%s") - 1) + (strlen(database) - 1) - 1;
-    if (snprintf(worker.bgw_extra, len + 1, "%s", database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    len2 = (sizeof("%s") - 1) + (strlen(username) - 1) - 1;
-    if (snprintf(worker.bgw_extra + len + 1, len2 + 1, "%s", username) != len2) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    len3 = (sizeof("%s") - 1) + (strlen(table) - 1) - 1;
-    if (snprintf(worker.bgw_extra + len + 1 + len2 + 1, len3 + 1, "%s", table) != len3) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    if (schema) {
-        len4 = (sizeof("%s") - 1) + (strlen(schema) - 1) - 1;
-        if (snprintf(worker.bgw_extra + len + 1 + len2 + 1 + len3 + 1, len4 + 1, "%s", schema) != len4) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
-    }
+    if (len + 1 > BGW_MAXLEN) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%ld > BGW_MAXLEN", len + 1)));
+    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_task task %s %lu", username, database, queue, id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", len)));
+    database_len = (sizeof("%s") - 1) + (strlen(database) - 1) - 1;
+    username_len = (sizeof("%s") - 1) + (strlen(username) - 1) - 1;
+    table_len = (sizeof("%s") - 1) + (strlen(table) - 1) - 1;
+    if (schema) schema_len = (sizeof("%s") - 1) + (strlen(schema) - 1) - 1;
+    if (database_len + 1 + username_len + 1 + table_len + 1 + schema_len + 1 > BGW_EXTRALEN) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%ld > BGW_EXTRALEN", database_len + 1 + username_len + 1 + table_len + 1 + schema_len + 1)));
+    if (snprintf(worker.bgw_extra, database_len + 1, "%s", database) != database_len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", database_len)));
+    if (snprintf(worker.bgw_extra + database_len + 1, username_len + 1, "%s", username) != username_len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", username_len)));
+    if (snprintf(worker.bgw_extra + database_len + 1 + username_len + 1, table_len + 1, "%s", table) != table_len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", table_len)));
+    if (schema && snprintf(worker.bgw_extra + database_len + 1 + username_len + 1 + table_len + 1, schema_len + 1, "%s", schema) != schema_len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", schema_len)));
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not register background process"), errhint("You may need to increase max_worker_processes.")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
@@ -786,11 +789,12 @@ static void error(const MemoryContext oldMemoryContext, char **data, char **stat
 
 static void update_bgw_type(const Datum arg) {
     uint64 id = DatumGetInt64(arg);
-    static int bgw_type_len = 0;
-    int len = (sizeof(" %lu") - 1) - 2;
+    static size_t bgw_type_len = 0;
+    size_t len = (sizeof(" %lu") - 1) - 2;
     for (int number = id; number /= 10; len++);
     if (!bgw_type_len) bgw_type_len = strlen(MyBgworkerEntry->bgw_type);
-    if (snprintf(MyBgworkerEntry->bgw_type + bgw_type_len, len + 1, " %lu", id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf")));
+    if (bgw_type_len + len + 1 > BGW_MAXLEN) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%ld > BGW_MAXLEN", bgw_type_len + len + 1)));
+    if (snprintf(MyBgworkerEntry->bgw_type + bgw_type_len, len + 1, " %lu", id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("snprintf != %ld", len)));
     MyBgworkerEntry->bgw_type[bgw_type_len + len + 1] = '\0';
     elog(LOG, "%s(%s:%d): MyBgworkerEntry->bgw_type = %s, MyBgworkerEntry->bgw_name = %s", __func__, __FILE__, __LINE__, MyBgworkerEntry->bgw_type, MyBgworkerEntry->bgw_name);
 }
