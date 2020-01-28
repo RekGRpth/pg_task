@@ -13,6 +13,7 @@
 #include <utils/guc.h>
 #include <utils/lsyscache.h>
 #include <utils/memutils.h>
+#include <utils/ps_status.h>
 #include <utils/snapmgr.h>
 #include <utils/timeout.h>
 #include <utils/varlena.h>
@@ -119,7 +120,8 @@ static void SPI_connect_my(const char *command, const int timeout) {
 //    elog(LOG, "%s(%s:%d): command = %s, MyBgworkerEntry->bgw_type = %s, MyBgworkerEntry->bgw_name = %s", __func__, __FILE__, __LINE__, command, MyBgworkerEntry->bgw_type, MyBgworkerEntry->bgw_name);
     pgstat_report_activity(STATE_RUNNING, command);
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_connect_ext = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    pgstat_report_appname(MyBgworkerEntry->bgw_name);
+//    pgstat_report_appname(MyBgworkerEntry->bgw_name);
+//    set_ps_display(MyBgworkerEntry->bgw_name, true);
     SPI_start_transaction();
     if (timeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, timeout); else disable_timeout(STATEMENT_TIMEOUT, false);
 }
@@ -229,6 +231,7 @@ void main_worker(Datum _); void main_worker(Datum _) {
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
+    pgstat_report_appname(MyBgworkerEntry->bgw_type);
     check();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | /*WL_TIMEOUT |*/ WL_POSTMASTER_DEATH, LONG_MAX, PG_WAIT_EXTENSION);
@@ -477,6 +480,7 @@ void tick_worker(Datum _); void tick_worker(Datum _) {
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(database, username, 0);
+    pgstat_report_appname(MyBgworkerEntry->bgw_type);
     schema_q = schema ? quote_identifier(schema) : "";
     point = schema ? "." : "";
     table_q = quote_identifier(table);
@@ -781,15 +785,21 @@ static void error(const MemoryContext oldMemoryContext, char **data, char **stat
     elog(LOG, "%s(%s:%d): MyBgworkerEntry->bgw_type = %s, MyBgworkerEntry->bgw_name = %s", __func__, __FILE__, __LINE__, MyBgworkerEntry->bgw_type, MyBgworkerEntry->bgw_name);
 }*/
 
-static void update_bgw_name(const Datum id) {
-    static size_t bgw_name_len = 0;
-    size_t len = (sizeof(" %lu") - 1) - 2;
-    for (int number = DatumGetUInt64(id); number /= 10; len++);
-    if (!bgw_name_len) bgw_name_len = strlen(MyBgworkerEntry->bgw_name);
-    if (bgw_name_len + len + 1 > BGW_MAXLEN) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu > BGW_MAXLEN", __func__, __FILE__, __LINE__, bgw_name_len + len + 1)));
-    if (snprintf(MyBgworkerEntry->bgw_name + bgw_name_len, len + 1, " %lu", DatumGetUInt64(id)) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, len)));
-    MyBgworkerEntry->bgw_name[bgw_name_len + len + 1] = '\0';
-    elog(LOG, "%s(%s:%d): id = %lu, MyBgworkerEntry->bgw_type = %s, MyBgworkerEntry->bgw_name = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), MyBgworkerEntry->bgw_type, MyBgworkerEntry->bgw_name);
+static void update_ps_display(const Datum id) {
+    StringInfoData buf;
+    initStringInfo(&buf);
+    appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_name, DatumGetUInt64(id));
+//    static size_t bgw_name_len = 0;
+//    size_t len = (sizeof(" %lu") - 1) - 2;
+//    for (int number = DatumGetUInt64(id); number /= 10; len++);
+//    if (!bgw_name_len) bgw_name_len = strlen(MyBgworkerEntry->bgw_name);
+//    if (bgw_name_len + len + 1 > BGW_MAXLEN) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu > BGW_MAXLEN", __func__, __FILE__, __LINE__, bgw_name_len + len + 1)));
+//    if (snprintf(MyBgworkerEntry->bgw_name + bgw_name_len, len + 1, " %lu", DatumGetUInt64(id)) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, len)));
+//    MyBgworkerEntry->bgw_name[bgw_name_len + len + 1] = '\0';
+//    elog(LOG, "%s(%s:%d): id = %lu, MyBgworkerEntry->bgw_type = %s, MyBgworkerEntry->bgw_name = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), MyBgworkerEntry->bgw_type, MyBgworkerEntry->bgw_name);
+//    pgstat_report_appname(MyBgworkerEntry->bgw_type);
+    init_ps_display(buf.data, "", "", "");
+    pfree(buf.data);
 }
 
 static void execute(const Datum id) {
@@ -797,7 +807,7 @@ static void execute(const Datum id) {
     uint64 timeout = 0;
     char *request, *data = NULL, *state;
     MemoryContext oldMemoryContext = CurrentMemoryContext;
-    update_bgw_name(id);
+    update_ps_display(id);
     work(oldMemoryContext, id, &request, &timeout);
     if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
     elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu, timeout = %lu, request = %s", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetUInt64(id), timeout, request);
@@ -877,5 +887,6 @@ void task_worker(Datum id); void task_worker(Datum id) {
     table_q = quote_identifier(table);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(database, username, 0);
+    pgstat_report_appname(MyBgworkerEntry->bgw_type);
     execute(id);
 }
