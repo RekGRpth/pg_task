@@ -119,7 +119,7 @@ static void SPI_connect_my(const char *command, const int timeout) {
 //    elog(LOG, "%s(%s:%d): command = %s, MyBgworkerEntry->bgw_type = %s, MyBgworkerEntry->bgw_name = %s", __func__, __FILE__, __LINE__, command, MyBgworkerEntry->bgw_type, MyBgworkerEntry->bgw_name);
     pgstat_report_activity(STATE_RUNNING, command);
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_connect_ext = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-//    pgstat_report_appname(MyBgworkerEntry->bgw_type);
+    pgstat_report_appname(MyBgworkerEntry->bgw_name);
     SPI_start_transaction();
     if (timeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, timeout); else disable_timeout(STATEMENT_TIMEOUT, false);
 }
