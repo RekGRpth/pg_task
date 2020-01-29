@@ -518,7 +518,7 @@ void tick_worker(Datum _); void tick_worker(Datum _) {
 
 static void work(const MemoryContext oldMemoryContext, const Datum id, char **request, uint64 *timeout) {
     int rc;
-    Oid argtypes[] = {INT8OID, INT8OID};
+    static Oid argtypes[] = {INT8OID, INT8OID};
     Datum Values[] = {id, MyProcPid};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
@@ -561,7 +561,7 @@ static void work(const MemoryContext oldMemoryContext, const Datum id, char **re
 
 static void repeat_task(const Datum id) {
     int rc;
-    Oid argtypes[] = {INT8OID};
+    static Oid argtypes[] = {INT8OID};
     Datum Values[] = {id};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
@@ -590,7 +590,7 @@ static void repeat_task(const Datum id) {
 
 static void delete_task(const Datum id) {
     int rc;
-    Oid argtypes[] = {INT8OID};
+    static Oid argtypes[] = {INT8OID};
     Datum Values[] = {id};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
@@ -665,7 +665,7 @@ static void done(const Datum id, const char *data, const char *state) {
 //    static TimestampTz start;
     bool delete, repeat;//, more;
 //    char *queue = NULL;
-    Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID/*, INT8OID, TIMESTAMPTZOID*/};
+    static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID/*, INT8OID, TIMESTAMPTZOID*/};
     Datum Values[] = {id, CStringGetTextDatum(state), data ? CStringGetTextDatum(data) : (Datum)NULL/*, UInt64GetDatum(count), TimestampTzGetDatum(count ? start : (start = GetCurrentTimestamp()))*/};
     char Nulls[] = {' ', ' ', data ? ' ' : 'n', ' ', ' '};
     static SPIPlanPtr plan = NULL;
@@ -811,7 +811,45 @@ static void update_ps_display(const Datum id) {
     pfree(buf.data);
 }
 
+static void execute(const Datum id);
 static void more(void) {
+    int rc;
+    static Oid argtypes[] = {TEXTOID, TIMESTAMPTZOID, INT8OID, INT8OID};
+    Datum Values[] = {CStringGetTextDatum(queue), TimestampTzGetDatum(start), UInt64GetDatum(max), UInt64GetDatum(count)};
+    static SPIPlanPtr plan = NULL;
+    static char *command = NULL;
+    if (!command) {
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfo(&buf,
+            "WITH s AS (\n"
+            "SELECT  id\n"
+            "FROM    %s%s%s\n"
+            "WHERE   state = 'PLAN'\n"
+            "AND     dt <= current_timestamp\n"
+            "AND     queue = $1\n"
+            "AND     $2 + COALESCE(live, '0 sec'::INTERVAL) >= current_timestamp\n"
+            "AND     COALESCE(max, ~(1<<31)) >= $3\n"
+            "AND     COALESCE(count, 0) >= $4\n"
+            "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
+            ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id", schema_q, point, table_q, schema_q, point, table_q);
+        command = pstrdup(buf.data);
+        pfree(buf.data);
+    }
+    SPI_connect_my(command, StatementTimeout);
+    if (!plan) {
+        if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
+        if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    }
+    if ((rc = SPI_execute_plan(plan, Values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_commit();
+    if (SPI_processed != 1) SPI_finish_my(command); else {
+        bool id_isnull;
+        Datum id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
+        if (id_isnull) ereport(ERROR, (errmsg("%s(%s:%d): id_isnull", __func__, __FILE__, __LINE__)));
+        SPI_finish_my(command);
+        execute(id);
+    }
 }
 
 static void execute(const Datum id) {
