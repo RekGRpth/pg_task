@@ -395,12 +395,13 @@ static void register_task_worker(const Datum id, const char *queue, const uint64
     if (schema) schema_len = (sizeof("%s") - 1) + (strlen(schema) - 1) - 1;
     table_len = (sizeof("%s") - 1) + (strlen(table) - 1) - 1;
     queue_len = (sizeof("%s") - 1) + (strlen(queue) - 1) - 1;
-    if (database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 > BGW_EXTRALEN) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu > BGW_EXTRALEN", __func__, __FILE__, __LINE__, database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1)));
+    if (database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + sizeof(uint64)> BGW_EXTRALEN) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu > BGW_EXTRALEN", __func__, __FILE__, __LINE__, database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + sizeof(uint64))));
     if (snprintf(worker.bgw_extra, database_len + 1, "%s", database) != database_len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, database_len)));
     if (snprintf(worker.bgw_extra + database_len + 1, username_len + 1, "%s", username) != username_len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, username_len)));
     if (schema && snprintf(worker.bgw_extra + database_len + 1 + username_len + 1, schema_len + 1, "%s", schema) != schema_len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, schema_len)));
     if (snprintf(worker.bgw_extra + database_len + 1 + username_len + 1 + schema_len + 1, table_len + 1, "%s", table) != table_len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, table_len)));
     if (snprintf(worker.bgw_extra + database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1, queue_len + 1, "%s", queue) != queue_len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, queue_len)));
+    *(uint64 *)(worker.bgw_extra + database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1) = max;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): could not register background process", __func__, __FILE__, __LINE__), errhint("You may need to increase max_worker_processes.")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
@@ -887,8 +888,9 @@ void task_worker(Datum id); void task_worker(Datum id) {
     schema = username + strlen(username) + 1;
     table = schema + strlen(schema) + 1;
     queue = table + strlen(table) + 1;
+    max = *(uint64 *)(queue + strlen(queue) + 1);
     if (table == schema + 1) schema = NULL;
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetUInt64(id));
+    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %lu", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
     schema_q = schema ? quote_identifier(schema) : "";
     point = schema ? "." : "";
     table_q = quote_identifier(table);
