@@ -799,6 +799,9 @@ static void update_ps_display(const Datum id) {
 //    elog(LOG, "%s(%s:%d): id = %lu, MyBgworkerEntry->bgw_type = %s, MyBgworkerEntry->bgw_name = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), MyBgworkerEntry->bgw_type, MyBgworkerEntry->bgw_name);
 //    pgstat_report_appname(MyBgworkerEntry->bgw_type);
     init_ps_display(buf.data, "", "", "");
+    resetStringInfo(&buf);
+    appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
+    pgstat_report_appname(buf.data);
     pfree(buf.data);
 }
 
