@@ -41,11 +41,6 @@ const char *point;
 const char *table_q;
 TimestampTz start;
 
-/*void _PG_fini(void); void _PG_fini(void) {
-    if (schema && schema_q != schema) pfree((void *)schema_q);
-    if (table && table_q != table) pfree((void *)table_q);
-}*/
-
 static void sighup(SIGNAL_ARGS) {
     int save_errno = errno;
     got_sighup = true;
@@ -118,11 +113,8 @@ static void register_tick_worker(const char *database, const char *username) {
 
 static void SPI_connect_my(const char *command, const int timeout) {
     int rc;
-//    elog(LOG, "%s(%s:%d): command = %s, MyBgworkerEntry->bgw_type = %s, MyBgworkerEntry->bgw_name = %s", __func__, __FILE__, __LINE__, command, MyBgworkerEntry->bgw_type, MyBgworkerEntry->bgw_name);
     pgstat_report_activity(STATE_RUNNING, command);
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_connect_ext = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-//    pgstat_report_appname(MyBgworkerEntry->bgw_name);
-//    set_ps_display(MyBgworkerEntry->bgw_name, true);
     SPI_start_transaction();
     if (timeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, timeout); else disable_timeout(STATEMENT_TIMEOUT, false);
 }
@@ -217,8 +209,6 @@ static void check(void) {
         if (usename_isnull) ereport(ERROR, (errmsg("%s(%s:%d): usename_isnull", __func__, __FILE__, __LINE__)));
         if (start_isnull) ereport(ERROR, (errmsg("%s(%s:%d): start_isnull", __func__, __FILE__, __LINE__)));
         if (start) register_tick_worker(database, username);
-//        pfree(database);
-//        pfree(username);
     }
     SPI_finish_my(buf.data);
     pfree(buf.data);
@@ -296,9 +286,7 @@ static void init_table(void) {
     initStringInfo(&name);
     appendStringInfo(&name, "%s_parent_fkey", table);
     name_q = quote_identifier(name.data);
-//    elog(LOG, "%s(%s:%d): name_q = %s, name_q != name.data = %s", __func__, __FILE__, __LINE__, name_q, name_q != name.data ? "true" : "false");
     initStringInfo(&buf);
-//    elog(LOG, "%s(%s:%d): %s%s%s %s %s%s%s", __func__, __FILE__, __LINE__, schema_q, point, table_q, name_q, schema_q, point, table_q);
     appendStringInfo(&buf,
         "CREATE TABLE IF NOT EXISTS %s%s%s (\n"
         "    id BIGSERIAL NOT NULL PRIMARY KEY,\n"
@@ -320,7 +308,6 @@ static void init_table(void) {
         "    live INTERVAL,\n"
         "    CONSTRAINT %s FOREIGN KEY (parent) REFERENCES %s%s%s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
         ")", schema_q, point, table_q, name_q, schema_q, point, table_q);
-//    elog(LOG, "%s(%s:%d): buf.data = %s", __func__, __FILE__, __LINE__, buf.data);
     SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
@@ -611,62 +598,11 @@ static void delete_task(const Datum id) {
     SPI_finish_my(command);
 }
 
-/*static void execute(const Datum id);
-static void more_task(const char *queue) {
-    int rc;
-    Oid argtypes[] = {TEXTOID};
-    Datum Values[] = {CStringGetTextDatum(queue)};
-    static SPIPlanPtr plan = NULL;
-    static char *command = NULL;
-    elog(LOG, "%s(%s:%d): queue = %s", __func__, __FILE__, __LINE__, queue);
-    if (!command) {
-        StringInfoData buf;
-        initStringInfo(&buf);
-        appendStringInfoString(&buf, "WITH s AS (\nSELECT id, COALESCE(max, ~(1<<31)) AS max FROM ");
-        if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
-        appendStringInfo(&buf, "%s WHERE id IN (\n", quote_identifier(table));
-        appendStringInfoString(&buf,
-            "WITH s AS (\n"
-            "    SELECT      id, COALESCE(max, ~(1<<31)) AS max\n"
-            "    FROM        ");
-        if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
-        appendStringInfo(&buf, "%s AS t\n"
-            "    WHERE       t.state = 'PLAN'\n"
-            "    AND         dt <= current_timestamp\n"
-            "    AND         queue = $1\n"
-            "    GROUP BY    1, 2\n"
-            "    ORDER BY    2 DESC, 1\n"
-            ") SELECT unnest((array_agg(id ORDER BY id))[:GREATEST(max(max), 0)]) AS id FROM s\n", quote_identifier(table));
-        appendStringInfoString(&buf, ") ORDER BY 2 DESC, 1 LIMIT 1 FOR UPDATE SKIP LOCKED\n) UPDATE ");
-        if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
-        appendStringInfo(&buf, "%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id", quote_identifier(table));
-        command = pstrdup(buf.data);
-        pfree(buf.data);
-    }
-    SPI_connect_my(command, StatementTimeout);
-    if (!plan) {
-        if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
-        if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    }
-    if ((rc = SPI_execute_plan(plan, Values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    SPI_commit();
-    if (SPI_processed != 1) SPI_finish_my(command); else {
-        bool isnull;
-        Datum id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
-        if (isnull) ereport(ERROR, (errmsg("%s(%s:%d): isnull", __func__, __FILE__, __LINE__)));
-        SPI_finish_my(command);
-        execute(id);
-    }
-}*/
-
 static void done(const Datum id, const char *data, const char *state) {
     int rc;
-//    static uint64 count = 0;
-//    static TimestampTz start;
     bool delete, repeat;//, more;
-//    char *queue = NULL;
-    static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID/*, INT8OID, TIMESTAMPTZOID*/};
-    Datum Values[] = {id, CStringGetTextDatum(state), data ? CStringGetTextDatum(data) : (Datum)NULL/*, UInt64GetDatum(count), TimestampTzGetDatum(count ? start : (start = GetCurrentTimestamp()))*/};
+    static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
+    Datum Values[] = {id, CStringGetTextDatum(state), data ? CStringGetTextDatum(data) : (Datum)NULL};
     char Nulls[] = {' ', ' ', data ? ' ' : 'n', ' ', ' '};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
@@ -678,7 +614,6 @@ static void done(const Datum id, const char *data, const char *state) {
             "WITH s AS (SELECT id FROM %s%s%s WHERE id = $1 FOR UPDATE\n)\n"
             "UPDATE %s%s%s AS u SET state = $2, stop = current_timestamp, response = $3 FROM s WHERE u.id = s.id\n"
             "RETURNING delete, queue,\n"
-//            "COALESCE(count, 0) > $4 AND $5 + COALESCE(live, '0 sec'::INTERVAL) > current_timestamp AS more,\n"
             "repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", schema_q, point, table_q, schema_q, point, table_q);
         command = pstrdup(buf.data);
         pfree(buf.data);
@@ -691,23 +626,15 @@ static void done(const Datum id, const char *data, const char *state) {
     if ((rc = SPI_execute_plan(plan, Values, Nulls, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
-        bool delete_isnull, repeat_isnull;//, more_isnull;//, queue_isnull;
+        bool delete_isnull, repeat_isnull;
         delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &delete_isnull));
         repeat = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &repeat_isnull));
-//        more = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "more"), &more_isnull));
         if (delete_isnull) ereport(ERROR, (errmsg("%s(%s:%d): delete_isnull", __func__, __FILE__, __LINE__)));
         if (repeat_isnull) ereport(ERROR, (errmsg("%s(%s:%d): repeat_isnull", __func__, __FILE__, __LINE__)));
-//        if (more_isnull) ereport(ERROR, (errmsg("%s(%s:%d): more_isnull", __func__, __FILE__, __LINE__)));
-//        if (more) {
-//            queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &queue_isnull));
-//            if (queue_isnull) ereport(ERROR, (errmsg("%s(%s:%d): queue_isnull", __func__, __FILE__, __LINE__)));
-//        }
     }
     SPI_finish_my(command);
     if (repeat) repeat_task(id);
     if (delete && !data) delete_task(id);
-//    if (queue) { more_task(queue); pfree(queue); }
-//    count++;
 }
 
 static void success(const MemoryContext oldMemoryContext, char **data, char **state) {
@@ -736,7 +663,6 @@ static void success(const MemoryContext oldMemoryContext, char **data, char **st
         }
         *data = MemoryContextStrdup(oldMemoryContext, buf.data);
         pfree(buf.data);
-//        elog(LOG, "%s(%s:%d): data = %s", __func__, __FILE__, __LINE__, *data);
     }
     *state = "DONE";
 }
@@ -775,35 +701,13 @@ static void error(const MemoryContext oldMemoryContext, char **data, char **stat
     FreeErrorData(edata);
     *data = MemoryContextStrdup(oldMemoryContext, buf.data);
     pfree(buf.data);
-//    elog(LOG, "%s(%s:%d): data = %s", __func__, __FILE__, __LINE__, *data);
     *state = "FAIL";
 }
-
-/*static void update_bgw_type(const Datum arg) {
-    uint64 id = DatumGetUInt64(arg);
-    static size_t bgw_type_len = 0;
-    size_t len = (sizeof(" %lu") - 1) - 2;
-    for (int number = id; number /= 10; len++);
-    if (!bgw_type_len) bgw_type_len = strlen(MyBgworkerEntry->bgw_type);
-    if (bgw_type_len + len + 1 > BGW_MAXLEN) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu > BGW_MAXLEN", __func__, __FILE__, __LINE__, bgw_type_len + len + 1)));
-    if (snprintf(MyBgworkerEntry->bgw_type + bgw_type_len, len + 1, " %lu", id) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, len)));
-    MyBgworkerEntry->bgw_type[bgw_type_len + len + 1] = '\0';
-    elog(LOG, "%s(%s:%d): MyBgworkerEntry->bgw_type = %s, MyBgworkerEntry->bgw_name = %s", __func__, __FILE__, __LINE__, MyBgworkerEntry->bgw_type, MyBgworkerEntry->bgw_name);
-}*/
 
 static void update_ps_display(const Datum id) {
     StringInfoData buf;
     initStringInfo(&buf);
     appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_name, DatumGetUInt64(id));
-//    static size_t bgw_name_len = 0;
-//    size_t len = (sizeof(" %lu") - 1) - 2;
-//    for (int number = DatumGetUInt64(id); number /= 10; len++);
-//    if (!bgw_name_len) bgw_name_len = strlen(MyBgworkerEntry->bgw_name);
-//    if (bgw_name_len + len + 1 > BGW_MAXLEN) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu > BGW_MAXLEN", __func__, __FILE__, __LINE__, bgw_name_len + len + 1)));
-//    if (snprintf(MyBgworkerEntry->bgw_name + bgw_name_len, len + 1, " %lu", DatumGetUInt64(id)) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, len)));
-//    MyBgworkerEntry->bgw_name[bgw_name_len + len + 1] = '\0';
-//    elog(LOG, "%s(%s:%d): id = %lu, MyBgworkerEntry->bgw_type = %s, MyBgworkerEntry->bgw_name = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), MyBgworkerEntry->bgw_type, MyBgworkerEntry->bgw_name);
-//    pgstat_report_appname(MyBgworkerEntry->bgw_type);
     init_ps_display(buf.data, "", "", "");
     resetStringInfo(&buf);
     appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
@@ -877,53 +781,6 @@ static void execute(const Datum id) {
     if (data) pfree(data);
     more();
 }
-
-/*static void take(void) {
-    int rc;
-    Oid argtypes[] = {TEXTOID};
-    Datum Values[] = {CStringGetTextDatum(queue)};
-    static SPIPlanPtr plan = NULL;
-    static char *command = NULL;
-    elog(LOG, "%s(%s:%d): queue = %s", __func__, __FILE__, __LINE__, queue);
-    if (!command) {
-        StringInfoData buf;
-        initStringInfo(&buf);
-        appendStringInfoString(&buf, "WITH s AS (\nSELECT id, COALESCE(max, ~(1<<31)) AS max FROM ");
-        if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
-        appendStringInfo(&buf, "%s WHERE id IN (\n", quote_identifier(table));
-        appendStringInfoString(&buf,
-            "WITH s AS (\n"
-            "    SELECT      id, COALESCE(max, ~(1<<31)) AS max\n"
-            "    FROM        ");
-        if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
-        appendStringInfo(&buf, "%s AS t\n"
-            "    WHERE       t.state = 'PLAN'\n"
-            "    AND         dt <= current_timestamp\n"
-            "    AND         queue = $1\n"
-            "    GROUP BY    1, 2\n"
-            "    ORDER BY    2 DESC, 1\n"
-            ") SELECT unnest((array_agg(id ORDER BY id))[:GREATEST(max(max), 0)]) AS id FROM s\n", quote_identifier(table));
-        appendStringInfoString(&buf, ") ORDER BY 2 DESC, 1 LIMIT 1 FOR UPDATE SKIP LOCKED\n) UPDATE ");
-        if (schema) appendStringInfo(&buf, "%s.", quote_identifier(schema));
-        appendStringInfo(&buf, "%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id", quote_identifier(table));
-        command = pstrdup(buf.data);
-        pfree(buf.data);
-    }
-    SPI_connect_my(command, StatementTimeout);
-    if (!plan) {
-        if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
-        if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    }
-    if ((rc = SPI_execute_plan(plan, Values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    SPI_commit();
-    if (SPI_processed != 1) SPI_finish_my(command); else {
-        bool isnull;
-        Datum id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &isnull);
-        if (isnull) ereport(ERROR, (errmsg("%s(%s:%d): isnull", __func__, __FILE__, __LINE__)));
-        SPI_finish_my(command);
-        execute(id);
-    }
-}*/
 
 void task_worker(Datum id); void task_worker(Datum id) {
     start = GetCurrentTimestamp();
