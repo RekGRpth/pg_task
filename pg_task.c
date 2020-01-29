@@ -798,6 +798,5 @@ void task_worker(Datum id); void task_worker(Datum id) {
     table_q = quote_identifier(table);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(database, username, 0);
-    pgstat_report_appname(MyBgworkerEntry->bgw_type);
     execute(id);
 }
