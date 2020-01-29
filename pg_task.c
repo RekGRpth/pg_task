@@ -216,6 +216,8 @@ static void check(void) {
         if (usename_isnull) ereport(ERROR, (errmsg("%s(%s:%d): usename_isnull", __func__, __FILE__, __LINE__)));
         if (start_isnull) ereport(ERROR, (errmsg("%s(%s:%d): start_isnull", __func__, __FILE__, __LINE__)));
         if (start) register_tick_worker(database, username);
+        pfree(database);
+        pfree(username);
     }
     SPI_finish_my(buf.data);
     pfree(buf.data);
@@ -368,7 +370,7 @@ static void init_fix(void) {
     pfree(buf.data);
 }
 
-static void register_task_worker(const Datum id, const char *queue) {
+static void register_task_worker(const Datum id, const char *queue, const uint64 max) {
     BackgroundWorker worker;
     BackgroundWorkerHandle *handle;
     pid_t pid;
@@ -449,7 +451,7 @@ static void tick(void) {
         if (id_isnull) ereport(ERROR, (errmsg("%s(%s:%d): id_isnull", __func__, __FILE__, __LINE__)));
         if (queue_isnull) ereport(ERROR, (errmsg("%s(%s:%d): queue_isnull", __func__, __FILE__, __LINE__)));
         if (max_isnull) ereport(ERROR, (errmsg("%s(%s:%d): max_isnull", __func__, __FILE__, __LINE__)));
-        register_task_worker(id, queue);
+        register_task_worker(id, queue, max);
         pfree(queue);
     }
     SPI_finish_my(command);
