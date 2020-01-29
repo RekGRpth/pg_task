@@ -35,6 +35,7 @@ char *schema = NULL;
 char *table = NULL;
 char *queue = NULL;
 uint64 max;
+uint64 count;
 const char *schema_q;
 const char *point;
 const char *table_q;
@@ -810,15 +811,19 @@ static void update_ps_display(const Datum id) {
     pfree(buf.data);
 }
 
+static void more(void) {
+}
+
 static void execute(const Datum id) {
     int rc;
     uint64 timeout = 0;
     char *request, *data = NULL, *state;
     MemoryContext oldMemoryContext = CurrentMemoryContext;
+    count++;
     update_ps_display(id);
     work(oldMemoryContext, id, &request, &timeout);
     if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu, timeout = %lu, request = %s", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetUInt64(id), timeout, request);
+    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu, timeout = %lu, request = %s, count = %lu", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetUInt64(id), timeout, request, count);
     SPI_connect_my(request, timeout);
     PG_TRY(); {
         if ((rc = SPI_execute(request, false, 0)) < 0) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
@@ -832,6 +837,7 @@ static void execute(const Datum id) {
     pfree(request);
     done(id, data, state);
     if (data) pfree(data);
+    more();
 }
 
 /*static void take(void) {
@@ -883,6 +889,7 @@ static void execute(const Datum id) {
 
 void task_worker(Datum id); void task_worker(Datum id) {
     start = GetCurrentTimestamp();
+    count = 0;
     database = MyBgworkerEntry->bgw_extra;
     username = database + strlen(database) + 1;
     schema = username + strlen(username) + 1;
