@@ -208,13 +208,13 @@ static void check(void) {
     if ((rc = SPI_execute_with_args(buf.data, i * 2, argtypes, Values, Nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
-        bool isnull, start;
-        char *username, *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &isnull));
-        if (isnull) ereport(ERROR, (errmsg("%s(%s:%d): isnull", __func__, __FILE__, __LINE__)));
-        username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &isnull));
-        if (isnull) ereport(ERROR, (errmsg("%s(%s:%d): isnull", __func__, __FILE__, __LINE__)));
-        start = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "start"), &isnull));
-        if (isnull) ereport(ERROR, (errmsg("%s(%s:%d): isnull", __func__, __FILE__, __LINE__)));
+        bool database_isnull, usename_isnull, start_isnull;
+        char *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &database_isnull));
+        char *username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull));
+        bool start = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "start"), &start_isnull));
+        if (database_isnull) ereport(ERROR, (errmsg("%s(%s:%d): database_isnull", __func__, __FILE__, __LINE__)));
+        if (usename_isnull) ereport(ERROR, (errmsg("%s(%s:%d): usename_isnull", __func__, __FILE__, __LINE__)));
+        if (start_isnull) ereport(ERROR, (errmsg("%s(%s:%d): start_isnull", __func__, __FILE__, __LINE__)));
         if (start) register_tick_worker(database, username);
     }
     SPI_finish_my(buf.data);
@@ -263,9 +263,9 @@ static void lock(void) {
     if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
-        bool isnull;
-        bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "pg_try_advisory_lock"), &isnull));
-        if (isnull) ereport(ERROR, (errmsg("%s(%s:%d): isnull", __func__, __FILE__, __LINE__)));
+        bool lock_isnull;
+        bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "pg_try_advisory_lock"), &lock_isnull));
+        if (lock_isnull) ereport(ERROR, (errmsg("%s(%s:%d): lock_isnull", __func__, __FILE__, __LINE__)));
         if (!lock) ereport(ERROR, (errmsg("%s(%s:%d): Already running database = %s, username = %s", __func__, __FILE__, __LINE__, database, username)));
         MyBgworkerEntry->bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     }
@@ -430,7 +430,7 @@ static void tick(void) {
             ") SELECT array_agg(id ORDER BY id) AS id, queue, count FROM s WHERE count > 0 GROUP BY queue, count\n"
             ") SELECT unnest(id[:count]) AS id, queue, count FROM s ORDER BY count DESC\n"
             ") SELECT s.* FROM s INNER JOIN %s%s%s USING (id) FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id, u.queue", schema_q, point, table_q, schema_q, point, table_q, schema_q, point, table_q);
+            ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", schema_q, point, table_q, schema_q, point, table_q, schema_q, point, table_q);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
@@ -442,11 +442,13 @@ static void tick(void) {
     if ((rc = SPI_execute_plan(plan, NULL, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
-        bool id_isnull, queue_isnull;
+        bool id_isnull, queue_isnull, max_isnull;
         Datum id = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
         char *queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &queue_isnull));
+        uint64 max = DatumGetUInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
         if (id_isnull) ereport(ERROR, (errmsg("%s(%s:%d): id_isnull", __func__, __FILE__, __LINE__)));
         if (queue_isnull) ereport(ERROR, (errmsg("%s(%s:%d): queue_isnull", __func__, __FILE__, __LINE__)));
+        if (max_isnull) ereport(ERROR, (errmsg("%s(%s:%d): max_isnull", __func__, __FILE__, __LINE__)));
         register_task_worker(id, queue);
         pfree(queue);
     }
