@@ -216,8 +216,8 @@ static void check(void) {
         if (usename_isnull) ereport(ERROR, (errmsg("%s(%s:%d): usename_isnull", __func__, __FILE__, __LINE__)));
         if (start_isnull) ereport(ERROR, (errmsg("%s(%s:%d): start_isnull", __func__, __FILE__, __LINE__)));
         if (start) register_tick_worker(database, username);
-        pfree(database);
-        pfree(username);
+//        pfree(database);
+//        pfree(username);
     }
     SPI_finish_my(buf.data);
     pfree(buf.data);
