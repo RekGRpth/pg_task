@@ -135,8 +135,8 @@ static void check(void) {
     List *elemlist;
     StringInfoData buf;
     Oid *argtypes = NULL;
-    Datum *Values = NULL;
-    char *Nulls = NULL;
+    Datum *values = NULL;
+    char *nulls = NULL;
     char **str = NULL;
     elog(LOG, "%s(%s:%d): databases = %s", __func__, __FILE__, __LINE__, databases ? databases : "(null)");
     initStringInfo(&buf);
@@ -152,8 +152,8 @@ static void check(void) {
         char *rawstring = pstrdup(databases);
         if (!SplitGUCList(rawstring, ',', &elemlist)) ereport(LOG, (errcode(ERRCODE_SYNTAX_ERROR), errmsg("%s(%s:%d): invalid list syntax in parameter `pg_task.database` in postgresql.conf", __func__, __FILE__, __LINE__)));
         argtypes = palloc(sizeof(Oid) * list_length(elemlist) * 2);
-        Values = palloc(sizeof(Datum) * list_length(elemlist) * 2);
-        Nulls = palloc(sizeof(char) * list_length(elemlist) * 2);
+        values = palloc(sizeof(Datum) * list_length(elemlist) * 2);
+        nulls = palloc(sizeof(char) * list_length(elemlist) * 2);
         str = palloc(sizeof(char *) * list_length(elemlist) * 2);
         appendStringInfoString(&buf, "    AND         (d.datname, u.usename) IN (\n        ");
         for (ListCell *cell = list_head(elemlist); cell; cell = lnext(cell)) {
@@ -164,10 +164,10 @@ static void check(void) {
                 ListCell *cell = list_head(elemlist);
                 const char *database = (const char *)lfirst(cell);
                 const char *username = NULL;
-                Nulls[2 * i] = ' ';
-                Nulls[2 * i + 1] = ' ';
+                nulls[2 * i] = ' ';
+                nulls[2 * i + 1] = ' ';
                 if ((cell = lnext(cell))) username = (const char *)lfirst(cell);
-                else Nulls[2 * i + 1] = 'n';
+                else nulls[2 * i + 1] = 'n';
                 elog(LOG, "%s(%s:%d): database = %s, username = %s", __func__, __FILE__, __LINE__, database, username ? username : "(null)");
                 if (i > 0) appendStringInfoString(&buf, ", ");
                 appendStringInfo(&buf, "($%i, COALESCE($%i, i.usename))", 2 * i + 1, 2 * i + 1 + 1);
@@ -175,8 +175,8 @@ static void check(void) {
                 argtypes[2 * i + 1] = TEXTOID;
                 str[2 * i] = pstrdup(database);
                 str[2 * i + 1] = username ? pstrdup(username) : NULL;
-                Values[2 * i] = CStringGetTextDatum(str[2 * i]);
-                Values[2 * i + 1] = username ? CStringGetTextDatum(str[2 * i + 1]) : (Datum)NULL;
+                values[2 * i] = CStringGetTextDatum(str[2 * i]);
+                values[2 * i + 1] = username ? CStringGetTextDatum(str[2 * i + 1]) : (Datum)NULL;
             }
             pfree(rawstring);
             list_free(elemlist);
@@ -200,7 +200,7 @@ static void check(void) {
         "WHERE       (datname, usename) NOT IN (SELECT datname, usename FROM s)\n"
         "AND         classid = datid AND objid = usesysid AND database = datid");
     SPI_connect_my(buf.data, StatementTimeout);
-    if ((rc = SPI_execute_with_args(buf.data, i * 2, argtypes, Values, Nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_with_args(buf.data, i * 2, argtypes, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool database_isnull, usename_isnull, start_isnull;
@@ -215,8 +215,8 @@ static void check(void) {
     SPI_finish_my(buf.data);
     pfree(buf.data);
     if (argtypes) pfree(argtypes);
-    if (Values) pfree(Values);
-    if (Nulls) pfree(Nulls);
+    if (values) pfree(values);
+    if (nulls) pfree(nulls);
     if (str) { for (int j = 0; j < i * 2; j++) if (str[j]) pfree(str[j]); pfree(str); }
 }
 
@@ -253,7 +253,7 @@ void main_worker(Datum main_arg); void main_worker(Datum main_arg) {
 
 static void lock(void) {
     int rc;
-    const char *command = "SELECT pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) as lock FROM pg_database, pg_user WHERE datname = current_catalog AND usename = current_user";
+    static const char *command = "SELECT pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) as lock FROM pg_database, pg_user WHERE datname = current_catalog AND usename = current_user";
     SPI_connect_my(command, StatementTimeout);
     if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
@@ -284,6 +284,24 @@ static void init_schema(void) {
     pfree(buf.data);
 }
 
+static void init_type(void) {
+    int rc;
+    static Oid argtypes[] = {TEXTOID};
+    Datum values[] = {schema ? CStringGetTextDatum(schema) : (Datum)NULL};
+    char nulls[] = {schema ? ' ' : 'n'};
+    static const char *command = 
+        "DO $$ BEGIN\n"
+        "    IF NOT EXISTS (SELECT 1 FROM pg_type AS t INNER JOIN pg_namespace AS n ON n.oid = typnamespace WHERE nspname = COALESCE($1, current_schema) AND typname = 'STATE') THEN\n"
+        "        CREATE TYPE STATE AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');\n"
+        "    END IF;\n"
+        "END; $$";
+    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table);
+    SPI_connect_my(command, StatementTimeout);
+    if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_commit();
+    SPI_finish_my(command);
+}
+
 static void init_table(void) {
     int rc;
     StringInfoData buf, name;
@@ -305,7 +323,7 @@ static void init_table(void) {
         "    pid INT,\n"
         "    request TEXT NOT NULL,\n"
         "    response TEXT,\n"
-        "    state TEXT NOT NULL DEFAULT 'PLAN',\n"
+        "    state STATE NOT NULL DEFAULT 'PLAN',\n"
         "    timeout INTERVAL,\n"
         "    delete BOOLEAN NOT NULL DEFAULT false,\n"
         "    repeat INTERVAL,\n"
@@ -454,6 +472,7 @@ static void tick(void) {
 
 static void init(void) {
     if (schema) init_schema();
+    init_type();
     init_table();
     init_index("dt");
     init_index("state");
@@ -514,7 +533,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
 static void work(const MemoryContext oldMemoryContext, const Datum id, char **request, uint64 *timeout) {
     int rc;
     static Oid argtypes[] = {INT8OID, INT8OID};
-    Datum Values[] = {id, MyProcPid};
+    Datum values[] = {id, MyProcPid};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StringInfoData buf;
@@ -540,7 +559,7 @@ static void work(const MemoryContext oldMemoryContext, const Datum id, char **re
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
-    if ((rc = SPI_execute_plan(plan, Values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
         bool request_isnull, timeout_isnull;
@@ -557,7 +576,7 @@ static void work(const MemoryContext oldMemoryContext, const Datum id, char **re
 static void repeat_task(const Datum id) {
     int rc;
     static Oid argtypes[] = {INT8OID};
-    Datum Values[] = {id};
+    Datum values[] = {id};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     if (!command) {
@@ -578,7 +597,7 @@ static void repeat_task(const Datum id) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
-    if ((rc = SPI_execute_plan(plan, Values, NULL, false, 0)) != SPI_OK_INSERT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_INSERT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     SPI_finish_my(command);
 }
@@ -586,7 +605,7 @@ static void repeat_task(const Datum id) {
 static void delete_task(const Datum id) {
     int rc;
     static Oid argtypes[] = {INT8OID};
-    Datum Values[] = {id};
+    Datum values[] = {id};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     if (!command) {
@@ -601,7 +620,7 @@ static void delete_task(const Datum id) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
-    if ((rc = SPI_execute_plan(plan, Values, NULL, false, 0)) != SPI_OK_DELETE) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_DELETE) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     SPI_finish_my(command);
 }
@@ -610,8 +629,8 @@ static void done(const Datum id, const char *data, const char *state) {
     int rc;
     bool delete, repeat;//, more;
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
-    Datum Values[] = {id, CStringGetTextDatum(state), data ? CStringGetTextDatum(data) : (Datum)NULL};
-    char Nulls[] = {' ', ' ', data ? ' ' : 'n', ' ', ' '};
+    Datum values[] = {id, CStringGetTextDatum(state), data ? CStringGetTextDatum(data) : (Datum)NULL};
+    char nulls[] = {' ', ' ', data ? ' ' : 'n', ' ', ' '};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     elog(LOG, "%s(%s:%d): id = %lu, data = %s, state = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), data ? data : "(null)", state);
@@ -631,7 +650,7 @@ static void done(const Datum id, const char *data, const char *state) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
-    if ((rc = SPI_execute_plan(plan, Values, Nulls, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
         bool delete_isnull, repeat_isnull;
@@ -727,7 +746,7 @@ static void execute(const Datum id);
 static void more(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, TIMESTAMPTZOID, INT8OID, INT8OID};
-    Datum Values[] = {CStringGetTextDatum(queue), TimestampTzGetDatum(start), UInt64GetDatum(max), UInt64GetDatum(count)};
+    Datum values[] = {CStringGetTextDatum(queue), TimestampTzGetDatum(start), UInt64GetDatum(max), UInt64GetDatum(count)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     if (!command) {
@@ -753,7 +772,7 @@ static void more(void) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
-    if ((rc = SPI_execute_plan(plan, Values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     if (SPI_processed != 1) SPI_finish_my(command); else {
         bool id_isnull;
