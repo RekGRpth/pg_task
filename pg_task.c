@@ -36,6 +36,8 @@ char *table = NULL;
 char *queue = NULL;
 uint64 max;
 uint64 count;
+const char *database_q;
+const char *username_q;
 const char *schema_q;
 const char *point;
 const char *table_q;
@@ -218,7 +220,7 @@ static void check(void) {
     if (str) { for (int j = 0; j < i * 2; j++) if (str[j]) pfree(str[j]); pfree(str); }
 }
 
-void main_worker(Datum _); void main_worker(Datum _) {
+void main_worker(Datum main_arg); void main_worker(Datum main_arg) {
     elog(LOG, "%s(%s:%d): databases = %s", __func__, __FILE__, __LINE__, databases ? databases : "(null)");
     pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
@@ -458,7 +460,7 @@ static void init(void) {
     init_fix();
 }
 
-void tick_worker(Datum _); void tick_worker(Datum _) {
+void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     StringInfoData buf;
     database = MyBgworkerEntry->bgw_extra;
     username = database + strlen(database) + 1;
@@ -786,7 +788,8 @@ static void execute(const Datum id) {
     more();
 }
 
-void task_worker(Datum id); void task_worker(Datum id) {
+void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
+    Datum id = main_arg;
     start = GetCurrentTimestamp();
     count = 0;
     database = MyBgworkerEntry->bgw_extra;
