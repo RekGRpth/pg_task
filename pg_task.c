@@ -251,26 +251,6 @@ void main_worker(Datum main_arg); void main_worker(Datum main_arg) {
     proc_exit(0);
 }
 
-static void lock(void) {
-    int rc;
-    static const char *command = "SELECT pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) as lock FROM pg_database, pg_user WHERE datname = current_catalog AND usename = current_user";
-    SPI_connect_my(command, StatementTimeout);
-    if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    SPI_commit();
-    if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
-        bool lock_isnull;
-        bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "lock"), &lock_isnull));
-        if (lock_isnull) ereport(ERROR, (errmsg("%s(%s:%d): lock_isnull", __func__, __FILE__, __LINE__)));
-        if (!lock) {
-            ereport(WARNING, (errmsg("%s(%s:%d): Already running database = %s, username = %s", __func__, __FILE__, __LINE__, database, username)));
-            SPI_finish_my(command);
-            proc_exit(0);
-            return;
-        }
-    }
-    SPI_finish_my(command);
-}
-
 static void init_schema(void) {
     int rc;
     StringInfoData buf;
@@ -291,7 +271,7 @@ static void init_type(void) {
     initStringInfo(&buf);
     appendStringInfo(&buf,
         "DO $$ BEGIN\n"
-        "    IF NOT EXISTS (SELECT 1 FROM pg_type AS t INNER JOIN pg_namespace AS n ON n.oid = typnamespace WHERE nspname = %s AND typname = 'STATE') THEN\n"
+        "    IF NOT EXISTS (SELECT 1 FROM pg_type AS t INNER JOIN pg_namespace AS n ON n.oid = typnamespace WHERE nspname = %s AND typname = 'state') THEN\n"
         "        CREATE TYPE STATE AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');\n"
         "    END IF;\n"
         "END; $$", schema_q);
@@ -362,6 +342,36 @@ static void init_index(const char *index) {
     pfree(name.data);
     if (name_q != name.data) pfree((void *)name_q);
     if (index_q != index) pfree((void *)index_q);
+}
+
+static void init_lock(void) {
+    int rc;
+    static Oid argtypes[] = {TEXTOID, TEXTOID};
+    Datum values[] = {schema ? CStringGetTextDatum(schema) : (Datum)NULL, CStringGetTextDatum(table)};
+    char nulls[] = {schema ? ' ' : 'n', ' '};
+    static const char *command =
+        "SELECT      pg_try_advisory_lock(c.oid::BIGINT) AS lock\n"
+        "FROM        pg_class AS c\n"
+        "INNER JOIN  pg_namespace AS n ON n.oid = relnamespace\n"
+        "INNER JOIN  pg_tables AS t ON tablename = relname AND nspname = schemaname\n"
+        "WHERE       schemaname = COALESCE($1, current_schema)\n"
+        "AND         tablename = $2";
+    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table);
+    SPI_connect_my(command, StatementTimeout);
+    if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_commit();
+    if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
+        bool lock_isnull;
+        bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "lock"), &lock_isnull));
+        if (lock_isnull) ereport(ERROR, (errmsg("%s(%s:%d): lock_isnull", __func__, __FILE__, __LINE__)));
+        if (!lock) {
+            ereport(WARNING, (errmsg("%s(%s:%d): Already running database = %s, username = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table)));
+            SPI_finish_my(command);
+            proc_exit(0);
+            return;
+        }
+    }
+    SPI_finish_my(command);
 }
 
 static void init_fix(void) {
@@ -478,6 +488,7 @@ static void init(void) {
     init_table();
     init_index("dt");
     init_index("state");
+    init_lock();
     init_fix();
 }
 
@@ -506,7 +517,6 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     schema_q = schema ? quote_identifier(schema) : "";
     point = schema ? "." : "";
     table_q = quote_identifier(table);
-    lock();
     init();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
@@ -521,11 +531,11 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
             ResetLatch(MyLatch);
             CHECK_FOR_INTERRUPTS();
         }
-        if (got_sighup) {
-            got_sighup = false;
-            ProcessConfigFile(PGC_SIGHUP);
-            init();
-        }
+//        if (got_sighup) {
+//            got_sighup = false;
+//            ProcessConfigFile(PGC_SIGHUP);
+//            init();
+//        }
         if (got_sigterm) proc_exit(0);
         if (rc & WL_TIMEOUT) tick();
     } while (!got_sigterm);
