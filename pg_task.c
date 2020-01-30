@@ -286,20 +286,22 @@ static void init_schema(void) {
 
 static void init_type(void) {
     int rc;
-    static Oid argtypes[] = {TEXTOID};
-    Datum values[] = {schema ? CStringGetTextDatum(schema) : (Datum)NULL};
-    char nulls[] = {schema ? ' ' : 'n'};
-    static const char *command = 
+    const char *schema_q = schema ? quote_literal_cstr(schema) : "current_schema";
+    StringInfoData buf;
+    initStringInfo(&buf);
+    appendStringInfo(&buf,
         "DO $$ BEGIN\n"
-        "    IF NOT EXISTS (SELECT 1 FROM pg_type AS t INNER JOIN pg_namespace AS n ON n.oid = typnamespace WHERE nspname = COALESCE($1, current_schema) AND typname = 'STATE') THEN\n"
+        "    IF NOT EXISTS (SELECT 1 FROM pg_type AS t INNER JOIN pg_namespace AS n ON n.oid = typnamespace WHERE nspname = %s AND typname = 'STATE') THEN\n"
         "        CREATE TYPE STATE AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');\n"
         "    END IF;\n"
-        "END; $$";
+        "END; $$", schema_q);
     elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table);
-    SPI_connect_my(command, StatementTimeout);
-    if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_connect_my(buf.data, StatementTimeout);
+    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
-    SPI_finish_my(command);
+    SPI_finish_my(buf.data);
+    pfree(buf.data);
+    if (schema && schema_q != schema) pfree((void *)schema_q);
 }
 
 static void init_table(void) {
@@ -627,7 +629,7 @@ static void delete_task(const Datum id) {
 
 static void done(const Datum id, const char *data, const char *state) {
     int rc;
-    bool delete, repeat;//, more;
+    bool delete, repeat;
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
     Datum values[] = {id, CStringGetTextDatum(state), data ? CStringGetTextDatum(data) : (Datum)NULL};
     char nulls[] = {' ', ' ', data ? ' ' : 'n', ' ', ' '};
