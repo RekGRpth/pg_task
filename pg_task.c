@@ -253,13 +253,13 @@ void main_worker(Datum main_arg); void main_worker(Datum main_arg) {
 
 static void lock(void) {
     int rc;
-    const char *command = "SELECT pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) FROM pg_database, pg_user WHERE datname = current_catalog AND usename = current_user";
+    const char *command = "SELECT pg_try_advisory_lock(pg_database.oid::INT, pg_user.usesysid::INT) as lock FROM pg_database, pg_user WHERE datname = current_catalog AND usename = current_user";
     SPI_connect_my(command, StatementTimeout);
     if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
         bool lock_isnull;
-        bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "pg_try_advisory_lock"), &lock_isnull));
+        bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "lock"), &lock_isnull));
         if (lock_isnull) ereport(ERROR, (errmsg("%s(%s:%d): lock_isnull", __func__, __FILE__, __LINE__)));
         if (!lock) {
             ereport(WARNING, (errmsg("%s(%s:%d): Already running database = %s, username = %s", __func__, __FILE__, __LINE__, database, username)));
@@ -480,6 +480,8 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(database, username, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
+    database_q = quote_identifier(database);
+    username_q = quote_identifier(username);
     schema_q = schema ? quote_identifier(schema) : "";
     point = schema ? "." : "";
     table_q = quote_identifier(table);
@@ -800,6 +802,8 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     max = *(uint64 *)(queue + strlen(queue) + 1);
     if (table == schema + 1) schema = NULL;
     elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %lu", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
+    database_q = quote_identifier(database);
+    username_q = quote_identifier(username);
     schema_q = schema ? quote_identifier(schema) : "";
     point = schema ? "." : "";
     table_q = quote_identifier(table);
