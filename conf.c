@@ -113,7 +113,7 @@ static void register_tick_worker(const char *database, const char *username, con
 
 static void check(void) {
     int rc;
-    static Oid argtypes[] = {TEXTOID, INT4OID, JSONOID};
+    static Oid argtypes[] = {TEXTOID, INT4OID, TEXTOID};
     Datum values[] = {CStringGetTextDatum(table), Int32GetDatum(period), database ? CStringGetTextDatum(database) : (Datum)NULL};
     char nulls[] = {' ', database ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
@@ -122,10 +122,11 @@ static void check(void) {
         "            COALESCE(COALESCE(a.rolname, username), database) AS username,\n"
         "            schema,\n"
         "            COALESCE(\"table\", $1) AS table,\n"
-        "            COALESCE(period, $2) AS pertiod\n"
-        "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3/*::JSON*/, '[{}]')) AS s (database TEXT, username TEXT, schema TEXT, \"table\" TEXT, period BIGINT)\n"
+        "            COALESCE(period, $2) AS period\n"
+        "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (database TEXT, username TEXT, schema TEXT, \"table\" TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON s.database IS NULL OR (d.datname = s.database AND NOT d.datistemplate AND d.datallowconn)\n"
         "LEFT JOIN   pg_authid AS a ON a.rolname = COALESCE(s.username, (SELECT rolname FROM pg_authid WHERE oid = d.datdba)) AND a.rolcanlogin";
+    elog(LOG, "%s(%s:%d): database = %s, table = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", table, period);
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
@@ -135,8 +136,8 @@ static void check(void) {
     SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool database_isnull, usename_isnull, schema_isnull, table_isnull, period_isnull;
-        char *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &database_isnull));
-        char *username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull));
+        char *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "database"), &database_isnull));
+        char *username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "username"), &usename_isnull));
         char *schema = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"), &schema_isnull));
         char *table = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"), &table_isnull));
         int32 period = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
