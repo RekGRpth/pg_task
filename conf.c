@@ -27,7 +27,6 @@ void SPI_finish_my(const char *command) {
 }
 
 static void register_conf_worker(void) {
-//    uint32 database_len = strlen(database), table_len = strlen(table), period_len = sizeof(int32);
     StringInfoData buf;
     BackgroundWorker worker;
     initStringInfo(&buf);
@@ -53,10 +52,6 @@ static void register_conf_worker(void) {
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
-//    if (database_len + 1 + table_len + 1 + period_len > BGW_EXTRALEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_EXTRALEN", __func__, __FILE__, __LINE__, database_len + 1 + table_len + 1 + period_len)));
-//    memcpy(worker.bgw_extra, database, database_len);
-//    memcpy(worker.bgw_extra + database_len + 1, table, table_len);
-//    *(uint32 *)(worker.bgw_extra + database_len + 1 + table_len + 1) = period;
     RegisterBackgroundWorker(&worker);
 }
 
@@ -173,9 +168,6 @@ static void sigterm(SIGNAL_ARGS) {
 }
 
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
-//    database = MyBgworkerEntry->bgw_extra;
-//    table = database + strlen(database) + 1;
-//    period = *(uint32 *)(table + strlen(table) + 1);
     elog(LOG, "%s(%s:%d): database = %s, table = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", table, period);
     pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
@@ -184,7 +176,7 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
     check();
     do {
-        int rc = WaitLatch(MyLatch, WL_LATCH_SET | /*WL_TIMEOUT |*/ WL_POSTMASTER_DEATH, LONG_MAX, PG_WAIT_EXTENSION);
+        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, LONG_MAX, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) proc_exit(1);
         if (rc & WL_LATCH_SET) {
             ResetLatch(MyLatch);
