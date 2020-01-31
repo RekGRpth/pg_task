@@ -194,12 +194,6 @@ void main_worker(Datum main_arg); void main_worker(Datum main_arg) {
     check();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | /*WL_TIMEOUT |*/ WL_POSTMASTER_DEATH, LONG_MAX, PG_WAIT_EXTENSION);
-//        if (rc & WL_LATCH_SET) elog(LOG, "loop WL_LATCH_SET");
-//        if (rc & WL_TIMEOUT) elog(LOG, "loop WL_TIMEOUT");
-//        if (rc & WL_POSTMASTER_DEATH) elog(LOG, "loop WL_POSTMASTER_DEATH");
-//        if (got_sigterm) elog(LOG, "loop got_sigterm");
-//        if (got_sighup) elog(LOG, "loop got_sighup");
-//        if (ProcDiePending) elog(LOG, "loop ProcDiePending");
         if (rc & WL_POSTMASTER_DEATH) proc_exit(1);
         if (rc & WL_LATCH_SET) {
             ResetLatch(MyLatch);

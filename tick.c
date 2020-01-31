@@ -281,22 +281,11 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     init();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
-//        if (rc & WL_LATCH_SET) elog(LOG, "tick WL_LATCH_SET");
-//        if (rc & WL_TIMEOUT) elog(LOG, "tick WL_TIMEOUT");
-//        if (rc & WL_POSTMASTER_DEATH) elog(LOG, "tick WL_POSTMASTER_DEATH");
-//        if (got_sigterm) elog(LOG, "tick got_sigterm");
-//        if (got_sighup) elog(LOG, "tick got_sighup");
-//        if (ProcDiePending) elog(LOG, "loop ProcDiePending");
         if (rc & WL_POSTMASTER_DEATH) proc_exit(1);
         if (rc & WL_LATCH_SET) {
             ResetLatch(MyLatch);
             CHECK_FOR_INTERRUPTS();
         }
-//        if (got_sighup) {
-//            got_sighup = false;
-//            ProcessConfigFile(PGC_SIGHUP);
-//            init();
-//        }
         if (got_sigterm) proc_exit(0);
         if (rc & WL_TIMEOUT) tick();
     } while (!got_sigterm);
