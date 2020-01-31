@@ -134,6 +134,7 @@ static void check(void) {
     }
     if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
+    elog(LOG, "%s(%s:%d): database = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", tablename, period);
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool database_isnull, username_isnull, schemaname_isnull, tablename_isnull, period_isnull;
         char *database = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "database"), &database_isnull));
