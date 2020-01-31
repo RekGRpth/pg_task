@@ -1,6 +1,7 @@
 #include "include.h"
 
-extern volatile sig_atomic_t got_sigterm;
+static volatile sig_atomic_t got_sigterm = false;
+
 static char *database = NULL;
 static char *username = NULL;
 static char *schema = NULL;
@@ -294,6 +295,13 @@ static void execute(void) {
     done();
 }
 
+static void sigterm(SIGNAL_ARGS) {
+    int save_errno = errno;
+    got_sigterm = true;
+    SetLatch(MyLatch);
+    errno = save_errno;
+}
+
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     id = main_arg;
     start = GetCurrentTimestamp();
@@ -311,7 +319,6 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     schema_q = schema ? quote_identifier(schema) : "";
     point = schema ? "." : "";
     table_q = quote_identifier(table);
-    pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(database, username, 0);

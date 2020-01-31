@@ -18,7 +18,5 @@
 #include <utils/timeout.h>
 #include <utils/varlena.h>
 
-void sighup(SIGNAL_ARGS);
-void sigterm(SIGNAL_ARGS);
 void SPI_connect_my(const char *command, const int timeout);
 void SPI_finish_my(const char *command);

@@ -3,22 +3,8 @@
 PG_MODULE_MAGIC;
 
 static volatile sig_atomic_t got_sighup = false;
-volatile sig_atomic_t got_sigterm = false;
+static volatile sig_atomic_t got_sigterm = false;
 static char *databases;
-
-void sighup(SIGNAL_ARGS) {
-    int save_errno = errno;
-    got_sighup = true;
-    SetLatch(MyLatch);
-    errno = save_errno;
-}
-
-void sigterm(SIGNAL_ARGS) {
-    int save_errno = errno;
-    got_sigterm = true;
-    SetLatch(MyLatch);
-    errno = save_errno;
-}
 
 void SPI_connect_my(const char *command, const int timeout) {
     int rc;
@@ -180,6 +166,20 @@ static void check(void) {
     if (values) pfree(values);
     if (nulls) pfree(nulls);
     if (str) { for (int j = 0; j < i * 2; j++) if (str[j]) pfree(str[j]); pfree(str); }
+}
+
+static void sighup(SIGNAL_ARGS) {
+    int save_errno = errno;
+    got_sighup = true;
+    SetLatch(MyLatch);
+    errno = save_errno;
+}
+
+static void sigterm(SIGNAL_ARGS) {
+    int save_errno = errno;
+    got_sigterm = true;
+    SetLatch(MyLatch);
+    errno = save_errno;
 }
 
 void main_worker(Datum main_arg); void main_worker(Datum main_arg) {
