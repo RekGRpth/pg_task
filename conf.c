@@ -9,7 +9,7 @@ static int32 period;
 
 static void register_tick_worker(const char *database, const char *username, const char *schema, const char *table, int32 period) {
     StringInfoData buf;
-    uint32 database_len = strlen(database), username_len = strlen(username), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table);
+    uint32 database_len = strlen(database), username_len = strlen(username), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), period_len = sizeof(int32);
     pid_t pid;
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker;
@@ -37,11 +37,12 @@ static void register_tick_worker(const char *database, const char *username, con
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
-    if (database_len + 1 + username_len + 1 + schema_len + 1 + table_len > BGW_EXTRALEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_EXTRALEN", __func__, __FILE__, __LINE__, database_len + 1 + username_len + 1 + schema_len + 1 + table_len)));
+    if (database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1 + period_len > BGW_EXTRALEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_EXTRALEN", __func__, __FILE__, __LINE__, database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1 + period_len)));
     memcpy(worker.bgw_extra, database, database_len);
     memcpy(worker.bgw_extra + database_len + 1, username, username_len);
     memcpy(worker.bgw_extra + database_len + 1 + username_len + 1, schema, schema_len);
     memcpy(worker.bgw_extra + database_len + 1 + username_len + 1 + schema_len + 1, table, table_len);
+    *(uint32 *)(worker.bgw_extra + database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1) = period;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errmsg("%s(%s:%d): !RegisterDynamicBackgroundWorker", __func__, __FILE__, __LINE__)));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
