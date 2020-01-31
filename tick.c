@@ -57,7 +57,7 @@ static void init_table(void) {
     appendStringInfo(&buf,
         "CREATE TABLE IF NOT EXISTS %s%s%s (\n"
         "    id BIGSERIAL NOT NULL PRIMARY KEY,\n"
-        "    parent BIGINT DEFAULT NULLIF((current_setting('pg_scheduler.task_id'::TEXT, true))::BIGINT, 0),\n"
+        "    parent BIGINT DEFAULT current_setting('pg_scheduler.task_id', true)::BIGINT,\n"
         "    dt TIMESTAMP NOT NULL DEFAULT current_timestamp,\n"
         "    start TIMESTAMP,\n"
         "    stop TIMESTAMP,\n"

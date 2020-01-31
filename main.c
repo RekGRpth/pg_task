@@ -5,7 +5,6 @@ PG_MODULE_MAGIC;
 static volatile sig_atomic_t got_sighup = false;
 volatile sig_atomic_t got_sigterm = false;
 static char *databases;
-static int task_id;
 
 void sighup(SIGNAL_ARGS) {
     int save_errno = errno;
@@ -57,7 +56,6 @@ void _PG_init(void); void _PG_init(void) {
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) ereport(FATAL, (errmsg("%s(%s:%d): pg_task can only be loaded via shared_preload_libraries", __func__, __FILE__, __LINE__), errhint("Add pg_task to the shared_preload_libraries configuration variable in postgresql.conf.")));
     DefineCustomStringVariable("pg_task.database", "pg_task database", NULL, &databases, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.task_id", "pg_task task_id", NULL, &task_id, 0, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     elog(LOG, "%s(%s:%d): databases = %s", __func__, __FILE__, __LINE__, databases ? databases : "(null)");
     register_main_worker();
 }

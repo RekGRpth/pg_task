@@ -38,15 +38,10 @@ static void work(void) {
     Datum values[] = {id, MyProcPid};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
-    StringInfoData buf;
     update_ps_display();
     oldMemoryContext = CurrentMemoryContext;
     timeout = 0;
     count++;
-    initStringInfo(&buf);
-    appendStringInfo(&buf, "%lu", DatumGetUInt64(id));
-    if (set_config_option("pg_task.task_id", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SAVE, true, 0, false) <= 0) ereport(ERROR, (errmsg("%s(%s:%d): set_config_option <= 0", __func__, __FILE__, __LINE__)));
-    pfree(buf.data);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -56,7 +51,7 @@ static void work(void) {
             "SET     state = 'WORK',\n"
             "        start = current_timestamp,\n"
             "        pid = $2\n"
-            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", schema_q, point, table_q, schema_q, point, table_q);
+            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout, set_config('pg_scheduler.task_id', $1::TEXT, false)", schema_q, point, table_q, schema_q, point, table_q);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
