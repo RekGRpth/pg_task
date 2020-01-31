@@ -156,13 +156,13 @@ static void init_fix(void) {
     pfree(buf.data);
 }
 
-static void register_task_worker(const Datum id, const char *queue, const uint64 max) {
+static void register_task_worker(const Datum id, const char *queue, const uint32 max) {
     StringInfoData buf;
-    uint32 database_len = strlen(database), username_len = strlen(username), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), queue_len = strlen(queue), max_len = sizeof(uint64);
+    uint32 database_len = strlen(database), username_len = strlen(username), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), queue_len = strlen(queue), max_len = sizeof(uint32);
     pid_t pid;
     BackgroundWorker worker;
     BackgroundWorkerHandle *handle;
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %lu", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
+    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = id;
@@ -191,7 +191,7 @@ static void register_task_worker(const Datum id, const char *queue, const uint64
     memcpy(worker.bgw_extra + database_len + 1 + username_len + 1, schema, schema_len);
     memcpy(worker.bgw_extra + database_len + 1 + username_len + 1 + schema_len + 1, table, table_len);
     memcpy(worker.bgw_extra + database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1, queue, queue_len);
-    *(uint64 *)(worker.bgw_extra + database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1) = max;
+    *(uint32 *)(worker.bgw_extra + database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1) = max;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errmsg("%s(%s:%d): !RegisterDynamicBackgroundWorker", __func__, __FILE__, __LINE__)));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
@@ -238,7 +238,7 @@ static void tick(void) {
         bool id_isnull, queue_isnull, max_isnull;
         Datum id = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
         char *queue = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"), &queue_isnull));
-        uint64 max = DatumGetUInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
+        uint32 max = DatumGetUInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
         if (id_isnull) ereport(ERROR, (errmsg("%s(%s:%d): id_isnull", __func__, __FILE__, __LINE__)));
         if (queue_isnull) ereport(ERROR, (errmsg("%s(%s:%d): queue_isnull", __func__, __FILE__, __LINE__)));
         if (max_isnull) ereport(ERROR, (errmsg("%s(%s:%d): max_isnull", __func__, __FILE__, __LINE__)));

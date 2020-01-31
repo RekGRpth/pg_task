@@ -7,8 +7,8 @@ static char *username = NULL;
 static char *schema = NULL;
 static char *table = NULL;
 static char *queue = NULL;
-static uint64 max;
-static uint64 count;
+static uint32 max;
+static uint32 count;
 static const char *database_q;
 static const char *username_q;
 static const char *schema_q;
@@ -130,8 +130,8 @@ static void delete_task(void) {
 
 static void more(void) {
     int rc;
-    static Oid argtypes[] = {TEXTOID, TIMESTAMPTZOID, INT8OID, INT8OID};
-    Datum values[] = {CStringGetTextDatum(queue), TimestampTzGetDatum(start), UInt64GetDatum(max), UInt64GetDatum(count)};
+    static Oid argtypes[] = {TEXTOID, TIMESTAMPTZOID, INT4OID, INT4OID};
+    Datum values[] = {CStringGetTextDatum(queue), TimestampTzGetDatum(start), UInt32GetDatum(max), UInt32GetDatum(count)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     if (!command) {
@@ -279,7 +279,7 @@ static void error(void) {
 
 static void execute(void) {
     work();
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu, timeout = %lu, request = %s, count = %lu", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetUInt64(id), timeout, request, count);
+    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu, timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetUInt64(id), timeout, request, count);
     SPI_connect_my(request, timeout);
     PG_TRY(); {
         int rc;
@@ -311,9 +311,9 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     schema = username + strlen(username) + 1;
     table = schema + strlen(schema) + 1;
     queue = table + strlen(table) + 1;
-    max = *(uint64 *)(queue + strlen(queue) + 1);
+    max = *(uint32 *)(queue + strlen(queue) + 1);
     if (table == schema + 1) schema = NULL;
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %lu", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
+    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
     database_q = quote_identifier(database);
     username_q = quote_identifier(username);
     schema_q = schema ? quote_identifier(schema) : "";
