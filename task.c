@@ -150,7 +150,7 @@ static void more(void) {
             "AND     queue = $1\n"
             "AND     $2 + COALESCE(live, '0 sec'::INTERVAL) >= current_timestamp\n"
             "AND     COALESCE(max, ~(1<<31)) >= $3\n"
-            "AND     COALESCE(count, 0) >= $4\n"
+            "AND     COALESCE(count, 0) > $4\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
             ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id", schema_q, point, table_q, schema_q, point, table_q);
         command = pstrdup(buf.data);
