@@ -121,9 +121,9 @@ static void check(void) {
         "SELECT      COALESCE(d.datname, database) AS database,\n"
         "            COALESCE(COALESCE(a.rolname, username), database) AS username,\n"
         "            schemaname,\n"
-        "            COALESCE(\"tablename\", $1) AS tablename,\n"
+        "            COALESCE(tablename, $1) AS tablename,\n"
         "            COALESCE(period, $2) AS period\n"
-        "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (database TEXT, username TEXT, schemaname TEXT, \"tablename\" TEXT, period BIGINT)\n"
+        "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (database TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON s.database IS NULL OR (d.datname = s.database AND NOT d.datistemplate AND d.datallowconn)\n"
         "LEFT JOIN   pg_authid AS a ON a.rolname = COALESCE(s.username, (SELECT rolname FROM pg_authid WHERE oid = d.datdba)) AND a.rolcanlogin";
     elog(LOG, "%s(%s:%d): database = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", tablename, period);
