@@ -7,7 +7,7 @@ static volatile sig_atomic_t got_sigterm = false;
 
 static char *database;
 static char *tablename;
-static int32 period;
+static uint32 period;
 
 void SPI_connect_my(const char *command, const int timeout) {
     int rc;
@@ -60,14 +60,14 @@ void _PG_init(void); void _PG_init(void) {
     if (!process_shared_preload_libraries_in_progress) ereport(FATAL, (errmsg("%s(%s:%d): !process_shared_preload_libraries_in_progress", __func__, __FILE__, __LINE__)));
     DefineCustomStringVariable("pg_task.database", "pg_task database", NULL, &database, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.tablename", "pg_task tablename", NULL, &tablename, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.period", "pg_task period", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.period", "pg_task period", NULL, (int *)&period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     elog(LOG, "%s(%s:%d): database = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", tablename, period);
     register_conf_worker();
 }
 
-static void register_tick_worker(const char *database, const char *username, const char *schemaname, const char *tablename, int32 period) {
+static void register_tick_worker(const char *database, const char *username, const char *schemaname, const char *tablename, uint32 period) {
     StringInfoData buf;
-    uint32 database_len = strlen(database), username_len = strlen(username), schemaname_len = schemaname ? strlen(schemaname) : 0, tablename_len = strlen(tablename), period_len = sizeof(int32);
+    uint32 database_len = strlen(database), username_len = strlen(username), schemaname_len = schemaname ? strlen(schemaname) : 0, tablename_len = strlen(tablename), period_len = sizeof(uint32);
     pid_t pid;
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker;
@@ -114,8 +114,8 @@ static void register_tick_worker(const char *database, const char *username, con
 static void check(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, INT4OID, TEXTOID};
-    Datum values[] = {CStringGetTextDatum(tablename), Int32GetDatum(period), database ? CStringGetTextDatum(database) : (Datum)NULL};
-    char nulls[] = {' ', database ? ' ' : 'n'};
+    Datum values[] = {CStringGetTextDatum(tablename), UInt32GetDatum(period), database ? CStringGetTextDatum(database) : (Datum)NULL};
+    char nulls[] = {' ', ' ', database ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "SELECT      COALESCE(d.datname, database) AS database,\n"
@@ -140,7 +140,7 @@ static void check(void) {
         char *username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "username"), &usename_isnull));
         char *schemaname = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schemaname"), &schemaname_isnull));
         char *tablename = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "tablename"), &tablename_isnull));
-        int32 period = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
+        uint32 period = DatumGetUInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
         elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, period);
         if (database_isnull) ereport(ERROR, (errmsg("%s(%s:%d): database_isnull", __func__, __FILE__, __LINE__)));
         if (usename_isnull) ereport(ERROR, (errmsg("%s(%s:%d): usename_isnull", __func__, __FILE__, __LINE__)));
