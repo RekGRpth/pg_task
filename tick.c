@@ -268,16 +268,16 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     DefineCustomStringVariable(buf.data, "pg_task table", NULL, &table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     pfree(buf.data);
     elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, period = %i", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, period);
-    pqsignal(SIGHUP, sighup);
-    pqsignal(SIGTERM, sigterm);
-    BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnection(database, username, 0);
-    pgstat_report_appname(MyBgworkerEntry->bgw_type);
     database_q = quote_identifier(database);
     username_q = quote_identifier(username);
     schema_q = schema ? quote_identifier(schema) : "";
     point = schema ? "." : "";
     table_q = quote_identifier(table);
+    pqsignal(SIGHUP, sighup);
+    pqsignal(SIGTERM, sigterm);
+    BackgroundWorkerUnblockSignals();
+    BackgroundWorkerInitializeConnection(database, username, 0);
+    pgstat_report_appname(MyBgworkerEntry->bgw_type);
     init();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);

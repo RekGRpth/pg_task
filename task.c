@@ -1,5 +1,6 @@
 #include "include.h"
 
+extern volatile sig_atomic_t got_sigterm;
 static char *database = NULL;
 static char *username = NULL;
 static char *schema = NULL;
@@ -123,7 +124,7 @@ static void done(const Datum id, const char *data, const char *state) {
         initStringInfo(&buf);
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %s%s%s WHERE id = $1 FOR UPDATE\n)\n"
-            "UPDATE %s%s%s AS u SET state = $2, stop = current_timestamp, response = $3 FROM s WHERE u.id = s.id\n"
+            "UPDATE %s%s%s AS u SET state = $2::STATE, stop = current_timestamp, response = $3 FROM s WHERE u.id = s.id\n"
             "RETURNING delete, queue,\n"
             "repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", schema_q, point, table_q, schema_q, point, table_q);
         command = pstrdup(buf.data);
@@ -226,8 +227,33 @@ static void update_ps_display(const Datum id) {
     pfree(buf.data);
 }
 
-static void execute(const Datum id);
-static void more(void) {
+static void execute(const Datum id) {
+    int rc;
+    uint64 timeout = 0;
+    char *request, *data = NULL, *state;
+    MemoryContext oldMemoryContext = CurrentMemoryContext;
+    count++;
+    update_ps_display(id);
+    work(oldMemoryContext, id, &request, &timeout);
+    if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
+    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu, timeout = %lu, request = %s, count = %lu", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetUInt64(id), timeout, request, count);
+    SPI_connect_my(request, timeout);
+    PG_TRY(); {
+        if ((rc = SPI_execute(request, false, 0)) < 0) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+        success(oldMemoryContext, &data, &state);
+        SPI_commit();
+    } PG_CATCH(); {
+        error(oldMemoryContext, &data, &state);
+        SPI_rollback();
+    } PG_END_TRY();
+    SPI_finish_my(request);
+    pfree(request);
+    done(id, data, state);
+    if (data) pfree(data);
+}
+
+static Datum more(void) {
+    Datum id = (Datum)0;
     int rc;
     static Oid argtypes[] = {TEXTOID, TIMESTAMPTZOID, INT8OID, INT8OID};
     Datum values[] = {CStringGetTextDatum(queue), TimestampTzGetDatum(start), UInt64GetDatum(max), UInt64GetDatum(count)};
@@ -258,39 +284,13 @@ static void more(void) {
     }
     if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
-    if (SPI_processed != 1) SPI_finish_my(command); else {
+    if (SPI_processed == 1) {
         bool id_isnull;
-        Datum id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
+        id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
         if (id_isnull) ereport(ERROR, (errmsg("%s(%s:%d): id_isnull", __func__, __FILE__, __LINE__)));
-        SPI_finish_my(command);
-        execute(id);
     }
-}
-
-static void execute(const Datum id) {
-    int rc;
-    uint64 timeout = 0;
-    char *request, *data = NULL, *state;
-    MemoryContext oldMemoryContext = CurrentMemoryContext;
-    count++;
-    update_ps_display(id);
-    work(oldMemoryContext, id, &request, &timeout);
-    if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, id = %lu, timeout = %lu, request = %s, count = %lu", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, DatumGetUInt64(id), timeout, request, count);
-    SPI_connect_my(request, timeout);
-    PG_TRY(); {
-        if ((rc = SPI_execute(request, false, 0)) < 0) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-        success(oldMemoryContext, &data, &state);
-        SPI_commit();
-    } PG_CATCH(); {
-        error(oldMemoryContext, &data, &state);
-        SPI_rollback();
-    } PG_END_TRY();
-    SPI_finish_my(request);
-    pfree(request);
-    done(id, data, state);
-    if (data) pfree(data);
-    more();
+    SPI_finish_my(command);
+    return id;
 }
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
@@ -310,7 +310,35 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     schema_q = schema ? quote_identifier(schema) : "";
     point = schema ? "." : "";
     table_q = quote_identifier(table);
+    pqsignal(SIGHUP, sighup);
+    pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(database, username, 0);
     execute(id);
+
+    do {
+        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
+//        if (rc & WL_LATCH_SET) elog(LOG, "tick WL_LATCH_SET");
+//        if (rc & WL_TIMEOUT) elog(LOG, "tick WL_TIMEOUT");
+//        if (rc & WL_POSTMASTER_DEATH) elog(LOG, "tick WL_POSTMASTER_DEATH");
+//        if (got_sigterm) elog(LOG, "tick got_sigterm");
+//        if (got_sighup) elog(LOG, "tick got_sighup");
+//        if (ProcDiePending) elog(LOG, "loop ProcDiePending");
+        if (rc & WL_POSTMASTER_DEATH) proc_exit(1);
+        if (rc & WL_LATCH_SET) {
+            ResetLatch(MyLatch);
+            CHECK_FOR_INTERRUPTS();
+        }
+//        if (got_sighup) {
+//            got_sighup = false;
+//            ProcessConfigFile(PGC_SIGHUP);
+//            init();
+//        }
+        if (got_sigterm) proc_exit(0);
+        if (rc & WL_TIMEOUT) {
+            execute(id);
+            id = more();
+        }
+    } while (!got_sigterm && id != (Datum)0);
+    proc_exit(0);
 }
