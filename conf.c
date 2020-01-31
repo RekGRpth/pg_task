@@ -65,14 +65,14 @@ void _PG_init(void); void _PG_init(void) {
     register_conf_worker();
 }
 
-static void register_tick_worker(const char *database, const char *username, const char *schema, const char *table, int32 period) {
+static void register_tick_worker(const char *database, const char *username, const char *schemaname, const char *table, int32 period) {
     StringInfoData buf;
-    uint32 database_len = strlen(database), username_len = strlen(username), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), period_len = sizeof(int32);
+    uint32 database_len = strlen(database), username_len = strlen(username), schemaname_len = schemaname ? strlen(schemaname) : 0, table_len = strlen(table), period_len = sizeof(int32);
     pid_t pid;
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker;
     initStringInfo(&buf);
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, period = %d", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, period);
+    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, table = %s, period = %d", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", table, period);
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = (Datum) 0;
@@ -87,20 +87,20 @@ static void register_tick_worker(const char *database, const char *username, con
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_function_name, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s%s%s pg_task tick", schema ? schema : "", schema ? "." : "", table);
+    appendStringInfo(&buf, "%s%s%s pg_task tick", schemaname ? schemaname : "", schemaname ? "." : "", table);
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s %s %s%s%s pg_task tick", database, username, schema ? schema : "", schema ? "." : "", table);
+    appendStringInfo(&buf, "%s %s %s%s%s pg_task tick", database, username, schemaname ? schemaname : "", schemaname ? "." : "", table);
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
-    if (database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1 + period_len > BGW_EXTRALEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_EXTRALEN", __func__, __FILE__, __LINE__, database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1 + period_len)));
+    if (database_len + 1 + username_len + 1 + schemaname_len + 1 + table_len + 1 + period_len > BGW_EXTRALEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_EXTRALEN", __func__, __FILE__, __LINE__, database_len + 1 + username_len + 1 + schemaname_len + 1 + table_len + 1 + period_len)));
     memcpy(worker.bgw_extra, database, database_len);
     memcpy(worker.bgw_extra + database_len + 1, username, username_len);
-    memcpy(worker.bgw_extra + database_len + 1 + username_len + 1, schema, schema_len);
-    memcpy(worker.bgw_extra + database_len + 1 + username_len + 1 + schema_len + 1, table, table_len);
-    *(uint32 *)(worker.bgw_extra + database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1) = period;
+    memcpy(worker.bgw_extra + database_len + 1 + username_len + 1, schemaname, schemaname_len);
+    memcpy(worker.bgw_extra + database_len + 1 + username_len + 1 + schemaname_len + 1, table, table_len);
+    *(uint32 *)(worker.bgw_extra + database_len + 1 + username_len + 1 + schemaname_len + 1 + table_len + 1) = period;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errmsg("%s(%s:%d): !RegisterDynamicBackgroundWorker", __func__, __FILE__, __LINE__)));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
@@ -120,10 +120,10 @@ static void check(void) {
     static const char *command =
         "SELECT      COALESCE(d.datname, database) AS database,\n"
         "            COALESCE(COALESCE(a.rolname, username), database) AS username,\n"
-        "            schema,\n"
+        "            schemaname,\n"
         "            COALESCE(\"table\", $1) AS table,\n"
         "            COALESCE(period, $2) AS period\n"
-        "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (database TEXT, username TEXT, schema TEXT, \"table\" TEXT, period BIGINT)\n"
+        "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (database TEXT, username TEXT, schemaname TEXT, \"table\" TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON s.database IS NULL OR (d.datname = s.database AND NOT d.datistemplate AND d.datallowconn)\n"
         "LEFT JOIN   pg_authid AS a ON a.rolname = COALESCE(s.username, (SELECT rolname FROM pg_authid WHERE oid = d.datdba)) AND a.rolcanlogin";
     elog(LOG, "%s(%s:%d): database = %s, table = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", table, period);
@@ -135,20 +135,20 @@ static void check(void) {
     if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
-        bool database_isnull, usename_isnull, schema_isnull, table_isnull, period_isnull;
+        bool database_isnull, usename_isnull, schemaname_isnull, table_isnull, period_isnull;
         char *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "database"), &database_isnull));
         char *username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "username"), &usename_isnull));
-        char *schema = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"), &schema_isnull));
+        char *schemaname = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schemaname"), &schemaname_isnull));
         char *table = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"), &table_isnull));
         int32 period = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
         if (database_isnull) ereport(ERROR, (errmsg("%s(%s:%d): database_isnull", __func__, __FILE__, __LINE__)));
         if (usename_isnull) ereport(ERROR, (errmsg("%s(%s:%d): usename_isnull", __func__, __FILE__, __LINE__)));
         if (table_isnull) ereport(ERROR, (errmsg("%s(%s:%d): table_isnull", __func__, __FILE__, __LINE__)));
         if (period_isnull) ereport(ERROR, (errmsg("%s(%s:%d): period_isnull", __func__, __FILE__, __LINE__)));
-        register_tick_worker(database, username, schema, table, period);
+        register_tick_worker(database, username, schemaname, table, period);
         pfree(database);
         pfree(username);
-        pfree(schema);
+        pfree(schemaname);
         pfree(table);
     }
     SPI_finish_my(command);
