@@ -5,7 +5,7 @@ static volatile sig_atomic_t got_sigterm = false;
 static char *database = NULL;
 static char *username = NULL;
 static char *schemaname = NULL;
-static char *table = NULL;
+static char *tablename = NULL;
 static char *queue = NULL;
 static uint32 max;
 static uint32 count;
@@ -13,7 +13,7 @@ static const char *database_q;
 static const char *username_q;
 static const char *schemaname_q;
 static const char *point;
-static const char *table_q;
+static const char *tablename_q;
 static TimestampTz start;
 static Datum id;
 static MemoryContext oldMemoryContext;
@@ -52,7 +52,7 @@ static void work(void) {
             "SET     state = 'WORK',\n"
             "        start = current_timestamp,\n"
             "        pid = $2\n"
-            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout, set_config('pg_scheduler.task_id', $1::TEXT, false)", schemaname_q, point, table_q, schemaname_q, point, table_q);
+            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout, set_config('pg_scheduler.task_id', $1::TEXT, false)", schemaname_q, point, tablename_q, schemaname_q, point, tablename_q);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
@@ -91,7 +91,7 @@ static void repeat_task(void) {
             "    ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
             "END AS dt, queue, max, request, 'PLAN' AS state, timeout, delete, repeat, drift, count, live\n"
             "FROM %s%s%s WHERE id = '1' AND state IN ('DONE', 'FAIL') LIMIT 1\n"
-            ") INSERT INTO %s%s%s (parent, dt, queue, max, request, state, timeout, delete, repeat, drift, count, live) SELECT * FROM s", schemaname_q, point, table_q, schemaname_q, point, table_q);
+            ") INSERT INTO %s%s%s (parent, dt, queue, max, request, state, timeout, delete, repeat, drift, count, live) SELECT * FROM s", schemaname_q, point, tablename_q, schemaname_q, point, tablename_q);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
@@ -114,7 +114,7 @@ static void delete_task(void) {
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
-        appendStringInfo(&buf, "DELETE FROM %s%s%s WHERE id = $1", schemaname_q, point, table_q);
+        appendStringInfo(&buf, "DELETE FROM %s%s%s WHERE id = $1", schemaname_q, point, tablename_q);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
@@ -148,7 +148,7 @@ static void more(void) {
             "AND     COALESCE(max, ~(1<<31)) >= $3\n"
             "AND     COALESCE(count, 0) > $4\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id", schemaname_q, point, table_q, schemaname_q, point, table_q);
+            ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id", schemaname_q, point, tablename_q, schemaname_q, point, tablename_q);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
@@ -184,7 +184,7 @@ static void done(void) {
             "WITH s AS (SELECT id FROM %s%s%s WHERE id = $1 FOR UPDATE\n)\n"
             "UPDATE %s%s%s AS u SET state = $2::STATE, stop = current_timestamp, response = $3 FROM s WHERE u.id = s.id\n"
             "RETURNING delete, queue,\n"
-            "repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", schemaname_q, point, table_q, schemaname_q, point, table_q);
+            "repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", schemaname_q, point, tablename_q, schemaname_q, point, tablename_q);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
@@ -279,7 +279,7 @@ static void error(void) {
 
 static void execute(void) {
     work();
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, table = %s, id = %lu, timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", table, DatumGetUInt64(id), timeout, request, count);
+    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), timeout, request, count);
     SPI_connect_my(request, timeout);
     PG_TRY(); {
         int rc;
@@ -309,16 +309,16 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     database = MyBgworkerEntry->bgw_extra;
     username = database + strlen(database) + 1;
     schemaname = username + strlen(username) + 1;
-    table = schemaname + strlen(schemaname) + 1;
-    queue = table + strlen(table) + 1;
+    tablename = schemaname + strlen(schemaname) + 1;
+    queue = tablename + strlen(tablename) + 1;
     max = *(uint32 *)(queue + strlen(queue) + 1);
-    if (table == schemaname + 1) schemaname = NULL;
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, table = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", table, DatumGetUInt64(id), queue, max);
+    if (tablename == schemaname + 1) schemaname = NULL;
+    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), queue, max);
     database_q = quote_identifier(database);
     username_q = quote_identifier(username);
     schemaname_q = schemaname ? quote_identifier(schemaname) : "";
     point = schemaname ? "." : "";
-    table_q = quote_identifier(table);
+    tablename_q = quote_identifier(tablename);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(database, username, 0);
