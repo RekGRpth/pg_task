@@ -8,7 +8,8 @@ static char *table;
 static int32 period;
 
 static void register_tick_worker(const char *database, const char *username, const char *schema, const char *table, int32 period) {
-    size_t len, database_len = strlen(database), username_len = strlen(username), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table);
+    char *point = schema ? "." : "";
+    size_t len, len2, database_len = strlen(database), username_len = strlen(username), schema_len = schema ? strlen(schema) : 0, point_len = schema ? 1 : 0, table_len = strlen(table);
     pid_t pid;
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker;
@@ -19,26 +20,26 @@ static void register_tick_worker(const char *database, const char *username, con
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_main_arg = (Datum) 0;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
-    if ((len = snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task")) != sizeof("pg_task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu != %lu", __func__, __FILE__, __LINE__, len, sizeof("pg_task") - 1)));
-    if ((len = snprintf(worker.bgw_function_name, sizeof("tick_worker"), "tick_worker")) != sizeof("tick_worker") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu != %lu", __func__, __FILE__, __LINE__, len, sizeof("tick_worker") - 1)));
+    if ((len = snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task")) != sizeof("pg_task") - 1) ereport(ERROR, (errmsg("%s(%s:%d): %lu != %lu", __func__, __FILE__, __LINE__, len, sizeof("pg_task") - 1)));
+    if ((len = snprintf(worker.bgw_function_name, sizeof("tick_worker"), "tick_worker")) != sizeof("tick_worker") - 1) ereport(ERROR, (errmsg("%s(%s:%d): %lu != %lu", __func__, __FILE__, __LINE__, len, sizeof("tick_worker") - 1)));
+    len2 = (sizeof("%s%s%s pg_task tick") - 1) + (schema_len - 1) - 1 + (point_len - 1) - 1 + (table_len - 1) - 1;
+    if (len2 + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %lu > BGW_MAXLEN", __func__, __FILE__, __LINE__, len2 + 1)));
+    if ((len = snprintf(worker.bgw_type, len2 + 1, "%s%s%s pg_task tick", schema ? schema : "", point, table)) != len2) ereport(ERROR, (errmsg("%s(%s:%d): %lu != %lu", __func__, __FILE__, __LINE__, len, len2)));
+    len2 = (sizeof("%s %s %s") - 1) + (username_len - 1) - 1 + (database_len - 1) - 1 + (len - 1) - 1;
+    if (len2 + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %lu > BGW_MAXLEN", __func__, __FILE__, __LINE__, len2 + 1)));
+    if ((len = snprintf(worker.bgw_name, len + 1, "%s %s %s", username, database, worker.bgw_type)) != len2) ereport(ERROR, (errmsg("%s(%s:%d): %lu != %lu", __func__, __FILE__, __LINE__, len, len2)));
 
 
-    if (snprintf(worker.bgw_type, sizeof("pg_task tick"), "pg_task tick") != sizeof("pg_task tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, sizeof("pg_task tick") - 1)));
-
-
-    len = (sizeof("%s %s pg_task tick") - 1) + (strlen(username) - 1) - 1 + (strlen(database) - 1) - 1;
-    if (len + 1 > BGW_MAXLEN) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu > BGW_MAXLEN", __func__, __FILE__, __LINE__, len + 1)));
-    if (snprintf(worker.bgw_name, len + 1, "%s %s pg_task tick", username, database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, len)));
     database_len = (sizeof("%s") - 1) + (strlen(database) - 1) - 1;
     username_len = (sizeof("%s") - 1) + (strlen(username) - 1) - 1;
-    if (database_len + 1 + username_len + 1 > BGW_EXTRALEN) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu > BGW_EXTRALEN", __func__, __FILE__, __LINE__, database_len + 1 + username_len + 1)));
-    if (snprintf(worker.bgw_extra                   , database_len + 1, "%s", database) != database_len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, database_len)));
-    if (snprintf(worker.bgw_extra + database_len + 1, username_len + 1, "%s", username) != username_len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, username_len)));
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): could not register background process", __func__, __FILE__, __LINE__), errhint("You may need to increase max_worker_processes.")));
+    if (database_len + 1 + username_len + 1 > BGW_EXTRALEN) ereport(ERROR, (errmsg("%s(%s:%d): %lu > BGW_EXTRALEN", __func__, __FILE__, __LINE__, database_len + 1 + username_len + 1)));
+    if (snprintf(worker.bgw_extra                   , database_len + 1, "%s", database) != database_len) ereport(ERROR, (errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, database_len)));
+    if (snprintf(worker.bgw_extra + database_len + 1, username_len + 1, "%s", username) != username_len) ereport(ERROR, (errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, username_len)));
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errmsg("%s(%s:%d): could not register background process", __func__, __FILE__, __LINE__), errhint("You may need to increase max_worker_processes.")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
-        case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): could not start background process", __func__, __FILE__, __LINE__), errhint("More details may be available in the server log.")));
-        case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): cannot start background processes without postmaster", __func__, __FILE__, __LINE__), errhint("Kill all remaining database processes and restart the database.")));
+        case BGWH_STOPPED: ereport(ERROR, (errmsg("%s(%s:%d): could not start background process", __func__, __FILE__, __LINE__), errhint("More details may be available in the server log.")));
+        case BGWH_POSTMASTER_DIED: ereport(ERROR, (errmsg("%s(%s:%d): cannot start background processes without postmaster", __func__, __FILE__, __LINE__), errhint("Kill all remaining database processes and restart the database.")));
         default: ereport(ERROR, (errmsg("%s(%s:%d): Unexpected bgworker handle status", __func__, __FILE__, __LINE__)));
     }
     pfree(handle);
