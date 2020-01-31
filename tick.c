@@ -266,19 +266,12 @@ static void sigterm(SIGNAL_ARGS) {
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
-    StringInfoData buf;
     database = MyBgworkerEntry->bgw_extra;
     username = database + strlen(database) + 1;
-    initStringInfo(&buf);
-    appendStringInfo(&buf, "pg_task_period.%s", database);
-    DefineCustomIntVariable(buf.data, "how often to run tick", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    resetStringInfo(&buf);
-    appendStringInfo(&buf, "pg_task_schema.%s", database);
-    DefineCustomStringVariable(buf.data, "pg_task schema", NULL, &schema, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    resetStringInfo(&buf);
-    appendStringInfo(&buf, "pg_task_table.%s", database);
-    DefineCustomStringVariable(buf.data, "pg_task table", NULL, &table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    pfree(buf.data);
+    schema = username + strlen(username) + 1;
+    table = schema + strlen(schema) + 1;
+    period = *(uint32 *)(table + strlen(table) + 1);
+    if (table == schema + 1) schema = NULL;
     elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, period = %i", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, period);
     database_q = quote_identifier(database);
     username_q = quote_identifier(username);
