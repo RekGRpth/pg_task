@@ -139,11 +139,10 @@ static void check(void) {
         bool database_isnull, username_isnull, schemaname_isnull, tablename_isnull, period_isnull;
         char *database = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "database"), &database_isnull));
         char *username = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "username"), &username_isnull));
-        char *schemaname = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schemaname"), &schemaname_isnull));
+        Datum datum = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schemaname"), &schemaname_isnull);
+        char *schemaname = schemaname_isnull ? NULL : TextDatumGetCString(datum);
         char *tablename = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "tablename"), &tablename_isnull));
         uint32 period = DatumGetUInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
-//        elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, period);
-        elog(LOG, "%s(%s:%d): database_isnull = %s, username_isnull = %s, schemaname_isnull = %s, tablename_isnull = %s, period_isnull = %s", __func__, __FILE__, __LINE__, database_isnull ? "true" : "false", username_isnull ? "true" : "false", schemaname_isnull ? "true" : "false", tablename_isnull ? "true" : "false", period_isnull ? "true" : "false");
         if (database_isnull) ereport(ERROR, (errmsg("%s(%s:%d): database_isnull", __func__, __FILE__, __LINE__)));
         if (username_isnull) ereport(ERROR, (errmsg("%s(%s:%d): username_isnull", __func__, __FILE__, __LINE__)));
         if (tablename_isnull) ereport(ERROR, (errmsg("%s(%s:%d): tablename_isnull", __func__, __FILE__, __LINE__)));
