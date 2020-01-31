@@ -118,8 +118,8 @@ static void check(void) {
     char nulls[] = {' ', ' ', database ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
     static const char *command =
-        "SELECT      COALESCE(d.datname, database) AS database,\n"
-        "            COALESCE(COALESCE(a.rolname, username), database) AS username,\n"
+        "SELECT      COALESCE(d.datname, database)::TEXT AS database,\n"
+        "            COALESCE(COALESCE(a.rolname, username), database)::TEXT AS username,\n"
         "            schemaname,\n"
         "            COALESCE(tablename, $1) AS tablename,\n"
         "            COALESCE(period, $2) AS period\n"
@@ -135,21 +135,22 @@ static void check(void) {
     if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
-        bool database_isnull, usename_isnull, schemaname_isnull, tablename_isnull, period_isnull;
-        char *database = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "database"), &database_isnull));
-        char *username = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "username"), &usename_isnull));
-        char *schemaname = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schemaname"), &schemaname_isnull));
-        char *tablename = DatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "tablename"), &tablename_isnull));
+        bool database_isnull, username_isnull, schemaname_isnull, tablename_isnull, period_isnull;
+        char *database = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "database"), &database_isnull));
+        char *username = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "username"), &username_isnull));
+        char *schemaname = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schemaname"), &schemaname_isnull));
+        char *tablename = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "tablename"), &tablename_isnull));
         uint32 period = DatumGetUInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
-        elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, period);
+//        elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, period);
+        elog(LOG, "%s(%s:%d): database_isnull = %s, username_isnull = %s, schemaname_isnull = %s, tablename_isnull = %s, period_isnull = %s", __func__, __FILE__, __LINE__, database_isnull ? "true" : "false", username_isnull ? "true" : "false", schemaname_isnull ? "true" : "false", tablename_isnull ? "true" : "false", period_isnull ? "true" : "false");
         if (database_isnull) ereport(ERROR, (errmsg("%s(%s:%d): database_isnull", __func__, __FILE__, __LINE__)));
-        if (usename_isnull) ereport(ERROR, (errmsg("%s(%s:%d): usename_isnull", __func__, __FILE__, __LINE__)));
+        if (username_isnull) ereport(ERROR, (errmsg("%s(%s:%d): username_isnull", __func__, __FILE__, __LINE__)));
         if (tablename_isnull) ereport(ERROR, (errmsg("%s(%s:%d): tablename_isnull", __func__, __FILE__, __LINE__)));
         if (period_isnull) ereport(ERROR, (errmsg("%s(%s:%d): period_isnull", __func__, __FILE__, __LINE__)));
         register_tick_worker(database, username, schemaname, tablename, period);
         pfree(database);
         pfree(username);
-        pfree(schemaname);
+        if (schemaname) pfree(schemaname);
         pfree(tablename);
     }
     SPI_finish_my(command);
