@@ -188,11 +188,11 @@ static void register_task_worker(const Datum id, const char *queue, const uint64
     if (snprintf(worker.bgw_extra + database_len + 1 + username_len + 1 + schema_len + 1, table_len + 1, "%s", table) != table_len) ereport(ERROR, (errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, table_len)));
     if (snprintf(worker.bgw_extra + database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1, queue_len + 1, "%s", queue) != queue_len) ereport(ERROR, (errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, queue_len)));
     *(uint64 *)(worker.bgw_extra + database_len + 1 + username_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1) = max;
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errmsg("%s(%s:%d): could not register background process", __func__, __FILE__, __LINE__), errhint("You may need to increase max_worker_processes.")));
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errmsg("%s(%s:%d): !RegisterDynamicBackgroundWorker", __func__, __FILE__, __LINE__)));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
-        case BGWH_STOPPED: ereport(ERROR, (errmsg("%s(%s:%d): could not start background process", __func__, __FILE__, __LINE__), errhint("More details may be available in the server log.")));
-        case BGWH_POSTMASTER_DIED: ereport(ERROR, (errmsg("%s(%s:%d): cannot start background processes without postmaster", __func__, __FILE__, __LINE__), errhint("Kill all remaining database processes and restart the database.")));
+        case BGWH_STOPPED: ereport(ERROR, (errmsg("%s(%s:%d): WaitForBackgroundWorkerStartup == BGWH_STOPPED", __func__, __FILE__, __LINE__)));
+        case BGWH_POSTMASTER_DIED: ereport(ERROR, (errmsg("%s(%s:%d): WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED", __func__, __FILE__, __LINE__)));
         default: ereport(ERROR, (errmsg("%s(%s:%d): Unexpected bgworker handle status", __func__, __FILE__, __LINE__)));
     }
     pfree(handle);
