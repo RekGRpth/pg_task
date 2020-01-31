@@ -8,10 +8,11 @@ static char *table;
 static int32 period;
 
 static void register_tick_worker(const char *database, const char *username, const char *schema, const char *table, int32 period) {
-    size_t len, database_len, username_len, schema_len, table_len;
+    size_t len, database_len = strlen(database), username_len = strlen(username), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table);
     pid_t pid;
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker;
+    elog(LOG, "%s(%s:%d): database = %s, username = %s, schema = %s, table = %s, period = %d", __func__, __FILE__, __LINE__, database, username, schema ? schema : "(null)", table, period);
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -20,7 +21,11 @@ static void register_tick_worker(const char *database, const char *username, con
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     if (snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task") != sizeof("pg_task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, sizeof("pg_task") - 1)));
     if (snprintf(worker.bgw_function_name, sizeof("tick_worker"), "tick_worker") != sizeof("tick_worker") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, sizeof("tick_worker") - 1)));
+
+
     if (snprintf(worker.bgw_type, sizeof("pg_task tick"), "pg_task tick") != sizeof("pg_task tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, sizeof("pg_task tick") - 1)));
+
+
     len = (sizeof("%s %s pg_task tick") - 1) + (strlen(username) - 1) - 1 + (strlen(database) - 1) - 1;
     if (len + 1 > BGW_MAXLEN) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu > BGW_MAXLEN", __func__, __FILE__, __LINE__, len + 1)));
     if (snprintf(worker.bgw_name, len + 1, "%s %s pg_task tick", username, database) != len) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, len)));

@@ -20,6 +20,7 @@ void SPI_finish_my(const char *command) {
 }
 
 static void register_conf_worker(void) {
+    size_t len;
     BackgroundWorker worker;
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -27,10 +28,10 @@ static void register_conf_worker(void) {
     worker.bgw_notify_pid = 0;
     worker.bgw_main_arg = (Datum) 0;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
-    if (snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task") != sizeof("pg_task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, sizeof("pg_task") - 1)));
-    if (snprintf(worker.bgw_function_name, sizeof("conf_worker"), "conf_worker") != sizeof("conf_worker") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, sizeof("conf_worker") - 1)));
-    if (snprintf(worker.bgw_type, sizeof("pg_task conf"), "pg_task conf") != sizeof("pg_task conf") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, sizeof("pg_task conf") - 1)));
-    if (snprintf(worker.bgw_name, sizeof("postgres postgres pg_task conf"), "postgres postgres pg_task conf") != sizeof("postgres postgres pg_task conf") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, sizeof("postgres postgres pg_task conf") - 1)));
+    if ((len = snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task")) != sizeof("pg_task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu != %lu", __func__, __FILE__, __LINE__, len, sizeof("pg_task") - 1)));
+    if ((len = snprintf(worker.bgw_function_name, sizeof("conf_worker"), "conf_worker")) != sizeof("conf_worker") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu != %lu", __func__, __FILE__, __LINE__, len, sizeof("conf_worker") - 1)));
+    if ((len = snprintf(worker.bgw_type, sizeof("pg_task conf"), "pg_task conf")) != sizeof("pg_task conf") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu != %lu", __func__, __FILE__, __LINE__, len, sizeof("pg_task conf") - 1)));
+    if ((len = snprintf(worker.bgw_name, sizeof("postgres postgres pg_task conf"), "postgres postgres pg_task conf")) != sizeof("postgres postgres pg_task conf") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu != %lu", __func__, __FILE__, __LINE__, len, sizeof("postgres postgres pg_task conf") - 1)));
     RegisterBackgroundWorker(&worker);
 }
 
