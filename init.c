@@ -2,6 +2,10 @@
 
 PG_MODULE_MAGIC;
 
+static char *database;
+static char *table;
+static int32 period;
+
 void SPI_connect_my(const char *command, const int timeout) {
     int rc;
     pgstat_report_activity(STATE_RUNNING, command);
@@ -20,6 +24,7 @@ void SPI_finish_my(const char *command) {
 }
 
 static void register_conf_worker(void) {
+    uint32 database_len = strlen(database), table_len = strlen(table), period_len = sizeof(int32);
     StringInfoData buf;
     BackgroundWorker worker;
     initStringInfo(&buf);
@@ -45,11 +50,19 @@ static void register_conf_worker(void) {
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
+    if (database_len + 1 + table_len + 1 + period_len > BGW_EXTRALEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_EXTRALEN", __func__, __FILE__, __LINE__, database_len + 1 + table_len + 1 + period_len)));
+    memcpy(worker.bgw_extra, database, database_len);
+    memcpy(worker.bgw_extra + database_len + 1, table, table_len);
+    *(uint32 *)(worker.bgw_extra + database_len + 1 + table_len + 1) = period;
     RegisterBackgroundWorker(&worker);
 }
 
 void _PG_init(void); void _PG_init(void) {
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) ereport(FATAL, (errmsg("%s(%s:%d): !process_shared_preload_libraries_in_progress", __func__, __FILE__, __LINE__)));
+    DefineCustomStringVariable("pg_task.database", "pg_task database", NULL, &database, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.table", "pg_task table", "task", &table, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.period", "pg_task period", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    elog(LOG, "%s(%s:%d): database = %s, table = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", table, period);
     register_conf_worker();
 }
