@@ -19,8 +19,8 @@ static void register_tick_worker(const char *database, const char *username, con
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_main_arg = (Datum) 0;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
-    if (snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task") != sizeof("pg_task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, sizeof("pg_task") - 1)));
-    if (snprintf(worker.bgw_function_name, sizeof("tick_worker"), "tick_worker") != sizeof("tick_worker") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, sizeof("tick_worker") - 1)));
+    if ((len = snprintf(worker.bgw_library_name, sizeof("pg_task"), "pg_task")) != sizeof("pg_task") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu != %lu", __func__, __FILE__, __LINE__, len, sizeof("pg_task") - 1)));
+    if ((len = snprintf(worker.bgw_function_name, sizeof("tick_worker"), "tick_worker")) != sizeof("tick_worker") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): %lu != %lu", __func__, __FILE__, __LINE__, len, sizeof("tick_worker") - 1)));
 
 
     if (snprintf(worker.bgw_type, sizeof("pg_task tick"), "pg_task tick") != sizeof("pg_task tick") - 1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("%s(%s:%d): snprintf != %lu", __func__, __FILE__, __LINE__, sizeof("pg_task tick") - 1)));
