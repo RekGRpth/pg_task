@@ -59,7 +59,7 @@ void _PG_init(void); void _PG_init(void) {
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) ereport(FATAL, (errmsg("%s(%s:%d): !process_shared_preload_libraries_in_progress", __func__, __FILE__, __LINE__)));
     DefineCustomStringVariable("pg_task.database", "pg_task database", NULL, &database, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.table", "pg_task table", "task", &table, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.table", "pg_task table", NULL, &table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.period", "pg_task period", NULL, &period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     elog(LOG, "%s(%s:%d): database = %s, table = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", table, period);
     register_conf_worker();
