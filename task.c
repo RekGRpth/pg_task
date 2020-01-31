@@ -2,25 +2,25 @@
 
 static volatile sig_atomic_t got_sigterm = false;
 
-static char *database = NULL;
-static char *username = NULL;
-static char *schemaname = NULL;
-static char *tablename = NULL;
-static char *queue = NULL;
-static uint32 max;
-static uint32 count;
-static const char *database_q;
-static const char *username_q;
-static const char *schemaname_q;
-static const char *point;
-static const char *tablename_q;
-static TimestampTz start;
-static Datum id;
-static MemoryContext oldMemoryContext;
-static uint64 timeout;
 static char *request;
 static char *response;
 static char *state;
+static const char *database = NULL;
+static const char *database_q;
+static const char *point;
+static const char *queue = NULL;
+static const char *schemaname = NULL;
+static const char *schemaname_q;
+static const char *tablename = NULL;
+static const char *tablename_q;
+static const char *username = NULL;
+static const char *username_q;
+static Datum id;
+static MemoryContext oldMemoryContext;
+static TimestampTz start;
+static uint32 count;
+static uint32 max;
+static uint64 timeout;
 
 static void update_ps_display(void) {
     StringInfoData buf;

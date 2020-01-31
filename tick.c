@@ -2,16 +2,16 @@
 
 static volatile sig_atomic_t got_sigterm = false;
 
-static int period;
-static char *database = NULL;
-static char *username = NULL;
-static char *schemaname = NULL;
-static char *tablename = NULL;
+static const char *database;
 static const char *database_q;
-static const char *username_q;
-static const char *schemaname_q;
 static const char *point;
+static const char *schemaname;
+static const char *schemaname_q;
+static const char *tablename;
 static const char *tablename_q;
+static const char *username;
+static const char *username_q;
+static int period;
 
 static void init_schema(void) {
     int rc;
