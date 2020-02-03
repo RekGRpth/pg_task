@@ -125,7 +125,6 @@ static void check(void) {
     static Oid argtypes[] = {TEXTOID, INT4OID, TEXTOID};
     Datum values[] = {CStringGetTextDatum(tablename), UInt32GetDatum(period), database ? CStringGetTextDatum(database) : (Datum)NULL};
     char nulls[] = {' ', ' ', database ? ' ' : 'n'};
-    static SPIPlanPtr plan = NULL;
     static const char *command =
         "SELECT      COALESCE(datname, database)::TEXT AS database,\n"
         "            datname,\n"
@@ -139,11 +138,7 @@ static void check(void) {
         "LEFT JOIN   pg_authid AS a ON rolname = COALESCE(username, (SELECT rolname FROM pg_authid WHERE oid = datdba)) AND rolcanlogin";
     elog(LOG, "%s(%s:%d): database = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", tablename, period);
     SPI_connect_my(command, StatementTimeout);
-    if (!plan) {
-        if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
-        if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    }
-    if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     elog(LOG, "%s(%s:%d): database = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", tablename, period);
     for (uint64 row = 0; row < SPI_processed; row++) {
