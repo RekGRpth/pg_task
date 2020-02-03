@@ -86,7 +86,6 @@ static void create_username(const char *username) {
 
 static void create_database(const char *username, const char *database) {
     StringInfoData buf;
-    MemoryContext oldcontext = CurrentMemoryContext;
     const char *username_q = quote_identifier(username);
     const char *database_q = quote_identifier(database);
     ParseState *pstate = make_parsestate(NULL);
@@ -96,7 +95,7 @@ static void create_database(const char *username, const char *database) {
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE DATABASE %s WITH OWNER = %s", database_q, username_q);
     pstate->p_sourcetext = buf.data;
-    options = lappend(options, makeDefElem("owner", (Node *) makeString((char *)username), -1));
+    options = lappend(options, makeDefElem("owner", (Node *)makeString((char *)username), -1));
     stmt->dbname = (char *)database;
     stmt->options = options;
     SPI_connect_my(buf.data, StatementTimeout);
@@ -107,7 +106,6 @@ static void create_database(const char *username, const char *database) {
     if (username_q != username) pfree((void *)username_q);
     if (database_q != database) pfree((void *)database_q);
     pfree(buf.data);
-    MemoryContextSwitchTo(oldcontext);
 }
 
 static void register_tick_worker(const char *database, const char *username, const char *schemaname, const char *tablename, uint32 period) {
