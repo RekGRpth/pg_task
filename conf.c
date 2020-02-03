@@ -103,6 +103,7 @@ static void create_database(const char *username, const char *database) {
     SPI_commit();
     SPI_finish_my(buf.data);
     free_parsestate(pstate);
+    list_free_deep(options);
     if (username_q != username) pfree((void *)username_q);
     if (database_q != database) pfree((void *)database_q);
     pfree(buf.data);
