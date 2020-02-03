@@ -97,7 +97,7 @@ static void create_database(const char *username, const char *database) {
     appendStringInfo(&buf, "CREATE DATABASE %s WITH OWNER = %s", database_q, username_q);
     pstate->p_sourcetext = buf.data;
     options = lappend(options, makeDefElem("owner", (Node *) makeString((char *)username), -1));
-    stmt->dbname = pstrdup(database);
+    stmt->dbname = (char *)database;
     stmt->options = options;
     SPI_connect_my(buf.data, StatementTimeout);
     createdb(pstate, stmt);
