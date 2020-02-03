@@ -84,82 +84,11 @@ static void create_username(const char *username) {
     pfree(buf.data);
 }
 
-#define GetSysCacheOid1_(cacheId, oidcol, key1) GetSysCacheOid_(cacheId, oidcol, key1, 0, 0, 0)
-
-/*static HeapTuple SearchSysCache_(int cacheId, Datum key1, Datum key2, Datum key3, Datum key4) {
-    Assert(cacheId >= 0 && cacheId < SysCacheSize && PointerIsValid(SysCache[cacheId]));
-    return SearchCatCache(SysCache[cacheId], key1, key2, key3, key4);
-}*/
-
-static Oid GetSysCacheOid_(int cacheId, AttrNumber oidcol, Datum key1, Datum key2, Datum key3, Datum key4) {
-    HeapTuple tuple;
-    bool isNull;
-    Oid result;
-    bool b = IsTransactionState();
-    elog(LOG, "%s(%s:%d): cacheId = %i, b = %s", __func__, __FILE__, __LINE__, cacheId, b ? "true" : "false");
-    tuple = SearchSysCache(cacheId, key1, key2, key3, key4);
-    elog(LOG, "%s(%s:%d): cacheId = %i", __func__, __FILE__, __LINE__, cacheId);
-    if (!HeapTupleIsValid(tuple)) return InvalidOid;
-    return InvalidOid;
-/*    result = heap_getattr(tuple, oidcol, SysCache[cacheId]->cc_tupdesc, &isNull);
-    Assert(!isNull);
-    ReleaseSysCache(tuple);
-    return result;*/
-}
-
-static Oid get_role_oid_(const char *rolname, bool missing_ok) {
-    Oid oid;
-    elog(LOG, "%s(%s:%d): rolname = %s, missing_ok = %s", __func__, __FILE__, __LINE__, rolname, missing_ok ? "true" : "false");
-    oid = GetSysCacheOid1(AUTHNAME, Anum_pg_type_oid, CStringGetDatum(rolname));
-    elog(LOG, "%s(%s:%d): oid = %u", __func__, __FILE__, __LINE__, oid);
-    if (!OidIsValid(oid) && !missing_ok) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("role \"%s\" does not exist", rolname)));
-    return oid;
-}
-
-static void createdb_(ParseState *pstate, const CreatedbStmt *stmt) {
-    Oid datdba;
-    ListCell *option;
-    char *dbname = stmt->dbname;
-    DefElem *downer = NULL;
-    char *dbowner = NULL;
-    elog(LOG, "%s(%s:%d): dbname = %s", __func__, __FILE__, __LINE__, dbname);
-    foreach(option, stmt->options) {
-        DefElem *defel = (DefElem *) lfirst(option);
-        elog(LOG, "%s(%s:%d): defel->defname = %s", __func__, __FILE__, __LINE__, defel->defname);
-        if (strcmp(defel->defname, "owner") == 0) downer = defel;
-    }
-    if (downer && downer->arg) dbowner = defGetString(downer);
-    elog(LOG, "%s(%s:%d): dbowner = %s", __func__, __FILE__, __LINE__, dbowner ? dbowner : "(null)");
-//    {
-//    Datum datum = CStringGetDatum(dbowner);
-//    elog(LOG, "%s(%s:%d): dbowner = %s", __func__, __FILE__, __LINE__, dbowner ? dbowner : "(null)");
-//    }
-    if (dbowner) datdba = get_role_oid_(dbowner, false); else datdba = GetUserId();
-    elog(LOG, "%s(%s:%d): datdba = %u", __func__, __FILE__, __LINE__, datdba);
-}
-
 static void create_database(const char *username, const char *database) {
     StringInfoData buf;
     MemoryContext oldcontext = CurrentMemoryContext;
     const char *username_q = quote_identifier(username);
     const char *database_q = quote_identifier(database);
-/*    elog(LOG, "%s(%s:%d): username = %s, database = %s", __func__, __FILE__, __LINE__, username, database);
-    {
-    List *raw_parsetree_list;
-    ParseState *pstate = make_parsestate(NULL);
-    ListCell *list_item;
-    MemoryContext parsecontext = AllocSetContextCreate(TopMemoryContext, "pg_task parse/plan", ALLOCSET_DEFAULT_MINSIZE, ALLOCSET_DEFAULT_INITSIZE, ALLOCSET_DEFAULT_MAXSIZE);
-    MemoryContext oldcontext = MemoryContextSwitchTo(parsecontext);
-    initStringInfo(&buf);
-    appendStringInfo(&buf, "CREATE DATABASE %s WITH OWNER = %s", database_q, username_q);
-    raw_parsetree_list = pg_parse_query(buf.data);
-    pstate->p_sourcetext = buf.data;
-    foreach(list_item, raw_parsetree_list) {
-        RawStmt *parsetree = lfirst_node(RawStmt, list_item);
-        createdb(pstate, (CreatedbStmt *) parsetree);
-    }
-    MemoryContextSwitchTo(oldcontext);
-    }*/
     ParseState *pstate = make_parsestate(NULL);
     List *options = NIL;
     CreatedbStmt *stmt = makeNode(CreatedbStmt);
@@ -173,12 +102,9 @@ static void create_database(const char *username, const char *database) {
     stmt->dbname = pstrdup(database);
     stmt->options = options;
     SPI_connect_my(buf.data, StatementTimeout);
-//    StartTransactionCommand();
-    createdb_(pstate, stmt);
     oid = createdb(pstate, stmt);
     SPI_commit();
     SPI_finish_my(buf.data);
-//    CommitTransactionCommand();
     elog(LOG, "%s(%s:%d): username = %s, database = %s", __func__, __FILE__, __LINE__, username, database);
     elog(LOG, "%s(%s:%d): oid = %u", __func__, __FILE__, __LINE__, oid);
     free_parsestate(pstate);
