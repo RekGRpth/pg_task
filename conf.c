@@ -70,9 +70,35 @@ void _PG_init(void); void _PG_init(void) {
 }
 
 static void create_username(const char *username) {
+    int rc;
+    StringInfoData buf;
+    const char *username_q = quote_identifier(username);
+    elog(LOG, "%s(%s:%d): username = %s", __func__, __FILE__, __LINE__, username);
+    initStringInfo(&buf);
+    appendStringInfo(&buf, "CREATE USER %s", username_q);
+    SPI_connect_my(buf.data, StatementTimeout);
+    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_commit();
+    SPI_finish_my(buf.data);
+    if (username_q != username) pfree((void *)username_q);
+    pfree(buf.data);
 }
 
 static void create_database(const char *username, const char *database) {
+    int rc;
+    StringInfoData buf;
+    const char *username_q = quote_identifier(username);
+    const char *database_q = quote_identifier(database);
+    elog(LOG, "%s(%s:%d): username = %s, database = %s", __func__, __FILE__, __LINE__, username, database);
+    initStringInfo(&buf);
+    appendStringInfo(&buf, "CREATE DATABASE %s WITH OWNER = %s", database_q, username_q);
+    SPI_connect_my(buf.data, StatementTimeout);
+    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_commit();
+    SPI_finish_my(buf.data);
+    if (username_q != username) pfree((void *)username_q);
+    if (database_q != database) pfree((void *)database_q);
+    pfree(buf.data);
 }
 
 static void register_tick_worker(const char *database, const char *username, const char *schemaname, const char *tablename, uint32 period) {
@@ -138,7 +164,7 @@ static void check(void) {
         "LEFT JOIN   pg_authid AS a ON rolname = COALESCE(username, (SELECT rolname FROM pg_authid WHERE oid = datdba)) AND rolcanlogin";
     elog(LOG, "%s(%s:%d): database = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", tablename, period);
     SPI_connect_my(command, StatementTimeout);
-    if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     elog(LOG, "%s(%s:%d): database = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", tablename, period);
     for (uint64 row = 0; row < SPI_processed; row++) {
