@@ -150,7 +150,7 @@ static void init_fix(void) {
         "    FROM    pg_stat_activity\n"
         "    WHERE   datname = current_catalog\n"
         "    AND     usename = current_user\n"
-        "    AND     application_name = concat_ws(' ', $1||'.', $2, 'pg_task', 'task', queue, id)\n"
+        "    AND     application_name = concat_ws(' ', 'pg_task', $1||'.', $2, queue, id)\n"
         ") for update skip locked) update %s%s%s as u set state = 'PLAN' from s where u.id = s.id", schemaname_q, point, tablename_q, schemaname_q, point, tablename_q);
     SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
@@ -181,11 +181,11 @@ static void register_task_worker(const Datum id, const char *queue, const uint32
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_function_name, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s%s%s pg_task task %s", schemaname ? schemaname : "", schemaname ? "." : "", tablename, queue);
+    appendStringInfo(&buf, "pg_task %s%s%s %s", schemaname ? schemaname : "", schemaname ? "." : "", tablename, queue);
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s %s %s%s%s pg_task task %s", username, database, schemaname ? schemaname : "", schemaname ? "." : "", tablename, queue);
+    appendStringInfo(&buf, "%s %s pg_task %s%s%s %s", username, database, schemaname ? schemaname : "", schemaname ? "." : "", tablename, queue);
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
@@ -223,7 +223,7 @@ static void tick(void) {
             "LEFT JOIN   pg_stat_activity AS a\n"
             "ON          datname = current_catalog\n"
             "AND         usename = current_user\n"
-            "AND         backend_type = concat_ws(' ', $1||'.', $2, 'pg_task', 'task', queue)\n"
+            "AND         backend_type = concat_ws(' ', 'pg_task', $1||'.', $2, queue)\n"
             "WHERE       t.state = 'PLAN'\n"
             "AND         dt <= current_timestamp\n"
             ") SELECT id, queue, max - count(pid) AS count FROM s GROUP BY id, queue, max\n"
