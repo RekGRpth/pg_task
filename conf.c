@@ -71,7 +71,6 @@ static void register_tick_worker(const char *database, const char *username, con
     pid_t pid;
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker;
-    initStringInfo(&buf);
     elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, period);
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -79,6 +78,7 @@ static void register_tick_worker(const char *database, const char *username, con
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
+    initStringInfo(&buf);
     appendStringInfoString(&buf, "pg_task");
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_library_name, buf.data, buf.len);
