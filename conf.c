@@ -69,6 +69,12 @@ void _PG_init(void); void _PG_init(void) {
     register_conf_worker();
 }
 
+static void create_username(const char *username) {
+}
+
+static void create_database(const char *username, const char *database) {
+}
+
 static void register_tick_worker(const char *database, const char *username, const char *schemaname, const char *tablename, uint32 period) {
     StringInfoData buf;
     uint32 database_len = strlen(database), username_len = strlen(username), schemaname_len = schemaname ? strlen(schemaname) : 0, tablename_len = strlen(tablename), period_len = sizeof(uint32);
@@ -121,14 +127,16 @@ static void check(void) {
     char nulls[] = {' ', ' ', database ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
     static const char *command =
-        "SELECT      COALESCE(d.datname, database)::TEXT AS database,\n"
-        "            COALESCE(COALESCE(a.rolname, username), database)::TEXT AS username,\n"
+        "SELECT      COALESCE(datname, database)::TEXT AS database,\n"
+        "            datname,\n"
+        "            COALESCE(COALESCE(rolname, username), database)::TEXT AS username,\n"
+        "            rolname,\n"
         "            schemaname,\n"
         "            COALESCE(tablename, $1) AS tablename,\n"
         "            COALESCE(period, $2) AS period\n"
         "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (database TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
-        "LEFT JOIN   pg_database AS d ON s.database IS NULL OR (d.datname = s.database AND NOT d.datistemplate AND d.datallowconn)\n"
-        "LEFT JOIN   pg_authid AS a ON a.rolname = COALESCE(s.username, (SELECT rolname FROM pg_authid WHERE oid = d.datdba)) AND a.rolcanlogin";
+        "LEFT JOIN   pg_database AS d ON database IS NULL OR (datname = database AND NOT datistemplate AND datallowconn)\n"
+        "LEFT JOIN   pg_authid AS a ON rolname = COALESCE(username, (SELECT rolname FROM pg_authid WHERE oid = datdba)) AND rolcanlogin";
     elog(LOG, "%s(%s:%d): database = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", tablename, period);
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
@@ -139,16 +147,20 @@ static void check(void) {
     SPI_commit();
     elog(LOG, "%s(%s:%d): database = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", tablename, period);
     for (uint64 row = 0; row < SPI_processed; row++) {
-        bool database_isnull, username_isnull, schemaname_isnull, tablename_isnull, period_isnull;
+        bool database_isnull, username_isnull, schemaname_isnull, tablename_isnull, period_isnull, datname_isnull, rolname_isnull;
         char *database = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "database", &database_isnull);
         char *username = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "username", &username_isnull);
         char *schemaname = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schemaname", &schemaname_isnull);
         char *tablename = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "tablename", &tablename_isnull);
         uint32 period = DatumGetUInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
+        SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull);
+        SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "rolname"), &rolname_isnull);
         if (database_isnull) ereport(ERROR, (errmsg("%s(%s:%d): database_isnull", __func__, __FILE__, __LINE__)));
         if (username_isnull) ereport(ERROR, (errmsg("%s(%s:%d): username_isnull", __func__, __FILE__, __LINE__)));
         if (tablename_isnull) ereport(ERROR, (errmsg("%s(%s:%d): tablename_isnull", __func__, __FILE__, __LINE__)));
         if (period_isnull) ereport(ERROR, (errmsg("%s(%s:%d): period_isnull", __func__, __FILE__, __LINE__)));
+        if (datname_isnull) create_username(username);
+        if (rolname_isnull) create_database(username, database);
         register_tick_worker(database, username, schemaname, tablename, period);
         pfree(database);
         pfree(username);
