@@ -29,13 +29,13 @@ void SPI_finish_my(const char *command) {
 static void register_conf_worker(void) {
     StringInfoData buf;
     BackgroundWorker worker;
-    initStringInfo(&buf);
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = (Datum) 0;
     worker.bgw_notify_pid = 0;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
+    initStringInfo(&buf);
     appendStringInfoString(&buf, "pg_task");
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_library_name, buf.data, buf.len);
