@@ -134,6 +134,8 @@ static void init_lock(void) {
         }
     }
     SPI_finish_my(command);
+    if (schemaname) pfree((void *)values[0]);
+    pfree((void *)values[1]);
 }
 
 static void init_fix(void) {
@@ -157,6 +159,8 @@ static void init_fix(void) {
     SPI_commit();
     SPI_finish_my(buf.data);
     pfree(buf.data);
+    if (schemaname) pfree((void *)values[0]);
+    pfree((void *)values[1]);
 }
 
 static void register_task_worker(const Datum id, const char *queue, const uint32 max) {
@@ -253,6 +257,8 @@ static void tick(void) {
         pfree(queue);
     }
     SPI_finish_my(command);
+    if (schemaname) pfree((void *)values[0]);
+    pfree((void *)values[1]);
 }
 
 static void init(void) {

@@ -166,6 +166,7 @@ static void more(void) {
         if (id_isnull) ereport(ERROR, (errmsg("%s(%s:%d): id_isnull", __func__, __FILE__, __LINE__)));
     }
     SPI_finish_my(command);
+    pfree((void *)values[0]);
 }
 
 static void done(void) {
@@ -203,6 +204,8 @@ static void done(void) {
         if (repeat_isnull) ereport(ERROR, (errmsg("%s(%s:%d): repeat_isnull", __func__, __FILE__, __LINE__)));
     }
     SPI_finish_my(command);
+    pfree((void *)values[1]);
+    if (response) pfree((void *)values[2]);
     if (repeat) repeat_task();
     if (delete && !response) delete_task();
     if (response) pfree(response);

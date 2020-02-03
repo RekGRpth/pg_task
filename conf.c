@@ -154,6 +154,8 @@ static void check(void) {
         pfree(tablename);
     }
     SPI_finish_my(command);
+    pfree((void *)values[0]);
+    if (database) pfree((void *)values[2]);
 }
 
 static void sighup(SIGNAL_ARGS) {
