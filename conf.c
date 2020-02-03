@@ -84,21 +84,108 @@ static void create_username(const char *username) {
     pfree(buf.data);
 }
 
+#define GetSysCacheOid1_(cacheId, oidcol, key1) GetSysCacheOid_(cacheId, oidcol, key1, 0, 0, 0)
+
+/*static HeapTuple SearchSysCache_(int cacheId, Datum key1, Datum key2, Datum key3, Datum key4) {
+    Assert(cacheId >= 0 && cacheId < SysCacheSize && PointerIsValid(SysCache[cacheId]));
+    return SearchCatCache(SysCache[cacheId], key1, key2, key3, key4);
+}*/
+
+static Oid GetSysCacheOid_(int cacheId, AttrNumber oidcol, Datum key1, Datum key2, Datum key3, Datum key4) {
+    HeapTuple tuple;
+    bool isNull;
+    Oid result;
+    bool b = IsTransactionState();
+    elog(LOG, "%s(%s:%d): cacheId = %i, b = %s", __func__, __FILE__, __LINE__, cacheId, b ? "true" : "false");
+    tuple = SearchSysCache(cacheId, key1, key2, key3, key4);
+    elog(LOG, "%s(%s:%d): cacheId = %i", __func__, __FILE__, __LINE__, cacheId);
+    if (!HeapTupleIsValid(tuple)) return InvalidOid;
+    return InvalidOid;
+/*    result = heap_getattr(tuple, oidcol, SysCache[cacheId]->cc_tupdesc, &isNull);
+    Assert(!isNull);
+    ReleaseSysCache(tuple);
+    return result;*/
+}
+
+static Oid get_role_oid_(const char *rolname, bool missing_ok) {
+    Oid oid;
+    elog(LOG, "%s(%s:%d): rolname = %s, missing_ok = %s", __func__, __FILE__, __LINE__, rolname, missing_ok ? "true" : "false");
+    oid = GetSysCacheOid1(AUTHNAME, Anum_pg_type_oid, CStringGetDatum(rolname));
+    elog(LOG, "%s(%s:%d): oid = %u", __func__, __FILE__, __LINE__, oid);
+    if (!OidIsValid(oid) && !missing_ok) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("role \"%s\" does not exist", rolname)));
+    return oid;
+}
+
+static void createdb_(ParseState *pstate, const CreatedbStmt *stmt) {
+    Oid datdba;
+    ListCell *option;
+    char *dbname = stmt->dbname;
+    DefElem *downer = NULL;
+    char *dbowner = NULL;
+    elog(LOG, "%s(%s:%d): dbname = %s", __func__, __FILE__, __LINE__, dbname);
+    foreach(option, stmt->options) {
+        DefElem *defel = (DefElem *) lfirst(option);
+        elog(LOG, "%s(%s:%d): defel->defname = %s", __func__, __FILE__, __LINE__, defel->defname);
+        if (strcmp(defel->defname, "owner") == 0) downer = defel;
+    }
+    if (downer && downer->arg) dbowner = defGetString(downer);
+    elog(LOG, "%s(%s:%d): dbowner = %s", __func__, __FILE__, __LINE__, dbowner ? dbowner : "(null)");
+//    {
+//    Datum datum = CStringGetDatum(dbowner);
+//    elog(LOG, "%s(%s:%d): dbowner = %s", __func__, __FILE__, __LINE__, dbowner ? dbowner : "(null)");
+//    }
+    if (dbowner) datdba = get_role_oid_(dbowner, false); else datdba = GetUserId();
+    elog(LOG, "%s(%s:%d): datdba = %u", __func__, __FILE__, __LINE__, datdba);
+}
+
 static void create_database(const char *username, const char *database) {
-    int rc;
     StringInfoData buf;
+    MemoryContext oldcontext = CurrentMemoryContext;
     const char *username_q = quote_identifier(username);
     const char *database_q = quote_identifier(database);
+/*    elog(LOG, "%s(%s:%d): username = %s, database = %s", __func__, __FILE__, __LINE__, username, database);
+    {
+    List *raw_parsetree_list;
+    ParseState *pstate = make_parsestate(NULL);
+    ListCell *list_item;
+    MemoryContext parsecontext = AllocSetContextCreate(TopMemoryContext, "pg_task parse/plan", ALLOCSET_DEFAULT_MINSIZE, ALLOCSET_DEFAULT_INITSIZE, ALLOCSET_DEFAULT_MAXSIZE);
+    MemoryContext oldcontext = MemoryContextSwitchTo(parsecontext);
+    initStringInfo(&buf);
+    appendStringInfo(&buf, "CREATE DATABASE %s WITH OWNER = %s", database_q, username_q);
+    raw_parsetree_list = pg_parse_query(buf.data);
+    pstate->p_sourcetext = buf.data;
+    foreach(list_item, raw_parsetree_list) {
+        RawStmt *parsetree = lfirst_node(RawStmt, list_item);
+        createdb(pstate, (CreatedbStmt *) parsetree);
+    }
+    MemoryContextSwitchTo(oldcontext);
+    }*/
+    ParseState *pstate = make_parsestate(NULL);
+    List *options = NIL;
+    CreatedbStmt *stmt = makeNode(CreatedbStmt);
+    Oid oid;
     elog(LOG, "%s(%s:%d): username = %s, database = %s", __func__, __FILE__, __LINE__, username, database);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE DATABASE %s WITH OWNER = %s", database_q, username_q);
+    pstate->p_sourcetext = buf.data;
+    options = lappend(options, makeDefElem("owner", (Node *) makeString((char *)username), -1));
+    elog(LOG, "%s(%s:%d): username = %s, database = %s", __func__, __FILE__, __LINE__, username, database);
+    stmt->dbname = pstrdup(database);
+    stmt->options = options;
     SPI_connect_my(buf.data, StatementTimeout);
-    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+//    StartTransactionCommand();
+    createdb_(pstate, stmt);
+    oid = createdb(pstate, stmt);
     SPI_commit();
     SPI_finish_my(buf.data);
+//    CommitTransactionCommand();
+    elog(LOG, "%s(%s:%d): username = %s, database = %s", __func__, __FILE__, __LINE__, username, database);
+    elog(LOG, "%s(%s:%d): oid = %u", __func__, __FILE__, __LINE__, oid);
+    free_parsestate(pstate);
     if (username_q != username) pfree((void *)username_q);
     if (database_q != database) pfree((void *)database_q);
     pfree(buf.data);
+    MemoryContextSwitchTo(oldcontext);
 }
 
 static void register_tick_worker(const char *database, const char *username, const char *schemaname, const char *tablename, uint32 period) {
@@ -161,12 +248,11 @@ static void check(void) {
         "            COALESCE(period, $2) AS period\n"
         "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (database TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON database IS NULL OR (datname = database AND NOT datistemplate AND datallowconn)\n"
-        "LEFT JOIN   pg_authid AS a ON rolname = COALESCE(username, (SELECT rolname FROM pg_authid WHERE oid = datdba)) AND rolcanlogin";
+        "LEFT JOIN   pg_authid AS a ON rolname = COALESCE(COALESCE(username, (SELECT rolname FROM pg_authid WHERE oid = datdba)), database) AND rolcanlogin";
     elog(LOG, "%s(%s:%d): database = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", tablename, period);
     SPI_connect_my(command, StatementTimeout);
     if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
-    elog(LOG, "%s(%s:%d): database = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", tablename, period);
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool database_isnull, username_isnull, schemaname_isnull, tablename_isnull, period_isnull, datname_isnull, rolname_isnull;
         char *database = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "database", &database_isnull);
@@ -176,18 +262,20 @@ static void check(void) {
         uint32 period = DatumGetUInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull);
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "rolname"), &rolname_isnull);
+        elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, period = %d, datname_isnull = %s, rolname_isnull = %s", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, period, datname_isnull ? "true" : "false", rolname_isnull ? "true" : "false");
         if (database_isnull) ereport(ERROR, (errmsg("%s(%s:%d): database_isnull", __func__, __FILE__, __LINE__)));
         if (username_isnull) ereport(ERROR, (errmsg("%s(%s:%d): username_isnull", __func__, __FILE__, __LINE__)));
         if (tablename_isnull) ereport(ERROR, (errmsg("%s(%s:%d): tablename_isnull", __func__, __FILE__, __LINE__)));
         if (period_isnull) ereport(ERROR, (errmsg("%s(%s:%d): period_isnull", __func__, __FILE__, __LINE__)));
-        if (datname_isnull) create_username(username);
-        if (rolname_isnull) create_database(username, database);
+        if (rolname_isnull) create_username(username);
+        if (datname_isnull) create_database(username, database);
         register_tick_worker(database, username, schemaname, tablename, period);
         pfree(database);
         pfree(username);
         if (schemaname) pfree(schemaname);
         pfree(tablename);
     }
+//    SPI_commit();
     SPI_finish_my(command);
     pfree((void *)values[0]);
     if (database) pfree((void *)values[2]);
