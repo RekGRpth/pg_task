@@ -138,6 +138,9 @@ static void init_lock(void) {
 
 static void init_fix(void) {
     int rc;
+    static Oid argtypes[] = {TEXTOID, TEXTOID};
+    Datum values[] = {schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename)};
+    char nulls[] = {schemaname ? ' ' : 'n', ' '};
     StringInfoData buf;
     elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename);
     initStringInfo(&buf);
@@ -147,10 +150,10 @@ static void init_fix(void) {
         "    FROM    pg_stat_activity\n"
         "    WHERE   datname = current_catalog\n"
         "    AND     usename = current_user\n"
-        "    AND     application_name = concat_ws(' ', 'pg_task task', queue, id)\n"
+        "    AND     application_name = concat_ws(' ', $1||'.', $2, 'pg_task', 'task', queue, id)\n"
         ") for update skip locked) update %s%s%s as u set state = 'PLAN' from s where u.id = s.id", schemaname_q, point, tablename_q, schemaname_q, point, tablename_q);
     SPI_connect_my(buf.data, StatementTimeout);
-    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     SPI_finish_my(buf.data);
     pfree(buf.data);
