@@ -98,6 +98,7 @@ static void check(void) {
     static Oid argtypes[] = {TEXTOID, INT4OID, TEXTOID};
     Datum values[] = {CStringGetTextDatum(default_tablename), UInt32GetDatum(default_period), config ? CStringGetTextDatum(config) : (Datum)NULL};
     char nulls[] = {' ', ' ', config ? ' ' : 'n'};
+    static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS (\n"
         "SELECT      COALESCE(datname, database)::TEXT AS database,\n"
@@ -116,7 +117,11 @@ static void check(void) {
         "WHERE       a.pid IS NULL";
     elog(LOG, "%s(%s:%d): config = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period);
     SPI_connect_my(command, StatementTimeout);
-    if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if (!plan) {
+        if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
+        if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    }
+    if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool database_isnull, username_isnull, schemaname_isnull, tablename_isnull, period_isnull, datname_isnull, usename_isnull;
