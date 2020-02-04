@@ -101,33 +101,33 @@ static void check(void) {
     static const char *command =
         "SELECT      COALESCE(datname, database)::TEXT AS database,\n"
         "            datname,\n"
-        "            COALESCE(COALESCE(rolname, username), database)::TEXT AS username,\n"
-        "            rolname,\n"
+        "            COALESCE(COALESCE(usename, username), database)::TEXT AS username,\n"
+        "            usename,\n"
         "            schemaname,\n"
         "            COALESCE(tablename, $1) AS tablename,\n"
         "            COALESCE(period, $2) AS period\n"
         "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (database TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON database IS NULL OR (datname = database AND NOT datistemplate AND datallowconn)\n"
-        "LEFT JOIN   pg_authid AS a ON rolname = COALESCE(COALESCE(username, (SELECT rolname FROM pg_authid WHERE oid = datdba)), database) AND rolcanlogin";
+        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(username, (SELECT usename FROM pg_user WHERE oid = datdba)), database)";
     elog(LOG, "%s(%s:%d): config = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period);
     SPI_connect_my(command, StatementTimeout);
     if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
-        bool database_isnull, username_isnull, schemaname_isnull, tablename_isnull, period_isnull, datname_isnull, rolname_isnull;
+        bool database_isnull, username_isnull, schemaname_isnull, tablename_isnull, period_isnull, datname_isnull, usename_isnull;
         char *database = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "database", &database_isnull);
         char *username = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "username", &username_isnull);
         char *schemaname = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schemaname", &schemaname_isnull);
         char *tablename = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "tablename", &tablename_isnull);
         uint32 period = DatumGetUInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull);
-        SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "rolname"), &rolname_isnull);
-        elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, period = %d, datname_isnull = %s, rolname_isnull = %s", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, period, datname_isnull ? "true" : "false", rolname_isnull ? "true" : "false");
+        SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull);
+        elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, period = %d, datname_isnull = %s, usename_isnull = %s", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, period, datname_isnull ? "true" : "false", usename_isnull ? "true" : "false");
         if (database_isnull) ereport(ERROR, (errmsg("%s(%s:%d): database_isnull", __func__, __FILE__, __LINE__)));
         if (username_isnull) ereport(ERROR, (errmsg("%s(%s:%d): username_isnull", __func__, __FILE__, __LINE__)));
         if (tablename_isnull) ereport(ERROR, (errmsg("%s(%s:%d): tablename_isnull", __func__, __FILE__, __LINE__)));
         if (period_isnull) ereport(ERROR, (errmsg("%s(%s:%d): period_isnull", __func__, __FILE__, __LINE__)));
-        if (rolname_isnull) create_username(username);
+        if (usename_isnull) create_username(username);
         if (datname_isnull) create_database(username, database);
         register_tick_worker(database, username, schemaname, tablename, period);
         pfree(database);

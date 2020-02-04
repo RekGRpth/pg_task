@@ -291,22 +291,35 @@ static void sigterm(SIGNAL_ARGS) {
 }
 
 static void check(void) {
-/*    int rc;
-    static Oid argtypes[] = {TEXTOID, INT4OID, TEXTOID};
-    Datum values[] = {CStringGetTextDatum(default_tablename), UInt32GetDatum(default_period), config ? CStringGetTextDatum(config) : (Datum)NULL};
-    char nulls[] = {' ', ' ', config ? ' ' : 'n'};
+    int rc;
+    static Oid argtypes[] = {TEXTOID, INT4OID, TEXTOID, TEXTOID, TEXTOID, TEXTOID, TEXTOID, INT4OID};
+    Datum values[] = {CStringGetTextDatum(default_tablename), UInt32GetDatum(default_period), config ? CStringGetTextDatum(config) : (Datum)NULL, CStringGetTextDatum(database), CStringGetTextDatum(username), schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename), UInt32GetDatum(period)};
+    char nulls[] = {' ', ' ', config ? ' ' : 'n', ' ', ' ', schemaname ? ' ' : 'n', ' ', ' '};
     static const char *command =
+        "WITH s AS ("
         "SELECT      COALESCE(datname, database)::TEXT AS database,\n"
         "            datname,\n"
-        "            COALESCE(COALESCE(rolname, username), database)::TEXT AS username,\n"
-        "            rolname,\n"
+        "            COALESCE(COALESCE(usename, username), database)::TEXT AS username,\n"
+        "            usename,\n"
         "            schemaname,\n"
         "            COALESCE(tablename, $1) AS tablename,\n"
         "            COALESCE(period, $2) AS period\n"
         "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (database TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON database IS NULL OR (datname = database AND NOT datistemplate AND datallowconn)\n"
-        "LEFT JOIN   pg_authid AS a ON rolname = COALESCE(COALESCE(username, (SELECT rolname FROM pg_authid WHERE oid = datdba)), database) AND rolcanlogin";*/
-    elog(LOG, "%s(%s:%d): config = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period);
+        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(username, (SELECT usename FROM pg_user WHERE oid = datdba)), database)\n"
+        ") SELECT * FROM s WHERE database = $4 AND username = $5 AND schemaname IS NOT DISTINCT FROM $6 AND tablename = $7 AND period = $8";
+    elog(LOG, "%s(%s:%d): config = %s, default_tablename = %s, default_period = %d, database = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period, database, username, schemaname ? schemaname : "(null)", tablename, period);
+    SPI_connect_my(command, StatementTimeout);
+    if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_commit();
+    if (SPI_processed == 0) got_sigterm = true;
+    SPI_finish_my(command);
+    pfree((void *)values[0]);
+    if (config) pfree((void *)values[2]);
+    pfree((void *)values[3]);
+    pfree((void *)values[4]);
+    if (schemaname) pfree((void *)values[5]);
+    pfree((void *)values[6]);
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
@@ -316,7 +329,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     tablename = schemaname + strlen(schemaname) + 1;
     period = *(uint32 *)(tablename + strlen(tablename) + 1);
     if (tablename == schemaname + 1) schemaname = NULL;
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, period = %i", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, period);
+    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, period);
     database_q = quote_identifier(database);
     username_q = quote_identifier(username);
     schemaname_q = schemaname ? quote_identifier(schemaname) : "";
