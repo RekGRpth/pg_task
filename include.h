@@ -12,6 +12,7 @@
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
+#include <storage/pmsignal.h>
 #include <tcop/tcopprot.h>
 #include <utils/builtins.h>
 #include <utils/guc.h>

@@ -4,7 +4,6 @@ PG_MODULE_MAGIC;
 
 static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
-//static bool reload = false;
 
 static char *database;
 static char *tablename;
@@ -60,28 +59,12 @@ static void register_conf_worker(void) {
     RegisterBackgroundWorker(&worker);
 }
 
-static void database_assign_hook(const char *newval, void *extra) {
-    if (PostmasterPid != MyProcPid) return;
-    elog(LOG, "%s(%s:%d): newval = %s", __func__, __FILE__, __LINE__, newval ? newval : "(null)");
-}
-
-static void tablename_assign_hook(const char *newval, void *extra) {
-    if (PostmasterPid != MyProcPid) return;
-    elog(LOG, "%s(%s:%d): newval = %s", __func__, __FILE__, __LINE__, newval ? newval : "(null)");
-}
-
-static void period_assign_hook(int newval, void *extra) {
-    if (PostmasterPid != MyProcPid) return;
-    elog(LOG, "%s(%s:%d): newval = %i", __func__, __FILE__, __LINE__, newval);
-}
-
 void _PG_init(void); void _PG_init(void) {
-    if (PostmasterPid != MyProcPid) return;
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) ereport(FATAL, (errmsg("%s(%s:%d): !process_shared_preload_libraries_in_progress", __func__, __FILE__, __LINE__)));
-    DefineCustomStringVariable("pg_task.database", "pg_task database", NULL, &database, NULL, PGC_SIGHUP, 0, NULL, database_assign_hook, NULL);
-    DefineCustomStringVariable("pg_task.tablename", "pg_task tablename", NULL, &tablename, "task", PGC_SIGHUP, 0, NULL, tablename_assign_hook, NULL);
-    DefineCustomIntVariable("pg_task.period", "pg_task period", NULL, (int *)&period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, period_assign_hook, NULL);
+    DefineCustomStringVariable("pg_task.database", "pg_task database", NULL, &database, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.tablename", "pg_task tablename", NULL, &tablename, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.period", "pg_task period", NULL, (int *)&period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     elog(LOG, "%s(%s:%d): database = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", tablename, period);
     register_conf_worker();
 }
@@ -214,7 +197,6 @@ static void check(void) {
         if (schemaname) pfree(schemaname);
         pfree(tablename);
     }
-//    SPI_commit();
     SPI_finish_my(command);
     pfree((void *)values[0]);
     if (database) pfree((void *)values[2]);
