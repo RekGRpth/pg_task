@@ -99,6 +99,7 @@ static void check(void) {
     Datum values[] = {CStringGetTextDatum(default_tablename), UInt32GetDatum(default_period), config ? CStringGetTextDatum(config) : (Datum)NULL};
     char nulls[] = {' ', ' ', config ? ' ' : 'n'};
     static const char *command =
+        "WITH s AS (\n"
         "SELECT      COALESCE(datname, database)::TEXT AS database,\n"
         "            datname,\n"
         "            COALESCE(COALESCE(usename, username), database)::TEXT AS username,\n"
@@ -108,7 +109,11 @@ static void check(void) {
         "            COALESCE(period, $2) AS period\n"
         "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (database TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON database IS NULL OR (datname = database AND NOT datistemplate AND datallowconn)\n"
-        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(username, (SELECT usename FROM pg_user WHERE usesysid = datdba)), database)";
+        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(username, (SELECT usename FROM pg_user WHERE usesysid = datdba)), database)\n"
+        ") SELECT s.* FROM s\n"
+        "LEFT JOIN   pg_stat_activity AS a ON a.datname = database AND a.usename = username AND application_name = concat_ws(' ', 'pg_task', schemaname||'.', tablename, period::TEXT)\n"
+        "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
+        "WHERE       a.pid IS NULL";
     elog(LOG, "%s(%s:%d): config = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period);
     SPI_connect_my(command, StatementTimeout);
     if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
