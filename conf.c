@@ -69,11 +69,11 @@ static void register_tick_worker(const char *database, const char *username, con
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_function_name, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "pg_task %s%s%s", schemaname ? schemaname : "", schemaname ? "." : "", tablename);
+    appendStringInfo(&buf, "pg_task %s%s%s %u", schemaname ? schemaname : "", schemaname ? "." : "", tablename, period);
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s %s pg_task %s%s%s", username, database, schemaname ? schemaname : "", schemaname ? "." : "", tablename);
+    appendStringInfo(&buf, "%s %s pg_task %s%s%s %u", username, database, schemaname ? schemaname : "", schemaname ? "." : "", tablename, period);
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
@@ -108,7 +108,7 @@ static void check(void) {
         "            COALESCE(period, $2) AS period\n"
         "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (database TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON database IS NULL OR (datname = database AND NOT datistemplate AND datallowconn)\n"
-        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(username, (SELECT usename FROM pg_user WHERE oid = datdba)), database)";
+        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(username, (SELECT usename FROM pg_user WHERE usesysid = datdba)), database)";
     elog(LOG, "%s(%s:%d): config = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period);
     SPI_connect_my(command, StatementTimeout);
     if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
