@@ -323,6 +323,7 @@ static void check(void) {
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
+    StringInfoData buf;
     database = MyBgworkerEntry->bgw_extra;
     username = database + strlen(database) + 1;
     schemaname = username + strlen(username) + 1;
@@ -339,7 +340,10 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(database, username, 0);
-    pgstat_report_appname(MyBgworkerEntry->bgw_type);
+    initStringInfo(&buf);
+    appendStringInfo(&buf, "%s %u", MyBgworkerEntry->bgw_type, period);
+    pgstat_report_appname(buf.data);
+    pfree(buf.data);
     init();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
