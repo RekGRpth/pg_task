@@ -1,6 +1,11 @@
 #include "include.h"
 
+static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
+
+extern char *config;
+extern char *default_tablename;
+extern uint32 default_period;
 
 static const char *database;
 static const char *database_q;
@@ -271,11 +276,37 @@ static void init(void) {
     init_fix();
 }
 
+static void sighup(SIGNAL_ARGS) {
+    int save_errno = errno;
+    got_sighup = true;
+    SetLatch(MyLatch);
+    errno = save_errno;
+}
+
 static void sigterm(SIGNAL_ARGS) {
     int save_errno = errno;
     got_sigterm = true;
     SetLatch(MyLatch);
     errno = save_errno;
+}
+
+static void check(void) {
+/*    int rc;
+    static Oid argtypes[] = {TEXTOID, INT4OID, TEXTOID};
+    Datum values[] = {CStringGetTextDatum(default_tablename), UInt32GetDatum(default_period), config ? CStringGetTextDatum(config) : (Datum)NULL};
+    char nulls[] = {' ', ' ', config ? ' ' : 'n'};
+    static const char *command =
+        "SELECT      COALESCE(datname, database)::TEXT AS database,\n"
+        "            datname,\n"
+        "            COALESCE(COALESCE(rolname, username), database)::TEXT AS username,\n"
+        "            rolname,\n"
+        "            schemaname,\n"
+        "            COALESCE(tablename, $1) AS tablename,\n"
+        "            COALESCE(period, $2) AS period\n"
+        "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (database TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
+        "LEFT JOIN   pg_database AS d ON database IS NULL OR (datname = database AND NOT datistemplate AND datallowconn)\n"
+        "LEFT JOIN   pg_authid AS a ON rolname = COALESCE(COALESCE(username, (SELECT rolname FROM pg_authid WHERE oid = datdba)), database) AND rolcanlogin";*/
+    elog(LOG, "%s(%s:%d): config = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period);
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
@@ -291,6 +322,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     schemaname_q = schemaname ? quote_identifier(schemaname) : "";
     point = schemaname ? "." : "";
     tablename_q = quote_identifier(tablename);
+    pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(database, username, 0);
@@ -302,6 +334,11 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
         if (rc & WL_LATCH_SET) {
             ResetLatch(MyLatch);
             CHECK_FOR_INTERRUPTS();
+        }
+        if (got_sighup) {
+            got_sighup = false;
+            ProcessConfigFile(PGC_SIGHUP);
+            check();
         }
         if (got_sigterm) proc_exit(0);
         if (rc & WL_TIMEOUT) tick();
