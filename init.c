@@ -62,6 +62,6 @@ void _PG_init(void); void _PG_init(void) {
     DefineCustomStringVariable("pg_task.config", "pg_task config", NULL, &config, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.tablename", "pg_task tablename", NULL, &default_tablename, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.period", "pg_task period", NULL, (int *)&default_period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    elog(LOG, "%s(%s:%d): config = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period);
+    elog(LOG, "%s(%s:%d): config = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period);
     register_conf_worker();
 }
