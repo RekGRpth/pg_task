@@ -299,9 +299,7 @@ static void check(void) {
     static const char *command =
         "WITH s AS ("
         "SELECT      COALESCE(datname, database)::TEXT AS database,\n"
-        "            datname,\n"
         "            COALESCE(COALESCE(usename, username), database)::TEXT AS username,\n"
-        "            usename,\n"
         "            schemaname,\n"
         "            COALESCE(tablename, $1) AS tablename,\n"
         "            COALESCE(period, $2) AS period\n"
