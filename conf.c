@@ -3,9 +3,9 @@
 static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
 
-extern char *database;
-extern char *tablename;
-extern uint32 period;
+extern char *config;
+extern char *default_tablename;
+extern uint32 default_period;
 
 static void create_username(const char *username) {
     int rc;
@@ -96,8 +96,8 @@ static void register_tick_worker(const char *database, const char *username, con
 static void check(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, INT4OID, TEXTOID};
-    Datum values[] = {CStringGetTextDatum(tablename), UInt32GetDatum(period), database ? CStringGetTextDatum(database) : (Datum)NULL};
-    char nulls[] = {' ', ' ', database ? ' ' : 'n'};
+    Datum values[] = {CStringGetTextDatum(default_tablename), UInt32GetDatum(default_period), config ? CStringGetTextDatum(config) : (Datum)NULL};
+    char nulls[] = {' ', ' ', config ? ' ' : 'n'};
     static const char *command =
         "SELECT      COALESCE(datname, database)::TEXT AS database,\n"
         "            datname,\n"
@@ -109,7 +109,7 @@ static void check(void) {
         "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (database TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON database IS NULL OR (datname = database AND NOT datistemplate AND datallowconn)\n"
         "LEFT JOIN   pg_authid AS a ON rolname = COALESCE(COALESCE(username, (SELECT rolname FROM pg_authid WHERE oid = datdba)), database) AND rolcanlogin";
-    elog(LOG, "%s(%s:%d): database = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", tablename, period);
+    elog(LOG, "%s(%s:%d): config = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period);
     SPI_connect_my(command, StatementTimeout);
     if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
@@ -137,7 +137,7 @@ static void check(void) {
     }
     SPI_finish_my(command);
     pfree((void *)values[0]);
-    if (database) pfree((void *)values[2]);
+    if (config) pfree((void *)values[2]);
 }
 
 static void sighup(SIGNAL_ARGS) {
@@ -155,7 +155,7 @@ static void sigterm(SIGNAL_ARGS) {
 }
 
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
-    elog(LOG, "%s(%s:%d): database = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", tablename, period);
+    elog(LOG, "%s(%s:%d): config = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period);
     pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();

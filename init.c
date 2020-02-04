@@ -2,9 +2,9 @@
 
 PG_MODULE_MAGIC;
 
-char *database;
-char *tablename;
-uint32 period;
+char *config;
+char *default_tablename;
+uint32 default_period;
 
 void SPI_connect_my(const char *command, const int timeout) {
     int rc;
@@ -59,9 +59,9 @@ static void register_conf_worker(void) {
 void _PG_init(void); void _PG_init(void) {
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) ereport(FATAL, (errmsg("%s(%s:%d): !process_shared_preload_libraries_in_progress", __func__, __FILE__, __LINE__)));
-    DefineCustomStringVariable("pg_task.database", "pg_task database", NULL, &database, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.tablename", "pg_task tablename", NULL, &tablename, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.period", "pg_task period", NULL, (int *)&period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    elog(LOG, "%s(%s:%d): database = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, database ? database : "(null)", tablename, period);
+    DefineCustomStringVariable("pg_task.config", "pg_task config", NULL, &config, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.tablename", "pg_task tablename", NULL, &default_tablename, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.period", "pg_task period", NULL, (int *)&default_period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    elog(LOG, "%s(%s:%d): config = %s, tablename = %s, period = %d", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period);
     register_conf_worker();
 }
