@@ -86,9 +86,8 @@ static void register_tick_worker(const char *dataname, const char *username, con
 
 static void check(void) {
     int rc;
-    static Oid argtypes[] = {TEXTOID, INT4OID, TEXTOID};
-    Datum values[] = {CStringGetTextDatum(pg_task_taskname), UInt32GetDatum(pg_task_period), pg_task_config ? CStringGetTextDatum(pg_task_config) : (Datum)NULL};
-    char nulls[] = {' ', ' ', pg_task_config ? ' ' : 'n'};
+    static Oid argtypes[] = {TEXTOID, INT4OID, JSONOID};
+    Datum values[] = {CStringGetTextDatum(pg_task_taskname), UInt32GetDatum(pg_task_period), CStringGetTextDatum(pg_task_config)};
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS (\n"
@@ -99,20 +98,20 @@ static void check(void) {
         "            schemaname,\n"
         "            COALESCE(tablename, $1) AS tablename,\n"
         "            COALESCE(period, $2) AS period\n"
-        "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (dataname TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
+        "FROM        json_populate_recordset(NULL::RECORD, $3) AS s (dataname TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON dataname IS NULL OR (datname = dataname AND NOT datistemplate AND datallowconn)\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(username, (SELECT usename FROM pg_user WHERE usesysid = datdba)), dataname)\n"
         ") SELECT s.* FROM s\n"
         "LEFT JOIN   pg_stat_activity AS a ON a.datname = dataname AND a.usename = username AND application_name = concat_ws(' ', 'pg_task', schemaname||'.', tablename, period::TEXT)\n"
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
         "WHERE       a.pid IS NULL";
-    elog(LOG, "%s(%s:%d): pg_task_config = %s, pg_task_taskname = %s, pg_task_period = %u", __func__, __FILE__, __LINE__, pg_task_config ? pg_task_config : "(null)", pg_task_taskname, pg_task_period);
+    elog(LOG, "%s(%s:%d): pg_task_config = %s, pg_task_taskname = %s, pg_task_period = %u", __func__, __FILE__, __LINE__, pg_task_config, pg_task_taskname, pg_task_period);
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
-    if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool dataname_isnull, username_isnull, schemaname_isnull, tablename_isnull, period_isnull, datname_isnull, usename_isnull;
@@ -138,7 +137,7 @@ static void check(void) {
     }
     SPI_finish_my(command);
     pfree((void *)values[0]);
-    if (pg_task_config) pfree((void *)values[2]);
+    pfree((void *)values[2]);
 }
 
 static void sighup(SIGNAL_ARGS) {
@@ -156,7 +155,7 @@ static void sigterm(SIGNAL_ARGS) {
 }
 
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
-    elog(LOG, "%s(%s:%d): pg_task_config = %s, pg_task_taskname = %s, pg_task_period = %u", __func__, __FILE__, __LINE__, pg_task_config ? pg_task_config : "(null)", pg_task_taskname, pg_task_period);
+    elog(LOG, "%s(%s:%d): pg_task_config = %s, pg_task_taskname = %s, pg_task_period = %u", __func__, __FILE__, __LINE__, pg_task_config, pg_task_taskname, pg_task_period);
     pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
