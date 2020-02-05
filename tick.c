@@ -117,7 +117,9 @@ static void init_lock(void) {
     Datum values[] = {schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename)};
     char nulls[] = {schemaname ? ' ' : 'n', ' '};
     static const char *command =
-        "SELECT      pg_try_advisory_lock(c.oid::BIGINT) AS lock\n"
+        "SELECT      pg_try_advisory_lock(c.oid::BIGINT) AS lock,\n"
+        "            set_config('pg_scheduler.task_schemaname', $1::TEXT, false),\n"
+        "            set_config('pg_scheduler.task_tablename', $2::TEXT, false)\n"
         "FROM        pg_class AS c\n"
         "INNER JOIN  pg_namespace AS n ON n.oid = relnamespace\n"
         "INNER JOIN  pg_tables AS t ON tablename = relname AND nspname = schemaname\n"
