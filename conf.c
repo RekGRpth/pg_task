@@ -51,8 +51,6 @@ static void create_dataname(const char *username, const char *dataname) {
 static void register_tick_worker(const char *dataname, const char *username, const char *schemaname, const char *tablename, uint32 period) {
     StringInfoData buf;
     uint32 dataname_len = strlen(dataname), username_len = strlen(username), schemaname_len = schemaname ? strlen(schemaname) : 0, tablename_len = strlen(tablename), period_len = sizeof(period);
-    pid_t pid;
-    BackgroundWorkerHandle *handle;
     BackgroundWorker worker;
     elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, period);
     MemSet(&worker, 0, sizeof(worker));
@@ -83,14 +81,19 @@ static void register_tick_worker(const char *dataname, const char *username, con
     memcpy(worker.bgw_extra + dataname_len + 1 + username_len + 1, schemaname, schemaname_len);
     memcpy(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1, tablename, tablename_len);
     *(typeof(period) *)(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1) = period;
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errmsg("%s(%s:%d): !RegisterDynamicBackgroundWorker", __func__, __FILE__, __LINE__)));
-    switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
-        case BGWH_STARTED: break;
-        case BGWH_STOPPED: ereport(ERROR, (errmsg("%s(%s:%d): WaitForBackgroundWorkerStartup == BGWH_STOPPED", __func__, __FILE__, __LINE__)));
-        case BGWH_POSTMASTER_DIED: ereport(ERROR, (errmsg("%s(%s:%d): WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED", __func__, __FILE__, __LINE__)));
-        default: ereport(ERROR, (errmsg("%s(%s:%d): Unexpected bgworker handle status", __func__, __FILE__, __LINE__)));
+    {
+        BackgroundWorkerHandle *handle;
+        if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errmsg("%s(%s:%d): !RegisterDynamicBackgroundWorker", __func__, __FILE__, __LINE__))); else {
+            pid_t pid;
+            switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
+                case BGWH_STARTED: break;
+                case BGWH_STOPPED: ereport(ERROR, (errmsg("%s(%s:%d): WaitForBackgroundWorkerStartup == BGWH_STOPPED", __func__, __FILE__, __LINE__)));
+                case BGWH_POSTMASTER_DIED: ereport(ERROR, (errmsg("%s(%s:%d): WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED", __func__, __FILE__, __LINE__)));
+                default: ereport(ERROR, (errmsg("%s(%s:%d): Unexpected bgworker handle status", __func__, __FILE__, __LINE__)));
+            }
+        }
+        pfree(handle);
     }
-    pfree(handle);
 }
 
 static void check(void) {
