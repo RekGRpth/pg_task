@@ -136,9 +136,7 @@ static void init_lock(void) {
         if (lock_isnull) ereport(ERROR, (errmsg("%s(%s:%d): lock_isnull", __func__, __FILE__, __LINE__)));
         if (!lock) {
             ereport(WARNING, (errmsg("%s(%s:%d): Already running dataname = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename)));
-            SPI_finish_my(command);
-            proc_exit(0);
-            return;
+            got_sigterm = true;
         }
     }
     SPI_finish_my(command);
@@ -354,8 +352,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
             ProcessConfigFile(PGC_SIGHUP);
             check();
         }
-        if (got_sigterm) proc_exit(0);
+        if (got_sigterm) break;
         if (rc & WL_TIMEOUT) tick();
     } while (!got_sigterm);
-    proc_exit(0);
 }

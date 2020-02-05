@@ -175,7 +175,6 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
             ProcessConfigFile(PGC_SIGHUP);
             check();
         }
-        if (got_sigterm) proc_exit(0);
+        if (got_sigterm) break;
     } while (!got_sigterm);
-    proc_exit(0);
 }

@@ -345,8 +345,7 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
             ResetLatch(MyLatch);
             CHECK_FOR_INTERRUPTS();
         }
-        if (got_sigterm) proc_exit(0);
+        if (got_sigterm) break;
         if (rc & WL_TIMEOUT) execute();
     } while (!got_sigterm && id != (Datum)0);
-    proc_exit(0);
 }
