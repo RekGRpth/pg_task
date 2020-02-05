@@ -339,6 +339,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     appendStringInfo(&buf, "%s %u", MyBgworkerEntry->bgw_type, period);
     pgstat_report_appname(buf.data);
     pfree(buf.data);
+    if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) ereport(ERROR, (errmsg("%s(%s:%d): !BackendPidGetProc", __func__, __FILE__, __LINE__)));
     init();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);

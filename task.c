@@ -338,6 +338,7 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(dataname, username, 0);
+    if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) ereport(ERROR, (errmsg("%s(%s:%d): !BackendPidGetProc", __func__, __FILE__, __LINE__)));
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) proc_exit(1);

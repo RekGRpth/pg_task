@@ -13,6 +13,7 @@
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
 #include <storage/pmsignal.h>
+#include <storage/procarray.h>
 #include <tcop/tcopprot.h>
 #include <utils/builtins.h>
 #include <utils/guc.h>
