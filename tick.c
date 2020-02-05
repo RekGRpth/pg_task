@@ -206,21 +206,7 @@ static void register_task_worker(const Datum id, const char *queue, const uint32
     memcpy(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1, tablename, tablename_len);
     memcpy(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1, queue, queue_len);
     *(typeof(max + 0) *)(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1 + queue_len + 1) = max;
-    {
-        BackgroundWorkerHandle *handle;
-        MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-        if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errmsg("%s(%s:%d): !RegisterDynamicBackgroundWorker", __func__, __FILE__, __LINE__))); else {
-            pid_t pid;
-            MemoryContextSwitchTo(oldcontext);
-            switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
-                case BGWH_STARTED: break;
-                case BGWH_STOPPED: ereport(ERROR, (errmsg("%s(%s:%d): WaitForBackgroundWorkerStartup == BGWH_STOPPED", __func__, __FILE__, __LINE__)));
-                case BGWH_POSTMASTER_DIED: ereport(ERROR, (errmsg("%s(%s:%d): WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED", __func__, __FILE__, __LINE__)));
-                default: ereport(ERROR, (errmsg("%s(%s:%d): Unexpected bgworker handle status", __func__, __FILE__, __LINE__)));
-            }
-        }
-        pfree(handle);
-    }
+    RegisterDynamicBackgroundWorker_my(&worker);
 }
 
 static void tick(void) {

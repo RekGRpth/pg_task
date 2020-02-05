@@ -6,6 +6,22 @@ char *pg_task_config;
 char *pg_task_taskname;
 uint32 pg_task_period;
 
+void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker) {
+    BackgroundWorkerHandle *handle;
+    MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+    if (!RegisterDynamicBackgroundWorker(worker, &handle)) ereport(ERROR, (errmsg("%s(%s:%d): !RegisterDynamicBackgroundWorker", __func__, __FILE__, __LINE__))); else {
+        pid_t pid;
+        MemoryContextSwitchTo(oldcontext);
+        switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
+            case BGWH_STARTED: break;
+            case BGWH_STOPPED: ereport(ERROR, (errmsg("%s(%s:%d): WaitForBackgroundWorkerStartup == BGWH_STOPPED", __func__, __FILE__, __LINE__)));
+            case BGWH_POSTMASTER_DIED: ereport(ERROR, (errmsg("%s(%s:%d): WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED", __func__, __FILE__, __LINE__)));
+            default: ereport(ERROR, (errmsg("%s(%s:%d): Unexpected bgworker handle status", __func__, __FILE__, __LINE__)));
+        }
+    }
+    pfree(handle);
+}
+
 void SPI_connect_my(const char *command, const int timeout) {
     int rc;
     pgstat_report_activity(STATE_RUNNING, command);

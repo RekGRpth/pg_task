@@ -24,6 +24,7 @@
 #include <utils/timeout.h>
 #include <utils/varlena.h>
 
+void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
 void SPI_connect_my(const char *command, const int timeout);
 void SPI_finish_my(const char *command);
 char *TextDatumGetCStringOrNULL(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool *isnull);
