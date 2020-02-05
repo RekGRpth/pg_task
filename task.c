@@ -327,7 +327,7 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     schemaname = username + strlen(username) + 1;
     tablename = schemaname + strlen(schemaname) + 1;
     queue = tablename + strlen(tablename) + 1;
-    max = *(uint32 *)(queue + strlen(queue) + 1);
+    max = *(typeof(max) *)(queue + strlen(queue) + 1);
     if (tablename == schemaname + 1) schemaname = NULL;
     elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), queue, max);
     dataname_q = quote_identifier(dataname);

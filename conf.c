@@ -82,7 +82,7 @@ static void register_tick_worker(const char *dataname, const char *username, con
     memcpy(worker.bgw_extra + dataname_len + 1, username, username_len);
     memcpy(worker.bgw_extra + dataname_len + 1 + username_len + 1, schemaname, schemaname_len);
     memcpy(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1, tablename, tablename_len);
-    *(uint32 *)(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1) = period;
+    *(typeof(period) *)(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1) = period;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errmsg("%s(%s:%d): !RegisterDynamicBackgroundWorker", __func__, __FILE__, __LINE__)));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;

@@ -207,7 +207,7 @@ static void register_task_worker(const Datum id, const char *queue, const uint32
     memcpy(worker.bgw_extra + dataname_len + 1 + username_len + 1, schemaname, schemaname_len);
     memcpy(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1, tablename, tablename_len);
     memcpy(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1, queue, queue_len);
-    *(uint32 *)(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1 + queue_len + 1) = max;
+    *(typeof(max + 0) *)(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1 + queue_len + 1) = max;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errmsg("%s(%s:%d): !RegisterDynamicBackgroundWorker", __func__, __FILE__, __LINE__)));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
@@ -334,7 +334,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     username = dataname + strlen(dataname) + 1;
     schemaname = username + strlen(username) + 1;
     tablename = schemaname + strlen(schemaname) + 1;
-    period = *(uint32 *)(tablename + strlen(tablename) + 1);
+    period = *(typeof(period) *)(tablename + strlen(tablename) + 1);
     if (tablename == schemaname + 1) schemaname = NULL;
     elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, period);
     dataname_q = quote_identifier(dataname);
