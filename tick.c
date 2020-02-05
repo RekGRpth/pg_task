@@ -3,9 +3,9 @@
 static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
 
-extern char *config;
-extern char *default_taskname;
-extern uint32 default_period;
+extern char *pg_task_config;
+extern char *pg_task_taskname;
+extern uint32 pg_task_period;
 
 static const char *dataname;
 static const char *dataname_q;
@@ -296,8 +296,8 @@ static void sigterm(SIGNAL_ARGS) {
 static void check(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, INT4OID, TEXTOID, TEXTOID, TEXTOID, TEXTOID, TEXTOID, INT4OID};
-    Datum values[] = {CStringGetTextDatum(default_taskname), UInt32GetDatum(default_period), config ? CStringGetTextDatum(config) : (Datum)NULL, CStringGetTextDatum(dataname), CStringGetTextDatum(username), schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename), UInt32GetDatum(period)};
-    char nulls[] = {' ', ' ', config ? ' ' : 'n', ' ', ' ', schemaname ? ' ' : 'n', ' ', ' '};
+    Datum values[] = {CStringGetTextDatum(pg_task_taskname), UInt32GetDatum(pg_task_period), pg_task_config ? CStringGetTextDatum(pg_task_config) : (Datum)NULL, CStringGetTextDatum(dataname), CStringGetTextDatum(username), schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename), UInt32GetDatum(period)};
+    char nulls[] = {' ', ' ', pg_task_config ? ' ' : 'n', ' ', ' ', schemaname ? ' ' : 'n', ' ', ' '};
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS ("
@@ -310,7 +310,7 @@ static void check(void) {
         "LEFT JOIN   pg_database AS d ON dataname IS NULL OR (datname = dataname AND NOT datistemplate AND datallowconn)\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(username, (SELECT usename FROM pg_user WHERE usesysid = datdba)), dataname)\n"
         ") SELECT * FROM s WHERE dataname = $4 AND username = $5 AND schemaname IS NOT DISTINCT FROM $6 AND tablename = $7 AND period = $8";
-    elog(LOG, "%s(%s:%d): config = %s, default_taskname = %s, default_period = %u, dataname = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_taskname, default_period, dataname, username, schemaname ? schemaname : "(null)", tablename, period);
+    elog(LOG, "%s(%s:%d): pg_task_config = %s, pg_task_taskname = %s, pg_task_period = %u, dataname = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, pg_task_config ? pg_task_config : "(null)", pg_task_taskname, pg_task_period, dataname, username, schemaname ? schemaname : "(null)", tablename, period);
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
@@ -321,7 +321,7 @@ static void check(void) {
     if (SPI_processed == 0) got_sigterm = true;
     SPI_finish_my(command);
     pfree((void *)values[0]);
-    if (config) pfree((void *)values[2]);
+    if (pg_task_config) pfree((void *)values[2]);
     pfree((void *)values[3]);
     pfree((void *)values[4]);
     if (schemaname) pfree((void *)values[5]);
