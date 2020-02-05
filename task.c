@@ -22,6 +22,7 @@ static Datum dataname_d;
 static Datum username_d;
 static Datum schemaname_d;
 static Datum tablename_d;
+static Datum queue_d;
 
 static Datum id;
 static MemoryContext oldMemoryContext;
@@ -147,7 +148,7 @@ static void delete_task(void) {
 static void more(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, TIMESTAMPTZOID, INT4OID, INT4OID};
-    Datum values[] = {CStringGetTextDatum(queue), TimestampTzGetDatum(start), UInt32GetDatum(max), UInt32GetDatum(count)};
+    Datum values[] = {queue_d, TimestampTzGetDatum(start), UInt32GetDatum(max), UInt32GetDatum(count)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     if (!command) {
@@ -182,7 +183,6 @@ static void more(void) {
         if (id_isnull) ereport(ERROR, (errmsg("%s(%s:%d): id_isnull", __func__, __FILE__, __LINE__)));
     }
     SPI_finish_my(command);
-    pfree((void *)values[0]);
 }
 
 static void done(void) {
@@ -343,6 +343,7 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     point = schemaname ? "." : "";
     tablename_q = quote_identifier(tablename);
     tablename_d = CStringGetTextDatum(tablename);
+    queue_d = CStringGetTextDatum(queue);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(dataname, username, 0);
