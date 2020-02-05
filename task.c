@@ -35,8 +35,9 @@ static void update_ps_display(void) {
 
 static void work(void) {
     int rc;
-    static Oid argtypes[] = {INT8OID, INT8OID};
-    Datum values[] = {id, MyProcPid};
+    static Oid argtypes[] = {INT8OID, INT8OID, TEXTOID, TEXTOID, TEXTOID, TEXTOID};
+    Datum values[] = {id, MyProcPid, CStringGetTextDatum(dataname), CStringGetTextDatum(username), schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename)};
+    char nulls[] = {' ', ' ', ' ', ' ', schemaname ? ' ' : 'n', ' '};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     update_ps_display();
@@ -52,7 +53,13 @@ static void work(void) {
             "SET     state = 'WORK',\n"
             "        start = current_timestamp,\n"
             "        pid = $2\n"
-            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout, set_config('pg_scheduler.task_id', $1::TEXT, false)", schemaname_q, point, tablename_q, schemaname_q, point, tablename_q);
+            "FROM s WHERE u.id = s.id RETURNING request,\n"
+            "        COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout,\n"
+            "        set_config('pg_task.dataname', $3::TEXT, false),\n"
+            "        set_config('pg_task.username', $4::TEXT, false),\n"
+            "        set_config('pg_task.schemaname', $5::TEXT, false),\n"
+            "        set_config('pg_task.tablename', $6::TEXT, false),\n"
+            "        set_config('pg_task.id', $1::TEXT, false)", schemaname_q, point, tablename_q, schemaname_q, point, tablename_q);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
@@ -61,7 +68,7 @@ static void work(void) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
-    if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
         bool request_isnull, timeout_isnull;
@@ -74,6 +81,10 @@ static void work(void) {
     }
     SPI_finish_my(command);
     if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
+    pfree((void *)values[2]);
+    pfree((void *)values[3]);
+    if (schemaname) pfree((void *)values[4]);
+    pfree((void *)values[5]);
 }
 
 static void repeat_task(void) {

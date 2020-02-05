@@ -3,7 +3,7 @@
 PG_MODULE_MAGIC;
 
 char *config;
-char *default_tablename;
+char *default_taskname;
 uint32 default_period;
 
 void SPI_connect_my(const char *command, const int timeout) {
@@ -60,8 +60,8 @@ void _PG_init(void); void _PG_init(void) {
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) ereport(FATAL, (errmsg("%s(%s:%d): !process_shared_preload_libraries_in_progress", __func__, __FILE__, __LINE__)));
     DefineCustomStringVariable("pg_task.config", "pg_task config", NULL, &config, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.tablename", "pg_task tablename", NULL, &default_tablename, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.taskname", "pg_task taskname", NULL, &default_taskname, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.period", "pg_task period", NULL, (int *)&default_period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    elog(LOG, "%s(%s:%d): config = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period);
+    elog(LOG, "%s(%s:%d): config = %s, default_taskname = %s, default_period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_taskname, default_period);
     register_conf_worker();
 }

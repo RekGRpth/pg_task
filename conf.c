@@ -4,7 +4,7 @@ static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
 
 extern char *config;
-extern char *default_tablename;
+extern char *default_taskname;
 extern uint32 default_period;
 
 static void create_username(const char *username) {
@@ -96,7 +96,7 @@ static void register_tick_worker(const char *dataname, const char *username, con
 static void check(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, INT4OID, TEXTOID};
-    Datum values[] = {CStringGetTextDatum(default_tablename), UInt32GetDatum(default_period), config ? CStringGetTextDatum(config) : (Datum)NULL};
+    Datum values[] = {CStringGetTextDatum(default_taskname), UInt32GetDatum(default_period), config ? CStringGetTextDatum(config) : (Datum)NULL};
     char nulls[] = {' ', ' ', config ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
     static const char *command =
@@ -115,7 +115,7 @@ static void check(void) {
         "LEFT JOIN   pg_stat_activity AS a ON a.datname = dataname AND a.usename = username AND application_name = concat_ws(' ', 'pg_task', schemaname||'.', tablename, period::TEXT)\n"
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
         "WHERE       a.pid IS NULL";
-    elog(LOG, "%s(%s:%d): config = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period);
+    elog(LOG, "%s(%s:%d): config = %s, default_taskname = %s, default_period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_taskname, default_period);
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
@@ -165,7 +165,7 @@ static void sigterm(SIGNAL_ARGS) {
 }
 
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
-    elog(LOG, "%s(%s:%d): config = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period);
+    elog(LOG, "%s(%s:%d): config = %s, default_taskname = %s, default_period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_taskname, default_period);
     pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();

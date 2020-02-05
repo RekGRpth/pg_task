@@ -4,7 +4,7 @@ static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
 
 extern char *config;
-extern char *default_tablename;
+extern char *default_taskname;
 extern uint32 default_period;
 
 static const char *dataname;
@@ -63,7 +63,7 @@ static void init_table(void) {
     appendStringInfo(&buf,
         "CREATE TABLE IF NOT EXISTS %s%s%s (\n"
         "    id BIGSERIAL NOT NULL PRIMARY KEY,\n"
-        "    parent BIGINT DEFAULT current_setting('pg_scheduler.task_id', true)::BIGINT,\n"
+        "    parent BIGINT DEFAULT current_setting('pg_task.id', true)::BIGINT,\n"
         "    dt TIMESTAMP NOT NULL DEFAULT current_timestamp,\n"
         "    start TIMESTAMP,\n"
         "    stop TIMESTAMP,\n"
@@ -118,8 +118,8 @@ static void init_lock(void) {
     char nulls[] = {schemaname ? ' ' : 'n', ' '};
     static const char *command =
         "SELECT      pg_try_advisory_lock(c.oid::BIGINT) AS lock,\n"
-        "            set_config('pg_scheduler.task_schemaname', $1::TEXT, false),\n"
-        "            set_config('pg_scheduler.task_tablename', $2::TEXT, false)\n"
+        "            set_config('pg_task.schemaname', $1::TEXT, false),\n"
+        "            set_config('pg_task.tablename', $2::TEXT, false)\n"
         "FROM        pg_class AS c\n"
         "INNER JOIN  pg_namespace AS n ON n.oid = relnamespace\n"
         "INNER JOIN  pg_tables AS t ON tablename = relname AND nspname = schemaname\n"
@@ -295,7 +295,7 @@ static void sigterm(SIGNAL_ARGS) {
 static void check(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, INT4OID, TEXTOID, TEXTOID, TEXTOID, TEXTOID, TEXTOID, INT4OID};
-    Datum values[] = {CStringGetTextDatum(default_tablename), UInt32GetDatum(default_period), config ? CStringGetTextDatum(config) : (Datum)NULL, CStringGetTextDatum(dataname), CStringGetTextDatum(username), schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename), UInt32GetDatum(period)};
+    Datum values[] = {CStringGetTextDatum(default_taskname), UInt32GetDatum(default_period), config ? CStringGetTextDatum(config) : (Datum)NULL, CStringGetTextDatum(dataname), CStringGetTextDatum(username), schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename), UInt32GetDatum(period)};
     char nulls[] = {' ', ' ', config ? ' ' : 'n', ' ', ' ', schemaname ? ' ' : 'n', ' ', ' '};
     static SPIPlanPtr plan = NULL;
     static const char *command =
@@ -309,7 +309,7 @@ static void check(void) {
         "LEFT JOIN   pg_database AS d ON dataname IS NULL OR (datname = dataname AND NOT datistemplate AND datallowconn)\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(username, (SELECT usename FROM pg_user WHERE usesysid = datdba)), dataname)\n"
         ") SELECT * FROM s WHERE dataname = $4 AND username = $5 AND schemaname IS NOT DISTINCT FROM $6 AND tablename = $7 AND period = $8";
-    elog(LOG, "%s(%s:%d): config = %s, default_tablename = %s, default_period = %u, dataname = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period, dataname, username, schemaname ? schemaname : "(null)", tablename, period);
+    elog(LOG, "%s(%s:%d): config = %s, default_taskname = %s, default_period = %u, dataname = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_taskname, default_period, dataname, username, schemaname ? schemaname : "(null)", tablename, period);
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
