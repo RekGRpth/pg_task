@@ -7,8 +7,8 @@ extern char *config;
 extern char *default_tablename;
 extern uint32 default_period;
 
-static const char *database;
-static const char *database_q;
+static const char *dataname;
+static const char *dataname_q;
 static const char *point;
 static const char *schemaname;
 static const char *schemaname_q;
@@ -21,7 +21,7 @@ static uint32 period;
 static void init_schema(void) {
     int rc;
     StringInfoData buf;
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename);
+    elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", schemaname_q);
     SPI_connect_my(buf.data, StatementTimeout);
@@ -42,7 +42,7 @@ static void init_type(void) {
         "        CREATE TYPE STATE AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');\n"
         "    END IF;\n"
         "END; $$", schemaname_q);
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename);
+    elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename);
     SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
@@ -55,7 +55,7 @@ static void init_table(void) {
     int rc;
     StringInfoData buf, name;
     const char *name_q;
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename);
+    elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename);
     initStringInfo(&name);
     appendStringInfo(&name, "%s_parent_fkey", tablename);
     name_q = quote_identifier(name.data);
@@ -95,7 +95,7 @@ static void init_index(const char *index) {
     StringInfoData buf, name;
     const char *name_q;
     const char *index_q = quote_identifier(index);
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, index = %s", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, index);
+    elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, index = %s", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, index);
     initStringInfo(&name);
     appendStringInfo(&name, "%s_%s_idx", tablename, index);
     name_q = quote_identifier(name.data);
@@ -123,7 +123,7 @@ static void init_lock(void) {
         "INNER JOIN  pg_tables AS t ON tablename = relname AND nspname = schemaname\n"
         "WHERE       schemaname = COALESCE($1, current_schema)\n"
         "AND         tablename = $2";
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename);
+    elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename);
     SPI_connect_my(command, StatementTimeout);
     if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
@@ -132,7 +132,7 @@ static void init_lock(void) {
         bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "lock"), &lock_isnull));
         if (lock_isnull) ereport(ERROR, (errmsg("%s(%s:%d): lock_isnull", __func__, __FILE__, __LINE__)));
         if (!lock) {
-            ereport(WARNING, (errmsg("%s(%s:%d): Already running database = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename)));
+            ereport(WARNING, (errmsg("%s(%s:%d): Already running dataname = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename)));
             SPI_finish_my(command);
             proc_exit(0);
             return;
@@ -149,7 +149,7 @@ static void init_fix(void) {
     Datum values[] = {schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename)};
     char nulls[] = {schemaname ? ' ' : 'n', ' '};
     StringInfoData buf;
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename);
+    elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename);
     initStringInfo(&buf);
     appendStringInfo(&buf,
         "with s as (select id from %s%s%s as t WHERE state IN ('TAKE', 'WORK') AND pid NOT IN (\n"
@@ -170,11 +170,11 @@ static void init_fix(void) {
 
 static void register_task_worker(const Datum id, const char *queue, const uint32 max) {
     StringInfoData buf;
-    uint32 database_len = strlen(database), username_len = strlen(username), schemaname_len = schemaname ? strlen(schemaname) : 0, tablename_len = strlen(tablename), queue_len = strlen(queue), max_len = sizeof(uint32);
+    uint32 dataname_len = strlen(dataname), username_len = strlen(username), schemaname_len = schemaname ? strlen(schemaname) : 0, tablename_len = strlen(tablename), queue_len = strlen(queue), max_len = sizeof(uint32);
     pid_t pid;
     BackgroundWorker worker;
     BackgroundWorkerHandle *handle;
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), queue, max);
+    elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), queue, max);
     MemSet(&worker, 0, sizeof(BackgroundWorker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = id;
@@ -194,17 +194,17 @@ static void register_task_worker(const Datum id, const char *queue, const uint32
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s %s pg_task %s%s%s %s", username, database, schemaname ? schemaname : "", schemaname ? "." : "", tablename, queue);
+    appendStringInfo(&buf, "%s %s pg_task %s%s%s %s", username, dataname, schemaname ? schemaname : "", schemaname ? "." : "", tablename, queue);
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
-    if (database_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1 + queue_len + 1 + max_len > BGW_EXTRALEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_EXTRALEN", __func__, __FILE__, __LINE__, database_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1 + queue_len + 1 + max_len)));
-    memcpy(worker.bgw_extra, database, database_len);
-    memcpy(worker.bgw_extra + database_len + 1, username, username_len);
-    memcpy(worker.bgw_extra + database_len + 1 + username_len + 1, schemaname, schemaname_len);
-    memcpy(worker.bgw_extra + database_len + 1 + username_len + 1 + schemaname_len + 1, tablename, tablename_len);
-    memcpy(worker.bgw_extra + database_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1, queue, queue_len);
-    *(uint32 *)(worker.bgw_extra + database_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1 + queue_len + 1) = max;
+    if (dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1 + queue_len + 1 + max_len > BGW_EXTRALEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_EXTRALEN", __func__, __FILE__, __LINE__, dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1 + queue_len + 1 + max_len)));
+    memcpy(worker.bgw_extra, dataname, dataname_len);
+    memcpy(worker.bgw_extra + dataname_len + 1, username, username_len);
+    memcpy(worker.bgw_extra + dataname_len + 1 + username_len + 1, schemaname, schemaname_len);
+    memcpy(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1, tablename, tablename_len);
+    memcpy(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1, queue, queue_len);
+    *(uint32 *)(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1 + queue_len + 1) = max;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errmsg("%s(%s:%d): !RegisterDynamicBackgroundWorker", __func__, __FILE__, __LINE__)));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_STARTED: break;
@@ -293,21 +293,21 @@ static void sigterm(SIGNAL_ARGS) {
 static void check(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, INT4OID, TEXTOID, TEXTOID, TEXTOID, TEXTOID, TEXTOID, INT4OID};
-    Datum values[] = {CStringGetTextDatum(default_tablename), UInt32GetDatum(default_period), config ? CStringGetTextDatum(config) : (Datum)NULL, CStringGetTextDatum(database), CStringGetTextDatum(username), schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename), UInt32GetDatum(period)};
+    Datum values[] = {CStringGetTextDatum(default_tablename), UInt32GetDatum(default_period), config ? CStringGetTextDatum(config) : (Datum)NULL, CStringGetTextDatum(dataname), CStringGetTextDatum(username), schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename), UInt32GetDatum(period)};
     char nulls[] = {' ', ' ', config ? ' ' : 'n', ' ', ' ', schemaname ? ' ' : 'n', ' ', ' '};
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS ("
-        "SELECT      COALESCE(datname, database)::TEXT AS database,\n"
-        "            COALESCE(COALESCE(usename, username), database)::TEXT AS username,\n"
+        "SELECT      COALESCE(datname, dataname)::TEXT AS dataname,\n"
+        "            COALESCE(COALESCE(usename, username), dataname)::TEXT AS username,\n"
         "            schemaname,\n"
         "            COALESCE(tablename, $1) AS tablename,\n"
         "            COALESCE(period, $2) AS period\n"
-        "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (database TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
-        "LEFT JOIN   pg_database AS d ON database IS NULL OR (datname = database AND NOT datistemplate AND datallowconn)\n"
-        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(username, (SELECT usename FROM pg_user WHERE usesysid = datdba)), database)\n"
-        ") SELECT * FROM s WHERE database = $4 AND username = $5 AND schemaname IS NOT DISTINCT FROM $6 AND tablename = $7 AND period = $8";
-    elog(LOG, "%s(%s:%d): config = %s, default_tablename = %s, default_period = %u, database = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period, database, username, schemaname ? schemaname : "(null)", tablename, period);
+        "FROM        json_populate_recordset(NULL::RECORD, COALESCE($3::JSON, '[{}]'::JSON)) AS s (dataname TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
+        "LEFT JOIN   pg_database AS d ON dataname IS NULL OR (datname = dataname AND NOT datistemplate AND datallowconn)\n"
+        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(username, (SELECT usename FROM pg_user WHERE usesysid = datdba)), dataname)\n"
+        ") SELECT * FROM s WHERE dataname = $4 AND username = $5 AND schemaname IS NOT DISTINCT FROM $6 AND tablename = $7 AND period = $8";
+    elog(LOG, "%s(%s:%d): config = %s, default_tablename = %s, default_period = %u, dataname = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, config ? config : "(null)", default_tablename, default_period, dataname, username, schemaname ? schemaname : "(null)", tablename, period);
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
@@ -327,14 +327,14 @@ static void check(void) {
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     StringInfoData buf;
-    database = MyBgworkerEntry->bgw_extra;
-    username = database + strlen(database) + 1;
+    dataname = MyBgworkerEntry->bgw_extra;
+    username = dataname + strlen(dataname) + 1;
     schemaname = username + strlen(username) + 1;
     tablename = schemaname + strlen(schemaname) + 1;
     period = *(uint32 *)(tablename + strlen(tablename) + 1);
     if (tablename == schemaname + 1) schemaname = NULL;
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, period);
-    database_q = quote_identifier(database);
+    elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, period);
+    dataname_q = quote_identifier(dataname);
     username_q = quote_identifier(username);
     schemaname_q = schemaname ? quote_identifier(schemaname) : "";
     point = schemaname ? "." : "";
@@ -342,7 +342,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnection(database, username, 0);
+    BackgroundWorkerInitializeConnection(dataname, username, 0);
     initStringInfo(&buf);
     appendStringInfo(&buf, "%s %u", MyBgworkerEntry->bgw_type, period);
     pgstat_report_appname(buf.data);

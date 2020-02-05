@@ -5,8 +5,8 @@ static volatile sig_atomic_t got_sigterm = false;
 static char *request;
 static char *response;
 static char *state;
-static const char *database = NULL;
-static const char *database_q;
+static const char *dataname = NULL;
+static const char *dataname_q;
 static const char *point;
 static const char *queue = NULL;
 static const char *schemaname = NULL;
@@ -282,7 +282,7 @@ static void error(void) {
 
 static void execute(void) {
     work();
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), timeout, request, count);
+    elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), timeout, request, count);
     SPI_connect_my(request, timeout);
     PG_TRY(); {
         int rc;
@@ -309,22 +309,22 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     id = main_arg;
     start = GetCurrentTimestamp();
     count = 0;
-    database = MyBgworkerEntry->bgw_extra;
-    username = database + strlen(database) + 1;
+    dataname = MyBgworkerEntry->bgw_extra;
+    username = dataname + strlen(dataname) + 1;
     schemaname = username + strlen(username) + 1;
     tablename = schemaname + strlen(schemaname) + 1;
     queue = tablename + strlen(tablename) + 1;
     max = *(uint32 *)(queue + strlen(queue) + 1);
     if (tablename == schemaname + 1) schemaname = NULL;
-    elog(LOG, "%s(%s:%d): database = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, database, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), queue, max);
-    database_q = quote_identifier(database);
+    elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), queue, max);
+    dataname_q = quote_identifier(dataname);
     username_q = quote_identifier(username);
     schemaname_q = schemaname ? quote_identifier(schemaname) : "";
     point = schemaname ? "." : "";
     tablename_q = quote_identifier(tablename);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnection(database, username, 0);
+    BackgroundWorkerInitializeConnection(dataname, username, 0);
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) proc_exit(1);
