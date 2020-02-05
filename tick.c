@@ -16,6 +16,8 @@ static const char *tablename;
 static const char *tablename_q;
 static const char *username;
 static const char *username_q;
+static Datum schemaname_d;
+static Datum tablename_d;
 
 static uint32 period;
 
@@ -115,7 +117,7 @@ static void init_index(const char *index) {
 static void init_lock(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, TEXTOID};
-    Datum values[] = {schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename)};
+    Datum values[] = {schemaname_d, tablename_d};
     char nulls[] = {schemaname ? ' ' : 'n', ' '};
     static const char *command =
         "SELECT      pg_try_advisory_lock(c.oid::BIGINT) AS lock,\n"
@@ -140,14 +142,12 @@ static void init_lock(void) {
         }
     }
     SPI_finish_my(command);
-    if (schemaname) pfree((void *)values[0]);
-    pfree((void *)values[1]);
 }
 
 static void init_fix(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, TEXTOID};
-    Datum values[] = {schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename)};
+    Datum values[] = {schemaname_d, tablename_d};
     char nulls[] = {schemaname ? ' ' : 'n', ' '};
     StringInfoData buf;
     elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename);
@@ -165,8 +165,6 @@ static void init_fix(void) {
     SPI_commit();
     SPI_finish_my(buf.data);
     pfree(buf.data);
-    if (schemaname) pfree((void *)values[0]);
-    pfree((void *)values[1]);
 }
 
 static void register_task_worker(const Datum id, const char *queue, const uint32 max) {
@@ -210,7 +208,7 @@ static void register_task_worker(const Datum id, const char *queue, const uint32
 static void tick(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, TEXTOID};
-    Datum values[] = {schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename)};
+    Datum values[] = {schemaname_d, tablename_d};
     char nulls[] = {schemaname ? ' ' : 'n', ' '};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
@@ -254,8 +252,6 @@ static void tick(void) {
         pfree(queue);
     }
     SPI_finish_my(command);
-    if (schemaname) pfree((void *)values[0]);
-    pfree((void *)values[1]);
 }
 
 static void init(void) {
@@ -285,7 +281,7 @@ static void sigterm(SIGNAL_ARGS) {
 static void check(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, INT4OID, JSONOID, TEXTOID, TEXTOID, TEXTOID, TEXTOID, INT4OID};
-    Datum values[] = {CStringGetTextDatum(pg_task_taskname), UInt32GetDatum(pg_task_period), CStringGetTextDatum(pg_task_config), CStringGetTextDatum(dataname), CStringGetTextDatum(username), schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename), UInt32GetDatum(period)};
+    Datum values[] = {CStringGetTextDatum(pg_task_taskname), UInt32GetDatum(pg_task_period), CStringGetTextDatum(pg_task_config), CStringGetTextDatum(dataname), CStringGetTextDatum(username), schemaname_d, tablename_d, UInt32GetDatum(period)};
     char nulls[] = {' ', ' ', ' ', ' ', ' ', schemaname ? ' ' : 'n', ' ', ' '};
     static SPIPlanPtr plan = NULL;
     static const char *command =
@@ -313,8 +309,6 @@ static void check(void) {
     pfree((void *)values[2]);
     pfree((void *)values[3]);
     pfree((void *)values[4]);
-    if (schemaname) pfree((void *)values[5]);
-    pfree((void *)values[6]);
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
@@ -329,8 +323,10 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     dataname_q = quote_identifier(dataname);
     username_q = quote_identifier(username);
     schemaname_q = schemaname ? quote_identifier(schemaname) : "";
+    schemaname_d = schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL;
     point = schemaname ? "." : "";
     tablename_q = quote_identifier(tablename);
+    tablename_d = CStringGetTextDatum(tablename);
     pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
