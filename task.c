@@ -15,7 +15,13 @@ static const char *tablename;
 static const char *tablename_q;
 static const char *username;
 static const char *username_q;
+
 static const char *queue;
+
+static Datum dataname_d;
+static Datum username_d;
+static Datum schemaname_d;
+static Datum tablename_d;
 
 static Datum id;
 static MemoryContext oldMemoryContext;
@@ -38,10 +44,11 @@ static void update_ps_display(void) {
 static void work(void) {
     int rc;
     static Oid argtypes[] = {INT8OID, INT8OID, TEXTOID, TEXTOID, TEXTOID, TEXTOID};
-    Datum values[] = {id, MyProcPid, CStringGetTextDatum(dataname), CStringGetTextDatum(username), schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL, CStringGetTextDatum(tablename)};
+    Datum values[] = {id, MyProcPid, dataname_d, username_d, schemaname_d, tablename_d};
     char nulls[] = {' ', ' ', ' ', ' ', schemaname ? ' ' : 'n', ' '};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
+    elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), queue, max);
     update_ps_display();
     oldMemoryContext = CurrentMemoryContext;
     timeout = 0;
@@ -83,10 +90,6 @@ static void work(void) {
     }
     SPI_finish_my(command);
     if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
-    pfree((void *)values[2]);
-    pfree((void *)values[3]);
-    if (schemaname) pfree((void *)values[4]);
-    pfree((void *)values[5]);
 }
 
 static void repeat_task(void) {
@@ -294,8 +297,9 @@ static void error(void) {
 }
 
 static void execute(void) {
+    elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), queue, max);
     work();
-    elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), timeout, request, count);
+    elog(LOG, "%s(%s:%d): timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, timeout, request, count);
     SPI_connect_my(request, timeout);
     PG_TRY(); {
         int rc;
@@ -331,10 +335,14 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     if (tablename == schemaname + 1) schemaname = NULL;
     elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), queue, max);
     dataname_q = quote_identifier(dataname);
+    dataname_d = CStringGetTextDatum(dataname);
     username_q = quote_identifier(username);
+    username_d = CStringGetTextDatum(username);
     schemaname_q = schemaname ? quote_identifier(schemaname) : "";
+    schemaname_d = schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL;
     point = schemaname ? "." : "";
     tablename_q = quote_identifier(tablename);
+    tablename_d = CStringGetTextDatum(tablename);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(dataname, username, 0);

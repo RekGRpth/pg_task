@@ -16,6 +16,7 @@ static const char *tablename;
 static const char *tablename_q;
 static const char *username;
 static const char *username_q;
+
 static Datum dataname_d;
 static Datum username_d;
 static Datum schemaname_d;
