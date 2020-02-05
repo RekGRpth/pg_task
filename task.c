@@ -5,16 +5,18 @@ static volatile sig_atomic_t got_sigterm = false;
 static char *request;
 static char *response;
 static char *state;
-static const char *dataname = NULL;
+
+static const char *dataname;
 static const char *dataname_q;
 static const char *point;
-static const char *queue = NULL;
-static const char *schemaname = NULL;
+static const char *schemaname;
 static const char *schemaname_q;
-static const char *tablename = NULL;
+static const char *tablename;
 static const char *tablename_q;
-static const char *username = NULL;
+static const char *username;
 static const char *username_q;
+static const char *queue;
+
 static Datum id;
 static MemoryContext oldMemoryContext;
 static TimestampTz start;

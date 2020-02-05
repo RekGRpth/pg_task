@@ -16,6 +16,7 @@ static const char *tablename;
 static const char *tablename_q;
 static const char *username;
 static const char *username_q;
+
 static uint32 period;
 
 static void init_schema(void) {
