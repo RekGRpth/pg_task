@@ -16,6 +16,8 @@ static const char *tablename;
 static const char *tablename_q;
 static const char *username;
 static const char *username_q;
+static Datum dataname_d;
+static Datum username_d;
 static Datum schemaname_d;
 static Datum tablename_d;
 
@@ -281,7 +283,7 @@ static void sigterm(SIGNAL_ARGS) {
 static void check(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, INT4OID, JSONOID, TEXTOID, TEXTOID, TEXTOID, TEXTOID, INT4OID};
-    Datum values[] = {CStringGetTextDatum(pg_task_taskname), UInt32GetDatum(pg_task_period), CStringGetTextDatum(pg_task_config), CStringGetTextDatum(dataname), CStringGetTextDatum(username), schemaname_d, tablename_d, UInt32GetDatum(period)};
+    Datum values[] = {CStringGetTextDatum(pg_task_taskname), UInt32GetDatum(pg_task_period), CStringGetTextDatum(pg_task_config), dataname_d, username_d, schemaname_d, tablename_d, UInt32GetDatum(period)};
     char nulls[] = {' ', ' ', ' ', ' ', ' ', schemaname ? ' ' : 'n', ' ', ' '};
     static SPIPlanPtr plan = NULL;
     static const char *command =
@@ -307,8 +309,6 @@ static void check(void) {
     SPI_finish_my(command);
     pfree((void *)values[0]);
     pfree((void *)values[2]);
-    pfree((void *)values[3]);
-    pfree((void *)values[4]);
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
@@ -321,7 +321,9 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     if (tablename == schemaname + 1) schemaname = NULL;
     elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, period);
     dataname_q = quote_identifier(dataname);
+    dataname_d = CStringGetTextDatum(dataname);
     username_q = quote_identifier(username);
+    username_d = CStringGetTextDatum(username);
     schemaname_q = schemaname ? quote_identifier(schemaname) : "";
     schemaname_d = schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL;
     point = schemaname ? "." : "";
