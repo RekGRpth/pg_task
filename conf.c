@@ -50,12 +50,12 @@ static void create_dataname(const char *username, const char *dataname) {
 
 static void register_tick_worker(const char *dataname, const char *username, const char *schemaname, const char *tablename, uint32 period) {
     StringInfoData buf;
-    uint32 dataname_len = strlen(dataname), username_len = strlen(username), schemaname_len = schemaname ? strlen(schemaname) : 0, tablename_len = strlen(tablename), period_len = sizeof(uint32);
+    uint32 dataname_len = strlen(dataname), username_len = strlen(username), schemaname_len = schemaname ? strlen(schemaname) : 0, tablename_len = strlen(tablename), period_len = sizeof(period);
     pid_t pid;
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker;
     elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, period);
-    MemSet(&worker, 0, sizeof(BackgroundWorker));
+    MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;

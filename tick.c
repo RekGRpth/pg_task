@@ -173,12 +173,12 @@ static void init_fix(void) {
 
 static void register_task_worker(const Datum id, const char *queue, const uint32 max) {
     StringInfoData buf;
-    uint32 dataname_len = strlen(dataname), username_len = strlen(username), schemaname_len = schemaname ? strlen(schemaname) : 0, tablename_len = strlen(tablename), queue_len = strlen(queue), max_len = sizeof(uint32);
+    uint32 dataname_len = strlen(dataname), username_len = strlen(username), schemaname_len = schemaname ? strlen(schemaname) : 0, tablename_len = strlen(tablename), queue_len = strlen(queue), max_len = sizeof(max);
     pid_t pid;
     BackgroundWorker worker;
     BackgroundWorkerHandle *handle;
     elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), queue, max);
-    MemSet(&worker, 0, sizeof(BackgroundWorker));
+    MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = id;
     worker.bgw_notify_pid = MyProcPid;

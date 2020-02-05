@@ -32,7 +32,7 @@ char *TextDatumGetCStringOrNULL(HeapTuple tuple, TupleDesc tupdesc, const char *
 static void register_conf_worker(void) {
     StringInfoData buf;
     BackgroundWorker worker;
-    MemSet(&worker, 0, sizeof(BackgroundWorker));
+    MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
