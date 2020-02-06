@@ -39,12 +39,6 @@ void SPI_finish_my(const char *command) {
     pgstat_report_stat(true);
 }
 
-char *TextDatumGetCStringOrNULL(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool *isnull) {
-    Datum datum = SPI_getbinval(tuple, tupdesc, SPI_fnumber(tupdesc, fname), isnull);
-    if (*isnull) return NULL;
-    return TextDatumGetCString(datum);
-}
-
 static void register_conf_worker(void) {
     StringInfoData buf;
     BackgroundWorker worker;

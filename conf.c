@@ -105,20 +105,16 @@ static void check(void) {
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
     if ((rc = SPI_execute_plan(plan, NULL, NULL, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
-        bool data_isnull, user_isnull, schema_isnull, table_isnull, period_isnull, datname_isnull, usename_isnull;
-        const char *data = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", &data_isnull);
-        const char *user = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", &user_isnull);
-        const char *schema = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schema", &schema_isnull);
-        const char *table = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", &table_isnull);
+        bool period_isnull, datname_isnull, usename_isnull;
+        const char *data = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
+        const char *user = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
+        const char *schema = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
+        const char *table = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
         const uint32 period = DatumGetUInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull);
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull);
         elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %u, datname_isnull = %s, usename_isnull = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period, datname_isnull ? "true" : "false", usename_isnull ? "true" : "false");
-        if (data_isnull) ereport(ERROR, (errmsg("%s(%s:%d): data_isnull", __func__, __FILE__, __LINE__)));
-        if (user_isnull) ereport(ERROR, (errmsg("%s(%s:%d): user_isnull", __func__, __FILE__, __LINE__)));
-        if (table_isnull) ereport(ERROR, (errmsg("%s(%s:%d): table_isnull", __func__, __FILE__, __LINE__)));
         if (period_isnull) ereport(ERROR, (errmsg("%s(%s:%d): period_isnull", __func__, __FILE__, __LINE__)));
         if (usename_isnull) create_user(user);
         if (datname_isnull) create_data(user, data);
@@ -128,6 +124,7 @@ static void check(void) {
         if (schema) pfree((void *)schema);
         pfree((void *)table);
     }
+    SPI_commit();
     SPI_finish_my(command);
 }
 
