@@ -4,7 +4,6 @@ static volatile sig_atomic_t got_sigterm = false;
 
 static char *request;
 static char *response;
-static char *state;
 
 static const char *data;
 static const char *data_quote;
@@ -23,6 +22,9 @@ static Datum user_datum;
 static Datum schema_datum;
 static Datum table_datum;
 static Datum queue_datum;
+static Datum done_datum;
+static Datum fail_datum;
+static Datum state_datum;
 
 static Datum id;
 static MemoryContext oldMemoryContext;
@@ -176,11 +178,10 @@ static void done(void) {
     int rc;
     bool delete, repeat;
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
-    Datum values[] = {id, CStringGetTextDatum(state), response ? CStringGetTextDatum(response) : (Datum)NULL};
+    Datum values[] = {id, state_datum, response ? CStringGetTextDatum(response) : (Datum)NULL};
     char nulls[] = {' ', ' ', response ? ' ' : 'n', ' ', ' '};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
-    elog(LOG, "%s(%s:%d): id = %lu, response = %s, state = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), response ? response : "(null)", state);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -242,7 +243,8 @@ static void success(void) {
         response = MemoryContextStrdup(oldMemoryContext, buf.data);
         pfree(buf.data);
     }
-    state = "DONE";
+    state_datum = done_datum;
+    elog(LOG, "%s(%s:%d): id = %lu, response = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), response ? response : "(null)");
 }
 
 static void error(void) {
@@ -279,11 +281,11 @@ static void error(void) {
     FreeErrorData(edata);
     response = MemoryContextStrdup(oldMemoryContext, buf.data);
     pfree(buf.data);
-    state = "FAIL";
+    state_datum = fail_datum;
+    elog(LOG, "%s(%s:%d): id = %lu, response = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), response);
 }
 
 static void execute(void) {
-//    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
     work();
     elog(LOG, "%s(%s:%d): timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, timeout, request, count);
     SPI_connect_my(request, timeout);
@@ -331,6 +333,8 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     table_quote = quote_identifier(table);
     table_datum = CStringGetTextDatum(table);
     queue_datum = CStringGetTextDatum(queue);
+    done_datum = CStringGetTextDatum("DONE");
+    fail_datum = CStringGetTextDatum("FAIL");
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(data, user, 0);
