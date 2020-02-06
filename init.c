@@ -3,7 +3,7 @@
 PG_MODULE_MAGIC;
 
 static char *pg_task_config;
-static char *pg_task_taskname;
+static char *pg_task_task;
 static uint32 pg_task_period;
 
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker) {
@@ -76,8 +76,8 @@ void _PG_init(void); void _PG_init(void) {
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) ereport(FATAL, (errmsg("%s(%s:%d): !process_shared_preload_libraries_in_progress", __func__, __FILE__, __LINE__)));
     DefineCustomStringVariable("pg_task.config", "pg_task config", NULL, &pg_task_config, "[{}]", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.taskname", "pg_task taskname", NULL, &pg_task_taskname, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.task", "pg_task task", NULL, &pg_task_task, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.period", "pg_task period", NULL, (int *)&pg_task_period, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    elog(LOG, "%s(%s:%d): pg_task_config = %s, pg_task_taskname = %s, pg_task_period = %u", __func__, __FILE__, __LINE__, pg_task_config, pg_task_taskname, pg_task_period);
+    elog(LOG, "%s(%s:%d): pg_task_config = %s, pg_task_task = %s, pg_task_period = %u", __func__, __FILE__, __LINE__, pg_task_config, pg_task_task, pg_task_period);
     register_conf_worker();
 }

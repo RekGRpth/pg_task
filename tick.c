@@ -288,7 +288,7 @@ static void check(void) {
         "SELECT      COALESCE(datname, data)::TEXT AS data,\n"
         "            COALESCE(COALESCE(usename, user), data)::TEXT AS user,\n"
         "            schema,\n"
-        "            COALESCE(table, current_setting('pg_task.taskname', false)) AS table,\n"
+        "            COALESCE(table, current_setting('pg_task.task', false)) AS table,\n"
         "            COALESCE(period, current_setting('pg_task.period', false)::INT) AS period\n"
         "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (data TEXT, user TEXT, schema TEXT, table TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON data IS NULL OR (datname = data AND NOT datistemplate AND datallowconn)\n"
