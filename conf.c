@@ -63,11 +63,11 @@ static void register_tick_worker(const char *data, const char *user, const char 
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_function_name, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "pg_task %s%s%s", schema ? schema : "", schema ? "." : "", table);
+    appendStringInfo(&buf, "pg_task %s%s%s", schema ? schema : "", schema ? " " : "", table);
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s %s pg_task %s%s%s %u", user, data, schema ? schema : "", schema ? "." : "", table, period);
+    appendStringInfo(&buf, "%s %s pg_task %s%s%s %u", user, data, schema ? schema : "", schema ? " " : "", table, period);
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
@@ -96,7 +96,7 @@ static void check(void) {
         "LEFT JOIN   pg_database AS d ON data IS NULL OR (datname = data AND NOT datistemplate AND datallowconn)\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
         ") SELECT s.* FROM s\n"
-        "LEFT JOIN   pg_stat_activity AS a ON a.datname = data AND a.usename = user AND application_name = concat_ws(' ', 'pg_task', schema||'.', \"table\", period::TEXT)\n"
+        "LEFT JOIN   pg_stat_activity AS a ON a.datname = data AND a.usename = user AND application_name = concat_ws(' ', 'pg_task', schema, \"table\", period::TEXT)\n"
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
         "WHERE       a.pid IS NULL";
     SPI_connect_my(command, StatementTimeout);
