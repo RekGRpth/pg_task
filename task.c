@@ -290,7 +290,7 @@ static void error(void) {
 static void execute(void) {
     executeMemoryContext = CurrentMemoryContext;
     work();
-    elog(LOG, "%s(%s:%d): timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, timeout, request, count);
+    elog(LOG, "%s(%s:%d): id = %lu, timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, DatumGetUInt64(id), timeout, request, count);
     SPI_connect_my(request, timeout);
     PG_TRY(); {
         int rc;
