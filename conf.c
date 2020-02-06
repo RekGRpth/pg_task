@@ -108,11 +108,11 @@ static void check(void) {
     SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool data_isnull, user_isnull, schema_isnull, table_isnull, period_isnull, datname_isnull, usename_isnull;
-        char *data = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", &data_isnull);
-        char *user = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", &user_isnull);
-        char *schema = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schema", &schema_isnull);
-        char *table = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", &table_isnull);
-        uint32 period = DatumGetUInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
+        const char *data = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", &data_isnull);
+        const char *user = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", &user_isnull);
+        const char *schema = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schema", &schema_isnull);
+        const char *table = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", &table_isnull);
+        const uint32 period = DatumGetUInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull);
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull);
         elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %u, datname_isnull = %s, usename_isnull = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period, datname_isnull ? "true" : "false", usename_isnull ? "true" : "false");
@@ -123,10 +123,10 @@ static void check(void) {
         if (usename_isnull) create_user(user);
         if (datname_isnull) create_data(user, data);
         register_tick_worker(data, user, schema, table, period);
-        pfree(data);
-        pfree(user);
-        if (schema) pfree(schema);
-        pfree(table);
+        pfree((void *)data);
+        pfree((void *)user);
+        if (schema) pfree((void *)schema);
+        pfree((void *)table);
     }
     SPI_finish_my(command);
 }
