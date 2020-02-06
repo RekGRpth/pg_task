@@ -293,7 +293,7 @@ static void check(void) {
         "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (dataname TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON dataname IS NULL OR (datname = dataname AND NOT datistemplate AND datallowconn)\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(username, (SELECT usename FROM pg_user WHERE usesysid = datdba)), dataname)\n"
-        ") SELECT * FROM s WHERE dataname = $4 AND username = $5 AND schemaname IS NOT DISTINCT FROM $6 AND tablename = $7 AND period = $8";
+        ") SELECT * FROM s WHERE dataname = $1 AND username = $2 AND schemaname IS NOT DISTINCT FROM $3 AND tablename = $4 AND period = $5";
     elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, period);
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
@@ -304,8 +304,6 @@ static void check(void) {
     SPI_commit();
     if (SPI_processed == 0) got_sigterm = true;
     SPI_finish_my(command);
-    pfree((void *)values[0]);
-    pfree((void *)values[2]);
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
