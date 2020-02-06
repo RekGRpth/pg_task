@@ -248,7 +248,7 @@ static void success(void) {
 }
 
 static void error(void) {
-    MemoryContext errMemoryContext = MemoryContextSwitchTo(oldMemoryContext);
+    MemoryContext errorMemoryContext = MemoryContextSwitchTo(oldMemoryContext);
     ErrorData *edata = CopyErrorData();
     StringInfoData buf;
     elog(LOG, "%s(%s:%d): id = %lu", __func__, __FILE__, __LINE__, DatumGetUInt64(id));
@@ -281,11 +281,10 @@ static void error(void) {
     if (edata->internalquery) appendStringInfo(&buf, "\ninternalquery::text\t%s", edata->internalquery);
     if (edata->saved_errno) appendStringInfo(&buf, "\nsaved_errno::int4\t%i", edata->saved_errno);
     FreeErrorData(edata);
-    MemoryContextSwitchTo(errMemoryContext);
-    response = MemoryContextStrdup(oldMemoryContext, buf.data);
-    pfree(buf.data);
+    response = buf.data;
     state_datum = fail_datum;
     elog(LOG, "%s(%s:%d): id = %lu, response = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), response);
+    MemoryContextSwitchTo(errorMemoryContext);
 }
 
 static void execute(void) {
