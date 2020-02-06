@@ -293,7 +293,6 @@ static void error(void) {
 }
 
 static void execute(void) {
-    executeMemoryContext = CurrentMemoryContext;
     work();
     elog(LOG, "%s(%s:%d): id = %lu, timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, DatumGetUInt64(id), timeout, request, count);
     SPI_connect_my(request, timeout);
@@ -321,6 +320,7 @@ static void sigterm(SIGNAL_ARGS) {
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     StringInfoData buf;
+    executeMemoryContext = CurrentMemoryContext;
     id = main_arg;
     start = GetCurrentTimestamp();
     count = 0;
