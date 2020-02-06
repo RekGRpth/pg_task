@@ -293,7 +293,7 @@ static void check(void) {
         "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (data TEXT, \"user\" TEXT, schema TEXT, \"table\" TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON data IS NULL OR (datname = data AND NOT datistemplate AND datallowconn)\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(user, (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT * FROM s WHERE data = $1 AND user = $2 AND schema IS NOT DISTINCT FROM $3 AND table = $4 AND period = $5";
+        ") SELECT * FROM s WHERE data = $1 AND user = $2 AND schema IS NOT DISTINCT FROM $3 AND \"table\" = $4 AND period = $5";
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
