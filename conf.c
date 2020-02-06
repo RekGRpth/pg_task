@@ -94,7 +94,7 @@ static void check(void) {
         "            COALESCE(period, current_setting('pg_task.period', false)::INT) AS period\n"
         "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (data TEXT, \"user\" TEXT, schema TEXT, \"table\" TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON data IS NULL OR (datname = data AND NOT datistemplate AND datallowconn)\n"
-        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(user, (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
+        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
         ") SELECT s.* FROM s\n"
         "LEFT JOIN   pg_stat_activity AS a ON a.datname = data AND a.usename = user AND application_name = concat_ws(' ', 'pg_task', schema||'.', \"table\", period::TEXT)\n"
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
