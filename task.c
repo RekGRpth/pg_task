@@ -217,7 +217,6 @@ static void done(void) {
     if (repeat) repeat_task();
     if (delete && !response) delete_task();
     if (response) pfree(response);
-    more();
 }
 
 static void success(void) {
@@ -310,6 +309,7 @@ static void execute(void) {
     SPI_finish_my(request);
     pfree(request);
     done();
+    more();
 }
 
 static void sigterm(SIGNAL_ARGS) {
