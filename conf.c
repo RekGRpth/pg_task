@@ -3,33 +3,33 @@
 static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
 
-static void create_username(const char *username) {
+static void create_user(const char *user) {
     int rc;
     StringInfoData buf;
-    const char *user_quote = quote_identifier(username);
-    elog(LOG, "%s(%s:%d): username = %s", __func__, __FILE__, __LINE__, username);
+    const char *user_quote = quote_identifier(user);
+    elog(LOG, "%s(%s:%d): user = %s", __func__, __FILE__, __LINE__, user);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE USER %s", user_quote);
     SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     SPI_finish_my(buf.data);
-    if (user_quote != username) pfree((void *)user_quote);
+    if (user_quote != user) pfree((void *)user_quote);
     pfree(buf.data);
 }
 
-static void create_data(const char *username, const char *data) {
+static void create_data(const char *user, const char *data) {
     StringInfoData buf;
-    const char *user_quote = quote_identifier(username);
+    const char *user_quote = quote_identifier(user);
     const char *data_quote = quote_identifier(data);
     ParseState *pstate = make_parsestate(NULL);
     List *options = NIL;
     CreatedbStmt *stmt = makeNode(CreatedbStmt);
-    elog(LOG, "%s(%s:%d): username = %s, data = %s", __func__, __FILE__, __LINE__, username, data);
+    elog(LOG, "%s(%s:%d): user = %s, data = %s", __func__, __FILE__, __LINE__, user, data);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE DATABASE %s WITH OWNER = %s", data_quote, user_quote);
     pstate->p_sourcetext = buf.data;
-    options = lappend(options, makeDefElem("owner", (Node *)makeString((char *)username), -1));
+    options = lappend(options, makeDefElem("owner", (Node *)makeString((char *)user), -1));
     stmt->dbname = (char *)data;
     stmt->options = options;
     SPI_connect_my(buf.data, StatementTimeout);
@@ -39,16 +39,16 @@ static void create_data(const char *username, const char *data) {
     free_parsestate(pstate);
     list_free_deep(options);
     pfree(stmt);
-    if (user_quote != username) pfree((void *)user_quote);
+    if (user_quote != user) pfree((void *)user_quote);
     if (data_quote != data) pfree((void *)data_quote);
     pfree(buf.data);
 }
 
-static void register_tick_worker(const char *data, const char *username, const char *schema, const char *table, uint32 period) {
+static void register_tick_worker(const char *data, const char *user, const char *schema, const char *table, uint32 period) {
     StringInfoData buf;
-    uint32 data_len = strlen(data), user_len = strlen(username), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), period_len = sizeof(period);
+    uint32 data_len = strlen(data), user_len = strlen(user), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), period_len = sizeof(period);
     BackgroundWorker worker;
-    elog(LOG, "%s(%s:%d): data = %s, username = %s, schema = %s, table = %s, period = %u", __func__, __FILE__, __LINE__, data, username, schema ? schema : "(null)", table, period);
+    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = MyProcPid;
@@ -67,13 +67,13 @@ static void register_tick_worker(const char *data, const char *username, const c
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s %s pg_task %s%s%s %u", username, data, schema ? schema : "", schema ? "." : "", table, period);
+    appendStringInfo(&buf, "%s %s pg_task %s%s%s %u", user, data, schema ? schema : "", schema ? "." : "", table, period);
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
     if (data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + period_len > BGW_EXTRALEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_EXTRALEN", __func__, __FILE__, __LINE__, data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + period_len)));
     memcpy(worker.bgw_extra, data, data_len);
-    memcpy(worker.bgw_extra + data_len + 1, username, user_len);
+    memcpy(worker.bgw_extra + data_len + 1, user, user_len);
     memcpy(worker.bgw_extra + data_len + 1 + user_len + 1, schema, schema_len);
     memcpy(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1, table, table_len);
     *(typeof(period) *)(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1) = period;
@@ -87,16 +87,16 @@ static void check(void) {
         "WITH s AS (\n"
         "SELECT      COALESCE(datname, data)::TEXT AS data,\n"
         "            datname,\n"
-        "            COALESCE(COALESCE(usename, username), data)::TEXT AS username,\n"
+        "            COALESCE(COALESCE(usename, user), data)::TEXT AS user,\n"
         "            usename,\n"
         "            schema,\n"
         "            COALESCE(table, current_setting('pg_task.taskname', false)) AS table,\n"
         "            COALESCE(period, current_setting('pg_task.period', false)::INT) AS period\n"
-        "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (data TEXT, username TEXT, schema TEXT, table TEXT, period BIGINT)\n"
+        "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (data TEXT, user TEXT, schema TEXT, table TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON data IS NULL OR (datname = data AND NOT datistemplate AND datallowconn)\n"
-        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(username, (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
+        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(user, (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
         ") SELECT s.* FROM s\n"
-        "LEFT JOIN   pg_stat_activity AS a ON a.datname = data AND a.usename = username AND application_name = concat_ws(' ', 'pg_task', schema||'.', table, period::TEXT)\n"
+        "LEFT JOIN   pg_stat_activity AS a ON a.datname = data AND a.usename = user AND application_name = concat_ws(' ', 'pg_task', schema||'.', table, period::TEXT)\n"
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
         "WHERE       a.pid IS NULL";
     SPI_connect_my(command, StatementTimeout);
@@ -109,22 +109,22 @@ static void check(void) {
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool data_isnull, user_isnull, schema_isnull, table_isnull, period_isnull, datname_isnull, usename_isnull;
         char *data = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", &data_isnull);
-        char *username = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "username", &user_isnull);
+        char *user = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", &user_isnull);
         char *schema = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schema", &schema_isnull);
         char *table = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", &table_isnull);
         uint32 period = DatumGetUInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull);
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull);
-        elog(LOG, "%s(%s:%d): data = %s, username = %s, schema = %s, table = %s, period = %u, datname_isnull = %s, usename_isnull = %s", __func__, __FILE__, __LINE__, data, username, schema ? schema : "(null)", table, period, datname_isnull ? "true" : "false", usename_isnull ? "true" : "false");
+        elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %u, datname_isnull = %s, usename_isnull = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period, datname_isnull ? "true" : "false", usename_isnull ? "true" : "false");
         if (data_isnull) ereport(ERROR, (errmsg("%s(%s:%d): data_isnull", __func__, __FILE__, __LINE__)));
         if (user_isnull) ereport(ERROR, (errmsg("%s(%s:%d): user_isnull", __func__, __FILE__, __LINE__)));
         if (table_isnull) ereport(ERROR, (errmsg("%s(%s:%d): table_isnull", __func__, __FILE__, __LINE__)));
         if (period_isnull) ereport(ERROR, (errmsg("%s(%s:%d): period_isnull", __func__, __FILE__, __LINE__)));
-        if (usename_isnull) create_username(username);
-        if (datname_isnull) create_data(username, data);
-        register_tick_worker(data, username, schema, table, period);
+        if (usename_isnull) create_user(user);
+        if (datname_isnull) create_data(user, data);
+        register_tick_worker(data, user, schema, table, period);
         pfree(data);
-        pfree(username);
+        pfree(user);
         if (schema) pfree(schema);
         pfree(table);
     }

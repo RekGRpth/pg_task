@@ -13,7 +13,7 @@ static const char *schema;
 static const char *schema_quote;
 static const char *table;
 static const char *table_quote;
-static const char *username;
+static const char *user;
 static const char *user_quote;
 
 static const char *queue;
@@ -49,7 +49,7 @@ static void work(void) {
     char nulls[] = {' ', ' ', ' ', ' ', schema ? ' ' : 'n', ' '};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
-    elog(LOG, "%s(%s:%d): data = %s, username = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, username, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
+    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
     update_ps_display();
     oldMemoryContext = CurrentMemoryContext;
     timeout = 0;
@@ -66,7 +66,7 @@ static void work(void) {
             "FROM s WHERE u.id = s.id RETURNING request,\n"
             "        COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout,\n"
             "        set_config('pg_task.data', $3::TEXT, false),\n"
-            "        set_config('pg_task.username', $4::TEXT, false),\n"
+            "        set_config('pg_task.user', $4::TEXT, false),\n"
             "        set_config('pg_task.schema', $5::TEXT, false),\n"
             "        set_config('pg_task.table', $6::TEXT, false),\n"
             "        set_config('pg_task.id', $1::TEXT, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
@@ -297,7 +297,7 @@ static void error(void) {
 }
 
 static void execute(void) {
-    elog(LOG, "%s(%s:%d): data = %s, username = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, username, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
+    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
     work();
     elog(LOG, "%s(%s:%d): timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, timeout, request, count);
     SPI_connect_my(request, timeout);
@@ -327,17 +327,17 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     start = GetCurrentTimestamp();
     count = 0;
     data = MyBgworkerEntry->bgw_extra;
-    username = data + strlen(data) + 1;
-    schema = username + strlen(username) + 1;
+    user = data + strlen(data) + 1;
+    schema = user + strlen(user) + 1;
     table = schema + strlen(schema) + 1;
     queue = table + strlen(table) + 1;
     max = *(typeof(max) *)(queue + strlen(queue) + 1);
     if (table == schema + 1) schema = NULL;
-    elog(LOG, "%s(%s:%d): data = %s, username = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, username, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
+    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
     data_quote = quote_identifier(data);
     data_datum = CStringGetTextDatum(data);
-    user_quote = quote_identifier(username);
-    user_datum = CStringGetTextDatum(username);
+    user_quote = quote_identifier(user);
+    user_datum = CStringGetTextDatum(user);
     schema_quote = schema ? quote_identifier(schema) : "";
     schema_datum = schema ? CStringGetTextDatum(schema) : (Datum)NULL;
     point = schema ? "." : "";
@@ -346,7 +346,7 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     queue_datum = CStringGetTextDatum(queue);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnection(data, username, 0);
+    BackgroundWorkerInitializeConnection(data, user, 0);
     if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) ereport(ERROR, (errmsg("%s(%s:%d): !BackendPidGetProc", __func__, __FILE__, __LINE__)));
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
