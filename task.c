@@ -178,9 +178,11 @@ static void done(void) {
     bool delete, repeat;
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
     Datum values[] = {id, state_datum, response ? CStringGetTextDatum(response) : (Datum)NULL};
-    char nulls[] = {' ', ' ', response ? ' ' : 'n', ' ', ' '};
+    char nulls[] = {' ', ' ', response ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
+    StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
+    StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
