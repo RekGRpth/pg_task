@@ -248,8 +248,10 @@ static void success(void) {
 }
 
 static void error(void) {
+    MemoryContext errMemoryContext = MemoryContextSwitchTo(oldMemoryContext);
     ErrorData *edata = CopyErrorData();
     StringInfoData buf;
+    elog(LOG, "%s(%s:%d): id = %lu", __func__, __FILE__, __LINE__, DatumGetUInt64(id));
     initStringInfo(&buf);
     appendStringInfo(&buf, "elevel::int4\t%i", edata->elevel);
     appendStringInfo(&buf, "\noutput_to_server::bool\t%s", edata->output_to_server ? "true" : "false");
@@ -279,6 +281,7 @@ static void error(void) {
     if (edata->internalquery) appendStringInfo(&buf, "\ninternalquery::text\t%s", edata->internalquery);
     if (edata->saved_errno) appendStringInfo(&buf, "\nsaved_errno::int4\t%i", edata->saved_errno);
     FreeErrorData(edata);
+    MemoryContextSwitchTo(errMemoryContext);
     response = MemoryContextStrdup(oldMemoryContext, buf.data);
     pfree(buf.data);
     state_datum = fail_datum;
