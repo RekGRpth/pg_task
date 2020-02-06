@@ -35,22 +35,17 @@ static void init_schema(void) {
 
 static void init_type(void) {
     int rc;
-    const char *schema_quote = schema ? quote_literal_cstr(schema) : "current_schema";
-    StringInfoData buf;
-    initStringInfo(&buf);
-    appendStringInfo(&buf,
+    static const char *command =
         "DO $$ BEGIN\n"
-        "    IF NOT EXISTS (SELECT 1 FROM pg_type AS t INNER JOIN pg_namespace AS n ON n.oid = typnamespace WHERE nspname = %s AND typname = 'state') THEN\n"
+        "    IF NOT EXISTS (SELECT 1 FROM pg_type AS t INNER JOIN pg_namespace AS n ON n.oid = typnamespace WHERE nspname = COALESCE(NULLIF(current_setting('pg_task.schema', true), ''), current_schema) AND typname = 'state') THEN\n"
         "        CREATE TYPE STATE AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');\n"
         "    END IF;\n"
-        "END; $$", schema_quote);
+        "END; $$";
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table);
-    SPI_connect_my(buf.data, StatementTimeout);
-    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_connect_my(command, StatementTimeout);
+    if ((rc = SPI_execute(command, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
-    SPI_finish_my(buf.data);
-    pfree(buf.data);
-    if (schema && schema_quote != schema) pfree((void *)schema_quote);
+    SPI_finish_my(command);
 }
 
 static void init_table(void) {
@@ -115,22 +110,16 @@ static void init_index(const char *index) {
 
 static void init_lock(void) {
     int rc;
-    static Oid argtypes[] = {TEXTOID, TEXTOID, INT4OID};
-    Datum values[] = {schema_datum, table_datum, UInt32GetDatum(period)};
-    char nulls[] = {schema ? ' ' : 'n', ' ', ' '};
     static const char *command =
-        "SELECT      pg_try_advisory_lock(c.oid::BIGINT) AS lock,\n"
-        "            set_config('pg_task.schema', $1, false),\n"
-        "            set_config('pg_task.table', $2, false),\n"
-        "            set_config('pg_task.period', $3::TEXT, false)\n"
+        "SELECT      pg_try_advisory_lock(c.oid::BIGINT) AS lock\n"
         "FROM        pg_class AS c\n"
         "INNER JOIN  pg_namespace AS n ON n.oid = relnamespace\n"
         "INNER JOIN  pg_tables AS t ON tablename = relname AND nspname = schemaname\n"
-        "WHERE       schemaname = COALESCE($1, current_schema)\n"
-        "AND         tablename = $2";
+        "WHERE       schemaname = COALESCE(NULLIF(current_setting('pg_task.schema', true), ''), current_schema)\n"
+        "AND         tablename = current_setting('pg_task.table', false)";
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table);
     SPI_connect_my(command, StatementTimeout);
-    if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
         bool lock_isnull;
         bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "lock"), &lock_isnull));
@@ -322,8 +311,13 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     initStringInfo(&buf);
     appendStringInfo(&buf, "%s %u", MyBgworkerEntry->bgw_type, period);
     pgstat_report_appname(buf.data);
-    pfree(buf.data);
     if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) ereport(ERROR, (errmsg("%s(%s:%d): !BackendPidGetProc", __func__, __FILE__, __LINE__)));
+    if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    resetStringInfo(&buf);
+    appendStringInfo(&buf, "%u", period);
+    set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    pfree(buf.data);
     init();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);

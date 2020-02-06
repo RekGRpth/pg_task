@@ -64,12 +64,7 @@ static void work(void) {
             "        start = current_timestamp,\n"
             "        pid = $2\n"
             "FROM s WHERE u.id = s.id RETURNING request,\n"
-            "        COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout,\n"
-            "        set_config('pg_task.data', $3, false),\n"
-            "        set_config('pg_task.user', $4, false),\n"
-            "        set_config('pg_task.schema', $5, false),\n"
-            "        set_config('pg_task.table', $6, false),\n"
-            "        set_config('pg_task.id', $1::TEXT, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            "        COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
@@ -322,6 +317,7 @@ static void sigterm(SIGNAL_ARGS) {
 }
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
+    StringInfoData buf;
     id = main_arg;
     start = GetCurrentTimestamp();
     count = 0;
@@ -347,6 +343,15 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(data, user, 0);
     if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) ereport(ERROR, (errmsg("%s(%s:%d): !BackendPidGetProc", __func__, __FILE__, __LINE__)));
+    set_config_option("pg_task.data", data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    set_config_option("pg_task.user", user, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    set_config_option("pg_task.queue", queue, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    initStringInfo(&buf);
+    appendStringInfo(&buf, "%lu", DatumGetUInt64(id));
+    set_config_option("pg_task.id", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    pfree(buf.data);
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) proc_exit(1);
