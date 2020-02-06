@@ -4,6 +4,7 @@ static volatile sig_atomic_t got_sigterm = false;
 
 static char *request;
 static char *response;
+static char *state;
 
 static const char *data;
 static const char *data_quote;
@@ -22,9 +23,6 @@ static Datum user_datum;
 static Datum schema_datum;
 static Datum table_datum;
 static Datum queue_datum;
-static Datum done_datum;
-static Datum fail_datum;
-static Datum state_datum;
 
 static Datum id;
 static MemoryContext executeMemoryContext;
@@ -181,13 +179,13 @@ static void done(void) {
     int rc;
     bool delete, repeat;
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
-    Datum values[] = {id, state_datum, response ? CStringGetTextDatum(response) : (Datum)NULL};
+    Datum values[] = {id, CStringGetTextDatum(state), response ? CStringGetTextDatum(response) : (Datum)NULL};
     char nulls[] = {' ', ' ', response ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    elog(LOG, "%s(%s:%d): id = %lu, response = %s, state = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), response ? response : "(null)", TextDatumGetCString(state_datum));
+    elog(LOG, "%s(%s:%d): id = %lu, response = %s, state = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), response ? response : "(null)", state);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -249,15 +247,13 @@ static void success(void) {
         response = buf.data;
         MemoryContextSwitchTo(successMemoryContext);
     }
-    state_datum = done_datum;
-    elog(LOG, "%s(%s:%d): id = %lu, response = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), response ? response : "(null)");
+    state = "DONE";
 }
 
 static void error(void) {
     MemoryContext errorMemoryContext = MemoryContextSwitchTo(executeMemoryContext);
     ErrorData *edata = CopyErrorData();
     StringInfoData buf;
-    elog(LOG, "%s(%s:%d): id = %lu", __func__, __FILE__, __LINE__, DatumGetUInt64(id));
     initStringInfo(&buf);
     appendStringInfo(&buf, "elevel::int4\t%i", edata->elevel);
     appendStringInfo(&buf, "\noutput_to_server::bool\t%s", edata->output_to_server ? "true" : "false");
@@ -288,8 +284,7 @@ static void error(void) {
     if (edata->saved_errno) appendStringInfo(&buf, "\nsaved_errno::int4\t%i", edata->saved_errno);
     FreeErrorData(edata);
     response = buf.data;
-    state_datum = fail_datum;
-    elog(LOG, "%s(%s:%d): id = %lu, response = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), response);
+    state = "FAIL";
     MemoryContextSwitchTo(errorMemoryContext);
 }
 
@@ -343,8 +338,6 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     table_quote = quote_identifier(table);
     table_datum = CStringGetTextDatum(table);
     queue_datum = CStringGetTextDatum(queue);
-    done_datum = CStringGetTextDatum("DONE");
-    fail_datum = CStringGetTextDatum("FAIL");
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(data, user, 0);
