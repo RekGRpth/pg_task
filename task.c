@@ -159,7 +159,7 @@ static void more(void) {
             "AND     COALESCE(max, ~(1<<31)) >= $3\n"
             "AND     COALESCE(count, 0) > $4\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id, set_config('pg_task.id', u.id::TEXT, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
