@@ -218,6 +218,7 @@ static void done(void) {
 static void success(void) {
     response = NULL;
     if ((SPI_tuptable) && (SPI_processed > 0)) {
+        MemoryContext successMemoryContext = MemoryContextSwitchTo(oldMemoryContext);
         StringInfoData buf;
         initStringInfo(&buf);
         if (SPI_tuptable->tupdesc->natts > 1) {
@@ -240,8 +241,8 @@ static void success(void) {
             }
             if (row < SPI_processed - 1) appendStringInfoString(&buf, "\n");
         }
-        response = MemoryContextStrdup(oldMemoryContext, buf.data);
-        pfree(buf.data);
+        response = buf.data;
+        MemoryContextSwitchTo(successMemoryContext);
     }
     state_datum = done_datum;
     elog(LOG, "%s(%s:%d): id = %lu, response = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), response ? response : "(null)");
