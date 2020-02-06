@@ -294,8 +294,7 @@ static void check(void) {
     }
     if ((rc = SPI_execute_plan(plan, NULL, NULL, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
-    if (SPI_processed == 0) got_sigterm = true;
-    elog(LOG, "%s(%s:%d): SPI_processed = %lu", __func__, __FILE__, __LINE__, SPI_processed);
+    if (!SPI_processed) got_sigterm = true;
     SPI_finish_my(command);
 }
 
