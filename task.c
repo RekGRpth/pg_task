@@ -63,8 +63,7 @@ static void work(void) {
             "        pid = $2\n"
             "FROM s WHERE u.id = s.id RETURNING request,\n"
             "        COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", schema_quote, point, table_quote, schema_quote, point, table_quote);
-        command = pstrdup(buf.data);
-        pfree(buf.data);
+        command = buf.data;
     }
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
@@ -101,8 +100,7 @@ static void repeat_task(void) {
             "END AS dt, queue, max, request, 'PLAN' AS state, timeout, delete, repeat, drift, count, live\n"
             "FROM %s%s%s WHERE id = '1' AND state IN ('DONE', 'FAIL') LIMIT 1\n"
             ") INSERT INTO %s%s%s (parent, dt, queue, max, request, state, timeout, delete, repeat, drift, count, live) SELECT * FROM s", schema_quote, point, table_quote, schema_quote, point, table_quote);
-        command = pstrdup(buf.data);
-        pfree(buf.data);
+        command = buf.data;
     }
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
@@ -124,8 +122,7 @@ static void delete_task(void) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf, "DELETE FROM %s%s%s WHERE id = $1", schema_quote, point, table_quote);
-        command = pstrdup(buf.data);
-        pfree(buf.data);
+        command = buf.data;
     }
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
@@ -158,8 +155,7 @@ static void more(void) {
             "AND     COALESCE(count, 0) > $4\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
             ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id, set_config('pg_task.id', u.id::TEXT, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
-        command = pstrdup(buf.data);
-        pfree(buf.data);
+        command = buf.data;
     }
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
@@ -194,8 +190,7 @@ static void done(void) {
             "UPDATE %s%s%s AS u SET state = $2::STATE, stop = current_timestamp, response = $3 FROM s WHERE u.id = s.id\n"
             "RETURNING delete, queue,\n"
             "repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", schema_quote, point, table_quote, schema_quote, point, table_quote);
-        command = pstrdup(buf.data);
-        pfree(buf.data);
+        command = buf.data;
     }
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {

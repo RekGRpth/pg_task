@@ -213,8 +213,7 @@ static void tick(void) {
             ") SELECT unnest(id[:count]) AS id, queue, count FROM s ORDER BY count DESC\n"
             ") SELECT s.* FROM s INNER JOIN %s%s%s USING (id) FOR UPDATE SKIP LOCKED\n"
             ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", schema_quote, point, table_quote, schema_quote, point, table_quote, schema_quote, point, table_quote);
-        command = pstrdup(buf.data);
-        pfree(buf.data);
+        command = buf.data;
     }
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
