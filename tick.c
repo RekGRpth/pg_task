@@ -124,9 +124,9 @@ static void init_lock(void) {
         "            set_config('pg_task.table', $2::TEXT, false)\n"
         "FROM        pg_class AS c\n"
         "INNER JOIN  pg_namespace AS n ON n.oid = relnamespace\n"
-        "INNER JOIN  pg_tables AS t ON table = relname AND nspname = schema\n"
-        "WHERE       schema = COALESCE($1, current_schema)\n"
-        "AND         table = $2";
+        "INNER JOIN  pg_tables AS t ON tablename = relname AND nspname = schemaname\n"
+        "WHERE       schemaname = COALESCE($1, current_schema)\n"
+        "AND         tablename = $2";
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table);
     SPI_connect_my(command, StatementTimeout);
     if ((rc = SPI_execute_with_args(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
@@ -288,9 +288,9 @@ static void check(void) {
         "SELECT      COALESCE(datname, data)::TEXT AS data,\n"
         "            COALESCE(COALESCE(usename, user), data)::TEXT AS user,\n"
         "            schema,\n"
-        "            COALESCE(table, current_setting('pg_task.task', false)) AS table,\n"
+        "            COALESCE(\"table\", current_setting('pg_task.task', false)) AS table,\n"
         "            COALESCE(period, current_setting('pg_task.period', false)::INT) AS period\n"
-        "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (data TEXT, user TEXT, schema TEXT, table TEXT, period BIGINT)\n"
+        "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (data TEXT, \"user\" TEXT, schema TEXT, \"table\" TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON data IS NULL OR (datname = data AND NOT datistemplate AND datallowconn)\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(user, (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
         ") SELECT * FROM s WHERE data = $1 AND user = $2 AND schema IS NOT DISTINCT FROM $3 AND table = $4 AND period = $5";
