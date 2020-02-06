@@ -82,12 +82,12 @@ static void work(void) {
     SPI_commit();
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
         bool request_isnull, timeout_isnull;
-        char *value = TextDatumGetCStringOrNULL(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "request", &request_isnull);
+        const char *value = TextDatumGetCStringOrNULL(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "request", &request_isnull);
         timeout = DatumGetUInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
         if (request_isnull) ereport(ERROR, (errmsg("%s(%s:%d): request_isnull", __func__, __FILE__, __LINE__)));
         if (timeout_isnull) ereport(ERROR, (errmsg("%s(%s:%d): timeout_isnull", __func__, __FILE__, __LINE__)));
         request = MemoryContextStrdup(oldMemoryContext, value);
-        pfree(value);
+        pfree((void *)value);
     }
     SPI_finish_my(command);
     if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
