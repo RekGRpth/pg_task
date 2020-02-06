@@ -274,6 +274,7 @@ static void sigterm(SIGNAL_ARGS) {
 
 static void check(void) {
     int rc;
+    static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS ("
         "SELECT      COALESCE(datname, data)::TEXT AS data,\n"
@@ -287,7 +288,11 @@ static void check(void) {
         ") SELECT * FROM s WHERE data = current_catalog AND \"user\" = current_user AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND period = current_setting('pg_task.period', false)::INT";
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     SPI_connect_my(command, StatementTimeout);
-    if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if (!plan) {
+        if (!(plan = SPI_prepare(command, 0, NULL))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
+        if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    }
+    if ((rc = SPI_execute_plan(plan, NULL, NULL, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     if (!SPI_processed) got_sigterm = true;
     SPI_finish_my(command);
