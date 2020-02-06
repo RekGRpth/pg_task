@@ -206,9 +206,6 @@ static void register_task_worker(const Datum id, const char *queue, const uint32
 
 static void tick(void) {
     int rc;
-    static Oid argtypes[] = {TEXTOID, TEXTOID};
-    Datum values[] = {schema_datum, table_datum};
-    char nulls[] = {schema ? ' ' : 'n', ' '};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     if (!command) {
@@ -221,7 +218,7 @@ static void tick(void) {
             "LEFT JOIN   pg_stat_activity AS a\n"
             "ON          datname = current_catalog\n"
             "AND         usename = current_user\n"
-            "AND         backend_type = concat_ws(' ', 'pg_task', $1||'.', $2, queue)\n"
+            "AND         backend_type = concat_ws(' ', 'pg_task', current_setting('pg_task.schema', true)||'.', current_setting('pg_task.table', false), queue)\n"
             "WHERE       t.state = 'PLAN'\n"
             "AND         dt <= current_timestamp\n"
             ") SELECT id, queue, max - count(pid) AS count FROM s GROUP BY id, queue, max\n"
@@ -234,10 +231,10 @@ static void tick(void) {
     }
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
-        if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
+        if (!(plan = SPI_prepare(command, 0, NULL))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
-    if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_plan(plan, NULL, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool id_isnull, queue_isnull, max_isnull;
