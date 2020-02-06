@@ -98,7 +98,7 @@ static void repeat_task(void) {
             "    WHEN drift THEN current_timestamp + repeat\n"
             "    ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
             "END AS dt, queue, max, request, 'PLAN' AS state, timeout, delete, repeat, drift, count, live\n"
-            "FROM %s%s%s WHERE id = '1' AND state IN ('DONE', 'FAIL') LIMIT 1\n"
+            "FROM %s%s%s WHERE id = $1 AND state IN ('DONE', 'FAIL') LIMIT 1\n"
             ") INSERT INTO %s%s%s (parent, dt, queue, max, request, state, timeout, delete, repeat, drift, count, live) SELECT * FROM s", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
