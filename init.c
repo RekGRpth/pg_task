@@ -2,9 +2,9 @@
 
 PG_MODULE_MAGIC;
 
-char *pg_task_config;
-char *pg_task_taskname;
-uint32 pg_task_period;
+static char *pg_task_config;
+static char *pg_task_taskname;
+static uint32 pg_task_period;
 
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker) {
     BackgroundWorkerHandle *handle;

@@ -3,10 +3,6 @@
 static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
 
-extern char *pg_task_config;
-extern char *pg_task_taskname;
-extern uint32 pg_task_period;
-
 static const char *dataname;
 static const char *dataname_q;
 static const char *point;
@@ -283,22 +279,22 @@ static void sigterm(SIGNAL_ARGS) {
 
 static void check(void) {
     int rc;
-    static Oid argtypes[] = {TEXTOID, INT4OID, JSONOID, TEXTOID, TEXTOID, TEXTOID, TEXTOID, INT4OID};
-    Datum values[] = {CStringGetTextDatum(pg_task_taskname), UInt32GetDatum(pg_task_period), CStringGetTextDatum(pg_task_config), dataname_d, username_d, schemaname_d, tablename_d, UInt32GetDatum(period)};
-    char nulls[] = {' ', ' ', ' ', ' ', ' ', schemaname ? ' ' : 'n', ' ', ' '};
+    static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID, TEXTOID, INT4OID};
+    Datum values[] = {dataname_d, username_d, schemaname_d, tablename_d, UInt32GetDatum(period)};
+    char nulls[] = {' ', ' ', schemaname ? ' ' : 'n', ' ', ' '};
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS ("
         "SELECT      COALESCE(datname, dataname)::TEXT AS dataname,\n"
         "            COALESCE(COALESCE(usename, username), dataname)::TEXT AS username,\n"
         "            schemaname,\n"
-        "            COALESCE(tablename, $1) AS tablename,\n"
-        "            COALESCE(period, $2) AS period\n"
-        "FROM        json_populate_recordset(NULL::RECORD, $3) AS s (dataname TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
+        "            COALESCE(tablename, current_setting('pg_task.taskname', false)) AS tablename,\n"
+        "            COALESCE(period, current_setting('pg_task.period', false)::INT) AS period\n"
+        "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (dataname TEXT, username TEXT, schemaname TEXT, tablename TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON dataname IS NULL OR (datname = dataname AND NOT datistemplate AND datallowconn)\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(username, (SELECT usename FROM pg_user WHERE usesysid = datdba)), dataname)\n"
         ") SELECT * FROM s WHERE dataname = $4 AND username = $5 AND schemaname IS NOT DISTINCT FROM $6 AND tablename = $7 AND period = $8";
-    elog(LOG, "%s(%s:%d): pg_task_config = %s, pg_task_taskname = %s, pg_task_period = %u, dataname = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, pg_task_config, pg_task_taskname, pg_task_period, dataname, username, schemaname ? schemaname : "(null)", tablename, period);
+    elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, period);
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
