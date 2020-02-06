@@ -50,6 +50,7 @@ static void work(void) {
     Datum values[] = {id, MyProcPid};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
+    StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     update_ps_display();
     timeout = 0;
     count++;
@@ -91,6 +92,7 @@ static void repeat_task(void) {
     Datum values[] = {id};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
+    StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -119,6 +121,7 @@ static void delete_task(void) {
     Datum values[] = {id};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
+    StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -141,6 +144,7 @@ static void more(void) {
     Datum values[] = {queue_datum, TimestampTzGetDatum(start), UInt32GetDatum(max), UInt32GetDatum(count)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
+    StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
