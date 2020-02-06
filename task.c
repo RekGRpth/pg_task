@@ -65,10 +65,10 @@ static void work(void) {
             "        pid = $2\n"
             "FROM s WHERE u.id = s.id RETURNING request,\n"
             "        COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout,\n"
-            "        set_config('pg_task.data', $3::TEXT, false),\n"
-            "        set_config('pg_task.user', $4::TEXT, false),\n"
-            "        set_config('pg_task.schema', $5::TEXT, false),\n"
-            "        set_config('pg_task.table', $6::TEXT, false),\n"
+            "        set_config('pg_task.data', $3, false),\n"
+            "        set_config('pg_task.user', $4, false),\n"
+            "        set_config('pg_task.schema', $5, false),\n"
+            "        set_config('pg_task.table', $6, false),\n"
             "        set_config('pg_task.id', $1::TEXT, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = pstrdup(buf.data);
         pfree(buf.data);

@@ -115,13 +115,14 @@ static void init_index(const char *index) {
 
 static void init_lock(void) {
     int rc;
-    static Oid argtypes[] = {TEXTOID, TEXTOID};
-    Datum values[] = {schema_datum, table_datum};
-    char nulls[] = {schema ? ' ' : 'n', ' '};
+    static Oid argtypes[] = {TEXTOID, TEXTOID, INT4OID};
+    Datum values[] = {schema_datum, table_datum, UInt32GetDatum(period)};
+    char nulls[] = {schema ? ' ' : 'n', ' ', ' '};
     static const char *command =
         "SELECT      pg_try_advisory_lock(c.oid::BIGINT) AS lock,\n"
-        "            set_config('pg_task.schema', $1::TEXT, false),\n"
-        "            set_config('pg_task.table', $2::TEXT, false)\n"
+        "            set_config('pg_task.schema', $1, false),\n"
+        "            set_config('pg_task.table', $2, false),\n"
+        "            set_config('pg_task.period', $3::TEXT, false)\n"
         "FROM        pg_class AS c\n"
         "INNER JOIN  pg_namespace AS n ON n.oid = relnamespace\n"
         "INNER JOIN  pg_tables AS t ON tablename = relname AND nspname = schemaname\n"
@@ -273,9 +274,6 @@ static void sigterm(SIGNAL_ARGS) {
 
 static void check(void) {
     int rc;
-    static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID, TEXTOID, INT4OID};
-    Datum values[] = {data_datum, user_datum, schema_datum, table_datum, UInt32GetDatum(period)};
-    char nulls[] = {' ', ' ', schema ? ' ' : 'n', ' ', ' '};
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS ("
@@ -283,20 +281,21 @@ static void check(void) {
         "            COALESCE(COALESCE(usename, user), data)::TEXT AS user,\n"
         "            schema,\n"
         "            COALESCE(\"table\", current_setting('pg_task.task', false)) AS table,\n"
-        "            COALESCE(period, current_setting('pg_task.period', false)::INT) AS period\n"
+        "            COALESCE(period, current_setting('pg_task.tick', false)::INT) AS period\n"
         "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (data TEXT, \"user\" TEXT, schema TEXT, \"table\" TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON data IS NULL OR (datname = data AND NOT datistemplate AND datallowconn)\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT * FROM s WHERE data = $1 AND user = $2 AND schema IS NOT DISTINCT FROM $3 AND \"table\" = $4 AND period = $5";
+        ") SELECT * FROM s WHERE data = current_catalog AND user = current_user AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND period = current_setting('pg_task.period', false)::INT";
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
-        if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
+        if (!(plan = SPI_prepare(command, 0, NULL))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
-    if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_plan(plan, NULL, NULL, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     if (SPI_processed == 0) got_sigterm = true;
+    elog(LOG, "%s(%s:%d): SPI_processed = %lu", __func__, __FILE__, __LINE__, SPI_processed);
     SPI_finish_my(command);
 }
 
