@@ -7,22 +7,22 @@ static char *response;
 static char *state;
 
 static const char *dataname;
-static const char *dataname_q;
+static const char *data_quote;
 static const char *point;
 static const char *schemaname;
-static const char *schemaname_q;
+static const char *schema_quote;
 static const char *tablename;
-static const char *tablename_q;
+static const char *table_quote;
 static const char *username;
-static const char *username_q;
+static const char *user_quote;
 
 static const char *queue;
 
-static Datum dataname_d;
-static Datum username_d;
-static Datum schemaname_d;
-static Datum tablename_d;
-static Datum queue_d;
+static Datum data_datum;
+static Datum user_datum;
+static Datum schema_datum;
+static Datum table_datum;
+static Datum queue_datum;
 
 static Datum id;
 static MemoryContext oldMemoryContext;
@@ -45,7 +45,7 @@ static void update_ps_display(void) {
 static void work(void) {
     int rc;
     static Oid argtypes[] = {INT8OID, INT8OID, TEXTOID, TEXTOID, TEXTOID, TEXTOID};
-    Datum values[] = {id, MyProcPid, dataname_d, username_d, schemaname_d, tablename_d};
+    Datum values[] = {id, MyProcPid, data_datum, user_datum, schema_datum, table_datum};
     char nulls[] = {' ', ' ', ' ', ' ', schemaname ? ' ' : 'n', ' '};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
@@ -69,7 +69,7 @@ static void work(void) {
             "        set_config('pg_task.username', $4::TEXT, false),\n"
             "        set_config('pg_task.schemaname', $5::TEXT, false),\n"
             "        set_config('pg_task.tablename', $6::TEXT, false),\n"
-            "        set_config('pg_task.id', $1::TEXT, false)", schemaname_q, point, tablename_q, schemaname_q, point, tablename_q);
+            "        set_config('pg_task.id', $1::TEXT, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
@@ -108,7 +108,7 @@ static void repeat_task(void) {
             "    ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
             "END AS dt, queue, max, request, 'PLAN' AS state, timeout, delete, repeat, drift, count, live\n"
             "FROM %s%s%s WHERE id = '1' AND state IN ('DONE', 'FAIL') LIMIT 1\n"
-            ") INSERT INTO %s%s%s (parent, dt, queue, max, request, state, timeout, delete, repeat, drift, count, live) SELECT * FROM s", schemaname_q, point, tablename_q, schemaname_q, point, tablename_q);
+            ") INSERT INTO %s%s%s (parent, dt, queue, max, request, state, timeout, delete, repeat, drift, count, live) SELECT * FROM s", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
@@ -131,7 +131,7 @@ static void delete_task(void) {
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
-        appendStringInfo(&buf, "DELETE FROM %s%s%s WHERE id = $1", schemaname_q, point, tablename_q);
+        appendStringInfo(&buf, "DELETE FROM %s%s%s WHERE id = $1", schema_quote, point, table_quote);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
@@ -148,7 +148,7 @@ static void delete_task(void) {
 static void more(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, TIMESTAMPTZOID, INT4OID, INT4OID};
-    Datum values[] = {queue_d, TimestampTzGetDatum(start), UInt32GetDatum(max), UInt32GetDatum(count)};
+    Datum values[] = {queue_datum, TimestampTzGetDatum(start), UInt32GetDatum(max), UInt32GetDatum(count)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     if (!command) {
@@ -165,7 +165,7 @@ static void more(void) {
             "AND     COALESCE(max, ~(1<<31)) >= $3\n"
             "AND     COALESCE(count, 0) > $4\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id", schemaname_q, point, tablename_q, schemaname_q, point, tablename_q);
+            ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
@@ -201,7 +201,7 @@ static void done(void) {
             "WITH s AS (SELECT id FROM %s%s%s WHERE id = $1 FOR UPDATE\n)\n"
             "UPDATE %s%s%s AS u SET state = $2::STATE, stop = current_timestamp, response = $3 FROM s WHERE u.id = s.id\n"
             "RETURNING delete, queue,\n"
-            "repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", schemaname_q, point, tablename_q, schemaname_q, point, tablename_q);
+            "repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
@@ -334,16 +334,16 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     max = *(typeof(max) *)(queue + strlen(queue) + 1);
     if (tablename == schemaname + 1) schemaname = NULL;
     elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), queue, max);
-    dataname_q = quote_identifier(dataname);
-    dataname_d = CStringGetTextDatum(dataname);
-    username_q = quote_identifier(username);
-    username_d = CStringGetTextDatum(username);
-    schemaname_q = schemaname ? quote_identifier(schemaname) : "";
-    schemaname_d = schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL;
+    data_quote = quote_identifier(dataname);
+    data_datum = CStringGetTextDatum(dataname);
+    user_quote = quote_identifier(username);
+    user_datum = CStringGetTextDatum(username);
+    schema_quote = schemaname ? quote_identifier(schemaname) : "";
+    schema_datum = schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL;
     point = schemaname ? "." : "";
-    tablename_q = quote_identifier(tablename);
-    tablename_d = CStringGetTextDatum(tablename);
-    queue_d = CStringGetTextDatum(queue);
+    table_quote = quote_identifier(tablename);
+    table_datum = CStringGetTextDatum(tablename);
+    queue_datum = CStringGetTextDatum(queue);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(dataname, username, 0);

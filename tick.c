@@ -4,19 +4,19 @@ static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
 
 static const char *dataname;
-static const char *dataname_q;
+static const char *data_quote;
 static const char *point;
 static const char *schemaname;
-static const char *schemaname_q;
+static const char *schema_quote;
 static const char *tablename;
-static const char *tablename_q;
+static const char *table_quote;
 static const char *username;
-static const char *username_q;
+static const char *user_quote;
 
-static Datum dataname_d;
-static Datum username_d;
-static Datum schemaname_d;
-static Datum tablename_d;
+static Datum data_datum;
+static Datum user_datum;
+static Datum schema_datum;
+static Datum table_datum;
 
 static uint32 period;
 
@@ -25,7 +25,7 @@ static void init_schema(void) {
     StringInfoData buf;
     elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename);
     initStringInfo(&buf);
-    appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", schemaname_q);
+    appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", schema_quote);
     SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
@@ -35,7 +35,7 @@ static void init_schema(void) {
 
 static void init_type(void) {
     int rc;
-    const char *schemaname_q = schemaname ? quote_literal_cstr(schemaname) : "current_schema";
+    const char *schema_quote = schemaname ? quote_literal_cstr(schemaname) : "current_schema";
     StringInfoData buf;
     initStringInfo(&buf);
     appendStringInfo(&buf,
@@ -43,14 +43,14 @@ static void init_type(void) {
         "    IF NOT EXISTS (SELECT 1 FROM pg_type AS t INNER JOIN pg_namespace AS n ON n.oid = typnamespace WHERE nspname = %s AND typname = 'state') THEN\n"
         "        CREATE TYPE STATE AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');\n"
         "    END IF;\n"
-        "END; $$", schemaname_q);
+        "END; $$", schema_quote);
     elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename);
     SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     SPI_finish_my(buf.data);
     pfree(buf.data);
-    if (schemaname && schemaname_q != schemaname) pfree((void *)schemaname_q);
+    if (schemaname && schema_quote != schemaname) pfree((void *)schema_quote);
 }
 
 static void init_table(void) {
@@ -82,7 +82,7 @@ static void init_table(void) {
         "    count INT,\n"
         "    live INTERVAL,\n"
         "    CONSTRAINT %s FOREIGN KEY (parent) REFERENCES %s%s%s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
-        ")", schemaname_q, point, tablename_q, name_q, schemaname_q, point, tablename_q);
+        ")", schema_quote, point, table_quote, name_q, schema_quote, point, table_quote);
     SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
@@ -102,7 +102,7 @@ static void init_index(const char *index) {
     appendStringInfo(&name, "%s_%s_idx", tablename, index);
     name_q = quote_identifier(name.data);
     initStringInfo(&buf);
-    appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON %s%s%s USING btree (%s)", name_q, schemaname_q, point, tablename_q, index_q);
+    appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON %s%s%s USING btree (%s)", name_q, schema_quote, point, table_quote, index_q);
     SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
@@ -116,7 +116,7 @@ static void init_index(const char *index) {
 static void init_lock(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, TEXTOID};
-    Datum values[] = {schemaname_d, tablename_d};
+    Datum values[] = {schema_datum, table_datum};
     char nulls[] = {schemaname ? ' ' : 'n', ' '};
     static const char *command =
         "SELECT      pg_try_advisory_lock(c.oid::BIGINT) AS lock,\n"
@@ -146,7 +146,7 @@ static void init_lock(void) {
 static void init_fix(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, TEXTOID};
-    Datum values[] = {schemaname_d, tablename_d};
+    Datum values[] = {schema_datum, table_datum};
     char nulls[] = {schemaname ? ' ' : 'n', ' '};
     StringInfoData buf;
     elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename);
@@ -158,7 +158,7 @@ static void init_fix(void) {
         "    WHERE   datname = current_catalog\n"
         "    AND     usename = current_user\n"
         "    AND     application_name = concat_ws(' ', 'pg_task', $1||'.', $2, queue, id)\n"
-        ") for update skip locked) update %s%s%s as u set state = 'PLAN' from s where u.id = s.id", schemaname_q, point, tablename_q, schemaname_q, point, tablename_q);
+        ") for update skip locked) update %s%s%s as u set state = 'PLAN' from s where u.id = s.id", schema_quote, point, table_quote, schema_quote, point, table_quote);
     SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute_with_args(buf.data, sizeof(argtypes)/sizeof(argtypes[0]), argtypes, values, nulls, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
@@ -207,7 +207,7 @@ static void register_task_worker(const Datum id, const char *queue, const uint32
 static void tick(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, TEXTOID};
-    Datum values[] = {schemaname_d, tablename_d};
+    Datum values[] = {schema_datum, table_datum};
     char nulls[] = {schemaname ? ' ' : 'n', ' '};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
@@ -228,7 +228,7 @@ static void tick(void) {
             ") SELECT array_agg(id ORDER BY id) AS id, queue, count FROM s WHERE count > 0 GROUP BY queue, count\n"
             ") SELECT unnest(id[:count]) AS id, queue, count FROM s ORDER BY count DESC\n"
             ") SELECT s.* FROM s INNER JOIN %s%s%s USING (id) FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", schemaname_q, point, tablename_q, schemaname_q, point, tablename_q, schemaname_q, point, tablename_q);
+            ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", schema_quote, point, table_quote, schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = pstrdup(buf.data);
         pfree(buf.data);
     }
@@ -280,7 +280,7 @@ static void sigterm(SIGNAL_ARGS) {
 static void check(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID, TEXTOID, INT4OID};
-    Datum values[] = {dataname_d, username_d, schemaname_d, tablename_d, UInt32GetDatum(period)};
+    Datum values[] = {data_datum, user_datum, schema_datum, table_datum, UInt32GetDatum(period)};
     char nulls[] = {' ', ' ', schemaname ? ' ' : 'n', ' ', ' '};
     static SPIPlanPtr plan = NULL;
     static const char *command =
@@ -315,15 +315,15 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     period = *(typeof(period) *)(tablename + strlen(tablename) + 1);
     if (tablename == schemaname + 1) schemaname = NULL;
     elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, period = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, period);
-    dataname_q = quote_identifier(dataname);
-    dataname_d = CStringGetTextDatum(dataname);
-    username_q = quote_identifier(username);
-    username_d = CStringGetTextDatum(username);
-    schemaname_q = schemaname ? quote_identifier(schemaname) : "";
-    schemaname_d = schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL;
+    data_quote = quote_identifier(dataname);
+    data_datum = CStringGetTextDatum(dataname);
+    user_quote = quote_identifier(username);
+    user_datum = CStringGetTextDatum(username);
+    schema_quote = schemaname ? quote_identifier(schemaname) : "";
+    schema_datum = schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL;
     point = schemaname ? "." : "";
-    tablename_q = quote_identifier(tablename);
-    tablename_d = CStringGetTextDatum(tablename);
+    table_quote = quote_identifier(tablename);
+    table_datum = CStringGetTextDatum(tablename);
     pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();

@@ -6,28 +6,28 @@ static volatile sig_atomic_t got_sigterm = false;
 static void create_username(const char *username) {
     int rc;
     StringInfoData buf;
-    const char *username_q = quote_identifier(username);
+    const char *user_quote = quote_identifier(username);
     elog(LOG, "%s(%s:%d): username = %s", __func__, __FILE__, __LINE__, username);
     initStringInfo(&buf);
-    appendStringInfo(&buf, "CREATE USER %s", username_q);
+    appendStringInfo(&buf, "CREATE USER %s", user_quote);
     SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     SPI_finish_my(buf.data);
-    if (username_q != username) pfree((void *)username_q);
+    if (user_quote != username) pfree((void *)user_quote);
     pfree(buf.data);
 }
 
 static void create_dataname(const char *username, const char *dataname) {
     StringInfoData buf;
-    const char *username_q = quote_identifier(username);
-    const char *dataname_q = quote_identifier(dataname);
+    const char *user_quote = quote_identifier(username);
+    const char *data_quote = quote_identifier(dataname);
     ParseState *pstate = make_parsestate(NULL);
     List *options = NIL;
     CreatedbStmt *stmt = makeNode(CreatedbStmt);
     elog(LOG, "%s(%s:%d): username = %s, dataname = %s", __func__, __FILE__, __LINE__, username, dataname);
     initStringInfo(&buf);
-    appendStringInfo(&buf, "CREATE DATABASE %s WITH OWNER = %s", dataname_q, username_q);
+    appendStringInfo(&buf, "CREATE DATABASE %s WITH OWNER = %s", data_quote, user_quote);
     pstate->p_sourcetext = buf.data;
     options = lappend(options, makeDefElem("owner", (Node *)makeString((char *)username), -1));
     stmt->dbname = (char *)dataname;
@@ -39,8 +39,8 @@ static void create_dataname(const char *username, const char *dataname) {
     free_parsestate(pstate);
     list_free_deep(options);
     pfree(stmt);
-    if (username_q != username) pfree((void *)username_q);
-    if (dataname_q != dataname) pfree((void *)dataname_q);
+    if (user_quote != username) pfree((void *)user_quote);
+    if (data_quote != dataname) pfree((void *)data_quote);
     pfree(buf.data);
 }
 
