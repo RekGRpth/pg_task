@@ -27,7 +27,7 @@ static Datum fail_datum;
 static Datum state_datum;
 
 static Datum id;
-static MemoryContext oldMemoryContext;
+static MemoryContext executeMemoryContext;
 static TimestampTz start;
 static uint32 count;
 static uint32 max;
@@ -51,7 +51,6 @@ static void work(void) {
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     update_ps_display();
-    oldMemoryContext = CurrentMemoryContext;
     timeout = 0;
     count++;
     if (!command) {
@@ -74,7 +73,7 @@ static void work(void) {
     }
     if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
-        MemoryContext workMemoryContext = MemoryContextSwitchTo(oldMemoryContext);
+        MemoryContext workMemoryContext = MemoryContextSwitchTo(executeMemoryContext);
         bool timeout_isnull;
         request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
         timeout = DatumGetUInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
@@ -218,7 +217,7 @@ static void done(void) {
 static void success(void) {
     response = NULL;
     if ((SPI_tuptable) && (SPI_processed > 0)) {
-        MemoryContext successMemoryContext = MemoryContextSwitchTo(oldMemoryContext);
+        MemoryContext successMemoryContext = MemoryContextSwitchTo(executeMemoryContext);
         StringInfoData buf;
         initStringInfo(&buf);
         if (SPI_tuptable->tupdesc->natts > 1) {
@@ -249,7 +248,7 @@ static void success(void) {
 }
 
 static void error(void) {
-    MemoryContext errorMemoryContext = MemoryContextSwitchTo(oldMemoryContext);
+    MemoryContext errorMemoryContext = MemoryContextSwitchTo(executeMemoryContext);
     ErrorData *edata = CopyErrorData();
     StringInfoData buf;
     elog(LOG, "%s(%s:%d): id = %lu", __func__, __FILE__, __LINE__, DatumGetUInt64(id));
@@ -289,6 +288,7 @@ static void error(void) {
 }
 
 static void execute(void) {
+    executeMemoryContext = CurrentMemoryContext;
     work();
     elog(LOG, "%s(%s:%d): timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, timeout, request, count);
     SPI_connect_my(request, timeout);
