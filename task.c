@@ -9,7 +9,7 @@ static char *state;
 static const char *data;
 static const char *data_quote;
 static const char *point;
-static const char *schemaname;
+static const char *schema;
 static const char *schema_quote;
 static const char *tablename;
 static const char *table_quote;
@@ -46,10 +46,10 @@ static void work(void) {
     int rc;
     static Oid argtypes[] = {INT8OID, INT8OID, TEXTOID, TEXTOID, TEXTOID, TEXTOID};
     Datum values[] = {id, MyProcPid, data_datum, user_datum, schema_datum, table_datum};
-    char nulls[] = {' ', ' ', ' ', ' ', schemaname ? ' ' : 'n', ' '};
+    char nulls[] = {' ', ' ', ' ', ' ', schema ? ' ' : 'n', ' '};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
-    elog(LOG, "%s(%s:%d): data = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), queue, max);
+    elog(LOG, "%s(%s:%d): data = %s, username = %s, schema = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, username, schema ? schema : "(null)", tablename, DatumGetUInt64(id), queue, max);
     update_ps_display();
     oldMemoryContext = CurrentMemoryContext;
     timeout = 0;
@@ -67,7 +67,7 @@ static void work(void) {
             "        COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout,\n"
             "        set_config('pg_task.data', $3::TEXT, false),\n"
             "        set_config('pg_task.username', $4::TEXT, false),\n"
-            "        set_config('pg_task.schemaname', $5::TEXT, false),\n"
+            "        set_config('pg_task.schema', $5::TEXT, false),\n"
             "        set_config('pg_task.tablename', $6::TEXT, false),\n"
             "        set_config('pg_task.id', $1::TEXT, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = pstrdup(buf.data);
@@ -297,7 +297,7 @@ static void error(void) {
 }
 
 static void execute(void) {
-    elog(LOG, "%s(%s:%d): data = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), queue, max);
+    elog(LOG, "%s(%s:%d): data = %s, username = %s, schema = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, username, schema ? schema : "(null)", tablename, DatumGetUInt64(id), queue, max);
     work();
     elog(LOG, "%s(%s:%d): timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, timeout, request, count);
     SPI_connect_my(request, timeout);
@@ -328,19 +328,19 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     count = 0;
     data = MyBgworkerEntry->bgw_extra;
     username = data + strlen(data) + 1;
-    schemaname = username + strlen(username) + 1;
-    tablename = schemaname + strlen(schemaname) + 1;
+    schema = username + strlen(username) + 1;
+    tablename = schema + strlen(schema) + 1;
     queue = tablename + strlen(tablename) + 1;
     max = *(typeof(max) *)(queue + strlen(queue) + 1);
-    if (tablename == schemaname + 1) schemaname = NULL;
-    elog(LOG, "%s(%s:%d): data = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), queue, max);
+    if (tablename == schema + 1) schema = NULL;
+    elog(LOG, "%s(%s:%d): data = %s, username = %s, schema = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, username, schema ? schema : "(null)", tablename, DatumGetUInt64(id), queue, max);
     data_quote = quote_identifier(data);
     data_datum = CStringGetTextDatum(data);
     user_quote = quote_identifier(username);
     user_datum = CStringGetTextDatum(username);
-    schema_quote = schemaname ? quote_identifier(schemaname) : "";
-    schema_datum = schemaname ? CStringGetTextDatum(schemaname) : (Datum)NULL;
-    point = schemaname ? "." : "";
+    schema_quote = schema ? quote_identifier(schema) : "";
+    schema_datum = schema ? CStringGetTextDatum(schema) : (Datum)NULL;
+    point = schema ? "." : "";
     table_quote = quote_identifier(tablename);
     table_datum = CStringGetTextDatum(tablename);
     queue_datum = CStringGetTextDatum(queue);
