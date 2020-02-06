@@ -163,8 +163,7 @@ static void more(void) {
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
     if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    id = (Datum)0;
-    if (SPI_processed == 1) {
+    if (!SPI_processed) got_sigterm = true; else {
         bool id_isnull;
         id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
         if (id_isnull) ereport(ERROR, (errmsg("%s(%s:%d): id_isnull", __func__, __FILE__, __LINE__)));
@@ -354,5 +353,5 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
         }
         if (got_sigterm) break;
         if (rc & WL_TIMEOUT) execute();
-    } while (!got_sigterm && id != (Datum)0);
+    } while (!got_sigterm);
 }
