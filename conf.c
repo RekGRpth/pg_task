@@ -107,18 +107,18 @@ static void check(void) {
     if ((rc = SPI_execute_plan(plan, NULL, NULL, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
     for (uint64 row = 0; row < SPI_processed; row++) {
-        bool dataname_isnull, username_isnull, schemaname_isnull, tablename_isnull, period_isnull, datname_isnull, usename_isnull;
-        char *dataname = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "dataname", &dataname_isnull);
-        char *username = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "username", &username_isnull);
-        char *schemaname = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schemaname", &schemaname_isnull);
-        char *tablename = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "tablename", &tablename_isnull);
+        bool data_isnull, user_isnull, schema_isnull, table_isnull, period_isnull, datname_isnull, usename_isnull;
+        char *dataname = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "dataname", &data_isnull);
+        char *username = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "username", &user_isnull);
+        char *schemaname = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schemaname", &schema_isnull);
+        char *tablename = TextDatumGetCStringOrNULL(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "tablename", &table_isnull);
         uint32 period = DatumGetUInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull);
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull);
         elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, period = %u, datname_isnull = %s, usename_isnull = %s", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, period, datname_isnull ? "true" : "false", usename_isnull ? "true" : "false");
-        if (dataname_isnull) ereport(ERROR, (errmsg("%s(%s:%d): dataname_isnull", __func__, __FILE__, __LINE__)));
-        if (username_isnull) ereport(ERROR, (errmsg("%s(%s:%d): username_isnull", __func__, __FILE__, __LINE__)));
-        if (tablename_isnull) ereport(ERROR, (errmsg("%s(%s:%d): tablename_isnull", __func__, __FILE__, __LINE__)));
+        if (data_isnull) ereport(ERROR, (errmsg("%s(%s:%d): data_isnull", __func__, __FILE__, __LINE__)));
+        if (user_isnull) ereport(ERROR, (errmsg("%s(%s:%d): user_isnull", __func__, __FILE__, __LINE__)));
+        if (table_isnull) ereport(ERROR, (errmsg("%s(%s:%d): table_isnull", __func__, __FILE__, __LINE__)));
         if (period_isnull) ereport(ERROR, (errmsg("%s(%s:%d): period_isnull", __func__, __FILE__, __LINE__)));
         if (usename_isnull) create_username(username);
         if (datname_isnull) create_dataname(username, dataname);
