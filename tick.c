@@ -168,7 +168,7 @@ static void init_fix(void) {
 
 static void register_task_worker(const Datum id, const char *queue, const uint32 max) {
     StringInfoData buf;
-    uint32 dataname_len = strlen(dataname), username_len = strlen(username), schemaname_len = schemaname ? strlen(schemaname) : 0, tablename_len = strlen(tablename), queue_len = strlen(queue), max_len = sizeof(max);
+    uint32 data_len = strlen(dataname), user_len = strlen(username), schema_len = schemaname ? strlen(schemaname) : 0, table_len = strlen(tablename), queue_len = strlen(queue), max_len = sizeof(max);
     BackgroundWorker worker;
     elog(LOG, "%s(%s:%d): dataname = %s, username = %s, schemaname = %s, tablename = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, dataname, username, schemaname ? schemaname : "(null)", tablename, DatumGetUInt64(id), queue, max);
     MemSet(&worker, 0, sizeof(worker));
@@ -194,13 +194,13 @@ static void register_task_worker(const Datum id, const char *queue, const uint32
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
-    if (dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1 + queue_len + 1 + max_len > BGW_EXTRALEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_EXTRALEN", __func__, __FILE__, __LINE__, dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1 + queue_len + 1 + max_len)));
-    memcpy(worker.bgw_extra, dataname, dataname_len);
-    memcpy(worker.bgw_extra + dataname_len + 1, username, username_len);
-    memcpy(worker.bgw_extra + dataname_len + 1 + username_len + 1, schemaname, schemaname_len);
-    memcpy(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1, tablename, tablename_len);
-    memcpy(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1, queue, queue_len);
-    *(typeof(max + 0) *)(worker.bgw_extra + dataname_len + 1 + username_len + 1 + schemaname_len + 1 + tablename_len + 1 + queue_len + 1) = max;
+    if (data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + max_len > BGW_EXTRALEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_EXTRALEN", __func__, __FILE__, __LINE__, data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + max_len)));
+    memcpy(worker.bgw_extra, dataname, data_len);
+    memcpy(worker.bgw_extra + data_len + 1, username, user_len);
+    memcpy(worker.bgw_extra + data_len + 1 + user_len + 1, schemaname, schema_len);
+    memcpy(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1, tablename, table_len);
+    memcpy(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1, queue, queue_len);
+    *(typeof(max + 0) *)(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1) = max;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
