@@ -3,6 +3,20 @@
 static volatile sig_atomic_t got_sighup = false;
 static volatile sig_atomic_t got_sigterm = false;
 
+static void sighup(SIGNAL_ARGS) {
+    int save_errno = errno;
+    got_sighup = true;
+    SetLatch(MyLatch);
+    errno = save_errno;
+}
+
+static void sigterm(SIGNAL_ARGS) {
+    int save_errno = errno;
+    got_sigterm = true;
+    SetLatch(MyLatch);
+    errno = save_errno;
+}
+
 static void create_user(const char *user) {
     int rc;
     StringInfoData buf;
@@ -126,20 +140,6 @@ static void check(void) {
     }
     SPI_commit();
     SPI_finish_my(command);
-}
-
-static void sighup(SIGNAL_ARGS) {
-    int save_errno = errno;
-    got_sighup = true;
-    SetLatch(MyLatch);
-    errno = save_errno;
-}
-
-static void sigterm(SIGNAL_ARGS) {
-    int save_errno = errno;
-    got_sigterm = true;
-    SetLatch(MyLatch);
-    errno = save_errno;
 }
 
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
