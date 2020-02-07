@@ -271,12 +271,20 @@ static void check(void) {
 }
 
 static void init(void) {
+    StringInfoData buf;
+    if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
+    if (!MyProcPort->remote_host) MyProcPort->remote_host = "local";
     data = MyBgworkerEntry->bgw_extra;
+    if (!MyProcPort->database_name) MyProcPort->database_name = (char *)data;
     user = data + strlen(data) + 1;
+    if (!MyProcPort->user_name) MyProcPort->user_name = (char *)user;
     schema = user + strlen(user) + 1;
     table = schema + strlen(schema) + 1;
     period = *(typeof(period) *)(table + strlen(table) + 1);
     if (table == schema + 1) schema = NULL;
+    initStringInfo(&buf);
+    appendStringInfo(&buf, "%s %u", MyBgworkerEntry->bgw_type, period);
+    SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     data_quote = quote_identifier(data);
     user_quote = quote_identifier(user);
@@ -287,18 +295,13 @@ static void init(void) {
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(data, user, 0);
-    {
-        StringInfoData buf;
-        initStringInfo(&buf);
-        appendStringInfo(&buf, "%s %u", MyBgworkerEntry->bgw_type, period);
-        pgstat_report_appname(buf.data);
-        if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
-        set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
-        resetStringInfo(&buf);
-        appendStringInfo(&buf, "%u", period);
-        set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
-        pfree(buf.data);
-    }
+    pgstat_report_appname(buf.data);
+    if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    resetStringInfo(&buf);
+    appendStringInfo(&buf, "%u", period);
+    set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    pfree(buf.data);
     if (schema) init_schema();
     init_type();
     init_table();
