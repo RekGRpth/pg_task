@@ -271,7 +271,6 @@ static void check(void) {
 }
 
 static void init(void) {
-    StringInfoData buf;
     data = MyBgworkerEntry->bgw_extra;
     user = data + strlen(data) + 1;
     schema = user + strlen(user) + 1;
@@ -288,15 +287,18 @@ static void init(void) {
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(data, user, 0);
-    initStringInfo(&buf);
-    appendStringInfo(&buf, "%s %u", MyBgworkerEntry->bgw_type, period);
-    pgstat_report_appname(buf.data);
-    if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
-    set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
-    resetStringInfo(&buf);
-    appendStringInfo(&buf, "%u", period);
-    set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
-    pfree(buf.data);
+    {
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfo(&buf, "%s %u", MyBgworkerEntry->bgw_type, period);
+        pgstat_report_appname(buf.data);
+        if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+        set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+        resetStringInfo(&buf);
+        appendStringInfo(&buf, "%u", period);
+        set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+        pfree(buf.data);
+    }
     if (schema) init_schema();
     init_type();
     init_table();
