@@ -38,7 +38,7 @@ static void update_ps_display(void) {
     init_ps_display(buf.data, "", "", "");
     resetStringInfo(&buf);
     appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
-    pgstat_report_appname(buf.data);
+    pgstat_report_appname(application_name = pstrdup(buf.data));
     pfree(buf.data);
 }
 

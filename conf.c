@@ -147,7 +147,7 @@ static void init(void) {
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
-    pgstat_report_appname(MyBgworkerEntry->bgw_type);
+    pgstat_report_appname(application_name = MyBgworkerEntry->bgw_type);
     check();
 }
 

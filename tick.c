@@ -309,7 +309,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     BackgroundWorkerInitializeConnection(data, user, 0);
     initStringInfo(&buf);
     appendStringInfo(&buf, "%s %u", MyBgworkerEntry->bgw_type, period);
-    pgstat_report_appname(buf.data);
+    pgstat_report_appname(application_name = pstrdup(buf.data));
     if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     resetStringInfo(&buf);
