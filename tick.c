@@ -13,11 +13,6 @@ static const char *table_quote;
 static const char *user;
 static const char *user_quote;
 
-static Datum data_datum;
-static Datum user_datum;
-static Datum schema_datum;
-static Datum table_datum;
-
 static uint32 period;
 
 static void init_schema(void) {
@@ -285,14 +280,10 @@ static void init(void) {
     if (table == schema + 1) schema = NULL;
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     data_quote = quote_identifier(data);
-    data_datum = CStringGetTextDatum(data);
     user_quote = quote_identifier(user);
-    user_datum = CStringGetTextDatum(user);
     schema_quote = schema ? quote_identifier(schema) : "";
-    schema_datum = schema ? CStringGetTextDatum(schema) : (Datum)NULL;
     point = schema ? "." : "";
     table_quote = quote_identifier(table);
-    table_datum = CStringGetTextDatum(table);
     pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
