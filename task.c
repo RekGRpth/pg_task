@@ -341,7 +341,6 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(data, user, 0);
-//    if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) ereport(ERROR, (errmsg("%s(%s:%d): !BackendPidGetProc", __func__, __FILE__, __LINE__)));
     set_config_option("pg_task.data", data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     set_config_option("pg_task.user", user, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
@@ -353,11 +352,9 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     pfree(buf.data);
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
-        if (rc & WL_POSTMASTER_DEATH) proc_exit(1);
-        if (rc & WL_LATCH_SET) {
-            ResetLatch(MyLatch);
-            CHECK_FOR_INTERRUPTS();
-        }
+        if (rc & WL_POSTMASTER_DEATH) break;
+        if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
+        if (rc & WL_LATCH_SET) { ResetLatch(MyLatch); CHECK_FOR_INTERRUPTS(); }
         if (got_sigterm) break;
         if (rc & WL_TIMEOUT) execute();
     } while (!got_sigterm);
