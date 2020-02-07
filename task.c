@@ -18,12 +18,6 @@ static const char *user_quote;
 
 static const char *queue;
 
-static Datum data_datum;
-static Datum user_datum;
-static Datum schema_datum;
-static Datum table_datum;
-static Datum queue_datum;
-
 static Datum id;
 static MemoryContext executeMemoryContext;
 static TimestampTz start;
@@ -139,7 +133,7 @@ static void delete_task(void) {
 static void more(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, TIMESTAMPTZOID, INT4OID, INT4OID};
-    Datum values[] = {queue_datum, TimestampTzGetDatum(start), UInt32GetDatum(max), UInt32GetDatum(count)};
+    Datum values[] = {CStringGetTextDatum(queue), TimestampTzGetDatum(start), UInt32GetDatum(max), UInt32GetDatum(count)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -173,6 +167,7 @@ static void more(void) {
     }
     SPI_commit();
     SPI_finish_my(command);
+    pfree((void *)values[0]);
 }
 
 static void done(void) {
@@ -314,10 +309,9 @@ static void sigterm(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
-void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
-    StringInfoData buf;
+static void init(void) {
     executeMemoryContext = CurrentMemoryContext;
-    id = main_arg;
+    id = MyBgworkerEntry->bgw_main_arg;
     start = GetCurrentTimestamp();
     count = 0;
     data = MyBgworkerEntry->bgw_extra;
@@ -329,15 +323,10 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     if (table == schema + 1) schema = NULL;
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
     data_quote = quote_identifier(data);
-    data_datum = CStringGetTextDatum(data);
     user_quote = quote_identifier(user);
-    user_datum = CStringGetTextDatum(user);
     schema_quote = schema ? quote_identifier(schema) : "";
-    schema_datum = schema ? CStringGetTextDatum(schema) : (Datum)NULL;
     point = schema ? "." : "";
     table_quote = quote_identifier(table);
-    table_datum = CStringGetTextDatum(table);
-    queue_datum = CStringGetTextDatum(queue);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(data, user, 0);
@@ -346,10 +335,17 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     set_config_option("pg_task.queue", queue, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
-    initStringInfo(&buf);
-    appendStringInfo(&buf, "%lu", DatumGetUInt64(id));
-    set_config_option("pg_task.id", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
-    pfree(buf.data);
+    {
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfo(&buf, "%lu", DatumGetUInt64(id));
+        set_config_option("pg_task.id", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+        pfree(buf.data);
+    }
+}
+
+void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
+    init();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) break;
