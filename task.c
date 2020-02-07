@@ -313,7 +313,7 @@ static void sigterm(SIGNAL_ARGS) {
 static void init(void) {
     StringInfoData buf;
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
-    if (!MyProcPort->remote_host) MyProcPort->remote_host = "local";
+    if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     executeMemoryContext = CurrentMemoryContext;
     id = MyBgworkerEntry->bgw_main_arg;
     start = GetCurrentTimestamp();

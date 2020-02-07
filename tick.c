@@ -273,7 +273,7 @@ static void check(void) {
 static void init(void) {
     StringInfoData buf;
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
-    if (!MyProcPort->remote_host) MyProcPort->remote_host = "local";
+    if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     data = MyBgworkerEntry->bgw_extra;
     if (!MyProcPort->database_name) MyProcPort->database_name = (char *)data;
     user = data + strlen(data) + 1;
