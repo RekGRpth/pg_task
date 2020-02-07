@@ -7,6 +7,7 @@
 #include <commands/defrem.h>
 #include <executor/spi.h>
 #include <fmgr.h>
+#include <libpq/libpq-be.h>
 #include <miscadmin.h>
 #include <nodes/makefuncs.h>
 #include <pgstat.h>

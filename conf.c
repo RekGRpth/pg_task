@@ -143,10 +143,14 @@ static void check(void) {
 }
 
 static void init(void) {
+    if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
+    if (!MyProcPort->user_name) MyProcPort->user_name = "postgres";
+    if (!MyProcPort->database_name) MyProcPort->database_name = "postgres";
+    SetConfigOption("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_OVERRIDE);
     pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
+    BackgroundWorkerInitializeConnection(MyProcPort->database_name, MyProcPort->user_name, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
     check();
 }
