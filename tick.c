@@ -235,16 +235,6 @@ static void tick(void) {
     SPI_finish_my(command);
 }
 
-static void init(void) {
-    if (schema) init_schema();
-    init_type();
-    init_table();
-    init_index("dt");
-    init_index("state");
-    init_lock();
-    init_fix();
-}
-
 static void sighup(SIGNAL_ARGS) {
     int save_errno = errno;
     got_sighup = true;
@@ -285,7 +275,7 @@ static void check(void) {
     SPI_finish_my(command);
 }
 
-void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
+static void init(void) {
     StringInfoData buf;
     data = MyBgworkerEntry->bgw_extra;
     user = data + strlen(data) + 1;
@@ -316,6 +306,16 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     appendStringInfo(&buf, "%u", period);
     set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     pfree(buf.data);
+    if (schema) init_schema();
+    init_type();
+    init_table();
+    init_index("dt");
+    init_index("state");
+    init_lock();
+    init_fix();
+}
+
+void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     init();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
