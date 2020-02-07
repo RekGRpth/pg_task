@@ -142,13 +142,17 @@ static void check(void) {
     SPI_finish_my(command);
 }
 
-void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
+static void init(void) {
     pqsignal(SIGHUP, sighup);
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
     check();
+}
+
+void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
+    init();
     do {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, LONG_MAX, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) break;
