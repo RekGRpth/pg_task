@@ -133,8 +133,8 @@ static void delete_task(void) {
 
 static void more(void) {
     int rc;
-    static Oid argtypes[] = {TEXTOID, TIMESTAMPTZOID, INT4OID, INT4OID};
-    Datum values[] = {CStringGetTextDatum(queue), TimestampTzGetDatum(start), UInt32GetDatum(max), UInt32GetDatum(count)};
+    static Oid argtypes[] = {TEXTOID, INT4OID, INT4OID, TIMESTAMPTZOID};
+    Datum values[] = {CStringGetTextDatum(queue), UInt32GetDatum(max), UInt32GetDatum(count), TimestampTzGetDatum(start)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -148,9 +148,8 @@ static void more(void) {
             "WHERE   state = 'PLAN'\n"
             "AND     dt <= current_timestamp\n"
             "AND     queue = $1\n"
-            "AND     $2 + COALESCE(live, '0 sec'::INTERVAL) >= current_timestamp\n"
-            "AND     COALESCE(max, ~(1<<31)) >= $3\n"
-            "AND     COALESCE(count, 0) > $4\n"
+            "AND     COALESCE(max, ~(1<<31)) >= $2\n"
+            "AND     ((count IS NOT NULL AND count > $3 AND live IS NOT NULL AND $4 + live > current_timestamp) OR COALESCE(count, 0) > $3 OR $4 + COALESCE(live, '0 sec'::INTERVAL) > current_timestamp)"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
             ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id, set_config('pg_task.id', u.id::TEXT, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
