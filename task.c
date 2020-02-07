@@ -32,6 +32,7 @@ static void update_ps_display(void) {
     init_ps_display(buf.data, "", "", "");
     resetStringInfo(&buf);
     appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
+    SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
     pgstat_report_appname(buf.data);
     pfree(buf.data);
 }
@@ -310,17 +311,25 @@ static void sigterm(SIGNAL_ARGS) {
 }
 
 static void init(void) {
+    StringInfoData buf;
+    if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
+    if (!MyProcPort->remote_host) MyProcPort->remote_host = "local";
     executeMemoryContext = CurrentMemoryContext;
     id = MyBgworkerEntry->bgw_main_arg;
     start = GetCurrentTimestamp();
     count = 0;
     data = MyBgworkerEntry->bgw_extra;
+    if (!MyProcPort->database_name) MyProcPort->database_name = (char *)data;
     user = data + strlen(data) + 1;
+    if (!MyProcPort->user_name) MyProcPort->user_name = (char *)user;
     schema = user + strlen(user) + 1;
     table = schema + strlen(schema) + 1;
     queue = table + strlen(table) + 1;
     max = *(typeof(max) *)(queue + strlen(queue) + 1);
     if (table == schema + 1) schema = NULL;
+    initStringInfo(&buf);
+    appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
+    SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
     data_quote = quote_identifier(data);
     user_quote = quote_identifier(user);
@@ -330,18 +339,16 @@ static void init(void) {
     pqsignal(SIGTERM, sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(data, user, 0);
+    pgstat_report_appname(buf.data);
     set_config_option("pg_task.data", data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     set_config_option("pg_task.user", user, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     set_config_option("pg_task.queue", queue, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
-    {
-        StringInfoData buf;
-        initStringInfo(&buf);
-        appendStringInfo(&buf, "%lu", DatumGetUInt64(id));
-        set_config_option("pg_task.id", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
-        pfree(buf.data);
-    }
+    resetStringInfo(&buf);
+    appendStringInfo(&buf, "%lu", DatumGetUInt64(id));
+    set_config_option("pg_task.id", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    pfree(buf.data);
 }
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
