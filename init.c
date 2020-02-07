@@ -8,10 +8,8 @@ static uint32 pg_task_tick;
 
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker) {
     BackgroundWorkerHandle *handle;
-//    MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
     if (!RegisterDynamicBackgroundWorker(worker, &handle)) ereport(ERROR, (errmsg("%s(%s:%d): !RegisterDynamicBackgroundWorker", __func__, __FILE__, __LINE__))); else {
         pid_t pid;
-//        MemoryContextSwitchTo(oldcontext);
         switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
             case BGWH_STARTED: break;
             case BGWH_STOPPED: ereport(ERROR, (errmsg("%s(%s:%d): WaitForBackgroundWorkerStartup == BGWH_STOPPED", __func__, __FILE__, __LINE__)));
