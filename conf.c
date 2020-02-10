@@ -156,12 +156,23 @@ static void init(void) {
     check();
 }
 
+static void reset(void) {
+    ResetLatch(MyLatch);
+    CHECK_FOR_INTERRUPTS();
+}
+
+static void reload(void) {
+    got_sighup = false;
+    ProcessConfigFile(PGC_SIGHUP);
+    check();
+}
+
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     init();
     while (!got_sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, LONG_MAX, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) break;
-        if (rc & WL_LATCH_SET) { ResetLatch(MyLatch); CHECK_FOR_INTERRUPTS(); }
-        if (got_sighup) { got_sighup = false; ProcessConfigFile(PGC_SIGHUP); check(); }
+        if (rc & WL_LATCH_SET) reset();
+        if (got_sighup) reload();
     }
 }

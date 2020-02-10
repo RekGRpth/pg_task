@@ -311,14 +311,25 @@ static void init(void) {
     init_fix();
 }
 
+static void reset(void) {
+    ResetLatch(MyLatch);
+    CHECK_FOR_INTERRUPTS();
+}
+
+static void reload(void) {
+    got_sighup = false;
+    ProcessConfigFile(PGC_SIGHUP);
+    check();
+}
+
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     init();
     while (!got_sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) break;
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
-        if (rc & WL_LATCH_SET) { ResetLatch(MyLatch); CHECK_FOR_INTERRUPTS(); }
-        if (got_sighup) { got_sighup = false; ProcessConfigFile(PGC_SIGHUP); check(); }
+        if (rc & WL_LATCH_SET) reset();
+        if (got_sighup) reload();
         if (rc & WL_TIMEOUT) tick();
     }
 }
