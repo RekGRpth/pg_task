@@ -39,8 +39,8 @@ static void update_ps_display(void) {
 
 static void work(void) {
     int rc;
-    static Oid argtypes[] = {INT8OID, INT8OID};
-    Datum values[] = {id, MyProcPid};
+    static Oid argtypes[] = {INT8OID};
+    Datum values[] = {id};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -55,7 +55,7 @@ static void work(void) {
             "UPDATE  %s%s%s AS u\n"
             "SET     state = 'WORK',\n"
             "        start = current_timestamp,\n"
-            "        pid = $2\n"
+            "        pid = pg_backend_pid()\n"
             "FROM s WHERE u.id = s.id RETURNING request,\n"
             "        COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
