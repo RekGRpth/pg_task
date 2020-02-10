@@ -64,7 +64,7 @@ static void init_table(void) {
         "    pid INT,\n"
         "    request TEXT NOT NULL,\n"
         "    response TEXT,\n"
-        "    state STATE NOT NULL DEFAULT 'PLAN',\n"
+        "    state STATE NOT NULL DEFAULT 'PLAN'::STATE,\n"
         "    timeout INTERVAL,\n"
         "    delete BOOLEAN NOT NULL DEFAULT false,\n"
         "    repeat INTERVAL,\n"
@@ -134,13 +134,13 @@ static void init_fix(void) {
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table);
     initStringInfo(&buf);
     appendStringInfo(&buf,
-        "with s as (select id from %s%s%s as t WHERE state IN ('TAKE', 'WORK') AND pid NOT IN (\n"
+        "with s as (select id from %s%s%s as t WHERE state IN ('TAKE'::STATE, 'WORK'::STATE) AND pid NOT IN (\n"
         "    SELECT  pid\n"
         "    FROM    pg_stat_activity\n"
         "    WHERE   datname = current_catalog\n"
         "    AND     usename = current_user\n"
         "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), queue, id)\n"
-        ") for update skip locked) update %s%s%s as u set state = 'PLAN' from s where u.id = s.id", schema_quote, point, table_quote, schema_quote, point, table_quote);
+        ") for update skip locked) update %s%s%s as u set state = 'PLAN'::STATE from s where u.id = s.id", schema_quote, point, table_quote, schema_quote, point, table_quote);
     SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
@@ -201,13 +201,13 @@ static void tick(void) {
             "ON          datname = current_catalog\n"
             "AND         usename = current_user\n"
             "AND         backend_type = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), queue)\n"
-            "WHERE       t.state = 'PLAN'\n"
+            "WHERE       t.state = 'PLAN'::STATE\n"
             "AND         dt <= current_timestamp\n"
             ") SELECT id, queue, max - count(pid) AS count FROM s GROUP BY id, queue, max\n"
             ") SELECT array_agg(id ORDER BY id) AS id, queue, count FROM s WHERE count > 0 GROUP BY queue, count\n"
             ") SELECT unnest(id[:count]) AS id, queue, count FROM s ORDER BY count DESC\n"
             ") SELECT s.* FROM s INNER JOIN %s%s%s USING (id) FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", schema_quote, point, table_quote, schema_quote, point, table_quote, schema_quote, point, table_quote);
+            ") UPDATE %s%s%s AS u SET state = 'TAKE'::STATE FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", schema_quote, point, table_quote, schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
     SPI_connect_my(command, StatementTimeout);

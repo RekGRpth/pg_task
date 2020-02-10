@@ -53,7 +53,7 @@ static void work(void) {
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %s%s%s WHERE id = $1 FOR UPDATE)\n"
             "UPDATE  %s%s%s AS u\n"
-            "SET     state = 'WORK',\n"
+            "SET     state = 'WORK'::STATE,\n"
             "        start = current_timestamp,\n"
             "        pid = pg_backend_pid()\n"
             "FROM s WHERE u.id = s.id RETURNING request,\n"
@@ -93,8 +93,8 @@ static void repeat_task(void) {
             "WITH s AS (SELECT id AS parent, CASE\n"
             "    WHEN drift THEN current_timestamp + repeat\n"
             "    ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
-            "END AS dt, queue, max, request, 'PLAN' AS state, timeout, delete, repeat, drift, count, live\n"
-            "FROM %s%s%s WHERE id = $1 AND state IN ('DONE', 'FAIL') LIMIT 1\n"
+            "END AS dt, queue, max, request, 'PLAN'::STATE AS state, timeout, delete, repeat, drift, count, live\n"
+            "FROM %s%s%s WHERE id = $1 AND state IN ('DONE'::STATE, 'FAIL'::STATE) LIMIT 1\n"
             ") INSERT INTO %s%s%s (parent, dt, queue, max, request, state, timeout, delete, repeat, drift, count, live) SELECT * FROM s", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
@@ -145,13 +145,13 @@ static void more(void) {
             "WITH s AS (\n"
             "SELECT  id\n"
             "FROM    %s%s%s\n"
-            "WHERE   state = 'PLAN'\n"
+            "WHERE   state = 'PLAN'::STATE\n"
             "AND     dt <= current_timestamp\n"
             "AND     queue = $1\n"
             "AND     COALESCE(max, ~(1<<31)) >= $2\n"
             "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $3 AND $4 + live > current_timestamp ELSE COALESCE(count, 0) > $3 OR $4 + COALESCE(live, '0 sec'::INTERVAL) > current_timestamp END\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %s%s%s AS u SET state = 'TAKE' FROM s WHERE u.id = s.id RETURNING u.id, set_config('pg_task.id', u.id::TEXT, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            ") UPDATE %s%s%s AS u SET state = 'TAKE'::STATE FROM s WHERE u.id = s.id RETURNING u.id, set_config('pg_task.id', u.id::TEXT, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
     SPI_connect_my(command, StatementTimeout);
@@ -188,7 +188,7 @@ static void done(void) {
             "WITH s AS (SELECT id FROM %s%s%s WHERE id = $1 FOR UPDATE\n)\n"
             "UPDATE %s%s%s AS u SET state = $2::STATE, stop = current_timestamp, response = $3 FROM s WHERE u.id = s.id\n"
             "RETURNING delete, queue,\n"
-            "repeat IS NOT NULL AND state IN ('DONE', 'FAIL') AS repeat", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            "repeat IS NOT NULL AND state IN ('DONE'::STATE, 'FAIL'::STATE) AS repeat", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
     SPI_connect_my(command, StatementTimeout);
