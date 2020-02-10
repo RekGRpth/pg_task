@@ -352,12 +352,11 @@ static void init(void) {
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     init();
-    do {
+    while (!got_sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) break;
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) { ResetLatch(MyLatch); CHECK_FOR_INTERRUPTS(); }
-        if (got_sigterm) break;
         if (rc & WL_TIMEOUT) execute();
-    } while (!got_sigterm);
+    }
 }
