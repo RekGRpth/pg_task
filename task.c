@@ -221,12 +221,13 @@ static void success(void) {
         initStringInfo(&buf);
         if (SPI_tuptable->tupdesc->natts > 1) {
             for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-                char *name = SPI_fname(SPI_tuptable->tupdesc, col);
-                char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
-                appendStringInfo(&buf, "%s::%s", name, type);
+                const char *name = SPI_fname(SPI_tuptable->tupdesc, col);
+                const char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
+                if (name) appendStringInfoString(&buf, name);
+                if (type) appendStringInfo(&buf, "::%s", type);
                 if (col > 1) appendStringInfoString(&buf, "\t");
-                pfree(name);
-                pfree(type);
+                pfree((void *)name);
+                pfree((void *)type);
             }
             appendStringInfoString(&buf, "\n");
         }
