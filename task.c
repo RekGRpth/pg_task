@@ -232,10 +232,10 @@ static void success(void) {
         }
         for (uint64 row = 0; row < SPI_processed; row++) {
             for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-                char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
-                appendStringInfo(&buf, "%s", value);
+                const char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
+                appendStringInfoString(&buf, value ? value : "(null)");
                 if (col > 1) appendStringInfoString(&buf, "\t");
-                pfree(value);
+                pfree((void *)value);
             }
             if (row < SPI_processed - 1) appendStringInfoString(&buf, "\n");
         }
