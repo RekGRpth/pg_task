@@ -223,8 +223,7 @@ static void success(void) {
             for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
                 const char *name = SPI_fname(SPI_tuptable->tupdesc, col);
                 const char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
-                if (name) appendStringInfoString(&buf, name);
-                if (type) appendStringInfo(&buf, "::%s", type);
+                appendStringInfo(&buf, "%s::%s", name, type);
                 if (col > 1) appendStringInfoString(&buf, "\t");
                 pfree((void *)name);
                 pfree((void *)type);
@@ -236,7 +235,7 @@ static void success(void) {
                 const char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
                 appendStringInfoString(&buf, value ? value : "(null)");
                 if (col > 1) appendStringInfoString(&buf, "\t");
-                pfree((void *)value);
+                if (value) pfree((void *)value);
             }
             if (row < SPI_processed - 1) appendStringInfoString(&buf, "\n");
         }
