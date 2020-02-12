@@ -14,3 +14,31 @@ pg_task.config = '[{"data":"database1"},{"data":"database2","user":"username2"},
 ```
 
 if database and/or user and/or schema and/or table does not exist then pg_task create it
+
+# pg_task using
+
+to run task more quickly execute sql command
+```sql
+INSERT INTO task (request) VALUES ('SELECT now()')
+```
+
+to run task after 5 minutes write plannded time
+```sql
+INSERT INTO task (dt, request) VALUES (now() + '5 min':INTERVAL, 'SELECT now()')
+```
+
+to run task at specific time so write
+```sql
+INSERT INTO task (dt, request) VALUES ('2029-07-01 12:51:00', 'SELECT now()')
+```
+
+to repeat task every 5 minutes write
+```sql
+INSERT INTO task (repeat, request) VALUES ('5 min', 'SELECT now()')
+```
+
+if write so
+```sql
+INSERT INTO task (repeat, request, drift) VALUES ('5 min', 'SELECT now()', false)
+```
+then repeat task will start after 5 minutes after task done (instead after planned time as default)
