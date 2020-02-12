@@ -282,7 +282,6 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
     }
     initStringInfo(&buf);
     appendStringInfo(&buf, "%s %ld", MyBgworkerEntry->bgw_type, period);
-//    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
     data_quote = quote_identifier(data);
     user_quote = quote_identifier(user);
@@ -296,17 +295,14 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
         BackgroundWorkerInitializeConnection(data, user, 0);
     }
     pgstat_report_appname(buf.data);
-//    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     resetStringInfo(&buf);
     appendStringInfo(&buf, "%ld", period);
     set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     pfree(buf.data);
-//    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     if (schema) tick_schema();
     tick_type();
-//    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     tick_table();
     tick_index("dt");
     tick_index("state");
