@@ -37,7 +37,7 @@ static void update_ps_display(void) {
     pfree(buf.data);
 }
 
-static void work(void) {
+static void task_work(void) {
     int rc;
     static Oid argtypes[] = {INT8OID};
     Datum values[] = {id};
@@ -79,7 +79,7 @@ static void work(void) {
     if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
 }
 
-static void repeat_task(void) {
+static void task_repeat(void) {
     int rc;
     static Oid argtypes[] = {INT8OID};
     Datum values[] = {id};
@@ -107,7 +107,7 @@ static void repeat_task(void) {
     SPI_finish_my(command);
 }
 
-static void delete_task(void) {
+static void task_delete(void) {
     int rc;
     static Oid argtypes[] = {INT8OID};
     Datum values[] = {id};
@@ -130,7 +130,7 @@ static void delete_task(void) {
     SPI_finish_my(command);
 }
 
-static void more(void) {
+static void task_more(void) {
     int rc;
     static Oid argtypes[] = {TEXTOID, INT4OID, INT4OID, TIMESTAMPTZOID};
     Datum values[] = {CStringGetTextDatum(queue), UInt32GetDatum(max), UInt32GetDatum(count), TimestampTzGetDatum(start)};
@@ -169,7 +169,7 @@ static void more(void) {
     pfree((void *)values[0]);
 }
 
-static void done(void) {
+static void task_done(void) {
     int rc;
     bool delete, repeat;
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
@@ -207,12 +207,12 @@ static void done(void) {
     SPI_finish_my(command);
     pfree((void *)values[1]);
     if (response) pfree((void *)values[2]);
-    if (repeat) repeat_task();
-    if (delete && !response) delete_task();
+    if (repeat) task_repeat();
+    if (delete && !response) task_delete();
     if (response) pfree(response);
 }
 
-static void success(void) {
+static void task_success(void) {
     response = NULL;
     if ((SPI_tuptable) && (SPI_processed > 0)) {
         MemoryContext successMemoryContext = MemoryContextSwitchTo(executeMemoryContext);
@@ -244,7 +244,7 @@ static void success(void) {
     state = "DONE";
 }
 
-static void error(void) {
+static void task_error(void) {
     MemoryContext errorMemoryContext = MemoryContextSwitchTo(executeMemoryContext);
     ErrorData *edata = CopyErrorData();
     StringInfoData buf;
@@ -282,33 +282,33 @@ static void error(void) {
     MemoryContextSwitchTo(errorMemoryContext);
 }
 
-static void execute(void) {
-    work();
+static void task_loop(void) {
+    task_work();
     elog(LOG, "%s(%s:%d): id = %lu, timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, DatumGetUInt64(id), timeout, request, count);
     SPI_connect_my(request, timeout);
     PG_TRY(); {
         int rc;
         if ((rc = SPI_execute(request, false, 0)) < 0) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-        success();
+        task_success();
         SPI_commit();
     } PG_CATCH(); {
-        error();
+        task_error();
         SPI_rollback();
     } PG_END_TRY();
     SPI_finish_my(request);
     pfree(request);
-    done();
-    more();
+    task_done();
+    task_more();
 }
 
-static void sigterm(SIGNAL_ARGS) {
+static void task_sigterm(SIGNAL_ARGS) {
     int save_errno = errno;
     got_sigterm = true;
     SetLatch(MyLatch);
     errno = save_errno;
 }
 
-static void init(void) {
+static void task_init(void) {
     StringInfoData buf;
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
@@ -334,7 +334,7 @@ static void init(void) {
     schema_quote = schema ? quote_identifier(schema) : "";
     point = schema ? "." : "";
     table_quote = quote_identifier(table);
-    pqsignal(SIGTERM, sigterm);
+    pqsignal(SIGTERM, task_sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(data, user, 0);
     pgstat_report_appname(buf.data);
@@ -349,18 +349,18 @@ static void init(void) {
     pfree(buf.data);
 }
 
-static void reset(void) {
+static void task_reset(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
 }
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
-    init();
+    task_init();
     while (!got_sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) break;
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
-        if (rc & WL_LATCH_SET) reset();
-        if (rc & WL_TIMEOUT) execute();
+        if (rc & WL_LATCH_SET) task_reset();
+        if (rc & WL_TIMEOUT) task_loop();
     }
 }
