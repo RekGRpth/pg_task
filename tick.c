@@ -186,7 +186,7 @@ static void register_task_worker(const Datum id, const char *queue, const uint32
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
-static void tick(void) {
+static void tick_loop(void) {
     int rc;
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
@@ -244,7 +244,7 @@ static void sigterm(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
-static void check(void) {
+static void tick_check(void) {
     int rc;
     static SPIPlanPtr plan = NULL;
     static const char *command =
@@ -270,7 +270,7 @@ static void check(void) {
     SPI_finish_my(command);
 }
 
-static void init(void) {
+static void tick_init(void) {
     StringInfoData buf;
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
@@ -311,25 +311,25 @@ static void init(void) {
     init_fix();
 }
 
-static void reset(void) {
+static void tick_reset(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
 }
 
-static void reload(void) {
+static void tick_reload(void) {
     got_sighup = false;
     ProcessConfigFile(PGC_SIGHUP);
-    check();
+    tick_check();
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
-    init();
+    tick_init();
     while (!got_sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) break;
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
-        if (rc & WL_LATCH_SET) reset();
-        if (got_sighup) reload();
-        if (rc & WL_TIMEOUT) tick();
+        if (rc & WL_LATCH_SET) tick_reset();
+        if (got_sighup) tick_reload();
+        if (rc & WL_TIMEOUT) tick_loop();
     }
 }
