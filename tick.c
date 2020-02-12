@@ -13,7 +13,7 @@ static const char *table_quote;
 static const char *user;
 static const char *user_quote;
 
-static uint32 period;
+static long period;
 
 static void tick_schema(void) {
     int rc;
@@ -186,7 +186,7 @@ static void task_worker(const Datum id, const char *queue, const uint32 max) {
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
-static void tick_loop(void) {
+void tick_loop(void) {
     int rc;
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
@@ -253,12 +253,12 @@ static void tick_check(void) {
         "            COALESCE(COALESCE(usename, \"user\"), data)::TEXT AS user,\n"
         "            schema,\n"
         "            COALESCE(\"table\", current_setting('pg_task.task', false)) AS table,\n"
-        "            COALESCE(period, current_setting('pg_task.tick', false)::INT) AS period\n"
+        "            COALESCE(period, current_setting('pg_task.tick', false)::BIGINT) AS period\n"
         "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (data TEXT, \"user\" TEXT, schema TEXT, \"table\" TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT * FROM s WHERE data = current_catalog AND \"user\" = current_user AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND period = current_setting('pg_task.period', false)::INT";
-    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
+        ") SELECT * FROM s WHERE data = current_catalog AND \"user\" = current_user AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND period = current_setting('pg_task.period', false)::BIGINT";
+    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, 0, NULL))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
@@ -283,9 +283,9 @@ static void tick_init(void) {
     period = *(typeof(period) *)(table + strlen(table) + 1);
     if (table == schema + 1) schema = NULL;
     initStringInfo(&buf);
-    appendStringInfo(&buf, "%s %u", MyBgworkerEntry->bgw_type, period);
+    appendStringInfo(&buf, "%s %ld", MyBgworkerEntry->bgw_type, period);
     SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
-    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
+    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     data_quote = quote_identifier(data);
     user_quote = quote_identifier(user);
     schema_quote = schema ? quote_identifier(schema) : "";
@@ -299,7 +299,7 @@ static void tick_init(void) {
     if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%u", period);
+    appendStringInfo(&buf, "%ld", period);
     set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     pfree(buf.data);
     if (schema) tick_schema();

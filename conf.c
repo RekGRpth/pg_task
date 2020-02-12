@@ -3,6 +3,9 @@
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
+static long period = LONG_MAX;
+static int events = WL_LATCH_SET | WL_POSTMASTER_DEATH;
+
 static void conf_sighup(SIGNAL_ARGS) {
     int save_errno = errno;
     sighup = true;
@@ -58,11 +61,11 @@ static void conf_data(const char *user, const char *data) {
     pfree(buf.data);
 }
 
-static void tick_worker(const char *data, const char *user, const char *schema, const char *table, uint32 period) {
+static void tick_worker(const char *data, const char *user, const char *schema, const char *table, long period) {
     StringInfoData buf;
     uint32 data_len = strlen(data), user_len = strlen(user), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), period_len = sizeof(period);
     BackgroundWorker worker;
-    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
+    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = MyProcPid;
@@ -81,7 +84,7 @@ static void tick_worker(const char *data, const char *user, const char *schema, 
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s %s pg_task %s%s%s %u", user, data, schema ? schema : "", schema ? " " : "", table, period);
+    appendStringInfo(&buf, "%s %s pg_task %s%s%s %ld", user, data, schema ? schema : "", schema ? " " : "", table, period);
     if (buf.len + 1 > BGW_MAXLEN) ereport(ERROR, (errmsg("%s(%s:%d): %u > BGW_MAXLEN", __func__, __FILE__, __LINE__, buf.len + 1)));
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
@@ -105,7 +108,7 @@ static void conf_check(void) {
         "            usename,\n"
         "            schema,\n"
         "            COALESCE(\"table\", current_setting('pg_task.task', false)) AS table,\n"
-        "            COALESCE(period, current_setting('pg_task.tick', false)::INT) AS period\n"
+        "            COALESCE(period, current_setting('pg_task.tick', false)::BIGINT) AS period\n"
         "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (data TEXT, \"user\" TEXT, schema TEXT, \"table\" TEXT, period BIGINT)\n"
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
@@ -125,10 +128,10 @@ static void conf_check(void) {
         const char *user = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
         const char *schema = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
         const char *table = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
-        const uint32 period = DatumGetUInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
+        const long period = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull);
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull);
-        elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %u, datname_isnull = %s, usename_isnull = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period, datname_isnull ? "true" : "false", usename_isnull ? "true" : "false");
+        elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld, datname_isnull = %s, usename_isnull = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period, datname_isnull ? "true" : "false", usename_isnull ? "true" : "false");
         if (period_isnull) ereport(ERROR, (errmsg("%s(%s:%d): period_isnull", __func__, __FILE__, __LINE__)));
         if (usename_isnull) conf_user(user);
         if (datname_isnull) conf_data(user, data);
@@ -167,12 +170,14 @@ static void conf_reload(void) {
     conf_check();
 }
 
+//extern int WaitLatch(Latch *latch, int wakeEvents, long timeout, uint32 wait_event_info);
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     conf_init();
     while (!sigterm) {
-        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, LONG_MAX, PG_WAIT_EXTENSION);
+        int rc = WaitLatch(MyLatch, events, period, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) break;
         if (rc & WL_LATCH_SET) conf_reset();
         if (sighup) conf_reload();
+        if (rc & WL_TIMEOUT) tick_loop();
     }
 }
