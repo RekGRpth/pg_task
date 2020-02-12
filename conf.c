@@ -102,6 +102,7 @@ static void tick_worker(const char *data, const char *user, const char *schema, 
 static void conf_check(void) {
     int rc;
     static SPIPlanPtr plan = NULL;
+    static bool conf = false;
     static const char *command =
         "WITH s AS (\n"
         "SELECT      COALESCE(datname, data)::TEXT AS data,\n"
@@ -139,7 +140,7 @@ static void conf_check(void) {
         if (usename_isnull) conf_user(user);
         if (datname_isnull) conf_data(user, data);
         if (!pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !schema && !pg_strcasecmp(table, pg_task_task)) {
-            tick_init(true, "postgres", "postgres", NULL, pg_task_task, period);
+            conf = true;
             timeout = period;
             events |= WL_TIMEOUT;
         } else tick_worker(data, user, schema, table, period);
@@ -150,6 +151,7 @@ static void conf_check(void) {
     }
     SPI_commit();
     SPI_finish_my(command);
+    if (conf) tick_init(true, "postgres", "postgres", NULL, pg_task_task, timeout);
 }
 
 static void conf_init(void) {
