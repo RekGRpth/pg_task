@@ -1,6 +1,6 @@
 #include "include.h"
 
-static volatile sig_atomic_t got_sigterm = false;
+static volatile sig_atomic_t sigterm = false;
 
 static char *request;
 static char *response;
@@ -19,7 +19,7 @@ static const char *user_quote;
 static const char *queue;
 
 static Datum id;
-static MemoryContext executeMemoryContext;
+static MemoryContext loopMemoryContext;
 static TimestampTz start;
 static uint32 count;
 static uint32 max;
@@ -67,7 +67,7 @@ static void task_work(void) {
     }
     if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
-        MemoryContext workMemoryContext = MemoryContextSwitchTo(executeMemoryContext);
+        MemoryContext workMemoryContext = MemoryContextSwitchTo(loopMemoryContext);
         bool timeout_isnull;
         request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
         timeout = DatumGetUInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
@@ -159,7 +159,7 @@ static void task_more(void) {
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
     if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    if (!SPI_processed) got_sigterm = true; else {
+    if (!SPI_processed) sigterm = true; else {
         bool id_isnull;
         id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
         if (id_isnull) ereport(ERROR, (errmsg("%s(%s:%d): id_isnull", __func__, __FILE__, __LINE__)));
@@ -215,7 +215,7 @@ static void task_done(void) {
 static void task_success(void) {
     response = NULL;
     if ((SPI_tuptable) && (SPI_processed > 0)) {
-        MemoryContext successMemoryContext = MemoryContextSwitchTo(executeMemoryContext);
+        MemoryContext successMemoryContext = MemoryContextSwitchTo(loopMemoryContext);
         StringInfoData buf;
         initStringInfo(&buf);
         if (SPI_tuptable->tupdesc->natts > 1) {
@@ -245,7 +245,7 @@ static void task_success(void) {
 }
 
 static void task_error(void) {
-    MemoryContext errorMemoryContext = MemoryContextSwitchTo(executeMemoryContext);
+    MemoryContext errorMemoryContext = MemoryContextSwitchTo(loopMemoryContext);
     ErrorData *edata = CopyErrorData();
     StringInfoData buf;
     initStringInfo(&buf);
@@ -303,7 +303,7 @@ static void task_loop(void) {
 
 static void task_sigterm(SIGNAL_ARGS) {
     int save_errno = errno;
-    got_sigterm = true;
+    sigterm = true;
     SetLatch(MyLatch);
     errno = save_errno;
 }
@@ -312,7 +312,7 @@ static void task_init(void) {
     StringInfoData buf;
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-    executeMemoryContext = CurrentMemoryContext;
+    loopMemoryContext = CurrentMemoryContext;
     id = MyBgworkerEntry->bgw_main_arg;
     start = GetCurrentTimestamp();
     count = 0;
@@ -356,7 +356,7 @@ static void task_reset(void) {
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     task_init();
-    while (!got_sigterm) {
+    while (!sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) break;
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;

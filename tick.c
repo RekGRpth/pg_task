@@ -1,7 +1,7 @@
 #include "include.h"
 
-static volatile sig_atomic_t got_sighup = false;
-static volatile sig_atomic_t got_sigterm = false;
+static volatile sig_atomic_t sighup = false;
+static volatile sig_atomic_t sigterm = false;
 
 static const char *data;
 static const char *data_quote;
@@ -121,7 +121,7 @@ static void tick_lock(void) {
         if (lock_isnull) ereport(ERROR, (errmsg("%s(%s:%d): lock_isnull", __func__, __FILE__, __LINE__)));
         if (!lock) {
             ereport(WARNING, (errmsg("%s(%s:%d): Already running data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table)));
-            got_sigterm = true;
+            sigterm = true;
         }
     }
     SPI_commit();
@@ -232,14 +232,14 @@ static void tick_loop(void) {
 
 static void tick_sighup(SIGNAL_ARGS) {
     int save_errno = errno;
-    got_sighup = true;
+    sighup = true;
     SetLatch(MyLatch);
     errno = save_errno;
 }
 
 static void tick_sigterm(SIGNAL_ARGS) {
     int save_errno = errno;
-    got_sigterm = true;
+    sigterm = true;
     SetLatch(MyLatch);
     errno = save_errno;
 }
@@ -265,7 +265,7 @@ static void tick_check(void) {
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
     if ((rc = SPI_execute_plan(plan, NULL, NULL, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    if (!SPI_processed) got_sigterm = true;
+    if (!SPI_processed) sigterm = true;
     SPI_commit();
     SPI_finish_my(command);
 }
@@ -317,19 +317,19 @@ static void tick_reset(void) {
 }
 
 static void tick_reload(void) {
-    got_sighup = false;
+    sighup = false;
     ProcessConfigFile(PGC_SIGHUP);
     tick_check();
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     tick_init();
-    while (!got_sigterm) {
+    while (!sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) break;
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) tick_reset();
-        if (got_sighup) tick_reload();
+        if (sighup) tick_reload();
         if (rc & WL_TIMEOUT) tick_loop();
     }
 }
