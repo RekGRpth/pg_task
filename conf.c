@@ -143,6 +143,7 @@ static void conf_check(void) {
         "LEFT JOIN   pg_stat_activity AS a ON a.datname = data AND a.usename = \"user\" AND application_name = concat_ws(' ', 'pg_task', schema, \"table\", period::TEXT) AND pid != pg_backend_pid()\n"
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
         "WHERE       a.pid IS NULL";
+    events &= ~WL_TIMEOUT;
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, 0, NULL))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
@@ -179,7 +180,6 @@ static void conf_check(void) {
         tick_init(true, "postgres", "postgres", NULL, pg_task_task, timeout);
     } else if (renamed) {
         timeout = LONG_MAX;
-        events &= ~WL_TIMEOUT;
         update_ps_display(false);
     }
 }
