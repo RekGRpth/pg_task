@@ -29,4 +29,5 @@
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
 void SPI_connect_my(const char *command, const int timeout);
 void SPI_finish_my(const char *command);
+void tick_init(const bool conf, const char *data, const char *user, const char *schema, const char *table, long period);
 void tick_loop(void);

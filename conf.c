@@ -138,7 +138,7 @@ static void conf_check(void) {
         if (period_isnull) ereport(ERROR, (errmsg("%s(%s:%d): period_isnull", __func__, __FILE__, __LINE__)));
         if (usename_isnull) conf_user(user);
         if (datname_isnull) conf_data(user, data);
-//        if (!pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !schema && !pg_strcasecmp(table, pg_task_task))
+//        if (!pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !schema && !pg_strcasecmp(table, pg_task_task)) tick_init(true, data, user, schema, table, period);
         tick_worker(data, user, schema, table, period);
         pfree((void *)data);
         pfree((void *)user);

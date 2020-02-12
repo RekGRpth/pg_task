@@ -270,31 +270,29 @@ static void tick_check(void) {
     SPI_finish_my(command);
 }
 
-static void tick_init(void) {
+void tick_init(const bool conf, const char *data, const char *user, const char *schema, const char *table, long period) {
     StringInfoData buf;
-    if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
-    if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-    data = MyBgworkerEntry->bgw_extra;
-    if (!MyProcPort->database_name) MyProcPort->database_name = (char *)data;
-    user = data + strlen(data) + 1;
-    if (!MyProcPort->user_name) MyProcPort->user_name = (char *)user;
-    schema = user + strlen(user) + 1;
-    table = schema + strlen(schema) + 1;
-    period = *(typeof(period) *)(table + strlen(table) + 1);
-    if (table == schema + 1) schema = NULL;
+    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
+    if (!conf) {
+        if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
+        if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
+        if (!MyProcPort->database_name) MyProcPort->database_name = (char *)data;
+        if (!MyProcPort->user_name) MyProcPort->user_name = (char *)user;
+    }
     initStringInfo(&buf);
     appendStringInfo(&buf, "%s %ld", MyBgworkerEntry->bgw_type, period);
     SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
-    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     data_quote = quote_identifier(data);
     user_quote = quote_identifier(user);
     schema_quote = schema ? quote_identifier(schema) : "";
     point = schema ? "." : "";
     table_quote = quote_identifier(table);
-    pqsignal(SIGHUP, tick_sighup);
-    pqsignal(SIGTERM, tick_sigterm);
-    BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnection(data, user, 0);
+    if (!conf) {
+        pqsignal(SIGHUP, tick_sighup);
+        pqsignal(SIGTERM, tick_sigterm);
+        BackgroundWorkerUnblockSignals();
+        BackgroundWorkerInitializeConnection(data, user, 0);
+    }
     pgstat_report_appname(buf.data);
     if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
@@ -323,7 +321,13 @@ static void tick_reload(void) {
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
-    tick_init();
+    data = MyBgworkerEntry->bgw_extra;
+    user = data + strlen(data) + 1;
+    schema = user + strlen(user) + 1;
+    table = schema + strlen(schema) + 1;
+    period = *(typeof(period) *)(table + strlen(table) + 1);
+    if (table == schema + 1) schema = NULL;
+    tick_init(false, data, user, schema, table, period);
     while (!sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) break;
