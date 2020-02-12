@@ -3,7 +3,7 @@
 PG_MODULE_MAGIC;
 
 static char *pg_task_config;
-static char *pg_task_task;
+char *pg_task_task;
 static long pg_task_tick;
 
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker) {

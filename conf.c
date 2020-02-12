@@ -1,5 +1,7 @@
 #include "include.h"
 
+extern char *pg_task_task;
+
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
@@ -116,6 +118,7 @@ static void conf_check(void) {
         "LEFT JOIN   pg_stat_activity AS a ON a.datname = data AND a.usename = \"user\" AND application_name = concat_ws(' ', 'pg_task', schema, \"table\", period::TEXT)\n"
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
         "WHERE       a.pid IS NULL";
+    elog(LOG, "%s(%s:%d): pg_task_task = %s", __func__, __FILE__, __LINE__, pg_task_task);
     SPI_connect_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, 0, NULL))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
@@ -135,6 +138,7 @@ static void conf_check(void) {
         if (period_isnull) ereport(ERROR, (errmsg("%s(%s:%d): period_isnull", __func__, __FILE__, __LINE__)));
         if (usename_isnull) conf_user(user);
         if (datname_isnull) conf_data(user, data);
+//        if (!pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !schema && !pg_strcasecmp(table, pg_task_task))
         tick_worker(data, user, schema, table, period);
         pfree((void *)data);
         pfree((void *)user);
@@ -170,7 +174,6 @@ static void conf_reload(void) {
     conf_check();
 }
 
-//extern int WaitLatch(Latch *latch, int wakeEvents, long timeout, uint32 wait_event_info);
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     conf_init();
     while (!sigterm) {
