@@ -1,23 +1,23 @@
 #include "include.h"
 
-static volatile sig_atomic_t got_sighup = false;
-static volatile sig_atomic_t got_sigterm = false;
+static volatile sig_atomic_t sighup = false;
+static volatile sig_atomic_t sigterm = false;
 
-static void sighup(SIGNAL_ARGS) {
+static void conf_sighup(SIGNAL_ARGS) {
     int save_errno = errno;
-    got_sighup = true;
+    sighup = true;
     SetLatch(MyLatch);
     errno = save_errno;
 }
 
-static void sigterm(SIGNAL_ARGS) {
+static void conf_sigterm(SIGNAL_ARGS) {
     int save_errno = errno;
-    got_sigterm = true;
+    sigterm = true;
     SetLatch(MyLatch);
     errno = save_errno;
 }
 
-static void create_user(const char *user) {
+static void conf_user(const char *user) {
     int rc;
     StringInfoData buf;
     const char *user_quote = quote_identifier(user);
@@ -32,7 +32,7 @@ static void create_user(const char *user) {
     pfree(buf.data);
 }
 
-static void create_data(const char *user, const char *data) {
+static void conf_data(const char *user, const char *data) {
     StringInfoData buf;
     const char *user_quote = quote_identifier(user);
     const char *data_quote = quote_identifier(data);
@@ -94,7 +94,7 @@ static void register_tick_worker(const char *data, const char *user, const char 
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
-static void check(void) {
+static void conf_check(void) {
     int rc;
     static SPIPlanPtr plan = NULL;
     static const char *command =
@@ -130,8 +130,8 @@ static void check(void) {
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull);
         elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %u, datname_isnull = %s, usename_isnull = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period, datname_isnull ? "true" : "false", usename_isnull ? "true" : "false");
         if (period_isnull) ereport(ERROR, (errmsg("%s(%s:%d): period_isnull", __func__, __FILE__, __LINE__)));
-        if (usename_isnull) create_user(user);
-        if (datname_isnull) create_data(user, data);
+        if (usename_isnull) conf_user(user);
+        if (datname_isnull) conf_data(user, data);
         register_tick_worker(data, user, schema, table, period);
         pfree((void *)data);
         pfree((void *)user);
@@ -142,37 +142,37 @@ static void check(void) {
     SPI_finish_my(command);
 }
 
-static void init(void) {
+static void conf_init(void) {
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
     if (!MyProcPort->user_name) MyProcPort->user_name = "postgres";
     if (!MyProcPort->database_name) MyProcPort->database_name = "postgres";
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     SetConfigOption("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_OVERRIDE);
-    pqsignal(SIGHUP, sighup);
-    pqsignal(SIGTERM, sigterm);
+    pqsignal(SIGHUP, conf_sighup);
+    pqsignal(SIGTERM, conf_sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(MyProcPort->database_name, MyProcPort->user_name, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
-    check();
+    conf_check();
 }
 
-static void reset(void) {
+static void conf_reset(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
 }
 
-static void reload(void) {
-    got_sighup = false;
+static void conf_reload(void) {
+    sighup = false;
     ProcessConfigFile(PGC_SIGHUP);
-    check();
+    conf_check();
 }
 
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
-    init();
-    while (!got_sigterm) {
+    conf_init();
+    while (!sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, LONG_MAX, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) break;
-        if (rc & WL_LATCH_SET) reset();
-        if (got_sighup) reload();
+        if (rc & WL_LATCH_SET) conf_reset();
+        if (sighup) conf_reload();
     }
 }
