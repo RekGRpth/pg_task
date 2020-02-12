@@ -134,13 +134,13 @@ static void init_fix(void) {
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table);
     initStringInfo(&buf);
     appendStringInfo(&buf,
-        "with s as (select id from %s%s%s as t WHERE state IN ('TAKE'::STATE, 'WORK'::STATE) AND pid NOT IN (\n"
+        "WITH s AS (SELECT id FROM %s%s%s AS t WHERE state IN ('TAKE'::STATE, 'WORK'::STATE) AND pid NOT IN (\n"
         "    SELECT  pid\n"
         "    FROM    pg_stat_activity\n"
         "    WHERE   datname = current_catalog\n"
         "    AND     usename = current_user\n"
         "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), queue, id)\n"
-        ") for update skip locked) update %s%s%s as u set state = 'PLAN'::STATE from s where u.id = s.id", schema_quote, point, table_quote, schema_quote, point, table_quote);
+        ") FOR UPDATE SKIP LOCKED) UPDATE %s%s%s AS u SET state = 'PLAN'::STATE FROM s WHERE u.id = s.id", schema_quote, point, table_quote, schema_quote, point, table_quote);
     SPI_connect_my(buf.data, StatementTimeout);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit();
