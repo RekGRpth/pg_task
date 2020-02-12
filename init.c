@@ -22,12 +22,12 @@ void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker) {
 
 void SPI_start_my(const char *command, const int timeout) {
     int rc;
-    pgstat_report_activity(STATE_RUNNING, command);
     SetCurrentStatementStartTimestamp();
     StartTransactionCommand();
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_connect = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     PushActiveSnapshot(GetTransactionSnapshot());
     if (timeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, timeout); else disable_timeout(STATEMENT_TIMEOUT, false);
+    pgstat_report_activity(STATE_RUNNING, command);
 }
 
 void SPI_commit_my(const char *command) {
