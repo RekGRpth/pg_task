@@ -4,14 +4,14 @@ static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
 static const char *data;
-static const char *data_quote;
+static const char *data_quote = NULL;
 static const char *point;
 static const char *schema;
-static const char *schema_quote;
+static const char *schema_quote = NULL;
 static const char *table;
-static const char *table_quote;
+static const char *table_quote = NULL;
 static const char *user;
-static const char *user_quote;
+static const char *user_quote = NULL;
 
 static long period;
 
@@ -280,10 +280,14 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
         if (!MyProcPort->database_name) MyProcPort->database_name = (char *)data;
         if (!MyProcPort->user_name) MyProcPort->user_name = (char *)user;
     }
+    if (data_quote && data_quote != data) { pfree((void *)data_quote); data_quote = NULL; }
     data_quote = quote_identifier(data);
+    if (user_quote && user_quote != user) { pfree((void *)user_quote); user_quote = NULL; }
     user_quote = quote_identifier(user);
+    if (schema && schema_quote && schema_quote != schema) { pfree((void *)schema_quote); schema_quote = NULL; }
     schema_quote = schema ? quote_identifier(schema) : "";
     point = schema ? "." : "";
+    if (table_quote && table_quote != table) { pfree((void *)table_quote); table_quote = NULL; }
     table_quote = quote_identifier(table);
     initStringInfo(&buf);
     if (!conf) {
