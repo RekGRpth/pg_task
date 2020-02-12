@@ -4,7 +4,15 @@ to run pg_task add it to line
 shared_preload_libraries = 'pg_task'
 ```
 
-bt default pg_task use table `task` and period `1000 ms`
+bt default pg_task use table
+```conf
+pg_task.task = 'task'
+```
+and period
+```conf
+pg_task.tick = 1000
+```
+milliseconds
 
 by default pg_task run on local database `postgres` with user `postgres` with default schema (in search path) with default table (as abow) and default period (as abow)
 
@@ -42,3 +50,8 @@ if write so
 INSERT INTO task (repeat, request, drift) VALUES ('5 min', 'SELECT now()', false)
 ```
 then repeat task will start after 5 minutes after task done (instead after planned time as default)
+
+if exception occures it catched and writed in result as text
+```sql
+INSERT INTO task (request) VALUES ('SELECT 1/0')
+```
