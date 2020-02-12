@@ -60,7 +60,7 @@ static void task_work(void) {
             "        COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
-    SPI_connect_my(command, StatementTimeout);
+    SPI_start_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
@@ -74,8 +74,7 @@ static void task_work(void) {
         if (timeout_isnull) ereport(ERROR, (errmsg("%s(%s:%d): timeout_isnull", __func__, __FILE__, __LINE__)));
         MemoryContextSwitchTo(workMemoryContext);
     }
-    SPI_commit();
-    SPI_finish_my(command);
+    SPI_commit_my(command);
     if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
 }
 
@@ -97,14 +96,13 @@ static void task_repeat(void) {
             "FROM %s%s%s WHERE id = $1 AND state IN ('DONE'::STATE, 'FAIL'::STATE) LIMIT 1", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
-    SPI_connect_my(command, StatementTimeout);
+    SPI_start_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
     if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_INSERT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    SPI_commit();
-    SPI_finish_my(command);
+    SPI_commit_my(command);
 }
 
 static void task_delete(void) {
@@ -120,14 +118,13 @@ static void task_delete(void) {
         appendStringInfo(&buf, "DELETE FROM %s%s%s WHERE id = $1", schema_quote, point, table_quote);
         command = buf.data;
     }
-    SPI_connect_my(command, StatementTimeout);
+    SPI_start_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
     if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_DELETE) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    SPI_commit();
-    SPI_finish_my(command);
+    SPI_commit_my(command);
 }
 
 static void task_more(void) {
@@ -153,7 +150,7 @@ static void task_more(void) {
             ") UPDATE %s%s%s AS u SET state = 'TAKE'::STATE FROM s WHERE u.id = s.id RETURNING u.id, set_config('pg_task.id', u.id::TEXT, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
-    SPI_connect_my(command, StatementTimeout);
+    SPI_start_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
@@ -164,8 +161,7 @@ static void task_more(void) {
         id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
         if (id_isnull) ereport(ERROR, (errmsg("%s(%s:%d): id_isnull", __func__, __FILE__, __LINE__)));
     }
-    SPI_commit();
-    SPI_finish_my(command);
+    SPI_commit_my(command);
     pfree((void *)values[0]);
 }
 
@@ -190,7 +186,7 @@ static void task_done(void) {
             "repeat IS NOT NULL AND state IN ('DONE'::STATE, 'FAIL'::STATE) AS repeat", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
-    SPI_connect_my(command, StatementTimeout);
+    SPI_start_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
@@ -203,8 +199,7 @@ static void task_done(void) {
         if (delete_isnull) ereport(ERROR, (errmsg("%s(%s:%d): delete_isnull", __func__, __FILE__, __LINE__)));
         if (repeat_isnull) ereport(ERROR, (errmsg("%s(%s:%d): repeat_isnull", __func__, __FILE__, __LINE__)));
     }
-    SPI_commit();
-    SPI_finish_my(command);
+    SPI_commit_my(command);
     pfree((void *)values[1]);
     if (response) pfree((void *)values[2]);
     if (repeat) task_repeat();
@@ -285,17 +280,16 @@ static void task_error(void) {
 static void task_loop(void) {
     task_work();
     elog(LOG, "%s(%s:%d): id = %lu, timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, DatumGetUInt64(id), timeout, request, count);
-    SPI_connect_my(request, timeout);
+    SPI_start_my(request, timeout);
     PG_TRY(); {
         int rc;
         if ((rc = SPI_execute(request, false, 0)) < 0) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
         task_success();
-        SPI_commit();
+        SPI_commit_my(request);
     } PG_CATCH(); {
         task_error();
-        SPI_rollback();
+        SPI_rollback_my(request);
     } PG_END_TRY();
-    SPI_finish_my(request);
     pfree(request);
     task_done();
     task_more();

@@ -20,21 +20,34 @@ void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker) {
     pfree(handle);
 }
 
-void SPI_connect_my(const char *command, const int timeout) {
+void SPI_start_my(const char *command, const int timeout) {
     int rc;
     pgstat_report_activity(STATE_RUNNING, command);
-    if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_connect_ext = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    SPI_start_transaction();
+    SetCurrentStatementStartTimestamp();
+    StartTransactionCommand();
+    if ((rc = SPI_connect_ext(0)) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_connect_ext = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    PushActiveSnapshot(GetTransactionSnapshot());
     if (timeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, timeout); else disable_timeout(STATEMENT_TIMEOUT, false);
 }
 
-void SPI_finish_my(const char *command) {
+void SPI_commit_my(const char *command) {
     int rc;
     disable_timeout(STATEMENT_TIMEOUT, false);
     if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(ERROR, (errmsg("%s(%s:%d): SPI_finish = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    PopActiveSnapshot();
+    CommitTransactionCommand();
     ProcessCompletedNotifies();
     pgstat_report_activity(STATE_IDLE, command);
     pgstat_report_stat(true);
+}
+
+void SPI_rollback_my(const char *command) {
+    disable_timeout(STATEMENT_TIMEOUT, false);
+    EmitErrorReport();
+    AbortCurrentTransaction();
+    pgstat_report_activity(STATE_IDLE, command);
+    pgstat_report_stat(true);
+    FlushErrorState();
 }
 
 static void conf_worker(void) {
