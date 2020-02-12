@@ -280,21 +280,21 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
         if (!MyProcPort->database_name) MyProcPort->database_name = (char *)data;
         if (!MyProcPort->user_name) MyProcPort->user_name = (char *)user;
     }
-    initStringInfo(&buf);
-    appendStringInfo(&buf, "%s %ld", MyBgworkerEntry->bgw_type, period);
-    SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
     data_quote = quote_identifier(data);
     user_quote = quote_identifier(user);
     schema_quote = schema ? quote_identifier(schema) : "";
     point = schema ? "." : "";
     table_quote = quote_identifier(table);
+    initStringInfo(&buf);
     if (!conf) {
+        appendStringInfo(&buf, "%s %ld", MyBgworkerEntry->bgw_type, period);
+        SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
         pqsignal(SIGHUP, tick_sighup);
         pqsignal(SIGTERM, tick_sigterm);
         BackgroundWorkerUnblockSignals();
         BackgroundWorkerInitializeConnection(data, user, 0);
+        pgstat_report_appname(buf.data);
     }
-    pgstat_report_appname(buf.data);
     if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     resetStringInfo(&buf);

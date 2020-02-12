@@ -22,6 +22,20 @@ static void conf_sigterm(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
+static void update_ps_display(bool conf) {
+    StringInfoData buf;
+    initStringInfo(&buf);
+    if (!conf) appendStringInfoString(&buf, "postgres postgres pg_task conf");
+    else appendStringInfo(&buf, "postgres postgres pg_task %s %ld", pg_task_task, timeout);
+    init_ps_display(buf.data, "", "", "");
+    resetStringInfo(&buf);
+    if (!conf) appendStringInfoString(&buf, "pg_task conf");
+    else appendStringInfo(&buf, "pg_task %s %ld", pg_task_task, timeout);
+    SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
+    pgstat_report_appname(buf.data);
+    pfree(buf.data);
+}
+
 static void conf_user(const char *user) {
     int rc;
     StringInfoData buf;
@@ -102,7 +116,6 @@ static void tick_worker(const char *data, const char *user, const char *schema, 
 static void conf_check(void) {
     int rc;
     static SPIPlanPtr plan = NULL;
-    static bool conf = false;
     static const char *command =
         "WITH s AS (\n"
         "SELECT      COALESCE(datname, data)::TEXT AS data,\n"
@@ -140,7 +153,6 @@ static void conf_check(void) {
         if (usename_isnull) conf_user(user);
         if (datname_isnull) conf_data(user, data);
         if (!pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !schema && !pg_strcasecmp(table, pg_task_task)) {
-            conf = true;
             timeout = period;
             events |= WL_TIMEOUT;
         } else tick_worker(data, user, schema, table, period);
@@ -151,7 +163,10 @@ static void conf_check(void) {
     }
     SPI_commit();
     SPI_finish_my(command);
-    if (conf) tick_init(true, "postgres", "postgres", NULL, pg_task_task, timeout);
+    if (events & WL_TIMEOUT) {
+        update_ps_display(true);
+        tick_init(true, "postgres", "postgres", NULL, pg_task_task, timeout);
+    } else update_ps_display(false);
 }
 
 static void conf_init(void) {
