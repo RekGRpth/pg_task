@@ -126,7 +126,7 @@ static void conf_unlock(void) {
 
 static void conf_check(void) {
     int rc;
-    static bool conf = false;
+    bool conf = false;
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS (\n"
@@ -166,6 +166,7 @@ static void conf_check(void) {
         if (!pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !schema && !pg_strcasecmp(table, pg_task_task)) {
             timeout = period;
             conf = true;
+            events |= WL_TIMEOUT;
         } else tick_worker(data, user, schema, table, period);
         pfree((void *)data);
         pfree((void *)user);
@@ -174,8 +175,7 @@ static void conf_check(void) {
     }
     SPI_commit();
     SPI_finish_my(command);
-    if (conf) {
-        events |= WL_TIMEOUT;
+    if (events & WL_TIMEOUT) {
         update_ps_display(true);
         conf_unlock();
         tick_init(true, "postgres", "postgres", NULL, pg_task_task, timeout);
