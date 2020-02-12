@@ -1,4 +1,4 @@
-# pg_task configuration
+# pg_task config
 to run pg_task add it to line
 ```conf
 shared_preload_libraries = 'pg_task'
@@ -66,3 +66,40 @@ if in this queue there are more tasks and they are executing concurently by 2 th
 INSERT INTO task (queue, max, request) VALUES ('queue', 3, 'SELECT now()')
 ```
 will execute task as more early in this queue
+
+# pg_task install
+
+need this patch
+```diff
+diff --git a/src/pl/plpgsql/src/pl_handler.c b/src/pl/plpgsql/src/pl_handler.c
+index ce03f1ef84..546ae27ad4 100644
+--- a/src/pl/plpgsql/src/pl_handler.c
++++ b/src/pl/plpgsql/src/pl_handler.c
+@@ -271,6 +271,13 @@ plpgsql_call_handler(PG_FUNCTION_ARGS)
+                /* Decrement use-count, restore cur_estate, and propagate error */
+                func->use_count--;
+                func->cur_estate = save_cur_estate;
++
++               /*
++                * Disconnect from SPI manager
++                */
++               if ((rc = SPI_finish()) != SPI_OK_FINISH)
++                       elog(ERROR, "SPI_finish failed: %s", SPI_result_code_string(rc));
++
+                PG_RE_THROW();
+        }
+        PG_END_TRY();
+@@ -368,6 +375,12 @@ plpgsql_inline_handler(PG_FUNCTION_ARGS)
+                /* ... so we can free subsidiary storage */
+                plpgsql_free_function_memory(func);
+ 
++               /*
++                * Disconnect from SPI manager
++                */
++               if ((rc = SPI_finish()) != SPI_OK_FINISH)
++                       elog(ERROR, "SPI_finish failed: %s", SPI_result_code_string(rc));
++
+                /* And propagate the error */
+                PG_RE_THROW();
+        }
+```
