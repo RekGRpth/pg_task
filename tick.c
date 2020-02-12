@@ -106,7 +106,7 @@ static void tick_index(const char *index) {
 static void tick_lock(void) {
     int rc;
     static const char *command =
-        "SELECT      pg_try_advisory_lock(c.oid::BIGINT) AS lock\n"
+        "SELECT      pg_try_advisory_lock(c.oid::BIGINT) AS lock, set_config('pg_task.lock', c.oid::TEXT, false)\n"
         "FROM        pg_class AS c\n"
         "INNER JOIN  pg_namespace AS n ON n.oid = relnamespace\n"
         "INNER JOIN  pg_tables AS t ON tablename = relname AND nspname = schemaname\n"
