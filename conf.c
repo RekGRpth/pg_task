@@ -58,7 +58,7 @@ static void conf_data(const char *user, const char *data) {
     pfree(buf.data);
 }
 
-static void register_tick_worker(const char *data, const char *user, const char *schema, const char *table, uint32 period) {
+static void tick_worker(const char *data, const char *user, const char *schema, const char *table, uint32 period) {
     StringInfoData buf;
     uint32 data_len = strlen(data), user_len = strlen(user), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), period_len = sizeof(period);
     BackgroundWorker worker;
@@ -132,7 +132,7 @@ static void conf_check(void) {
         if (period_isnull) ereport(ERROR, (errmsg("%s(%s:%d): period_isnull", __func__, __FILE__, __LINE__)));
         if (usename_isnull) conf_user(user);
         if (datname_isnull) conf_data(user, data);
-        register_tick_worker(data, user, schema, table, period);
+        tick_worker(data, user, schema, table, period);
         pfree((void *)data);
         pfree((void *)user);
         if (schema) pfree((void *)schema);

@@ -148,7 +148,7 @@ static void tick_fix(void) {
     pfree(buf.data);
 }
 
-static void register_task_worker(const Datum id, const char *queue, const uint32 max) {
+static void task_worker(const Datum id, const char *queue, const uint32 max) {
     StringInfoData buf;
     uint32 data_len = strlen(data), user_len = strlen(user), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), queue_len = strlen(queue), max_len = sizeof(max);
     BackgroundWorker worker;
@@ -223,7 +223,7 @@ static void tick_loop(void) {
         const uint32 max = DatumGetUInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
         if (id_isnull) ereport(ERROR, (errmsg("%s(%s:%d): id_isnull", __func__, __FILE__, __LINE__)));
         if (max_isnull) ereport(ERROR, (errmsg("%s(%s:%d): max_isnull", __func__, __FILE__, __LINE__)));
-        register_task_worker(id, queue, max);
+        task_worker(id, queue, max);
         pfree((void *)queue);
     }
     SPI_commit();
