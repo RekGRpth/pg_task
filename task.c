@@ -90,12 +90,11 @@ static void repeat_task(void) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "WITH s AS (SELECT id AS parent, CASE\n"
-            "    WHEN drift THEN current_timestamp + repeat\n"
-            "    ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
-            "END AS dt, queue, max, request, 'PLAN'::STATE AS state, timeout, delete, repeat, drift, count, live\n"
-            "FROM %s%s%s WHERE id = $1 AND state IN ('DONE'::STATE, 'FAIL'::STATE) LIMIT 1\n"
-            ") INSERT INTO %s%s%s (parent, dt, queue, max, request, state, timeout, delete, repeat, drift, count, live) SELECT * FROM s", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            "INSERT INTO %s%s%s (dt, queue, max, request, timeout, delete, repeat, drift, count, live)\n"
+            "SELECT CASE WHEN drift THEN current_timestamp + repeat\n"
+            "ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
+            "END AS dt, queue, max, request, timeout, delete, repeat, drift, count, live\n"
+            "FROM %s%s%s WHERE id = $1 AND state IN ('DONE'::STATE, 'FAIL'::STATE) LIMIT 1", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
     SPI_connect_my(command, StatementTimeout);
