@@ -1,28 +1,16 @@
 # pg_task configuration
-to run postgres task add it to line
+to run pg_task add it to line
 ```conf
 shared_preload_libraries = 'pg_task'
 ```
 
-by default postgres task run on all local databases with database owners
+bt default pg_task use table `task` and period `1000 ms`
 
-to run only specific databases set line
+by default pg_task run on local database `postgres` with user `postgres` with default schema (in search path) with default table (as abow) and default period (as abow)
+
+to run specific database and/or user and/or schema and/or table and/or period set line (in json format)
 ```conf
-pg_task.database = 'database1,database2:user2'
+pg_task.config = '[{"data":"database1"},{"data":"database2","user":"username2"},{"data":"database3","schema":"schema3"},{"data":"database4","table":"table4"},{"data":"database5","period":100}]'
 ```
 
-by default postgres task use schema in search path and table task
-
-to specify schema and/or table use lines
-```conf
-pg_task_schema.database1 = schema3
-pg_task_table.database1 = table3
-```
-
-by default postgres task runs every 1000 ms
-
-to specify other use lines
-```conf
-pg_task_period.database1 = 100
-pg_task_period.database2 = 10
-```
+if database and/or user and/or schema and/or table does not exist then pg_task create it
