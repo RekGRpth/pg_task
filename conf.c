@@ -5,7 +5,7 @@ extern char *pg_task_task;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
-static long period = LONG_MAX;
+static long timeout = LONG_MAX;
 static int events = WL_LATCH_SET | WL_POSTMASTER_DEATH;
 
 static void conf_sighup(SIGNAL_ARGS) {
@@ -138,8 +138,11 @@ static void conf_check(void) {
         if (period_isnull) ereport(ERROR, (errmsg("%s(%s:%d): period_isnull", __func__, __FILE__, __LINE__)));
         if (usename_isnull) conf_user(user);
         if (datname_isnull) conf_data(user, data);
-//        if (!pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !schema && !pg_strcasecmp(table, pg_task_task)) tick_init(true, data, user, schema, table, period);
-        tick_worker(data, user, schema, table, period);
+        if (!pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !schema && !pg_strcasecmp(table, pg_task_task)) {
+            tick_init(true, "postgres", "postgres", NULL, pg_task_task, period);
+            timeout = period;
+            events |= WL_TIMEOUT;
+        } else tick_worker(data, user, schema, table, period);
         pfree((void *)data);
         pfree((void *)user);
         if (schema) pfree((void *)schema);
@@ -177,7 +180,7 @@ static void conf_reload(void) {
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     conf_init();
     while (!sigterm) {
-        int rc = WaitLatch(MyLatch, events, period, PG_WAIT_EXTENSION);
+        int rc = WaitLatch(MyLatch, events, timeout, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) break;
         if (rc & WL_LATCH_SET) conf_reset();
         if (sighup) conf_reload();

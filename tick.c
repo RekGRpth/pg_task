@@ -270,8 +270,9 @@ static void tick_check(void) {
     SPI_finish_my(command);
 }
 
-void tick_init(const bool conf, const char *data, const char *user, const char *schema, const char *table, long period) {
+void tick_init(const bool conf, const char *_data, const char *_user, const char *_schema, const char *_table, long _period) {
     StringInfoData buf;
+    data = _data; user = _user; schema = _schema; table = _table; period = _period;
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     if (!conf) {
         if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
@@ -281,6 +282,7 @@ void tick_init(const bool conf, const char *data, const char *user, const char *
     }
     initStringInfo(&buf);
     appendStringInfo(&buf, "%s %ld", MyBgworkerEntry->bgw_type, period);
+//    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
     data_quote = quote_identifier(data);
     user_quote = quote_identifier(user);
@@ -294,14 +296,17 @@ void tick_init(const bool conf, const char *data, const char *user, const char *
         BackgroundWorkerInitializeConnection(data, user, 0);
     }
     pgstat_report_appname(buf.data);
+//    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     resetStringInfo(&buf);
     appendStringInfo(&buf, "%ld", period);
     set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     pfree(buf.data);
+//    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     if (schema) tick_schema();
     tick_type();
+//    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     tick_table();
     tick_index("dt");
     tick_index("state");
@@ -321,11 +326,11 @@ static void tick_reload(void) {
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
-    data = MyBgworkerEntry->bgw_extra;
-    user = data + strlen(data) + 1;
-    schema = user + strlen(user) + 1;
-    table = schema + strlen(schema) + 1;
-    period = *(typeof(period) *)(table + strlen(table) + 1);
+    const char *data = MyBgworkerEntry->bgw_extra;
+    const char *user = data + strlen(data) + 1;
+    const char *schema = user + strlen(user) + 1;
+    const char *table = schema + strlen(schema) + 1;
+    const long period = *(typeof(period) *)(table + strlen(table) + 1);
     if (table == schema + 1) schema = NULL;
     tick_init(false, data, user, schema, table, period);
     while (!sigterm) {
