@@ -15,7 +15,7 @@ static const char *user_quote;
 
 static uint32 period;
 
-static void init_schema(void) {
+static void tick_schema(void) {
     int rc;
     StringInfoData buf;
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table);
@@ -28,7 +28,7 @@ static void init_schema(void) {
     pfree(buf.data);
 }
 
-static void init_type(void) {
+static void tick_type(void) {
     int rc;
     static const char *command =
         "DO $$ BEGIN\n"
@@ -43,7 +43,7 @@ static void init_type(void) {
     SPI_finish_my(command);
 }
 
-static void init_table(void) {
+static void tick_table(void) {
     int rc;
     StringInfoData buf, name;
     const char *name_q;
@@ -82,7 +82,7 @@ static void init_table(void) {
     pfree(buf.data);
 }
 
-static void init_index(const char *index) {
+static void tick_index(const char *index) {
     int rc;
     StringInfoData buf, name;
     const char *name_q;
@@ -103,7 +103,7 @@ static void init_index(const char *index) {
     if (index_q != index) pfree((void *)index_q);
 }
 
-static void init_lock(void) {
+static void tick_lock(void) {
     int rc;
     static const char *command =
         "SELECT      pg_try_advisory_lock(c.oid::BIGINT) AS lock\n"
@@ -128,7 +128,7 @@ static void init_lock(void) {
     SPI_finish_my(command);
 }
 
-static void init_fix(void) {
+static void tick_fix(void) {
     int rc;
     StringInfoData buf;
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table);
@@ -230,14 +230,14 @@ static void tick_loop(void) {
     SPI_finish_my(command);
 }
 
-static void sighup(SIGNAL_ARGS) {
+static void tick_sighup(SIGNAL_ARGS) {
     int save_errno = errno;
     got_sighup = true;
     SetLatch(MyLatch);
     errno = save_errno;
 }
 
-static void sigterm(SIGNAL_ARGS) {
+static void tick_sigterm(SIGNAL_ARGS) {
     int save_errno = errno;
     got_sigterm = true;
     SetLatch(MyLatch);
@@ -291,8 +291,8 @@ static void tick_init(void) {
     schema_quote = schema ? quote_identifier(schema) : "";
     point = schema ? "." : "";
     table_quote = quote_identifier(table);
-    pqsignal(SIGHUP, sighup);
-    pqsignal(SIGTERM, sigterm);
+    pqsignal(SIGHUP, tick_sighup);
+    pqsignal(SIGTERM, tick_sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(data, user, 0);
     pgstat_report_appname(buf.data);
@@ -302,13 +302,13 @@ static void tick_init(void) {
     appendStringInfo(&buf, "%u", period);
     set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     pfree(buf.data);
-    if (schema) init_schema();
-    init_type();
-    init_table();
-    init_index("dt");
-    init_index("state");
-    init_lock();
-    init_fix();
+    if (schema) tick_schema();
+    tick_type();
+    tick_table();
+    tick_index("dt");
+    tick_index("state");
+    tick_lock();
+    tick_fix();
 }
 
 static void tick_reset(void) {
