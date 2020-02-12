@@ -25,7 +25,7 @@ void SPI_start_my(const char *command, const int timeout) {
     pgstat_report_activity(STATE_RUNNING, command);
     SetCurrentStatementStartTimestamp();
     StartTransactionCommand();
-    if ((rc = SPI_connect_ext(0)) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_connect_ext = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_connect = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     PushActiveSnapshot(GetTransactionSnapshot());
     if (timeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, timeout); else disable_timeout(STATEMENT_TIMEOUT, false);
 }
