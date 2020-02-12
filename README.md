@@ -55,3 +55,14 @@ if exception occures it catched and writed in result as text
 ```sql
 INSERT INTO task (request) VALUES ('SELECT 1/0')
 ```
+
+if some queue needs concurently run only 2 tasks then use command
+```sql
+INSERT INTO task (queue, max, request) VALUES ('queue', 2, 'SELECT now()')
+```
+
+if in this queue there are more tasks and they are executing concurently by 2 then command
+```sql
+INSERT INTO task (queue, max, request) VALUES ('queue', 3, 'SELECT now()')
+```
+will execute task as more early in this queue
