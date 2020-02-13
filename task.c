@@ -249,7 +249,7 @@ static void task_done(void) {
 
 static void task_success(void) {
     response = NULL;
-    if ((SPI_tuptable) && (SPI_processed > 0)) {
+    if (SPI_tuptable && SPI_processed > 0) {
         MemoryContext successMemoryContext = MemoryContextSwitchTo(loopMemoryContext);
         StringInfoData buf;
         initStringInfo(&buf);
