@@ -32,3 +32,6 @@ void SPI_rollback_my(const char *command);
 void SPI_start_my(const char *command, const int timeout);
 void tick_init(const bool conf, const char *data, const char *user, const char *schema, const char *table, long period);
 void tick_loop(void);
+
+#define Q(name) #name
+#define S(macro) Q(macro)

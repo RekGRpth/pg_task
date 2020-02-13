@@ -39,8 +39,10 @@ static void update_ps_display(void) {
 
 static void task_work(void) {
     int rc;
-    static Oid argtypes[] = {INT8OID};
-    Datum values[] = {id};
+    #define ID 1
+    #define SID S(ID)
+    static Oid argtypes[] = {[ID - 1] = INT8OID};
+    Datum values[] = {[ID - 1] = id};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -51,7 +53,7 @@ static void task_work(void) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %s%s%s WHERE id = $1 FOR UPDATE)\n"
+            "WITH s AS (SELECT id FROM %s%s%s WHERE id = $" SID " FOR UPDATE)\n"
             "UPDATE  %s%s%s AS u\n"
             "SET     state = 'WORK'::STATE,\n"
             "        start = current_timestamp,\n"
@@ -60,6 +62,8 @@ static void task_work(void) {
             "        COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
+    #undef ID
+    #undef SID
     SPI_start_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
@@ -80,8 +84,10 @@ static void task_work(void) {
 
 static void task_repeat(void) {
     int rc;
-    static Oid argtypes[] = {INT8OID};
-    Datum values[] = {id};
+    #define ID 1
+    #define SID S(ID)
+    static Oid argtypes[] = {[ID - 1] = INT8OID};
+    Datum values[] = {[ID - 1] = id};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -93,9 +99,11 @@ static void task_repeat(void) {
             "SELECT CASE WHEN drift THEN current_timestamp + repeat\n"
             "ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
             "END AS dt, queue, max, request, timeout, delete, repeat, drift, count, live\n"
-            "FROM %s%s%s WHERE id = $1 AND state IN ('DONE'::STATE, 'FAIL'::STATE) LIMIT 1", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            "FROM %s%s%s WHERE id = $" SID " AND state IN ('DONE'::STATE, 'FAIL'::STATE) LIMIT 1", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
+    #undef ID
+    #undef SID
     SPI_start_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
@@ -107,17 +115,21 @@ static void task_repeat(void) {
 
 static void task_delete(void) {
     int rc;
-    static Oid argtypes[] = {INT8OID};
-    Datum values[] = {id};
+    #define ID 1
+    #define SID S(ID)
+    static Oid argtypes[] = {[ID - 1] = INT8OID};
+    Datum values[] = {[ID - 1] = id};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
-        appendStringInfo(&buf, "DELETE FROM %s%s%s WHERE id = $1", schema_quote, point, table_quote);
+        appendStringInfo(&buf, "DELETE FROM %s%s%s WHERE id = $" SID, schema_quote, point, table_quote);
         command = buf.data;
     }
+    #undef ID
+    #undef SID
     SPI_start_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
@@ -129,8 +141,16 @@ static void task_delete(void) {
 
 static void task_more(void) {
     int rc;
-    static Oid argtypes[] = {TEXTOID, INT4OID, INT4OID, TIMESTAMPTZOID};
-    Datum values[] = {CStringGetTextDatum(queue), UInt32GetDatum(max), UInt32GetDatum(count), TimestampTzGetDatum(start)};
+    #define QUEUE 1
+    #define SQUEUE S(QUEUE)
+    #define MAX 2
+    #define SMAX S(MAX)
+    #define COUNT 3
+    #define SCOUNT S(COUNT)
+    #define START 4
+    #define SSTART S(START)
+    static Oid argtypes[] = {[QUEUE - 1] = TEXTOID, [MAX - 1] = INT4OID, [COUNT - 1] = INT4OID, [START - 1] = TIMESTAMPTZOID};
+    Datum values[] = {[QUEUE - 1] = CStringGetTextDatum(queue), [MAX - 1] = UInt32GetDatum(max), [COUNT - 1] = UInt32GetDatum(count), [START - 1] = TimestampTzGetDatum(start)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -143,13 +163,19 @@ static void task_more(void) {
             "FROM    %s%s%s\n"
             "WHERE   state = 'PLAN'::STATE\n"
             "AND     dt <= current_timestamp\n"
-            "AND     queue = $1\n"
-            "AND     COALESCE(max, ~(1<<31)) >= $2\n"
-            "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $3 AND $4 + live > current_timestamp ELSE COALESCE(count, 0) > $3 OR $4 + COALESCE(live, '0 sec'::INTERVAL) > current_timestamp END\n"
+            "AND     queue = $" SQUEUE "\n"
+            "AND     COALESCE(max, ~(1<<31)) >= $" SMAX "\n"
+            "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $" SCOUNT " AND $" SSTART " + live > current_timestamp ELSE COALESCE(count, 0) > $" SCOUNT " OR $" SSTART " + COALESCE(live, '0 sec'::INTERVAL) > current_timestamp END\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
             ") UPDATE %s%s%s AS u SET state = 'TAKE'::STATE FROM s WHERE u.id = s.id RETURNING u.id, set_config('pg_task.id', u.id::TEXT, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
+    #undef MAX
+    #undef SMAX
+    #undef COUNT
+    #undef SCOUNT
+    #undef START
+    #undef SSTART
     SPI_start_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
@@ -162,15 +188,23 @@ static void task_more(void) {
         if (id_isnull) ereport(ERROR, (errmsg("%s(%s:%d): id_isnull", __func__, __FILE__, __LINE__)));
     }
     SPI_commit_my(command);
-    pfree((void *)values[0]);
+    pfree((void *)values[QUEUE - 1]);
+    #undef QUEUE
+    #undef SQUEUE
 }
 
 static void task_done(void) {
     int rc;
     bool delete, repeat;
-    static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
-    Datum values[] = {id, CStringGetTextDatum(state), response ? CStringGetTextDatum(response) : (Datum)NULL};
-    char nulls[] = {' ', ' ', response ? ' ' : 'n'};
+    #define ID 1
+    #define SID S(ID)
+    #define STATE 2
+    #define SSTATE S(STATE)
+    #define RESPONSE 3
+    #define SRESPONSE S(RESPONSE)
+    static Oid argtypes[] = {[ID - 1] = INT8OID, [STATE - 1] = TEXTOID, [RESPONSE - 1] = TEXTOID};
+    Datum values[] = {[ID - 1] = id, [STATE - 1] = CStringGetTextDatum(state), [RESPONSE - 1] = response ? CStringGetTextDatum(response) : (Datum)NULL};
+    char nulls[] = {[ID - 1] = ' ', [STATE - 1] = ' ', [RESPONSE - 1] = response ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -180,12 +214,14 @@ static void task_done(void) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %s%s%s WHERE id = $1 FOR UPDATE\n)\n"
-            "UPDATE %s%s%s AS u SET state = $2::STATE, stop = current_timestamp, response = $3 FROM s WHERE u.id = s.id\n"
+            "WITH s AS (SELECT id FROM %s%s%s WHERE id = $" SID " FOR UPDATE\n)\n"
+            "UPDATE %s%s%s AS u SET state = $" SSTATE "::STATE, stop = current_timestamp, response = $" SRESPONSE " FROM s WHERE u.id = s.id\n"
             "RETURNING delete, queue,\n"
             "repeat IS NOT NULL AND state IN ('DONE'::STATE, 'FAIL'::STATE) AS repeat", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
+    #undef ID
+    #undef SID
     SPI_start_my(command, StatementTimeout);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
@@ -200,8 +236,12 @@ static void task_done(void) {
         if (repeat_isnull) ereport(ERROR, (errmsg("%s(%s:%d): repeat_isnull", __func__, __FILE__, __LINE__)));
     }
     SPI_commit_my(command);
-    pfree((void *)values[1]);
-    if (response) pfree((void *)values[2]);
+    pfree((void *)values[STATE - 1]);
+    #undef STATE
+    #undef SSTATE
+    if (response) pfree((void *)values[RESPONSE - 1]);
+    #undef RESPONSE
+    #undef SRESPONSE
     if (repeat) task_repeat();
     if (delete && !response) task_delete();
     if (response) pfree(response);
