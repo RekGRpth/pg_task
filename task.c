@@ -248,35 +248,35 @@ static void task_done(void) {
 }
 
 static void task_success(void) {
-    response = NULL;
-    if (SPI_tuptable && SPI_processed > 0) {
-        MemoryContext successMemoryContext = MemoryContextSwitchTo(loopMemoryContext);
-        StringInfoData buf;
-        initStringInfo(&buf);
-        if (SPI_tuptable->tupdesc->natts > 1) {
-            for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-                const char *name = SPI_fname(SPI_tuptable->tupdesc, col);
-                const char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
-                appendStringInfo(&buf, "%s::%s", name, type);
-                if (col > 1) appendStringInfoString(&buf, "\t");
-                pfree((void *)name);
-                pfree((void *)type);
-            }
-            appendStringInfoString(&buf, "\n");
-        }
-        for (uint64 row = 0; row < SPI_processed; row++) {
-            for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-                const char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
-                appendStringInfoString(&buf, value ? value : "(null)");
-                if (col > 1) appendStringInfoString(&buf, "\t");
-                if (value) pfree((void *)value);
-            }
-            if (row < SPI_processed - 1) appendStringInfoString(&buf, "\n");
-        }
-        response = buf.data;
-        MemoryContextSwitchTo(successMemoryContext);
-    }
+    StringInfoData buf;
+    MemoryContext successMemoryContext;
     state = "DONE";
+    response = NULL;
+    if (!SPI_processed) return;
+    successMemoryContext = MemoryContextSwitchTo(loopMemoryContext);
+    initStringInfo(&buf);
+    if (SPI_tuptable->tupdesc->natts > 1) {
+        for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
+            const char *name = SPI_fname(SPI_tuptable->tupdesc, col);
+            const char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
+            appendStringInfo(&buf, "%s::%s", name, type);
+            if (col > 1) appendStringInfoString(&buf, "\t");
+            pfree((void *)name);
+            pfree((void *)type);
+        }
+        appendStringInfoString(&buf, "\n");
+    }
+    for (uint64 row = 0; row < SPI_processed; row++) {
+        for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
+            const char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
+            appendStringInfoString(&buf, value ? value : "(null)");
+            if (col > 1) appendStringInfoString(&buf, "\t");
+            if (value) pfree((void *)value);
+        }
+        if (row < SPI_processed - 1) appendStringInfoString(&buf, "\n");
+    }
+    response = buf.data;
+    MemoryContextSwitchTo(successMemoryContext);
 }
 
 static void task_error(void) {
