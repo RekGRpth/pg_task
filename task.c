@@ -3,8 +3,9 @@
 static volatile sig_atomic_t sigterm = false;
 
 static char *request;
-static char *response;
 static char *state;
+static StringInfoData response;
+static bool response_isnull;
 
 static const char *data;
 static const char *data_quote;
@@ -23,7 +24,7 @@ static MemoryContext loopMemoryContext;
 static TimestampTz start;
 static uint32 count;
 static uint32 max;
-static uint64 timeout;
+static int timeout;
 
 static void update_ps_display(void) {
     StringInfoData buf;
@@ -64,19 +65,19 @@ static void task_work(void) {
     }
     #undef ID
     #undef SID
-    SPI_start_my(command, StatementTimeout);
+    SPI_start_my(command);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
     if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
-        MemoryContext workMemoryContext = MemoryContextSwitchTo(loopMemoryContext);
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(loopMemoryContext);
         bool timeout_isnull;
         request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
-        timeout = DatumGetUInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
+        timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
         if (timeout_isnull) ereport(ERROR, (errmsg("%s(%s:%d): timeout_isnull", __func__, __FILE__, __LINE__)));
-        MemoryContextSwitchTo(workMemoryContext);
+        MemoryContextSwitchTo(oldMemoryContext);
     }
     SPI_commit_my(command);
     if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
@@ -104,7 +105,7 @@ static void task_repeat(void) {
     }
     #undef ID
     #undef SID
-    SPI_start_my(command, StatementTimeout);
+    SPI_start_my(command);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
@@ -130,7 +131,7 @@ static void task_delete(void) {
     }
     #undef ID
     #undef SID
-    SPI_start_my(command, StatementTimeout);
+    SPI_start_my(command);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
@@ -176,7 +177,7 @@ static void task_more(void) {
     #undef SCOUNT
     #undef START
     #undef SSTART
-    SPI_start_my(command, StatementTimeout);
+    SPI_start_my(command);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
@@ -203,13 +204,13 @@ static void task_done(void) {
     #define RESPONSE 3
     #define SRESPONSE S(RESPONSE)
     static Oid argtypes[] = {[ID - 1] = INT8OID, [STATE - 1] = TEXTOID, [RESPONSE - 1] = TEXTOID};
-    Datum values[] = {[ID - 1] = id, [STATE - 1] = CStringGetTextDatum(state), [RESPONSE - 1] = response ? CStringGetTextDatum(response) : (Datum)NULL};
-    char nulls[] = {[ID - 1] = ' ', [STATE - 1] = ' ', [RESPONSE - 1] = response ? ' ' : 'n'};
+    Datum values[] = {[ID - 1] = id, [STATE - 1] = CStringGetTextDatum(state), [RESPONSE - 1] = !response_isnull ? CStringGetTextDatum(response.data) : (Datum)NULL};
+    char nulls[] = {[ID - 1] = ' ', [STATE - 1] = ' ', [RESPONSE - 1] = !response_isnull ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    elog(LOG, "%s(%s:%d): id = %lu, response = %s, state = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), response ? response : "(null)", state);
+    elog(LOG, "%s(%s:%d): id = %lu, response = %s, state = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), !response_isnull ? response.data : "(null)", state);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -222,7 +223,7 @@ static void task_done(void) {
     }
     #undef ID
     #undef SID
-    SPI_start_my(command, StatementTimeout);
+    SPI_start_my(command);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
@@ -239,93 +240,68 @@ static void task_done(void) {
     pfree((void *)values[STATE - 1]);
     #undef STATE
     #undef SSTATE
-    if (response) pfree((void *)values[RESPONSE - 1]);
+    if (!response_isnull) pfree((void *)values[RESPONSE - 1]);
     #undef RESPONSE
     #undef SRESPONSE
     if (repeat) task_repeat();
-    if (delete && !response) task_delete();
-    if (response) pfree(response);
-}
-
-static void task_success(void) {
-    StringInfoData buf;
-    MemoryContext successMemoryContext;
-    state = "DONE";
-    response = NULL;
-    if (!SPI_processed) return;
-    successMemoryContext = MemoryContextSwitchTo(loopMemoryContext);
-    initStringInfo(&buf);
-    if (SPI_tuptable->tupdesc->natts > 1) {
-        for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-            const char *name = SPI_fname(SPI_tuptable->tupdesc, col);
-            const char *type = SPI_gettype(SPI_tuptable->tupdesc, col);
-            appendStringInfo(&buf, "%s::%s", name, type);
-            if (col > 1) appendStringInfoString(&buf, "\t");
-            pfree((void *)name);
-            pfree((void *)type);
-        }
-        appendStringInfoString(&buf, "\n");
-    }
-    for (uint64 row = 0; row < SPI_processed; row++) {
-        for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-            const char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
-            appendStringInfoString(&buf, value ? value : "(null)");
-            if (col > 1) appendStringInfoString(&buf, "\t");
-            if (value) pfree((void *)value);
-        }
-        if (row < SPI_processed - 1) appendStringInfoString(&buf, "\n");
-    }
-    response = buf.data;
-    MemoryContextSwitchTo(successMemoryContext);
+    if (delete && response_isnull) task_delete();
+    resetStringInfo(&response);
 }
 
 static void task_error(void) {
-    MemoryContext errorMemoryContext = MemoryContextSwitchTo(loopMemoryContext);
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(loopMemoryContext);
     ErrorData *edata = CopyErrorData();
-    StringInfoData buf;
-    initStringInfo(&buf);
-    appendStringInfo(&buf, "elevel::int4\t%i", edata->elevel);
-    appendStringInfo(&buf, "\noutput_to_server::bool\t%s", edata->output_to_server ? "true" : "false");
-    appendStringInfo(&buf, "\noutput_to_client::bool\t%s", edata->output_to_client ? "true" : "false");
-    appendStringInfo(&buf, "\nshow_funcname::bool\t%s", edata->show_funcname ? "true" : "false");
-    appendStringInfo(&buf, "\nhide_stmt::bool\t%s", edata->hide_stmt ? "true" : "false");
-    appendStringInfo(&buf, "\nhide_ctx::bool\t%s", edata->hide_ctx ? "true" : "false");
-    if (edata->filename) appendStringInfo(&buf, "\nfilename::text\t%s", edata->filename);
-    if (edata->lineno) appendStringInfo(&buf, "\nlineno::int4\t%i", edata->lineno);
-    if (edata->funcname) appendStringInfo(&buf, "\nfuncname::text\t%s", edata->funcname);
-    if (edata->domain) appendStringInfo(&buf, "\ndomain::text\t%s", edata->domain);
-    if (edata->context_domain) appendStringInfo(&buf, "\ncontext_domain::text\t%s", edata->context_domain);
-    if (edata->sqlerrcode) appendStringInfo(&buf, "\nsqlerrcode::int4\t%i", edata->sqlerrcode);
-    if (edata->message) appendStringInfo(&buf, "\nmessage::text\t%s", edata->message);
-    if (edata->detail) appendStringInfo(&buf, "\ndetail::text\t%s", edata->detail);
-    if (edata->detail_log) appendStringInfo(&buf, "\ndetail_log::text\t%s", edata->detail_log);
-    if (edata->hint) appendStringInfo(&buf, "\nhint::text\t%s", edata->hint);
-    if (edata->context) appendStringInfo(&buf, "\ncontext::text\t%s", edata->context);
-    if (edata->message_id) appendStringInfo(&buf, "\nmessage_id::text\t%s", edata->message_id);
-    if (edata->schema_name) appendStringInfo(&buf, "\nschema_name::text\t%s", edata->schema_name);
-    if (edata->table_name) appendStringInfo(&buf, "\ntable_name::text\t%s", edata->table_name);
-    if (edata->column_name) appendStringInfo(&buf, "\ncolumn_name::text\t%s", edata->column_name);
-    if (edata->datatype_name) appendStringInfo(&buf, "\ndatatype_name::text\t%s", edata->datatype_name);
-    if (edata->constraint_name) appendStringInfo(&buf, "\nconstraint_name::text\t%s", edata->constraint_name);
-    if (edata->cursorpos) appendStringInfo(&buf, "\ncursorpos::int4\t%i", edata->cursorpos);
-    if (edata->internalpos) appendStringInfo(&buf, "\ninternalpos::int4\t%i", edata->internalpos);
-    if (edata->internalquery) appendStringInfo(&buf, "\ninternalquery::text\t%s", edata->internalquery);
-    if (edata->saved_errno) appendStringInfo(&buf, "\nsaved_errno::int4\t%i", edata->saved_errno);
+    appendStringInfo(&response, "elevel::int4\t%i", edata->elevel);
+    appendStringInfo(&response, "\noutput_to_server::bool\t%s", edata->output_to_server ? "true" : "false");
+    appendStringInfo(&response, "\noutput_to_client::bool\t%s", edata->output_to_client ? "true" : "false");
+    appendStringInfo(&response, "\nshow_funcname::bool\t%s", edata->show_funcname ? "true" : "false");
+    appendStringInfo(&response, "\nhide_stmt::bool\t%s", edata->hide_stmt ? "true" : "false");
+    appendStringInfo(&response, "\nhide_ctx::bool\t%s", edata->hide_ctx ? "true" : "false");
+    if (edata->filename) appendStringInfo(&response, "\nfilename::text\t%s", edata->filename);
+    if (edata->lineno) appendStringInfo(&response, "\nlineno::int4\t%i", edata->lineno);
+    if (edata->funcname) appendStringInfo(&response, "\nfuncname::text\t%s", edata->funcname);
+    if (edata->domain) appendStringInfo(&response, "\ndomain::text\t%s", edata->domain);
+    if (edata->context_domain) appendStringInfo(&response, "\ncontext_domain::text\t%s", edata->context_domain);
+    if (edata->sqlerrcode) appendStringInfo(&response, "\nsqlerrcode::int4\t%i", edata->sqlerrcode);
+    if (edata->message) appendStringInfo(&response, "\nmessage::text\t%s", edata->message);
+    if (edata->detail) appendStringInfo(&response, "\ndetail::text\t%s", edata->detail);
+    if (edata->detail_log) appendStringInfo(&response, "\ndetail_log::text\t%s", edata->detail_log);
+    if (edata->hint) appendStringInfo(&response, "\nhint::text\t%s", edata->hint);
+    if (edata->context) appendStringInfo(&response, "\ncontext::text\t%s", edata->context);
+    if (edata->message_id) appendStringInfo(&response, "\nmessage_id::text\t%s", edata->message_id);
+    if (edata->schema_name) appendStringInfo(&response, "\nschema_name::text\t%s", edata->schema_name);
+    if (edata->table_name) appendStringInfo(&response, "\ntable_name::text\t%s", edata->table_name);
+    if (edata->column_name) appendStringInfo(&response, "\ncolumn_name::text\t%s", edata->column_name);
+    if (edata->datatype_name) appendStringInfo(&response, "\ndatatype_name::text\t%s", edata->datatype_name);
+    if (edata->constraint_name) appendStringInfo(&response, "\nconstraint_name::text\t%s", edata->constraint_name);
+    if (edata->cursorpos) appendStringInfo(&response, "\ncursorpos::int4\t%i", edata->cursorpos);
+    if (edata->internalpos) appendStringInfo(&response, "\ninternalpos::int4\t%i", edata->internalpos);
+    if (edata->internalquery) appendStringInfo(&response, "\ninternalquery::text\t%s", edata->internalquery);
+    if (edata->saved_errno) appendStringInfo(&response, "\nsaved_errno::int4\t%i", edata->saved_errno);
     FreeErrorData(edata);
-    response = buf.data;
     state = "FAIL";
-    MemoryContextSwitchTo(errorMemoryContext);
+    response_isnull = false;
+    MemoryContextSwitchTo(oldMemoryContext);
 }
 
 static void task_loop(void) {
     task_work();
-    elog(LOG, "%s(%s:%d): id = %lu, timeout = %lu, request = %s, count = %u", __func__, __FILE__, __LINE__, DatumGetUInt64(id), timeout, request, count);
-    SPI_start_my(request, timeout);
+    elog(LOG, "%s(%s:%d): id = %lu, timeout = %d, request = %s, count = %u", __func__, __FILE__, __LINE__, DatumGetUInt64(id), timeout, request, count);
+    state = "DONE";
+    response_isnull = true;
     PG_TRY(); {
-        int rc;
-        if ((rc = SPI_execute(request, false, 0)) < 0) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-        task_success();
-        SPI_commit_my(request);
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
+        uint64 old_timeout = StatementTimeout;
+        MemoryContextResetAndDeleteChildren(MessageContext);
+        InvalidateCatalogSnapshotConditionally();
+        MemoryContextSwitchTo(oldMemoryContext);
+        SetCurrentStatementStartTimestamp();
+        pgstat_report_activity(STATE_RUNNING, request);
+        if (timeout > 0 && timeout != StatementTimeout) StatementTimeout = timeout;
+        exec_simple_query(request);
+        StatementTimeout = old_timeout;
+        pgstat_report_activity(STATE_IDLE, request);
+        pgstat_report_stat(true);
     } PG_CATCH(); {
         task_error();
         SPI_rollback_my(request);
@@ -381,6 +357,8 @@ static void task_init(void) {
     appendStringInfo(&buf, "%lu", DatumGetUInt64(id));
     set_config_option("pg_task.id", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     pfree(buf.data);
+    initStringInfo(&response);
+    MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
 }
 
 static void task_reset(void) {
@@ -398,3 +376,61 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
         if (rc & WL_TIMEOUT) task_loop();
     }
 }
+
+static const char *SPI_fname_my(TupleDesc tupdesc, int fnumber) {
+    if (fnumber > tupdesc->natts || fnumber == 0 || fnumber <= FirstLowInvalidHeapAttributeNumber) ereport(ERROR, (errmsg("%s(%s:%d): SPI_ERROR_NOATTRIBUTE", __func__, __FILE__, __LINE__)));
+    return NameStr((fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1) : SystemAttributeDefinition(fnumber))->attname);
+}
+
+static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
+    Datum val;
+    bool isnull;
+    Oid foutoid;
+    bool typisvarlena;
+    if (fnumber > tupdesc->natts || fnumber == 0 || fnumber <= FirstLowInvalidHeapAttributeNumber) ereport(ERROR, (errmsg("%s(%s:%d): SPI_ERROR_NOATTRIBUTE", __func__, __FILE__, __LINE__)));
+    val = slot_getattr(slot, fnumber, &isnull);
+    if (isnull) return NULL;
+    getTypeOutputInfo(fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1)->atttypid : (SystemAttributeDefinition(fnumber))->atttypid, &foutoid, &typisvarlena);
+    return OidOutputFunctionCall(foutoid, val);
+}
+
+static const char *SPI_gettype_my(TupleDesc tupdesc, int fnumber) {
+    HeapTuple typeTuple;
+    const char *result;
+    if (fnumber > tupdesc->natts || fnumber == 0 || fnumber <= FirstLowInvalidHeapAttributeNumber) ereport(ERROR, (errmsg("%s(%s:%d): SPI_ERROR_NOATTRIBUTE", __func__, __FILE__, __LINE__)));
+    typeTuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1)->atttypid : (SystemAttributeDefinition(fnumber))->atttypid));
+    if (!HeapTupleIsValid(typeTuple)) ereport(ERROR, (errmsg("%s(%s:%d): SPI_ERROR_TYPUNKNOWN", __func__, __FILE__, __LINE__)));
+    result = NameStr(((Form_pg_type) GETSTRUCT(typeTuple))->typname);
+    ReleaseSysCache(typeTuple);
+    return result;
+}
+
+static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(loopMemoryContext);
+    response_isnull = false;
+    if (!response.len && slot->tts_tupleDescriptor->natts > 1) {
+        for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
+            if (col > 1) appendStringInfoString(&response, "\t");
+            appendStringInfo(&response, "%s::%s", SPI_fname_my(slot->tts_tupleDescriptor, col), SPI_gettype_my(slot->tts_tupleDescriptor, col));
+        }
+    }
+    if (response.len) appendStringInfoString(&response, "\n");
+    for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
+        const char *value = SPI_getvalue_my(slot, slot->tts_tupleDescriptor, col);
+        if (col > 1) appendStringInfoString(&response, "\t");
+        appendStringInfoString(&response, value ? value : "(null)");
+        if (value) pfree((void *)value);
+    }
+    MemoryContextSwitchTo(oldMemoryContext);
+    return true;
+}
+
+static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) { }
+
+static void rShutdown(DestReceiver *self) { }
+
+static void rDestroy(DestReceiver *self) { }
+
+static const DestReceiver DestReceiverMy = {.receiveSlot = receiveSlot, .rStartup = rStartup, .rShutdown = rShutdown, .rDestroy = rDestroy, .mydest = DestDebug};
+
+DestReceiver *CreateDestReceiverMy(CommandDest dest) { return unconstify(DestReceiver *, &DestReceiverMy); }

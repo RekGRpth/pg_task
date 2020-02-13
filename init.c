@@ -4,7 +4,7 @@ PG_MODULE_MAGIC;
 
 static char *pg_task_config;
 char *pg_task_task;
-static long pg_task_tick;
+static int pg_task_tick;
 
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker) {
     BackgroundWorkerHandle *handle;
@@ -20,13 +20,13 @@ void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker) {
     pfree(handle);
 }
 
-void SPI_start_my(const char *command, const int timeout) {
+void SPI_start_my(const char *command) {
     int rc;
     SetCurrentStatementStartTimestamp();
     StartTransactionCommand();
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_connect = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     PushActiveSnapshot(GetTransactionSnapshot());
-    if (timeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, timeout); else disable_timeout(STATEMENT_TIMEOUT, false);
+    if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else disable_timeout(STATEMENT_TIMEOUT, false);
     pgstat_report_activity(STATE_RUNNING, command);
 }
 
@@ -82,7 +82,7 @@ void _PG_init(void); void _PG_init(void) {
     if (!process_shared_preload_libraries_in_progress) ereport(FATAL, (errmsg("%s(%s:%d): !process_shared_preload_libraries_in_progress", __func__, __FILE__, __LINE__)));
     DefineCustomStringVariable("pg_task.config", "pg_task config", NULL, &pg_task_config, "[{\"data\":\"postgres\"}]", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.task", "pg_task task", NULL, &pg_task_task, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.tick", "pg_task tick", NULL, (int *)&pg_task_tick, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    elog(LOG, "%s(%s:%d): pg_task_config = %s, pg_task_task = %s, pg_task_tick = %ld", __func__, __FILE__, __LINE__, pg_task_config, pg_task_task, pg_task_tick);
+    DefineCustomIntVariable("pg_task.tick", "pg_task tick", NULL, &pg_task_tick, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    elog(LOG, "%s(%s:%d): pg_task_config = %s, pg_task_task = %s, pg_task_tick = %d", __func__, __FILE__, __LINE__, pg_task_config, pg_task_task, pg_task_tick);
     conf_worker();
 }

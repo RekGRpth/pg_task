@@ -13,7 +13,7 @@ static const char *table_quote = NULL;
 static const char *user;
 static const char *user_quote = NULL;
 
-static long period;
+static int period;
 
 static void tick_schema(void) {
     int rc;
@@ -21,7 +21,7 @@ static void tick_schema(void) {
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", schema_quote);
-    SPI_start_my(buf.data, StatementTimeout);
+    SPI_start_my(buf.data);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit_my(buf.data);
     pfree(buf.data);
@@ -36,7 +36,7 @@ static void tick_type(void) {
         "    END IF;\n"
         "END; $$";
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table);
-    SPI_start_my(command, StatementTimeout);
+    SPI_start_my(command);
     if ((rc = SPI_execute(command, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit_my(command);
 }
@@ -71,7 +71,7 @@ static void tick_table(void) {
         "    live INTERVAL,\n"
         "    CONSTRAINT %s FOREIGN KEY (parent) REFERENCES %s%s%s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
         ")", schema_quote, point, table_quote, name_q, schema_quote, point, table_quote);
-    SPI_start_my(buf.data, StatementTimeout);
+    SPI_start_my(buf.data);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit_my(buf.data);
     if (name_q != name.data) pfree((void *)name_q);
@@ -90,7 +90,7 @@ static void tick_index(const char *index) {
     name_q = quote_identifier(name.data);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON %s%s%s USING btree (%s)", name_q, schema_quote, point, table_quote, index_q);
-    SPI_start_my(buf.data, StatementTimeout);
+    SPI_start_my(buf.data);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit_my(buf.data);
     pfree(buf.data);
@@ -109,7 +109,7 @@ static void tick_lock(void) {
         "WHERE       schemaname = COALESCE(NULLIF(current_setting('pg_task.schema', true), ''), current_schema)\n"
         "AND         tablename = current_setting('pg_task.table', false)";
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table);
-    SPI_start_my(command, StatementTimeout);
+    SPI_start_my(command);
     if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
         bool lock_isnull;
@@ -136,7 +136,7 @@ static void tick_fix(void) {
         "    AND     usename = current_user\n"
         "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), queue, id)\n"
         ") FOR UPDATE SKIP LOCKED) UPDATE %s%s%s AS u SET state = 'PLAN'::STATE FROM s WHERE u.id = s.id", schema_quote, point, table_quote, schema_quote, point, table_quote);
-    SPI_start_my(buf.data, StatementTimeout);
+    SPI_start_my(buf.data);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit_my(buf.data);
     pfree(buf.data);
@@ -204,7 +204,7 @@ void tick_loop(void) {
             ") UPDATE %s%s%s AS u SET state = 'TAKE'::STATE FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", schema_quote, point, table_quote, schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
-    SPI_start_my(command, StatementTimeout);
+    SPI_start_my(command);
     if (!plan) {
         if (!(plan = SPI_prepare(command, 0, NULL))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
@@ -246,13 +246,13 @@ static void tick_check(void) {
         "            COALESCE(COALESCE(usename, \"user\"), data)::TEXT AS user,\n"
         "            schema,\n"
         "            COALESCE(\"table\", current_setting('pg_task.task', false)) AS table,\n"
-        "            COALESCE(period, current_setting('pg_task.tick', false)::BIGINT) AS period\n"
-        "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (data TEXT, \"user\" TEXT, schema TEXT, \"table\" TEXT, period BIGINT)\n"
+        "            COALESCE(period, current_setting('pg_task.tick', false)::INT) AS period\n"
+        "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (data TEXT, \"user\" TEXT, schema TEXT, \"table\" TEXT, period INT)\n"
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT * FROM s WHERE data = current_catalog AND \"user\" = current_user AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND period = current_setting('pg_task.period', false)::BIGINT";
-    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
-    SPI_start_my(command, StatementTimeout);
+        ") SELECT * FROM s WHERE data = current_catalog AND \"user\" = current_user AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND period = current_setting('pg_task.period', false)::INT";
+    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %d", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
+    SPI_start_my(command);
     if (!plan) {
         if (!(plan = SPI_prepare(command, 0, NULL))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
@@ -262,10 +262,10 @@ static void tick_check(void) {
     SPI_commit_my(command);
 }
 
-void tick_init(const bool conf, const char *_data, const char *_user, const char *_schema, const char *_table, long _period) {
+void tick_init(const bool conf, const char *_data, const char *_user, const char *_schema, const char *_table, int _period) {
     StringInfoData buf;
     data = _data; user = _user; schema = _schema; table = _table; period = _period;
-    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %ld", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
+    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %d", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     if (!conf) {
         if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
         if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
@@ -283,7 +283,7 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
     table_quote = quote_identifier(table);
     initStringInfo(&buf);
     if (!conf) {
-        appendStringInfo(&buf, "%s %ld", MyBgworkerEntry->bgw_type, period);
+        appendStringInfo(&buf, "%s %d", MyBgworkerEntry->bgw_type, period);
         SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
         pqsignal(SIGHUP, tick_sighup);
         pqsignal(SIGTERM, tick_sigterm);
@@ -294,7 +294,7 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
     if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%ld", period);
+    appendStringInfo(&buf, "%d", period);
     set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     pfree(buf.data);
     if (schema) tick_schema();
@@ -322,7 +322,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     const char *user = data + strlen(data) + 1;
     const char *schema = user + strlen(user) + 1;
     const char *table = schema + strlen(schema) + 1;
-    const long period = *(typeof(period) *)(table + strlen(table) + 1);
+    const int period = *(typeof(period) *)(table + strlen(table) + 1);
     if (table == schema + 1) schema = NULL;
     tick_init(false, data, user, schema, table, period);
     while (!sigterm) {
