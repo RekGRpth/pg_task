@@ -31,9 +31,8 @@ static void tick_type(void) {
     int rc;
     static const char *command =
         "DO $$ BEGIN\n"
-        "    IF NOT EXISTS (SELECT 1 FROM pg_type AS t INNER JOIN pg_namespace AS n ON n.oid = typnamespace WHERE nspname = COALESCE(NULLIF(current_setting('pg_task.schema', true), ''), current_schema) AND typname = 'state') THEN\n"
-        "        CREATE TYPE STATE AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');\n"
-        "    END IF;\n"
+        "    PERFORM concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), 'state')::REGTYPE;\n"
+        "    EXCEPTION WHEN undefined_object THEN CREATE TYPE STATE AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');\n"
         "END; $$";
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table);
     SPI_start_my(command);
