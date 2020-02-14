@@ -229,6 +229,8 @@ static void task_done(void) {
     }
     #undef ID
     #undef SID
+    #undef STATE
+    #undef SSTATE
     SPI_start_my(command);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
@@ -243,8 +245,6 @@ static void task_done(void) {
         if (repeat_isnull) ereport(ERROR, (errmsg("%s(%s:%d): repeat_isnull", __func__, __FILE__, __LINE__)));
     }
     SPI_commit_my(command);
-    #undef STATE
-    #undef SSTATE
     if (!response_isnull) pfree((void *)values[RESPONSE - 1]);
     #undef RESPONSE
     #undef SRESPONSE
