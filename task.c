@@ -2,7 +2,6 @@
 
 bool response_isnull;
 int timeout;
-MemoryContext loopMemoryContext;
 static char *request;
 static char *state;
 static const char *data;
@@ -72,7 +71,7 @@ static void task_work(void) {
     }
     if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
-        MemoryContext oldMemoryContext = MemoryContextSwitchTo(loopMemoryContext);
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         bool timeout_isnull;
         request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
         timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
@@ -258,7 +257,7 @@ static void task_success(void) {
 }
 
 static void task_error(void) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(loopMemoryContext);
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
     appendStringInfo(&response, "elevel::int4\t%i", edata->elevel);
     appendStringInfo(&response, "\noutput_to_server::bool\t%s", edata->output_to_server ? "true" : "false");
@@ -324,7 +323,6 @@ static void task_init(void) {
     StringInfoData buf;
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-    loopMemoryContext = CurrentMemoryContext;
     id = MyBgworkerEntry->bgw_main_arg;
     start = GetCurrentTimestamp();
     count = 0;
