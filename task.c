@@ -56,11 +56,11 @@ static void task_work(void) {
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %s%s%s WHERE id = $" SID " FOR UPDATE)\n"
             "UPDATE  %s%s%s AS u\n"
-            "SET     state = 'WORK'::STATE,\n"
+            "SET     state = 'WORK'::state,\n"
             "        start = current_timestamp,\n"
             "        pid = pg_backend_pid()\n"
             "FROM s WHERE u.id = s.id RETURNING request,\n"
-            "        COALESCE(EXTRACT(epoch FROM timeout), 0)::INT * 1000 AS timeout", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            "        COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
     #undef ID
@@ -100,7 +100,7 @@ static void task_repeat(void) {
             "SELECT CASE WHEN drift THEN current_timestamp + repeat\n"
             "ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
             "END AS dt, queue, max, request, timeout, delete, repeat, drift, count, live\n"
-            "FROM %s%s%s WHERE id = $" SID " AND state IN ('DONE'::STATE, 'FAIL'::STATE) LIMIT 1", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            "FROM %s%s%s WHERE id = $" SID " AND state IN ('DONE'::state, 'FAIL'::state) LIMIT 1", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
     #undef ID
@@ -162,13 +162,13 @@ static void task_more(void) {
             "WITH s AS (\n"
             "SELECT  id\n"
             "FROM    %s%s%s\n"
-            "WHERE   state = 'PLAN'::STATE\n"
+            "WHERE   state = 'PLAN'::state\n"
             "AND     dt <= current_timestamp\n"
             "AND     queue = $" SQUEUE "\n"
             "AND     COALESCE(max, ~(1<<31)) >= $" SMAX "\n"
-            "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $" SCOUNT " AND $" SSTART " + live > current_timestamp ELSE COALESCE(count, 0) > $" SCOUNT " OR $" SSTART " + COALESCE(live, '0 sec'::INTERVAL) > current_timestamp END\n"
+            "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $" SCOUNT " AND $" SSTART " + live > current_timestamp ELSE COALESCE(count, 0) > $" SCOUNT " OR $" SSTART " + COALESCE(live, '0 sec'::interval) > current_timestamp END\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %s%s%s AS u SET state = 'TAKE'::STATE FROM s WHERE u.id = s.id RETURNING u.id, set_config('pg_task.id', u.id::TEXT, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            ") UPDATE %s%s%s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, set_config('pg_task.id', u.id::text, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
     #undef MAX
@@ -216,9 +216,9 @@ static void task_done(void) {
         initStringInfo(&buf);
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %s%s%s WHERE id = $" SID " FOR UPDATE\n)\n"
-            "UPDATE %s%s%s AS u SET state = $" SSTATE "::STATE, stop = current_timestamp, response = $" SRESPONSE " FROM s WHERE u.id = s.id\n"
+            "UPDATE %s%s%s AS u SET state = $" SSTATE "::state, stop = current_timestamp, response = $" SRESPONSE " FROM s WHERE u.id = s.id\n"
             "RETURNING delete, queue,\n"
-            "repeat IS NOT NULL AND state IN ('DONE'::STATE, 'FAIL'::STATE) AS repeat", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            "repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
     #undef ID

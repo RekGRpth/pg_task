@@ -31,7 +31,7 @@ static void tick_type(void) {
     int rc;
     static const char *command =
         "DO $$ BEGIN\n"
-        "    PERFORM concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), 'state')::REGTYPE;\n"
+        "    PERFORM concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), 'state')::regtype;\n"
         "    EXCEPTION WHEN undefined_object THEN CREATE TYPE STATE AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');\n"
         "END; $$";
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table);
@@ -51,23 +51,23 @@ static void tick_table(void) {
     initStringInfo(&buf);
     appendStringInfo(&buf,
         "CREATE TABLE IF NOT EXISTS %s%s%s (\n"
-        "    id BIGSERIAL NOT NULL PRIMARY KEY,\n"
-        "    parent BIGINT DEFAULT current_setting('pg_task.id', true)::BIGINT,\n"
-        "    dt TIMESTAMP NOT NULL DEFAULT current_timestamp,\n"
-        "    start TIMESTAMP,\n"
-        "    stop TIMESTAMP,\n"
-        "    queue TEXT NOT NULL DEFAULT 'default',\n"
-        "    max INT,\n"
-        "    pid INT,\n"
-        "    request TEXT NOT NULL,\n"
-        "    response TEXT,\n"
-        "    state STATE NOT NULL DEFAULT 'PLAN'::STATE,\n"
-        "    timeout INTERVAL,\n"
-        "    delete BOOLEAN NOT NULL DEFAULT false,\n"
-        "    repeat INTERVAL,\n"
-        "    drift BOOLEAN NOT NULL DEFAULT true,\n"
-        "    count INT,\n"
-        "    live INTERVAL,\n"
+        "    id bigserial NOT NULL PRIMARY KEY,\n"
+        "    parent int8 DEFAULT current_setting('pg_task.id', true)::int8,\n"
+        "    dt timestamp NOT NULL DEFAULT current_timestamp,\n"
+        "    start timestamp,\n"
+        "    stop timestamp,\n"
+        "    queue text NOT NULL DEFAULT 'default',\n"
+        "    max int4,\n"
+        "    pid int4,\n"
+        "    request text NOT NULL,\n"
+        "    response text,\n"
+        "    state state NOT NULL DEFAULT 'PLAN'::state,\n"
+        "    timeout interval,\n"
+        "    delete boolean NOT NULL DEFAULT false,\n"
+        "    repeat interval,\n"
+        "    drift boolean NOT NULL DEFAULT true,\n"
+        "    count int4,\n"
+        "    live interval,\n"
         "    CONSTRAINT %s FOREIGN KEY (parent) REFERENCES %s%s%s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
         ")", schema_quote, point, table_quote, name_q, schema_quote, point, table_quote);
     SPI_start_my(buf.data);
@@ -101,8 +101,8 @@ static void tick_index(const char *index) {
 static void tick_lock(void) {
     int rc;
     static const char *command =
-        "SELECT pg_try_advisory_lock(concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::REGCLASS::OID::BIGINT) AS lock,\n"
-        "       set_config('pg_task.lock', concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::REGCLASS::OID::TEXT, false)";
+        "SELECT pg_try_advisory_lock(concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::int8) AS lock,\n"
+        "       set_config('pg_task.lock', concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::text, false)";
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table);
     SPI_start_my(command);
     if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
@@ -124,13 +124,13 @@ static void tick_fix(void) {
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table);
     initStringInfo(&buf);
     appendStringInfo(&buf,
-        "WITH s AS (SELECT id FROM %s%s%s AS t WHERE state IN ('TAKE'::STATE, 'WORK'::STATE) AND pid NOT IN (\n"
+        "WITH s AS (SELECT id FROM %s%s%s AS t WHERE state IN ('TAKE'::state, 'WORK'::state) AND pid NOT IN (\n"
         "    SELECT  pid\n"
         "    FROM    pg_stat_activity\n"
         "    WHERE   datname = current_catalog\n"
         "    AND     usename = current_user\n"
         "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), queue, id)\n"
-        ") FOR UPDATE SKIP LOCKED) UPDATE %s%s%s AS u SET state = 'PLAN'::STATE FROM s WHERE u.id = s.id", schema_quote, point, table_quote, schema_quote, point, table_quote);
+        ") FOR UPDATE SKIP LOCKED) UPDATE %s%s%s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", schema_quote, point, table_quote, schema_quote, point, table_quote);
     SPI_start_my(buf.data);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit_my(buf.data);
@@ -190,13 +190,13 @@ void tick_loop(void) {
             "ON          datname = current_catalog\n"
             "AND         usename = current_user\n"
             "AND         backend_type = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), queue)\n"
-            "WHERE       t.state = 'PLAN'::STATE\n"
+            "WHERE       t.state = 'PLAN'::state\n"
             "AND         dt <= current_timestamp\n"
             ") SELECT id, queue, max - count(pid) AS count FROM s GROUP BY id, queue, max\n"
             ") SELECT array_agg(id ORDER BY id) AS id, queue, count FROM s WHERE count > 0 GROUP BY queue, count\n"
             ") SELECT unnest(id[:count]) AS id, queue, count FROM s ORDER BY count DESC\n"
             ") SELECT s.* FROM s INNER JOIN %s%s%s USING (id) FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %s%s%s AS u SET state = 'TAKE'::STATE FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", schema_quote, point, table_quote, schema_quote, point, table_quote, schema_quote, point, table_quote);
+            ") UPDATE %s%s%s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", schema_quote, point, table_quote, schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
     SPI_start_my(command);
@@ -237,15 +237,15 @@ static void tick_check(void) {
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS ("
-        "SELECT      COALESCE(datname, data)::TEXT AS data,\n"
-        "            COALESCE(COALESCE(usename, \"user\"), data)::TEXT AS user,\n"
+        "SELECT      COALESCE(datname, data)::text AS data,\n"
+        "            COALESCE(COALESCE(usename, \"user\"), data)::text AS user,\n"
         "            schema,\n"
         "            COALESCE(\"table\", current_setting('pg_task.task', false)) AS table,\n"
-        "            COALESCE(period, current_setting('pg_task.tick', false)::INT) AS period\n"
-        "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (data TEXT, \"user\" TEXT, schema TEXT, \"table\" TEXT, period INT)\n"
+        "            COALESCE(period, current_setting('pg_task.tick', false)::int4) AS period\n"
+        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.config', false)::json) AS s (data text, \"user\" text, schema text, \"table\" text, period int4)\n"
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT * FROM s WHERE data = current_catalog AND \"user\" = current_user AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND period = current_setting('pg_task.period', false)::INT";
+        ") SELECT * FROM s WHERE data = current_catalog AND \"user\" = current_user AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND period = current_setting('pg_task.period', false)::int4";
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %d", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
     SPI_start_my(command);
     if (!plan) {

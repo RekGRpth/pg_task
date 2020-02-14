@@ -115,7 +115,7 @@ static void tick_worker(const char *data, const char *user, const char *schema, 
 
 static void conf_unlock(void) {
     int rc;
-    static const char *command = "SELECT pg_advisory_unlock(current_setting('pg_task.lock', true)::BIGINT) AS unlock";
+    static const char *command = "SELECT pg_advisory_unlock(current_setting('pg_task.lock', true)::int8) AS unlock";
     SPI_start_my(command);
     if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit_my(command);
@@ -126,18 +126,18 @@ static void conf_check(void) {
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS (\n"
-        "SELECT      COALESCE(datname, data)::TEXT AS data,\n"
+        "SELECT      COALESCE(datname, data)::text AS data,\n"
         "            datname,\n"
         "            COALESCE(COALESCE(usename, \"user\"), data)::TEXT AS user,\n"
         "            usename,\n"
         "            schema,\n"
         "            COALESCE(\"table\", current_setting('pg_task.task', false)) AS table,\n"
-        "            COALESCE(period, current_setting('pg_task.tick', false)::INT) AS period\n"
-        "FROM        json_populate_recordset(NULL::RECORD, current_setting('pg_task.config', false)::JSON) AS s (data TEXT, \"user\" TEXT, schema TEXT, \"table\" TEXT, period INT)\n"
+        "            COALESCE(period, current_setting('pg_task.tick', false)::int4) AS period\n"
+        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.config', false)::json) AS s (data text, \"user\" text, schema text, \"table\" text, period int4)\n"
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
         ") SELECT s.* FROM s\n"
-        "LEFT JOIN   pg_stat_activity AS a ON a.datname = data AND a.usename = \"user\" AND application_name = concat_ws(' ', 'pg_task', schema, \"table\", period::TEXT) AND pid != pg_backend_pid()\n"
+        "LEFT JOIN   pg_stat_activity AS a ON a.datname = data AND a.usename = \"user\" AND application_name = concat_ws(' ', 'pg_task', schema, \"table\", period::text) AND pid != pg_backend_pid()\n"
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
         "WHERE       a.pid IS NULL";
     events &= ~WL_TIMEOUT;
