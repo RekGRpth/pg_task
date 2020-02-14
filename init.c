@@ -2,8 +2,8 @@
 
 PG_MODULE_MAGIC;
 
-static char *pg_task_config;
 char *pg_task_task;
+static char *pg_task_config;
 static int pg_task_tick;
 
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker) {
@@ -18,36 +18,6 @@ void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker) {
         }
     }
     pfree(handle);
-}
-
-void SPI_start_my(const char *command) {
-    int rc;
-    SetCurrentStatementStartTimestamp();
-    StartTransactionCommand();
-    if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_connect = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    PushActiveSnapshot(GetTransactionSnapshot());
-    if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else disable_timeout(STATEMENT_TIMEOUT, false);
-    pgstat_report_activity(STATE_RUNNING, command);
-}
-
-void SPI_commit_my(const char *command) {
-    int rc;
-    disable_timeout(STATEMENT_TIMEOUT, false);
-    if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(ERROR, (errmsg("%s(%s:%d): SPI_finish = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    PopActiveSnapshot();
-    CommitTransactionCommand();
-    ProcessCompletedNotifies();
-    pgstat_report_activity(STATE_IDLE, command);
-    pgstat_report_stat(true);
-}
-
-void SPI_rollback_my(const char *command) {
-    disable_timeout(STATEMENT_TIMEOUT, false);
-    EmitErrorReport();
-    AbortCurrentTransaction();
-    pgstat_report_activity(STATE_IDLE, command);
-    pgstat_report_stat(true);
-    FlushErrorState();
 }
 
 static void conf_worker(void) {

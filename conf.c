@@ -1,13 +1,11 @@
 #include "include.h"
 
 extern char *pg_task_task;
-
+static bool renamed = false;
+static int events = WL_LATCH_SET | WL_POSTMASTER_DEATH;
+static long timeout = LONG_MAX;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
-
-static long timeout = LONG_MAX;
-static int events = WL_LATCH_SET | WL_POSTMASTER_DEATH;
-static bool renamed = false;
 
 static void conf_sighup(SIGNAL_ARGS) {
     int save_errno = errno;

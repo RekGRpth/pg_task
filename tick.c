@@ -1,8 +1,5 @@
 #include "include.h"
 
-static volatile sig_atomic_t sighup = false;
-static volatile sig_atomic_t sigterm = false;
-
 static const char *data;
 static const char *data_quote = NULL;
 static const char *point;
@@ -12,8 +9,9 @@ static const char *table;
 static const char *table_quote = NULL;
 static const char *user;
 static const char *user_quote = NULL;
-
 static int period;
+static volatile sig_atomic_t sighup = false;
+static volatile sig_atomic_t sigterm = false;
 
 static void tick_schema(void) {
     int rc;
