@@ -143,7 +143,7 @@ static void task_delete(void) {
     SPI_commit_my(command);
 }
 
-static void task_more(void) {
+static void task_live(void) {
     int rc;
     #define QUEUE 1
     #define SQUEUE S(QUEUE)
@@ -247,7 +247,6 @@ static void task_done(void) {
     #undef SRESPONSE
     if (repeat) task_repeat();
     if (delete && response_isnull) task_delete();
-    pfree(response.data);
 }
 
 static void task_error(void) {
@@ -310,7 +309,8 @@ static void task_loop(void) {
     } PG_END_TRY();
     pfree(request);
     task_done();
-    task_more();
+    pfree(response.data);
+    task_live();
 }
 
 static void task_sigterm(SIGNAL_ARGS) {
