@@ -1,5 +1,7 @@
 #include "include.h"
 
+extern int timeout;
+
 /*
  * Flag to keep track of whether we have started a transaction.
  * For extended query protocol this has to be remembered across messages.
@@ -527,11 +529,11 @@ enable_statement_timeout(void)
 	/* must be within an xact */
 	Assert(xact_started);
 
-	if (StatementTimeout > 0)
+	if (timeout > 0)
 	{
 		if (!stmt_timeout_active)
 		{
-			enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout);
+			enable_timeout_after(STATEMENT_TIMEOUT, timeout);
 			stmt_timeout_active = true;
 		}
 	}

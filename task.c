@@ -24,7 +24,7 @@ static MemoryContext loopMemoryContext;
 static TimestampTz start;
 static uint32 count;
 static uint32 max;
-static int timeout;
+int timeout;
 
 static void update_ps_display(void) {
     StringInfoData buf;
@@ -291,15 +291,12 @@ static void task_loop(void) {
     response_isnull = true;
     PG_TRY(); {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
-        uint64 old_timeout = StatementTimeout;
         MemoryContextResetAndDeleteChildren(MessageContext);
         InvalidateCatalogSnapshotConditionally();
         MemoryContextSwitchTo(oldMemoryContext);
         SetCurrentStatementStartTimestamp();
         pgstat_report_activity(STATE_RUNNING, request);
-        if (timeout > 0 && timeout != StatementTimeout) StatementTimeout = timeout;
         exec_simple_query(request);
-        StatementTimeout = old_timeout;
         pgstat_report_activity(STATE_IDLE, request);
         pgstat_report_stat(true);
     } PG_CATCH(); {
