@@ -58,8 +58,8 @@ static void task_work(void) {
             "SET     state = 'WORK'::state,\n"
             "        start = current_timestamp,\n"
             "        pid = pg_backend_pid()\n"
-            "FROM s WHERE u.id = s.id RETURNING request,\n"
-            "        COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout,\n"
+            "pg_try_advisory_lock(concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::int4, $" SID "::int4) AS lock", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
     #undef ID
@@ -72,7 +72,10 @@ static void task_work(void) {
     if ((rc = SPI_execute_plan(plan, values, NULL, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-        bool timeout_isnull;
+        bool timeout_isnull, lock_isnull;
+        bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "lock"), &lock_isnull));
+        if (lock_isnull) ereport(ERROR, (errmsg("%s(%s:%d): lock_isnull", __func__, __FILE__, __LINE__)));
+        if (!lock) ereport(ERROR, (errmsg("%s(%s:%d): !lock", __func__, __FILE__, __LINE__)));
         request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
         timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
         if (timeout_isnull) ereport(ERROR, (errmsg("%s(%s:%d): timeout_isnull", __func__, __FILE__, __LINE__)));
@@ -149,8 +152,10 @@ static void task_live(void) {
     #define SCOUNT S(COUNT)
     #define START 4
     #define SSTART S(START)
-    static Oid argtypes[] = {[QUEUE - 1] = TEXTOID, [MAX - 1] = INT4OID, [COUNT - 1] = INT4OID, [START - 1] = TIMESTAMPTZOID};
-    Datum values[] = {[QUEUE - 1] = queue_datum, [MAX - 1] = UInt32GetDatum(max), [COUNT - 1] = UInt32GetDatum(count), [START - 1] = TimestampTzGetDatum(start)};
+    #define ID 5
+    #define SID S(ID)
+    static Oid argtypes[] = {[QUEUE - 1] = TEXTOID, [MAX - 1] = INT4OID, [COUNT - 1] = INT4OID, [START - 1] = TIMESTAMPTZOID, [ID - 1] = INT8OID};
+    Datum values[] = {[QUEUE - 1] = queue_datum, [MAX - 1] = UInt32GetDatum(max), [COUNT - 1] = UInt32GetDatum(count), [START - 1] = TimestampTzGetDatum(start), [ID - 1] = id};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -167,15 +172,20 @@ static void task_live(void) {
             "AND     COALESCE(max, ~(1<<31)) >= $" SMAX "\n"
             "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $" SCOUNT " AND $" SSTART " + live > current_timestamp ELSE COALESCE(count, 0) > $" SCOUNT " OR $" SSTART " + COALESCE(live, '0 sec'::interval) > current_timestamp END\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %s%s%s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, set_config('pg_task.id', u.id::text, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            ") UPDATE %s%s%s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, set_config('pg_task.id', u.id::text, false),\n"
+            "pg_advisory_unlock(concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::int4, $" SID "::int4)", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
+    #undef QUEUE
+    #undef SQUEUE
     #undef MAX
     #undef SMAX
     #undef COUNT
     #undef SCOUNT
     #undef START
     #undef SSTART
+    #undef ID
+    #undef SID
     SPI_start_my(command);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
@@ -188,8 +198,6 @@ static void task_live(void) {
         if (id_isnull) ereport(ERROR, (errmsg("%s(%s:%d): id_isnull", __func__, __FILE__, __LINE__)));
     }
     SPI_commit_my(command);
-    #undef QUEUE
-    #undef SQUEUE
 }
 
 static void task_done(void) {
