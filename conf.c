@@ -40,7 +40,7 @@ static void conf_user(const char *user) {
     int rc;
     StringInfoData buf;
     const char *user_quote = quote_identifier(user);
-    elog(LOG, "%s(%s:%d): user = %s", __func__, __FILE__, __LINE__, user);
+    ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): user = %s", __func__, __FILE__, __LINE__, user)));
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE USER %s", user_quote);
     SPI_start_my(buf.data);
@@ -57,7 +57,7 @@ static void conf_data(const char *user, const char *data) {
     ParseState *pstate = make_parsestate(NULL);
     List *options = NIL;
     CreatedbStmt *stmt = makeNode(CreatedbStmt);
-    elog(LOG, "%s(%s:%d): user = %s, data = %s", __func__, __FILE__, __LINE__, user, data);
+    ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): user = %s, data = %s", __func__, __FILE__, __LINE__, user, data)));
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE DATABASE %s WITH OWNER = %s", data_quote, user_quote);
     pstate->p_sourcetext = buf.data;
@@ -79,7 +79,7 @@ static void tick_worker(const char *data, const char *user, const char *schema, 
     StringInfoData buf;
     uint32 data_len = strlen(data), user_len = strlen(user), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), period_len = sizeof(period);
     BackgroundWorker worker;
-    elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %d", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period);
+    ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %d", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period)));
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = MyProcPid;
@@ -154,7 +154,7 @@ static void conf_check(void) {
         const int period = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull);
         SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull);
-        elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %d, datname_isnull = %s, usename_isnull = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period, datname_isnull ? "true" : "false", usename_isnull ? "true" : "false");
+        ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %d, datname_isnull = %s, usename_isnull = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period, datname_isnull ? "true" : "false", usename_isnull ? "true" : "false")));
         if (period_isnull) ereport(ERROR, (errmsg("%s(%s:%d): period_isnull", __func__, __FILE__, __LINE__)));
         if (usename_isnull) conf_user(user);
         if (datname_isnull) conf_data(user, data);

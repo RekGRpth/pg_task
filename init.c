@@ -53,6 +53,6 @@ void _PG_init(void); void _PG_init(void) {
     DefineCustomStringVariable("pg_task.config", "pg_task config", NULL, &pg_task_config, "[{\"data\":\"postgres\"}]", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.task", "pg_task task", NULL, &pg_task_task, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.tick", "pg_task tick", NULL, &pg_task_tick, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    elog(LOG, "%s(%s:%d): pg_task_config = %s, pg_task_task = %s, pg_task_tick = %d", __func__, __FILE__, __LINE__, pg_task_config, pg_task_task, pg_task_tick);
+    ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): pg_task_config = %s, pg_task_task = %s, pg_task_tick = %d", __func__, __FILE__, __LINE__, pg_task_config, pg_task_task, pg_task_tick)));
     conf_worker();
 }
