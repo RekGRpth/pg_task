@@ -249,6 +249,18 @@ static void task_done(void) {
     if (delete && response_isnull) task_delete();
 }
 
+static void task_success(void) {
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
+    MemoryContextResetAndDeleteChildren(MessageContext);
+    InvalidateCatalogSnapshotConditionally();
+    MemoryContextSwitchTo(oldMemoryContext);
+    SetCurrentStatementStartTimestamp();
+    pgstat_report_activity(STATE_RUNNING, request);
+    exec_simple_query(request);
+    pgstat_report_activity(STATE_IDLE, request);
+    pgstat_report_stat(true);
+}
+
 static void task_error(void) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(loopMemoryContext);
     ErrorData *edata = CopyErrorData();
@@ -284,6 +296,7 @@ static void task_error(void) {
     state_datum = fail;
     response_isnull = false;
     MemoryContextSwitchTo(oldMemoryContext);
+    SPI_rollback_my(request);
 }
 
 static void task_loop(void) {
@@ -293,20 +306,11 @@ static void task_loop(void) {
     state_datum = done;
     response_isnull = true;
     initStringInfo(&response);
-    PG_TRY(); {
-        MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
-        MemoryContextResetAndDeleteChildren(MessageContext);
-        InvalidateCatalogSnapshotConditionally();
-        MemoryContextSwitchTo(oldMemoryContext);
-        SetCurrentStatementStartTimestamp();
-        pgstat_report_activity(STATE_RUNNING, request);
-        exec_simple_query(request);
-        pgstat_report_activity(STATE_IDLE, request);
-        pgstat_report_stat(true);
-    } PG_CATCH(); {
+    PG_TRY();
+        task_success();
+    PG_CATCH();
         task_error();
-        SPI_rollback_my(request);
-    } PG_END_TRY();
+    PG_END_TRY();
     pfree(request);
     task_done();
     pfree(response.data);
