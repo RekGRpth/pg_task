@@ -101,12 +101,8 @@ static void tick_index(const char *index) {
 static void tick_lock(void) {
     int rc;
     static const char *command =
-        "SELECT      pg_try_advisory_lock(c.oid::BIGINT) AS lock, set_config('pg_task.lock', c.oid::TEXT, false)\n"
-        "FROM        pg_class AS c\n"
-        "INNER JOIN  pg_namespace AS n ON n.oid = relnamespace\n"
-        "INNER JOIN  pg_tables AS t ON tablename = relname AND nspname = schemaname\n"
-        "WHERE       schemaname = COALESCE(NULLIF(current_setting('pg_task.schema', true), ''), current_schema)\n"
-        "AND         tablename = current_setting('pg_task.table', false)";
+        "SELECT pg_try_advisory_lock(concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::REGCLASS::OID::BIGINT) AS lock,\n"
+        "       set_config('pg_task.lock', concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::REGCLASS::OID::TEXT, false)";
     elog(LOG, "%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table);
     SPI_start_my(command);
     if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
