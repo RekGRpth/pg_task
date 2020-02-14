@@ -18,6 +18,7 @@ static const char *user_quote;
 static Datum done;
 static Datum fail;
 static Datum id;
+static Datum queue_datum;
 static Datum state_datum;
 static TimestampTz start;
 static uint32 count;
@@ -150,7 +151,7 @@ static void task_live(void) {
     #define START 4
     #define SSTART S(START)
     static Oid argtypes[] = {[QUEUE - 1] = TEXTOID, [MAX - 1] = INT4OID, [COUNT - 1] = INT4OID, [START - 1] = TIMESTAMPTZOID};
-    Datum values[] = {[QUEUE - 1] = CStringGetTextDatum(queue), [MAX - 1] = UInt32GetDatum(max), [COUNT - 1] = UInt32GetDatum(count), [START - 1] = TimestampTzGetDatum(start)};
+    Datum values[] = {[QUEUE - 1] = queue_datum, [MAX - 1] = UInt32GetDatum(max), [COUNT - 1] = UInt32GetDatum(count), [START - 1] = TimestampTzGetDatum(start)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -188,7 +189,6 @@ static void task_live(void) {
         if (id_isnull) ereport(ERROR, (errmsg("%s(%s:%d): id_isnull", __func__, __FILE__, __LINE__)));
     }
     SPI_commit_my(command);
-    pfree((void *)values[QUEUE - 1]);
     #undef QUEUE
     #undef SQUEUE
 }
@@ -362,6 +362,7 @@ static void task_init(void) {
     MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     done = CStringGetTextDatum("DONE");
     fail = CStringGetTextDatum("FAIL");
+    queue_datum = CStringGetTextDatum(queue);
 }
 
 static void task_reset(void) {
