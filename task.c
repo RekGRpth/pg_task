@@ -2,10 +2,13 @@
 
 static volatile sig_atomic_t sigterm = false;
 
+static bool response_isnull;
 static char *request;
 static char *state;
+static Datum done;
+static Datum fail;
+static Datum state_datum;
 static StringInfoData response;
-static bool response_isnull;
 
 static const char *data;
 static const char *data_quote;
@@ -204,7 +207,7 @@ static void task_done(void) {
     #define RESPONSE 3
     #define SRESPONSE S(RESPONSE)
     static Oid argtypes[] = {[ID - 1] = INT8OID, [STATE - 1] = TEXTOID, [RESPONSE - 1] = TEXTOID};
-    Datum values[] = {[ID - 1] = id, [STATE - 1] = CStringGetTextDatum(state), [RESPONSE - 1] = !response_isnull ? CStringGetTextDatum(response.data) : (Datum)NULL};
+    Datum values[] = {[ID - 1] = id, [STATE - 1] = state_datum, [RESPONSE - 1] = !response_isnull ? CStringGetTextDatum(response.data) : (Datum)NULL};
     char nulls[] = {[ID - 1] = ' ', [STATE - 1] = ' ', [RESPONSE - 1] = !response_isnull ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
@@ -237,7 +240,6 @@ static void task_done(void) {
         if (repeat_isnull) ereport(ERROR, (errmsg("%s(%s:%d): repeat_isnull", __func__, __FILE__, __LINE__)));
     }
     SPI_commit_my(command);
-    pfree((void *)values[STATE - 1]);
     #undef STATE
     #undef SSTATE
     if (!response_isnull) pfree((void *)values[RESPONSE - 1]);
@@ -245,7 +247,7 @@ static void task_done(void) {
     #undef SRESPONSE
     if (repeat) task_repeat();
     if (delete && response_isnull) task_delete();
-    resetStringInfo(&response);
+    pfree(response.data);
 }
 
 static void task_error(void) {
@@ -280,6 +282,7 @@ static void task_error(void) {
     if (edata->saved_errno) appendStringInfo(&response, "\nsaved_errno::int4\t%i", edata->saved_errno);
     FreeErrorData(edata);
     state = "FAIL";
+    state_datum = fail;
     response_isnull = false;
     MemoryContextSwitchTo(oldMemoryContext);
 }
@@ -288,7 +291,9 @@ static void task_loop(void) {
     task_work();
     elog(LOG, "%s(%s:%d): id = %lu, timeout = %d, request = %s, count = %u", __func__, __FILE__, __LINE__, DatumGetUInt64(id), timeout, request, count);
     state = "DONE";
+    state_datum = done;
     response_isnull = true;
+    initStringInfo(&response);
     PG_TRY(); {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
         MemoryContextResetAndDeleteChildren(MessageContext);
@@ -354,8 +359,9 @@ static void task_init(void) {
     appendStringInfo(&buf, "%lu", DatumGetUInt64(id));
     set_config_option("pg_task.id", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     pfree(buf.data);
-    initStringInfo(&response);
     MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
+    done = CStringGetTextDatum("DONE");
+    fail = CStringGetTextDatum("FAIL");
 }
 
 static void task_reset(void) {
