@@ -83,6 +83,10 @@ static void task_work(void) {
     }
     SPI_commit_my(command);
     if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
+    state = "DONE";
+    state_datum = done;
+    response_isnull = true;
+    initStringInfo(&response);
 }
 
 static void task_repeat(void) {
@@ -211,6 +215,7 @@ static void task_done(void) {
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
+    pfree(request);
     ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): id = %lu, response = %s, state = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), !response_isnull ? response.data : "(null)", state)));
     if (!command) {
         StringInfoData buf;
@@ -245,6 +250,8 @@ static void task_done(void) {
     #undef SRESPONSE
     if (repeat) task_repeat();
     if (delete && response_isnull) task_delete();
+    pfree(response.data);
+    task_live();
 }
 
 static void task_success(void) {
@@ -300,19 +307,12 @@ static void task_error(void) {
 static void task_loop(void) {
     task_work();
     ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): id = %lu, timeout = %d, request = %s, count = %u", __func__, __FILE__, __LINE__, DatumGetUInt64(id), timeout, request, count)));
-    state = "DONE";
-    state_datum = done;
-    response_isnull = true;
-    initStringInfo(&response);
     PG_TRY();
         task_success();
     PG_CATCH();
         task_error();
     PG_END_TRY();
-    pfree(request);
     task_done();
-    pfree(response.data);
-    task_live();
 }
 
 static void task_sigterm(SIGNAL_ARGS) {
