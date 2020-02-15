@@ -34,7 +34,7 @@ void SPI_rollback_my(const char *command) {
 }
 
 static const char *SPI_fname_my(TupleDesc tupdesc, int fnumber) {
-    if (fnumber > tupdesc->natts || fnumber == 0 || fnumber <= FirstLowInvalidHeapAttributeNumber) ereport(ERROR, (errmsg("%s(%s:%d): SPI_ERROR_NOATTRIBUTE", __func__, __FILE__, __LINE__)));
+    if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) ereport(ERROR, (errmsg("%s(%s:%d): SPI_ERROR_NOATTRIBUTE", __func__, __FILE__, __LINE__)));
     return NameStr((fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1) : SystemAttributeDefinition(fnumber))->attname);
 }
 
@@ -43,7 +43,7 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
     bool isnull;
     Oid foutoid;
     bool typisvarlena;
-    if (fnumber > tupdesc->natts || fnumber == 0 || fnumber <= FirstLowInvalidHeapAttributeNumber) ereport(ERROR, (errmsg("%s(%s:%d): SPI_ERROR_NOATTRIBUTE", __func__, __FILE__, __LINE__)));
+    if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) ereport(ERROR, (errmsg("%s(%s:%d): SPI_ERROR_NOATTRIBUTE", __func__, __FILE__, __LINE__)));
     val = slot_getattr(slot, fnumber, &isnull);
     if (isnull) return NULL;
     getTypeOutputInfo(fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1)->atttypid : (SystemAttributeDefinition(fnumber))->atttypid, &foutoid, &typisvarlena);
@@ -53,10 +53,10 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
 static const char *SPI_gettype_my(TupleDesc tupdesc, int fnumber) {
     HeapTuple typeTuple;
     const char *result;
-    if (fnumber > tupdesc->natts || fnumber == 0 || fnumber <= FirstLowInvalidHeapAttributeNumber) ereport(ERROR, (errmsg("%s(%s:%d): SPI_ERROR_NOATTRIBUTE", __func__, __FILE__, __LINE__)));
+    if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) ereport(ERROR, (errmsg("%s(%s:%d): SPI_ERROR_NOATTRIBUTE", __func__, __FILE__, __LINE__)));
     typeTuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1)->atttypid : (SystemAttributeDefinition(fnumber))->atttypid));
     if (!HeapTupleIsValid(typeTuple)) ereport(ERROR, (errmsg("%s(%s:%d): SPI_ERROR_TYPUNKNOWN", __func__, __FILE__, __LINE__)));
-    result = NameStr(((Form_pg_type) GETSTRUCT(typeTuple))->typname);
+    result = NameStr(((Form_pg_type)GETSTRUCT(typeTuple))->typname);
     ReleaseSysCache(typeTuple);
     return result;
 }
