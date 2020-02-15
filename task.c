@@ -152,10 +152,8 @@ static void task_live(void) {
     #define SCOUNT S(COUNT)
     #define START 4
     #define SSTART S(START)
-    #define ID 5
-    #define SID S(ID)
-    static Oid argtypes[] = {[QUEUE - 1] = TEXTOID, [MAX - 1] = INT4OID, [COUNT - 1] = INT4OID, [START - 1] = TIMESTAMPTZOID, [ID - 1] = INT8OID};
-    Datum values[] = {[QUEUE - 1] = queue_datum, [MAX - 1] = UInt32GetDatum(max), [COUNT - 1] = UInt32GetDatum(count), [START - 1] = TimestampTzGetDatum(start), [ID - 1] = id};
+    static Oid argtypes[] = {[QUEUE - 1] = TEXTOID, [MAX - 1] = INT4OID, [COUNT - 1] = INT4OID, [START - 1] = TIMESTAMPTZOID};
+    Datum values[] = {[QUEUE - 1] = queue_datum, [MAX - 1] = UInt32GetDatum(max), [COUNT - 1] = UInt32GetDatum(count), [START - 1] = TimestampTzGetDatum(start)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -172,8 +170,7 @@ static void task_live(void) {
             "AND     COALESCE(max, ~(1<<31)) >= $" SMAX "\n"
             "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $" SCOUNT " AND $" SSTART " + live > current_timestamp ELSE COALESCE(count, 0) > $" SCOUNT " OR $" SSTART " + COALESCE(live, '0 sec'::interval) > current_timestamp END\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %s%s%s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, set_config('pg_task.id', u.id::text, false),\n"
-            "pg_advisory_unlock(concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::int4, $" SID "::int4)", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            ") UPDATE %s%s%s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, set_config('pg_task.id', u.id::text, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
     #undef QUEUE
@@ -184,8 +181,6 @@ static void task_live(void) {
     #undef SCOUNT
     #undef START
     #undef SSTART
-    #undef ID
-    #undef SID
     SPI_start_my(command);
     if (!plan) {
         if (!(plan = SPI_prepare(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
@@ -223,8 +218,8 @@ static void task_done(void) {
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %s%s%s WHERE id = $" SID " FOR UPDATE\n)\n"
             "UPDATE %s%s%s AS u SET state = $" SSTATE "::state, stop = current_timestamp, response = $" SRESPONSE " FROM s WHERE u.id = s.id\n"
-            "RETURNING delete, queue,\n"
-            "repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            "RETURNING delete, queue, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat,\n"
+            "pg_advisory_unlock(concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::int4, $" SID "::int4)", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
     #undef ID
