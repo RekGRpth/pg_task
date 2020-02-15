@@ -201,7 +201,7 @@ static void task_live(void) {
 
 static void task_done(void) {
     int rc;
-    bool delete, repeat;
+    bool delete, repeat, live;
     #define ID 1
     #define SID S(ID)
     #define STATE 2
@@ -223,7 +223,7 @@ static void task_done(void) {
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %s%s%s WHERE id = $" SID " FOR UPDATE\n)\n"
             "UPDATE %s%s%s AS u SET state = $" SSTATE "::state, stop = current_timestamp, response = $" SRESPONSE " FROM s WHERE u.id = s.id\n"
-            "RETURNING delete, queue, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat,\n"
+            "RETURNING delete, queue, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live,\n"
             "pg_advisory_unlock(concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::int4, $" SID "::int4)", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
@@ -238,11 +238,13 @@ static void task_done(void) {
     }
     if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != SPI_OK_UPDATE_RETURNING) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
-        bool delete_isnull, repeat_isnull;
+        bool delete_isnull, repeat_isnull, live_isnull;
         delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &delete_isnull));
         repeat = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &repeat_isnull));
+        live = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "live"), &live_isnull));
         if (delete_isnull) ereport(ERROR, (errmsg("%s(%s:%d): delete_isnull", __func__, __FILE__, __LINE__)));
         if (repeat_isnull) ereport(ERROR, (errmsg("%s(%s:%d): repeat_isnull", __func__, __FILE__, __LINE__)));
+        if (live_isnull) ereport(ERROR, (errmsg("%s(%s:%d): live_isnull", __func__, __FILE__, __LINE__)));
     }
     SPI_commit_my(command);
     if (!response_isnull) pfree((void *)values[RESPONSE - 1]);
@@ -251,7 +253,7 @@ static void task_done(void) {
     if (repeat) task_repeat();
     if (delete && response_isnull) task_delete();
     pfree(response.data);
-    task_live();
+    if (live) task_live(); else sigterm = true;
 }
 
 static void task_success(void) {
