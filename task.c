@@ -20,8 +20,8 @@ static Datum id;
 static Datum queue_datum;
 static Datum state_datum;
 static TimestampTz start;
-static uint32 count;
-static uint32 max;
+static int count;
+static int max;
 static volatile sig_atomic_t sigterm = false;
 StringInfoData response;
 
@@ -157,7 +157,7 @@ static void task_live(void) {
     #define START 4
     #define SSTART S(START)
     static Oid argtypes[] = {[QUEUE - 1] = TEXTOID, [MAX - 1] = INT4OID, [COUNT - 1] = INT4OID, [START - 1] = TIMESTAMPTZOID};
-    Datum values[] = {[QUEUE - 1] = queue_datum, [MAX - 1] = UInt32GetDatum(max), [COUNT - 1] = UInt32GetDatum(count), [START - 1] = TimestampTzGetDatum(start)};
+    Datum values[] = {[QUEUE - 1] = queue_datum, [MAX - 1] = Int32GetDatum(max), [COUNT - 1] = Int32GetDatum(count), [START - 1] = TimestampTzGetDatum(start)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");

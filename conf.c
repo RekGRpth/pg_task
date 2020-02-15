@@ -77,7 +77,7 @@ static void conf_data(const char *user, const char *data) {
 
 static void tick_worker(const char *data, const char *user, const char *schema, const char *table, int period) {
     StringInfoData buf;
-    uint32 data_len = strlen(data), user_len = strlen(user), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), period_len = sizeof(period);
+    int data_len = strlen(data), user_len = strlen(user), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), period_len = sizeof(period);
     BackgroundWorker worker;
     ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %d", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period)));
     MemSet(&worker, 0, sizeof(worker));
