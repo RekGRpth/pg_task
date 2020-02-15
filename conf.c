@@ -179,7 +179,7 @@ static void conf_check(void) {
 }
 
 static void conf_init(void) {
-    if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
+    if (!MyProcPort && !(MyProcPort = (Port *)calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
     if (!MyProcPort->user_name) MyProcPort->user_name = "postgres";
     if (!MyProcPort->database_name) MyProcPort->database_name = "postgres";
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
@@ -187,7 +187,7 @@ static void conf_init(void) {
     pqsignal(SIGHUP, conf_sighup);
     pqsignal(SIGTERM, conf_sigterm);
     BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnection(MyProcPort->database_name, MyProcPort->user_name, 0);
+    BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
     conf_check();
 }
