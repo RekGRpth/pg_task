@@ -20,16 +20,16 @@ void SPI_commit_my(const char *command) {
     PopActiveSnapshot();
     CommitTransactionCommand();
     ProcessCompletedNotifies();
-    pgstat_report_activity(STATE_IDLE, command);
     pgstat_report_stat(false);
+    pgstat_report_activity(STATE_IDLE, NULL);
 }
 
 void SPI_rollback_my(const char *command) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     EmitErrorReport();
     AbortCurrentTransaction();
-    pgstat_report_activity(STATE_IDLE, command);
     pgstat_report_stat(false);
+    pgstat_report_activity(STATE_IDLE, NULL);
     FlushErrorState();
 }
 

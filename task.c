@@ -262,10 +262,9 @@ static void task_success(void) {
     InvalidateCatalogSnapshotConditionally();
     MemoryContextSwitchTo(oldMemoryContext);
     SetCurrentStatementStartTimestamp();
-    pgstat_report_activity(STATE_RUNNING, request);
     exec_simple_query(request);
-    pgstat_report_activity(STATE_IDLE, request);
     pgstat_report_stat(false);
+    pgstat_report_activity(STATE_IDLE, NULL);
 }
 
 static void task_error(void) {
