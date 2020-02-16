@@ -3,7 +3,7 @@
 extern bool response_isnull;
 extern StringInfoData response;
 
-void SPI_start_my(const char *command) {
+void SPI_begin_my(const char *command) {
     int rc;
     SetCurrentStatementStartTimestamp();
     StartTransactionCommand();

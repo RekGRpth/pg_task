@@ -43,7 +43,7 @@ static void conf_user(const char *user) {
     ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): user = %s", __func__, __FILE__, __LINE__, user)));
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE USER %s", user_quote);
-    SPI_start_my(buf.data);
+    SPI_begin_my(buf.data);
     if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit_my(buf.data);
     if (user_quote != user) pfree((void *)user_quote);
@@ -64,7 +64,7 @@ static void conf_data(const char *user, const char *data) {
     options = lappend(options, makeDefElem("owner", (Node *)makeString((char *)user), -1));
     stmt->dbname = (char *)data;
     stmt->options = options;
-    SPI_start_my(buf.data);
+    SPI_begin_my(buf.data);
     createdb(pstate, stmt);
     SPI_commit_my(buf.data);
     free_parsestate(pstate);
@@ -114,7 +114,7 @@ static void tick_worker(const char *data, const char *user, const char *schema, 
 static void conf_unlock(void) {
     int rc;
     static const char *command = "SELECT pg_advisory_unlock(current_setting('pg_task.lock', true)::int8) AS unlock";
-    SPI_start_my(command);
+    SPI_begin_my(command);
     if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit_my(command);
 }
@@ -139,7 +139,7 @@ static void conf_check(void) {
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
         "WHERE       a.pid IS NULL";
     events &= ~WL_TIMEOUT;
-    SPI_start_my(command);
+    SPI_begin_my(command);
     if (!plan) {
         if (!(plan = SPI_prepare(command, 0, NULL))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));

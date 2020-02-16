@@ -35,9 +35,9 @@
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
 void exec_simple_query(const char *query_string);
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
+void SPI_begin_my(const char *command);
 void SPI_commit_my(const char *command);
 void SPI_rollback_my(const char *command);
-void SPI_start_my(const char *command);
 void tick_init(const bool conf, const char *data, const char *user, const char *schema, const char *table, int period);
 void tick_loop(void);
 
