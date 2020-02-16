@@ -13,20 +13,12 @@ static bool xact_started = false;
  */
 static bool stmt_timeout_active = false;
 
-/*
- * If an unnamed prepared statement exists, it's stored here.
- * We keep it separate from the hashtable kept by commands/prepare.c
- * in order to reduce overhead for short-lived queries.
- */
-static CachedPlanSource *unnamed_stmt_psrc = NULL;
-
 static bool check_log_statement(List *stmt_list);
 static int	errdetail_execute(List *raw_parsetree_list);
 static int	errdetail_abort(void);
 static void start_xact_command(void);
 static void finish_xact_command(void);
 static bool IsTransactionExitStmt(Node *parsetree);
-static void drop_unnamed_stmt(void);
 static void enable_statement_timeout(void);
 static void disable_statement_timeout(void);
 
@@ -69,14 +61,6 @@ exec_simple_query(const char *query_string)
 	 * will normally change current memory context.)
 	 */
 	start_xact_command();
-
-	/*
-	 * Zap any pre-existing unnamed statement.  (While not strictly necessary,
-	 * it seems best to define simple-Query mode as if it used the unnamed
-	 * statement and portal; this ensures we recover any storage used by prior
-	 * unnamed operations.)
-	 */
-	drop_unnamed_stmt();
 
 	/*
 	 * Switch to appropriate context for constructing parsetrees.
@@ -500,20 +484,6 @@ IsTransactionExitStmt(Node *parsetree)
 			return true;
 	}
 	return false;
-}
-
-/* Release any existing unnamed prepared statement */
-static void
-drop_unnamed_stmt(void)
-{
-	/* paranoia to avoid a dangling pointer in case of error */
-	if (unnamed_stmt_psrc)
-	{
-		CachedPlanSource *psrc = unnamed_stmt_psrc;
-
-		unnamed_stmt_psrc = NULL;
-		DropCachedPlan(psrc);
-	}
 }
 
 /*
