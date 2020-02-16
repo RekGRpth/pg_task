@@ -265,7 +265,7 @@ static void task_success(void) {
     pgstat_report_activity(STATE_RUNNING, request);
     exec_simple_query(request);
     pgstat_report_activity(STATE_IDLE, request);
-    pgstat_report_stat(true);
+    pgstat_report_stat(false);
 }
 
 static void task_error(void) {

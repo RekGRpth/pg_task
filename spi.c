@@ -21,7 +21,7 @@ void SPI_commit_my(const char *command) {
     CommitTransactionCommand();
     ProcessCompletedNotifies();
     pgstat_report_activity(STATE_IDLE, command);
-    pgstat_report_stat(true);
+    pgstat_report_stat(false);
 }
 
 void SPI_rollback_my(const char *command) {
@@ -29,7 +29,7 @@ void SPI_rollback_my(const char *command) {
     EmitErrorReport();
     AbortCurrentTransaction();
     pgstat_report_activity(STATE_IDLE, command);
-    pgstat_report_stat(true);
+    pgstat_report_stat(false);
     FlushErrorState();
 }
 
