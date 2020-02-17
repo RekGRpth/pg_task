@@ -39,7 +39,7 @@ bool pg_advisory_unlock_int8_my(int64 key) {
     LOCKTAG tag;
     PreventAdvisoryLocksInParallelMode();
     SET_LOCKTAG_INT64(tag, key);
-    return LockRelease(&tag, ExclusiveLock, true);
+    return LockHeldByMe(&tag, ExclusiveLock) && LockRelease(&tag, ExclusiveLock, true);
 }
 
 bool pg_try_advisory_lock_int4_my(int32 key1, int32 key2) {
@@ -53,5 +53,5 @@ bool pg_advisory_unlock_int4_my(int32 key1, int32 key2) {
     LOCKTAG tag;
     PreventAdvisoryLocksInParallelMode();
     SET_LOCKTAG_INT32(tag, key1, key2);
-    return LockRelease(&tag, ExclusiveLock, true);
+    return LockHeldByMe(&tag, ExclusiveLock) && LockRelease(&tag, ExclusiveLock, true);
 }
