@@ -32,6 +32,10 @@
 #include <utils/timeout.h>
 #include <utils/varlena.h>
 
+bool pg_advisory_unlock_int4_my(int32 key1, int32 key2);
+bool pg_advisory_unlock_int8_my(int64 key);
+bool pg_try_advisory_lock_int4_my(int32 key1, int32 key2);
+bool pg_try_advisory_lock_int8_my(int64 key);
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void exec_simple_query(const char *query_string);
@@ -43,6 +47,7 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_rollback_my(const char *command);
 void tick_init(const bool conf, const char *data, const char *user, const char *schema, const char *table, int period);
 void tick_loop(void);
+
 
 #define Q(name) #name
 #define S(macro) Q(macro)

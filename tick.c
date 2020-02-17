@@ -102,22 +102,8 @@ static void tick_index(const char *index) {
 }
 
 static void tick_lock(void) {
-    static const char *command =
-        "SELECT pg_try_advisory_lock(concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::int8) AS lock,\n"
-        "       set_config('pg_task.oid', concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::text, false)";
     L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
-    SPI_begin_my(command);
-    SPI_execute_with_args_my(command, 0, NULL, NULL, NULL, SPI_OK_SELECT);
-    if (SPI_processed != 1) E("SPI_processed != 1"); else {
-        bool lock_isnull;
-        bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "lock"), &lock_isnull));
-        if (lock_isnull) E("lock_isnull");
-        if (!lock) {
-            W("Already running data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
-            sigterm = true;
-        }
-    }
-    SPI_commit_my(command);
+    if (!pg_try_advisory_lock_int8_my(oid)) { sigterm = true; W("Already running data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table); }
 }
 
 static void tick_fix(void) {
