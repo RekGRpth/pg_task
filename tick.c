@@ -103,11 +103,10 @@ static void tick_index(const char *index) {
 }
 
 static bool tick_lock(void) {
-    bool lock;
-    if ((lock = pg_try_advisory_lock_int8_my(oid))) return lock;
+    if (pg_try_advisory_lock_int8_my(oid)) return true;
     sigterm = true;
     W("lock oid = %d", oid);
-    return lock;
+    return false;
 }
 
 static void tick_fix(void) {

@@ -41,11 +41,10 @@ static void update_ps_display(void) {
 }
 
 static bool task_lock(void) {
-    bool lock;
-    if ((lock = pg_try_advisory_lock_int4_my(oid, DatumGetUInt64(id)))) return lock;
+    if (pg_try_advisory_lock_int4_my(oid, DatumGetUInt64(id))) return true;
     sigterm = true;
     W("lock id = %lu, oid = %d", DatumGetUInt64(id), oid);
-    return lock;
+    return false;
 }
 
 static void task_work(void) {
