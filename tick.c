@@ -45,7 +45,7 @@ static void tick_table(void) {
     name_q = quote_identifier(name.data);
     initStringInfo(&buf);
     appendStringInfo(&buf,
-        "CREATE TABLE IF NOT EXISTS %s%s%s (\n"
+        "CREATE TABLE IF NOT EXISTS %1$s%2$s%3$s (\n"
         "    id bigserial NOT NULL PRIMARY KEY,\n"
         "    parent int8 DEFAULT current_setting('pg_task.id', true)::int8,\n"
         "    dt timestamp NOT NULL DEFAULT current_timestamp,\n"
@@ -63,8 +63,8 @@ static void tick_table(void) {
         "    drift boolean NOT NULL DEFAULT true,\n"
         "    count int4,\n"
         "    live interval,\n"
-        "    CONSTRAINT %s FOREIGN KEY (parent) REFERENCES %s%s%s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
-        ")", schema_quote, point, table_quote, name_q, schema_quote, point, table_quote);
+        "    CONSTRAINT %4$s FOREIGN KEY (parent) REFERENCES %1$s%2$s%3$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
+        ")", schema_quote, point, table_quote, name_q);
     SPI_begin_my(buf.data);
     SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_commit_my(buf.data);
@@ -116,13 +116,13 @@ static void tick_fix(void) {
     L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
     initStringInfo(&buf);
     appendStringInfo(&buf,
-        "WITH s AS (SELECT id FROM %s%s%s AS t WHERE state IN ('TAKE'::state, 'WORK'::state) AND pid NOT IN (\n"
+        "WITH s AS (SELECT id FROM %1$s%2$s%3$s AS t WHERE state IN ('TAKE'::state, 'WORK'::state) AND pid NOT IN (\n"
         "    SELECT  pid\n"
         "    FROM    pg_stat_activity\n"
         "    WHERE   datname = current_catalog\n"
         "    AND     usename = current_user\n"
         "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), queue, id)\n"
-        ") FOR UPDATE SKIP LOCKED) UPDATE %s%s%s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", schema_quote, point, table_quote, schema_quote, point, table_quote);
+        ") FOR UPDATE SKIP LOCKED) UPDATE %1$s%2$s%3$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", schema_quote, point, table_quote);
     SPI_begin_my(buf.data);
     SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UPDATE);
     SPI_commit_my(buf.data);
@@ -176,7 +176,7 @@ void tick_loop(void) {
         appendStringInfo(&buf,
             "WITH s AS (WITH s AS (WITH s AS (WITH s AS (WITH s AS (\n"
             "SELECT      id, queue, COALESCE(max, ~(1<<31)) AS max, a.pid\n"
-            "FROM        %s%s%s AS t\n"
+            "FROM        %1$s%2$s%3$s AS t\n"
             "LEFT JOIN   pg_stat_activity AS a\n"
             "ON          datname = current_catalog\n"
             "AND         usename = current_user\n"
@@ -186,8 +186,8 @@ void tick_loop(void) {
             ") SELECT id, queue, max - count(pid) AS count FROM s GROUP BY id, queue, max\n"
             ") SELECT array_agg(id ORDER BY id) AS id, queue, count FROM s WHERE count > 0 GROUP BY queue, count\n"
             ") SELECT unnest(id[:count]) AS id, queue, count FROM s ORDER BY count DESC\n"
-            ") SELECT s.* FROM s INNER JOIN %s%s%s USING (id) FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %s%s%s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", schema_quote, point, table_quote, schema_quote, point, table_quote, schema_quote, point, table_quote);
+            ") SELECT s.* FROM s INNER JOIN %1$s%2$s%3$s USING (id) FOR UPDATE SKIP LOCKED\n"
+            ") UPDATE %1$s%2$s%3$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", schema_quote, point, table_quote);
         command = buf.data;
     }
     SPI_begin_my(command);
