@@ -40,11 +40,11 @@ static void tick_type(void) {
 
 static void tick_table(void) {
     StringInfoData buf, name;
-    const char *name_q;
+    const char *name_quote;
     L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
     initStringInfo(&name);
     appendStringInfo(&name, "%s_parent_fkey", table);
-    name_q = quote_identifier(name.data);
+    name_quote = quote_identifier(name.data);
     initStringInfo(&buf);
     appendStringInfo(&buf,
         "CREATE TABLE IF NOT EXISTS %1$s (\n"
@@ -66,32 +66,32 @@ static void tick_table(void) {
         "    count int4,\n"
         "    live interval,\n"
         "    CONSTRAINT %2$s FOREIGN KEY (parent) REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
-        ")", schema_quote_point_table_quote, name_q);
+        ")", schema_quote_point_table_quote, name_quote);
     SPI_begin_my(buf.data);
     SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_commit_my(buf.data);
-    if (name_q != name.data) pfree((void *)name_q);
+    if (name_quote != name.data) pfree((void *)name_quote);
     pfree(name.data);
     pfree(buf.data);
 }
 
 static void tick_index(const char *index) {
     StringInfoData buf, name;
-    const char *name_q;
-    const char *index_q = quote_identifier(index);
+    const char *name_quote;
+    const char *index_quote = quote_identifier(index);
     L("data = %s, user = %s, schema = %s, table = %s, index = %s", data, user, schema ? schema : "(null)", table, index);
     initStringInfo(&name);
     appendStringInfo(&name, "%s_%s_idx", table, index);
-    name_q = quote_identifier(name.data);
+    name_quote = quote_identifier(name.data);
     initStringInfo(&buf);
-    appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON %s USING btree (%s)", name_q, schema_quote_point_table_quote, index_q);
+    appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON %s USING btree (%s)", name_quote, schema_quote_point_table_quote, index_quote);
     SPI_begin_my(buf.data);
     SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_commit_my(buf.data);
     pfree(buf.data);
     pfree(name.data);
-    if (name_q != name.data) pfree((void *)name_q);
-    if (index_q != index) pfree((void *)index_q);
+    if (name_quote != name.data) pfree((void *)name_quote);
+    if (index_quote != index) pfree((void *)index_quote);
 }
 
 static void tick_lock(void) {
