@@ -236,7 +236,6 @@ static void tick_check(void) {
 void tick_init(const bool conf, const char *_data, const char *_user, const char *_schema, const char *_table, int _period) {
     StringInfoData buf;
     data = _data; user = _user; schema = _schema; table = _table; period = _period;
-    L("data = %s, user = %s, schema = %s, table = %s, period = %d", data, user, schema ? schema : "(null)", table, period);
     if (!conf) {
         if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
         if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
@@ -273,6 +272,7 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
         pgstat_report_appname(buf.data);
         pfree(buf.data);
     }
+    L("data = %s, user = %s, schema = %s, table = %s, period = %d", data, user, schema ? schema : "(null)", table, period);
     initStringInfo(&buf);
     appendStringInfo(&buf, "%d", period);
     set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
