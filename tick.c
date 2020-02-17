@@ -28,16 +28,21 @@ static void tick_schema(void) {
 }
 
 static void tick_type(void) {
-    static const char *command =
-        "DO $$ BEGIN\n"
-        "    PERFORM concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), 'state')::regtype;\n"
-        "    EXCEPTION WHEN undefined_object THEN CREATE TYPE STATE AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');\n"
-        "END; $$";
+    StringInfoData buf, name;
+    Oid type = InvalidOid;
+    int32 typmod;
     L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
-    SPI_begin_my(command);
-//    parseTypeString(typ_name_or_oid, &result, &typmod, false);
-    SPI_execute_with_args_my(command, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_commit_my(command);
+    initStringInfo(&name);
+    if (schema) appendStringInfo(&name, "%s.", schema_quote);
+    appendStringInfoString(&name, "state");
+    initStringInfo(&buf);
+    appendStringInfo(&buf, "CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')", name.data);
+    SPI_begin_my(buf.data);
+    parseTypeString(name.data, &type, &typmod, true);
+    if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_commit_my(buf.data);
+    pfree(name.data);
+    pfree(buf.data);
 }
 
 static void tick_table(void) {
