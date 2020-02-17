@@ -96,6 +96,7 @@ static void tick_table(void) {
 
 static void tick_index(const char *index) {
     StringInfoData buf, name;
+    List *names;
     const char *name_quote;
     const char *index_quote = quote_identifier(index);
     L("data = %s, user = %s, schema = %s, table = %s, index = %s", data, user, schema ? schema : "(null)", table, index);
@@ -104,9 +105,11 @@ static void tick_index(const char *index) {
     name_quote = quote_identifier(name.data);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE INDEX %s ON %s USING btree (%s)", name_quote, schema_quote_point_table_quote, index_quote);
+    names = stringToQualifiedNameList(name_quote);
     SPI_begin_my(buf.data);
-    if (!OidIsValid(RangeVarGetRelid(makeRangeVarFromNameList(stringToQualifiedNameList(name_quote)), NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    if (!OidIsValid(RangeVarGetRelid(makeRangeVarFromNameList(names), NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_commit_my(buf.data);
+    list_free_deep(names);
     pfree(buf.data);
     pfree(name.data);
     if (name_quote != name.data) pfree((void *)name_quote);
