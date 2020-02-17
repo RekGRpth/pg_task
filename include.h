@@ -1,6 +1,5 @@
 #include <postgres.h>
 
-
 #include <access/printtup.h>
 #include <access/xact.h>
 #include <catalog/heap.h>
@@ -15,6 +14,7 @@
 #include <libpq/libpq-be.h>
 #include <miscadmin.h>
 #include <nodes/makefuncs.h>
+#include <nodes/nodes.h>
 #include <parser/analyze.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
@@ -34,6 +34,7 @@
 #include <utils/syscache.h>
 #include <utils/timeout.h>
 #include <utils/varlena.h>
+
 bool pg_advisory_unlock_int4_my(int32 key1, int32 key2);
 bool pg_advisory_unlock_int8_my(int64 key);
 bool pg_try_advisory_lock_int4_my(int32 key1, int32 key2);

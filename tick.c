@@ -23,7 +23,7 @@ static void tick_schema(void) {
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", schema_quote);
     SPI_begin_my(buf.data);
-    SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    if (!OidIsValid(get_namespace_oid(strVal(linitial(stringToQualifiedNameList(schema_quote))), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_commit_my(buf.data);
     pfree(buf.data);
 }
