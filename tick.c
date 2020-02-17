@@ -40,16 +40,11 @@ static void tick_type(void) {
     SPI_commit_my(command);
 }
 
-static void tick_unlock(void) {
-    bool lock = pg_advisory_unlock_int8_my(oid);
-    L("data = %s, user = %s, schema = %s, table = %s, lock = %s", data, user, schema ? schema : "(null)", table, lock ? "true" : "false");
-}
-
 static void tick_table(void) {
     StringInfoData buf, name;
     const char *name_quote;
     L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
-    if (oid) tick_unlock();
+    if (oid) pg_advisory_unlock_int8_my(oid);
     set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     initStringInfo(&name);
     appendStringInfo(&name, "%s_parent_fkey", table);

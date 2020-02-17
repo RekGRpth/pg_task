@@ -40,11 +40,6 @@ static void update_ps_display(void) {
     pfree(buf.data);
 }
 
-static void task_unlock(void) {
-    bool lock = pg_advisory_unlock_int4_my(oid, DatumGetUInt64(id));
-    L("data = %s, user = %s, schema = %s, table = %s, lock = %s", data, user, schema ? schema : "(null)", table, lock ? "true" : "false");
-}
-
 static bool task_lock(void) {
     bool lock;
     if ((lock = pg_try_advisory_lock_int4_my(oid, DatumGetUInt64(id)))) return lock;
@@ -165,7 +160,7 @@ static void task_live(void) {
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    task_unlock();
+    pg_advisory_unlock_int4_my(oid, DatumGetUInt64(id));
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
