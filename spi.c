@@ -28,9 +28,9 @@ void SPI_rollback_my(const char *command) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     EmitErrorReport();
     AbortCurrentTransaction();
+    FlushErrorState();
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
-    FlushErrorState();
 }
 
 static const char *SPI_fname_my(TupleDesc tupdesc, int fnumber) {
