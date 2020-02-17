@@ -118,7 +118,6 @@ static void conf_unlock(void) {
 }
 
 static void conf_check(void) {
-    int rc;
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS (\n"
@@ -139,10 +138,11 @@ static void conf_check(void) {
     events &= ~WL_TIMEOUT;
     SPI_begin_my(command);
     if (!plan) {
+        int rc;
         if (!(plan = SPI_prepare(command, 0, NULL))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
         if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     }
-    if ((rc = SPI_execute_plan(plan, NULL, NULL, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool period_isnull, datname_isnull, usename_isnull;
         const char *data = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
