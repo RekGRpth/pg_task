@@ -7,7 +7,7 @@ void SPI_begin_my(const char *command) {
     int rc;
     SetCurrentStatementStartTimestamp();
     StartTransactionCommand();
-    if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_connect = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_connect()) != SPI_OK_CONNECT) E("SPI_connect = %s", SPI_result_code_string(rc));
     PushActiveSnapshot(GetTransactionSnapshot());
     if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else disable_timeout(STATEMENT_TIMEOUT, false);
     pgstat_report_activity(STATE_RUNNING, command);
@@ -16,7 +16,7 @@ void SPI_begin_my(const char *command) {
 void SPI_commit_my(const char *command) {
     int rc;
     disable_timeout(STATEMENT_TIMEOUT, false);
-    if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(ERROR, (errmsg("%s(%s:%d): SPI_finish = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_finish()) != SPI_OK_FINISH) E("SPI_finish = %s", SPI_result_code_string(rc));
     PopActiveSnapshot();
     CommitTransactionCommand();
     ProcessCompletedNotifies();
@@ -27,19 +27,19 @@ void SPI_commit_my(const char *command) {
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     int rc;
     SPIPlanPtr plan;
-    if (!(plan = SPI_prepare(src, nargs, argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
-    if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if (!(plan = SPI_prepare(src, nargs, argtypes))) E("SPI_prepare = %s", SPI_result_code_string(SPI_result));
+    if ((rc = SPI_keepplan(plan))) E("SPI_keepplan = %s", SPI_result_code_string(rc));
     return plan;
 }
 
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res) {
     int rc;
-    if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != res) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != res) E("SPI_execute_plan = %s", SPI_result_code_string(rc));
 }
 
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res){
     int rc;
-    if ((rc = SPI_execute_with_args(src, nargs, argtypes, values, nulls, false, 0)) != res) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_with_args = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    if ((rc = SPI_execute_with_args(src, nargs, argtypes, values, nulls, false, 0)) != res) E("SPI_execute_with_args = %s", SPI_result_code_string(rc));
 }
 
 void SPI_rollback_my(const char *command) {
@@ -52,7 +52,7 @@ void SPI_rollback_my(const char *command) {
 }
 
 static const char *SPI_fname_my(TupleDesc tupdesc, int fnumber) {
-    if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) ereport(ERROR, (errmsg("%s(%s:%d): SPI_ERROR_NOATTRIBUTE", __func__, __FILE__, __LINE__)));
+    if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) E("SPI_ERROR_NOATTRIBUTE");
     return NameStr((fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1) : SystemAttributeDefinition(fnumber))->attname);
 }
 
@@ -61,7 +61,7 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
     bool isnull;
     Oid foutoid;
     bool typisvarlena;
-    if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) ereport(ERROR, (errmsg("%s(%s:%d): SPI_ERROR_NOATTRIBUTE", __func__, __FILE__, __LINE__)));
+    if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) E("SPI_ERROR_NOATTRIBUTE");
     val = slot_getattr(slot, fnumber, &isnull);
     if (isnull) return NULL;
     getTypeOutputInfo(fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1)->atttypid : (SystemAttributeDefinition(fnumber))->atttypid, &foutoid, &typisvarlena);
@@ -71,9 +71,9 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
 static const char *SPI_gettype_my(TupleDesc tupdesc, int fnumber) {
     HeapTuple typeTuple;
     const char *result;
-    if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) ereport(ERROR, (errmsg("%s(%s:%d): SPI_ERROR_NOATTRIBUTE", __func__, __FILE__, __LINE__)));
+    if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) E("SPI_ERROR_NOATTRIBUTE");
     typeTuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1)->atttypid : (SystemAttributeDefinition(fnumber))->atttypid));
-    if (!HeapTupleIsValid(typeTuple)) ereport(ERROR, (errmsg("%s(%s:%d): SPI_ERROR_TYPUNKNOWN", __func__, __FILE__, __LINE__)));
+    if (!HeapTupleIsValid(typeTuple)) E("SPI_ERROR_TYPUNKNOWN");
     result = NameStr(((Form_pg_type)GETSTRUCT(typeTuple))->typname);
     ReleaseSysCache(typeTuple);
     return result;

@@ -67,15 +67,15 @@ static void task_work(void) {
     SPI_begin_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
-    if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
+    if (SPI_processed != 1) E("SPI_processed != 1"); else {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         bool timeout_isnull, lock_isnull;
         bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "lock"), &lock_isnull));
-        if (lock_isnull) ereport(ERROR, (errmsg("%s(%s:%d): lock_isnull", __func__, __FILE__, __LINE__)));
-        if (!lock) ereport(ERROR, (errmsg("%s(%s:%d): !lock", __func__, __FILE__, __LINE__)));
+        if (lock_isnull) E("lock_isnull");
+        if (!lock) E("!lock");
         request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
         timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
-        if (timeout_isnull) ereport(ERROR, (errmsg("%s(%s:%d): timeout_isnull", __func__, __FILE__, __LINE__)));
+        if (timeout_isnull) E("timeout_isnull");
         MemoryContextSwitchTo(oldMemoryContext);
     }
     SPI_commit_my(command);
@@ -179,7 +179,7 @@ static void task_live(void) {
     if (!SPI_processed) sigterm = true; else {
         bool id_isnull;
         id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
-        if (id_isnull) ereport(ERROR, (errmsg("%s(%s:%d): id_isnull", __func__, __FILE__, __LINE__)));
+        if (id_isnull) E("id_isnull");
     }
     SPI_commit_my(command);
 }
@@ -200,7 +200,7 @@ static void task_done(void) {
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     pfree(request);
-    ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): id = %lu, response = %s, state = %s", __func__, __FILE__, __LINE__, DatumGetUInt64(id), !response_isnull ? response.data : "(null)", state)));
+    L("id = %lu, response = %s, state = %s", DatumGetUInt64(id), !response_isnull ? response.data : "(null)", state);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -218,14 +218,14 @@ static void task_done(void) {
     SPI_begin_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING);
-    if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
+    if (SPI_processed != 1) E("SPI_processed != 1"); else {
         bool delete_isnull, repeat_isnull, live_isnull;
         delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &delete_isnull));
         repeat = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &repeat_isnull));
         live = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "live"), &live_isnull));
-        if (delete_isnull) ereport(ERROR, (errmsg("%s(%s:%d): delete_isnull", __func__, __FILE__, __LINE__)));
-        if (repeat_isnull) ereport(ERROR, (errmsg("%s(%s:%d): repeat_isnull", __func__, __FILE__, __LINE__)));
-        if (live_isnull) ereport(ERROR, (errmsg("%s(%s:%d): live_isnull", __func__, __FILE__, __LINE__)));
+        if (delete_isnull) E("delete_isnull");
+        if (repeat_isnull) E("repeat_isnull");
+        if (live_isnull) E("live_isnull");
     }
     SPI_commit_my(command);
     if (!response_isnull) pfree((void *)values[RESPONSE - 1]);
@@ -288,7 +288,7 @@ static void task_error(void) {
 
 static void task_loop(void) {
     task_work();
-    ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): id = %lu, timeout = %d, request = %s, count = %u", __func__, __FILE__, __LINE__, DatumGetUInt64(id), timeout, request, count)));
+    L("id = %lu, timeout = %d, request = %s, count = %u", DatumGetUInt64(id), timeout, request, count);
     PG_TRY();
         task_success();
     PG_CATCH();
@@ -306,7 +306,7 @@ static void task_sigterm(SIGNAL_ARGS) {
 
 static void task_init(void) {
     StringInfoData buf;
-    if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) ereport(ERROR, (errmsg("%s(%s:%d): !calloc", __func__, __FILE__, __LINE__)));
+    if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     id = MyBgworkerEntry->bgw_main_arg;
     start = GetCurrentTimestamp();
@@ -323,7 +323,7 @@ static void task_init(void) {
     initStringInfo(&buf);
     appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
     SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
-    ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max)));
+    L("data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u", data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
     data_quote = quote_identifier(data);
     user_quote = quote_identifier(user);
     schema_quote = schema ? quote_identifier(schema) : "";
