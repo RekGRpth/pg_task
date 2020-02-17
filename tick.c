@@ -92,9 +92,9 @@ static void tick_index(const char *index) {
     appendStringInfo(&name, "%s_%s_idx", table, index);
     name_quote = quote_identifier(name.data);
     initStringInfo(&buf);
-    appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON %s USING btree (%s)", name_quote, schema_quote_point_table_quote, index_quote);
+    appendStringInfo(&buf, "CREATE INDEX %s ON %s USING btree (%s)", name_quote, schema_quote_point_table_quote, index_quote);
     SPI_begin_my(buf.data);
-    SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    if (!OidIsValid(RangeVarGetRelid(makeRangeVarFromNameList(stringToQualifiedNameList(name_quote)), NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_commit_my(buf.data);
     pfree(buf.data);
     pfree(name.data);
