@@ -51,6 +51,7 @@ static void tick_type(void) {
 static void tick_table(void) {
     StringInfoData buf, name;
     List *names;
+    const RangeVar *relation;
     const char *name_quote;
     L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
     if (oid) pg_advisory_unlock_int8_my(oid);
@@ -81,10 +82,12 @@ static void tick_table(void) {
         "    CONSTRAINT %2$s FOREIGN KEY (parent) REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
         ")", schema_quote_point_table_quote, name_quote);
     names = stringToQualifiedNameList(schema_quote_point_table_quote);
+    relation = makeRangeVarFromNameList(names);
     SPI_begin_my(buf.data);
-    if (!OidIsValid(RangeVarGetRelid(makeRangeVarFromNameList(names), NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    oid = RangeVarGetRelid(makeRangeVarFromNameList(names), NoLock, false);
+    if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    oid = RangeVarGetRelid(relation, NoLock, false);
     SPI_commit_my(buf.data);
+    pfree((void *)relation);
     list_free_deep(names);
     if (name_quote != name.data) pfree((void *)name_quote);
     pfree(name.data);
@@ -97,6 +100,7 @@ static void tick_table(void) {
 static void tick_index(const char *index) {
     StringInfoData buf, name;
     List *names;
+    const RangeVar *relation;
     const char *name_quote;
     const char *index_quote = quote_identifier(index);
     L("data = %s, user = %s, schema = %s, table = %s, index = %s", data, user, schema ? schema : "(null)", table, index);
@@ -106,9 +110,11 @@ static void tick_index(const char *index) {
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE INDEX %s ON %s USING btree (%s)", name_quote, schema_quote_point_table_quote, index_quote);
     names = stringToQualifiedNameList(name_quote);
+    relation = makeRangeVarFromNameList(names);
     SPI_begin_my(buf.data);
-    if (!OidIsValid(RangeVarGetRelid(makeRangeVarFromNameList(names), NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_commit_my(buf.data);
+    pfree((void *)relation);
     list_free_deep(names);
     pfree(buf.data);
     pfree(name.data);
