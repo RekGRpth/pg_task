@@ -1,8 +1,10 @@
 #include <postgres.h>
 
+
 #include <access/printtup.h>
 #include <access/xact.h>
 #include <catalog/heap.h>
+#include <catalog/namespace.h>
 #include <catalog/pg_type.h>
 #include <commands/async.h>
 #include <commands/dbcommands.h>
@@ -27,11 +29,11 @@
 #include <utils/lsyscache.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
+#include <utils/regproc.h>
 #include <utils/snapmgr.h>
 #include <utils/syscache.h>
 #include <utils/timeout.h>
 #include <utils/varlena.h>
-
 bool pg_advisory_unlock_int4_my(int32 key1, int32 key2);
 bool pg_advisory_unlock_int8_my(int64 key);
 bool pg_try_advisory_lock_int4_my(int32 key1, int32 key2);
