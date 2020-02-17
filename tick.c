@@ -191,11 +191,7 @@ void tick_loop(void) {
         command = buf.data;
     }
     SPI_begin_my(command);
-    if (!plan) {
-        int rc;
-        if (!(plan = SPI_prepare(command, 0, NULL))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
-        if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    }
+    if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING);
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool id_isnull, max_isnull;
@@ -239,11 +235,7 @@ static void tick_check(void) {
         ") SELECT * FROM s WHERE data = current_catalog AND \"user\" = current_user AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND period = current_setting('pg_task.period', false)::int4";
     ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): data = %s, user = %s, schema = %s, table = %s, period = %d", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table, period)));
     SPI_begin_my(command);
-    if (!plan) {
-        int rc;
-        if (!(plan = SPI_prepare(command, 0, NULL))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
-        if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    }
+    if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     if (!SPI_processed) sigterm = true;
     SPI_commit_my(command);

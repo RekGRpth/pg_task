@@ -24,6 +24,14 @@ void SPI_commit_my(const char *command) {
     pgstat_report_activity(STATE_IDLE, NULL);
 }
 
+SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
+    int rc;
+    SPIPlanPtr plan;
+    if (!(plan = SPI_prepare(src, nargs, argtypes))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
+    if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    return plan;
+}
+
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res) {
     int rc;
     if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != res) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));

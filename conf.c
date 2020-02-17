@@ -137,11 +137,7 @@ static void conf_check(void) {
         "WHERE       a.pid IS NULL";
     events &= ~WL_TIMEOUT;
     SPI_begin_my(command);
-    if (!plan) {
-        int rc;
-        if (!(plan = SPI_prepare(command, 0, NULL))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_prepare = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(SPI_result))));
-        if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errmsg("%s(%s:%d): SPI_keepplan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-    }
+    if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool period_isnull, datname_isnull, usename_isnull;

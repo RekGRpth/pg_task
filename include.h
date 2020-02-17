@@ -33,6 +33,7 @@
 #include <utils/varlena.h>
 
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
+SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void exec_simple_query(const char *query_string);
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
 void SPI_begin_my(const char *command);
