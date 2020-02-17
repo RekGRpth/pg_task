@@ -100,7 +100,7 @@ static void tick_lock(void) {
     int rc;
     static const char *command =
         "SELECT pg_try_advisory_lock(concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::int8) AS lock,\n"
-        "       set_config('pg_task.lock', concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::text, false)";
+        "       set_config('pg_task.oid', concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::text, false)";
     ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table)));
     SPI_begin_my(command);
     if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));

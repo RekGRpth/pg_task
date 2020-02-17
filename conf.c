@@ -113,7 +113,7 @@ static void tick_worker(const char *data, const char *user, const char *schema, 
 
 static void conf_unlock(void) {
     int rc;
-    static const char *command = "SELECT pg_advisory_unlock(current_setting('pg_task.lock', true)::int8) AS unlock";
+    static const char *command = "SELECT pg_advisory_unlock(current_setting('pg_task.oid', true)::int8) AS unlock";
     SPI_begin_my(command);
     if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
     SPI_commit_my(command);
