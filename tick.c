@@ -21,7 +21,7 @@ static void tick_schema(void) {
     L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
     set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     initStringInfo(&buf);
-    appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", schema_quote);
+    appendStringInfo(&buf, "CREATE SCHEMA %s", schema_quote);
     SPI_begin_my(buf.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(stringToQualifiedNameList(schema_quote))), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_commit_my(buf.data);
