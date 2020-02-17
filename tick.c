@@ -102,13 +102,6 @@ static void tick_index(const char *index) {
     if (index_quote != index) pfree((void *)index_quote);
 }
 
-static bool tick_lock(void) {
-    if (pg_try_advisory_lock_int8_my(oid)) return true;
-    sigterm = true;
-    W("lock oid = %d", oid);
-    return false;
-}
-
 static void tick_fix(void) {
     StringInfoData buf;
     L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
@@ -289,7 +282,7 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
     tick_table();
     tick_index("dt");
     tick_index("state");
-    if (!tick_lock()) return;
+    if (!pg_try_advisory_lock_int8_my(oid)) { sigterm = true; W("lock oid = %d", oid); return; }
     tick_fix();
 }
 

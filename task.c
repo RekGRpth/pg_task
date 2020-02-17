@@ -40,13 +40,6 @@ static void update_ps_display(void) {
     pfree(buf.data);
 }
 
-static bool task_lock(void) {
-    if (pg_try_advisory_lock_int4_my(oid, DatumGetUInt64(id))) return true;
-    sigterm = true;
-    W("lock id = %lu, oid = %d", DatumGetUInt64(id), oid);
-    return false;
-}
-
 static void task_work(void) {
     #define ID 1
     #define SID S(ID)
@@ -77,10 +70,7 @@ static void task_work(void) {
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-        bool timeout_isnull, lock_isnull;
-        bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "lock"), &lock_isnull));
-        if (lock_isnull) E("lock_isnull");
-        if (!lock) E("!lock");
+        bool timeout_isnull;
         request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
         timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
         if (timeout_isnull) E("timeout_isnull");
@@ -295,7 +285,7 @@ static void task_error(void) {
 }
 
 static void task_loop(void) {
-    if (!task_lock()) return;
+    if (!pg_try_advisory_lock_int4_my(oid, DatumGetUInt64(id))) E("lock id = %lu, oid = %d", DatumGetUInt64(id), oid);
     task_work();
     L("id = %lu, timeout = %d, request = %s, count = %u", DatumGetUInt64(id), timeout, request, count);
     PG_TRY();
