@@ -23,6 +23,7 @@ static Datum queue_datum;
 static Datum state_datum;
 static int count;
 static int max;
+static Oid oid = 0;
 static TimestampTz start;
 static volatile sig_atomic_t sigterm = false;
 StringInfoData response;
@@ -37,6 +38,15 @@ static void update_ps_display(void) {
     SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
     pgstat_report_appname(buf.data);
     pfree(buf.data);
+}
+
+static bool task_lock(void) {
+    bool lock = pg_advisory_unlock_int4_my(oid, DatumGetUInt64(id));
+    L("data = %s, user = %s, schema = %s, table = %s, lock = %s", data, user, schema ? schema : "(null)", table, lock ? "true" : "false");
+    if ((lock = pg_try_advisory_lock_int4_my(oid, DatumGetUInt64(id)))) return lock;
+    sigterm = true;
+    W("lock id = %lu, oid = %d", DatumGetUInt64(id), oid);
+    return lock;
 }
 
 static void task_work(void) {
@@ -289,6 +299,7 @@ static void task_error(void) {
 }
 
 static void task_loop(void) {
+    if (!task_lock()) return;
     task_work();
     L("id = %lu, timeout = %d, request = %s, count = %u", DatumGetUInt64(id), timeout, request, count);
     PG_TRY();
@@ -321,11 +332,12 @@ static void task_init(void) {
     table = schema + strlen(schema) + 1;
     queue = table + strlen(table) + 1;
     max = *(typeof(max) *)(queue + strlen(queue) + 1);
+    oid = *(typeof(oid) *)(queue + strlen(queue) + 1 + sizeof(max));
     if (table == schema + 1) schema = NULL;
     initStringInfo(&buf);
     appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
     SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
-    L("data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u", data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
+    L("data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     data_quote = quote_identifier(data);
     user_quote = quote_identifier(user);
     schema_quote = schema ? quote_identifier(schema) : NULL;
@@ -351,6 +363,9 @@ static void task_init(void) {
     initStringInfo(&buf);
     appendStringInfo(&buf, "%lu", DatumGetUInt64(id));
     set_config_option("pg_task.id", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    resetStringInfo(&buf);
+    appendStringInfo(&buf, "%d", oid);
+    set_config_option("pg_task.oid", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     pfree(buf.data);
     MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     done = CStringGetTextDatum("DONE");

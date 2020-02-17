@@ -101,10 +101,13 @@ static void tick_index(const char *index) {
     if (index_quote != index) pfree((void *)index_quote);
 }
 
-static void tick_lock(void) {
-    bool locked = pg_advisory_unlock_int8_my(oid);
-    L("data = %s, user = %s, schema = %s, table = %s, locked = %s", data, user, schema ? schema : "(null)", table, locked ? "true" : "false");
-    if (!pg_try_advisory_lock_int8_my(oid)) { sigterm = true; W("Already running data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table); }
+static bool tick_lock(void) {
+    bool lock = pg_advisory_unlock_int8_my(oid);
+    L("data = %s, user = %s, schema = %s, table = %s, lock = %s", data, user, schema ? schema : "(null)", table, lock ? "true" : "false");
+    if ((lock = pg_try_advisory_lock_int8_my(oid))) return lock;
+    sigterm = true;
+    W("lock oid = %d", oid);
+    return lock;
 }
 
 static void tick_fix(void) {
@@ -127,9 +130,9 @@ static void tick_fix(void) {
 
 static void task_worker(const Datum id, const char *queue, const int max) {
     StringInfoData buf;
-    int data_len = strlen(data), user_len = strlen(user), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), queue_len = strlen(queue), max_len = sizeof(max);
+    int data_len = strlen(data), user_len = strlen(user), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), queue_len = strlen(queue), max_len = sizeof(max), oid_len = sizeof(oid);
     BackgroundWorker worker;
-    L("data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u", data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max);
+    L("data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = id;
@@ -153,13 +156,14 @@ static void task_worker(const Datum id, const char *queue, const int max) {
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
-    if (data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + max_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + max_len);
+    if (data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + max_len + oid_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + max_len + oid_len);
     memcpy(worker.bgw_extra, data, data_len);
     memcpy(worker.bgw_extra + data_len + 1, user, user_len);
     memcpy(worker.bgw_extra + data_len + 1 + user_len + 1, schema, schema_len);
     memcpy(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1, table, table_len);
     memcpy(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1, queue, queue_len);
     *(typeof(max + 0) *)(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1) = max;
+    *(typeof(oid) *)(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + max_len) = oid;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
@@ -286,7 +290,7 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
     tick_table();
     tick_index("dt");
     tick_index("state");
-    tick_lock();
+    if (!tick_lock()) return;
     tick_fix();
 }
 
