@@ -12,7 +12,7 @@ static const char *table_quote = NULL;
 static const char *user;
 static const char *user_quote = NULL;
 static int period;
-static Oid oid;
+static Oid oid = 0;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
@@ -40,10 +40,16 @@ static void tick_type(void) {
     SPI_commit_my(command);
 }
 
+static void tick_unlock(void) {
+    bool lock = pg_advisory_unlock_int8_my(oid);
+    L("data = %s, user = %s, schema = %s, table = %s, lock = %s", data, user, schema ? schema : "(null)", table, lock ? "true" : "false");
+}
+
 static void tick_table(void) {
     StringInfoData buf, name;
     const char *name_quote;
     L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
+    if (oid) tick_unlock();
     set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     initStringInfo(&name);
     appendStringInfo(&name, "%s_parent_fkey", table);
@@ -102,8 +108,7 @@ static void tick_index(const char *index) {
 }
 
 static bool tick_lock(void) {
-    bool lock = pg_advisory_unlock_int8_my(oid);
-    L("data = %s, user = %s, schema = %s, table = %s, lock = %s", data, user, schema ? schema : "(null)", table, lock ? "true" : "false");
+    bool lock;
     if ((lock = pg_try_advisory_lock_int8_my(oid))) return lock;
     sigterm = true;
     W("lock oid = %d", oid);
