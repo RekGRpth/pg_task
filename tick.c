@@ -51,7 +51,7 @@ static void tick_table(void) {
     name_quote = quote_identifier(name.data);
     initStringInfo(&buf);
     appendStringInfo(&buf,
-        "CREATE TABLE IF NOT EXISTS %1$s (\n"
+        "CREATE TABLE %1$s (\n"
         "    id bigserial NOT NULL PRIMARY KEY,\n"
         "    parent int8 DEFAULT current_setting('pg_task.id', true)::int8,\n"
         "    dt timestamp NOT NULL DEFAULT current_timestamp,\n"
@@ -72,7 +72,7 @@ static void tick_table(void) {
         "    CONSTRAINT %2$s FOREIGN KEY (parent) REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
         ")", schema_quote_point_table_quote, name_quote);
     SPI_begin_my(buf.data);
-    SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    if (!OidIsValid(RangeVarGetRelid(makeRangeVarFromNameList(stringToQualifiedNameList(schema_quote_point_table_quote)), NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     oid = RangeVarGetRelid(makeRangeVarFromNameList(stringToQualifiedNameList(schema_quote_point_table_quote)), NoLock, false);
     SPI_commit_my(buf.data);
     if (name_quote != name.data) pfree((void *)name_quote);
