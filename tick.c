@@ -290,14 +290,17 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
     initStringInfo(&buf);
     appendStringInfo(&buf, "%d", period);
     set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
-    pfree(buf.data);
     if (schema) tick_schema();
     tick_type();
     tick_table();
+    resetStringInfo(&buf);
+    appendStringInfo(&buf, "%d", oid);
+    set_config_option("pg_task.oid", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     tick_index("dt");
     tick_index("state");
     tick_lock();
     tick_fix();
+    pfree(buf.data);
 }
 
 static void tick_reset(void) {
