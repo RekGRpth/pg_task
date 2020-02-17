@@ -59,7 +59,8 @@ static void task_work(void) {
             "        start = current_timestamp,\n"
             "        pid = pg_backend_pid()\n"
             "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout,\n"
-            "pg_try_advisory_lock(concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::int4, $" SID "::int4) AS lock", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            "pg_try_advisory_lock(concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::int4, $" SID "::int4) AS lock,\n"
+            "set_config('pg_task.oid', concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::text, false)", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
     #undef ID
@@ -224,7 +225,7 @@ static void task_done(void) {
             "WITH s AS (SELECT id FROM %s%s%s WHERE id = $" SID " FOR UPDATE\n)\n"
             "UPDATE %s%s%s AS u SET state = $" SSTATE "::state, stop = current_timestamp, response = $" SRESPONSE " FROM s WHERE u.id = s.id\n"
             "RETURNING delete, queue, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live,\n"
-            "pg_advisory_unlock(concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::int4, $" SID "::int4)", schema_quote, point, table_quote, schema_quote, point, table_quote);
+            "pg_advisory_unlock(current_setting('pg_task.oid', true)::int4, $" SID "::int4)", schema_quote, point, table_quote, schema_quote, point, table_quote);
         command = buf.data;
     }
     #undef ID
