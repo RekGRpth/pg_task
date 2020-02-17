@@ -251,14 +251,14 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
         if (!MyProcPort->database_name) MyProcPort->database_name = (char *)data;
         if (!MyProcPort->user_name) MyProcPort->user_name = (char *)user;
     }
-    if (data_quote && data_quote != data) { pfree((void *)data_quote); data_quote = NULL; }
+    if (data_quote && data_quote != data) pfree((void *)data_quote);
     data_quote = quote_identifier(data);
-    if (user_quote && user_quote != user) { pfree((void *)user_quote); user_quote = NULL; }
+    if (user_quote && user_quote != user) pfree((void *)user_quote);
     user_quote = quote_identifier(user);
-    if (schema_quote && schema_quote != schema) { pfree((void *)schema_quote); schema_quote = NULL; }
+    if (schema_quote && schema_quote != schema) pfree((void *)schema_quote);
     schema_quote = schema ? quote_identifier(schema) : NULL;
     point = schema ? "." : "";
-    if (table_quote && table_quote != table) { pfree((void *)table_quote); table_quote = NULL; }
+    if (table_quote && table_quote != table) pfree((void *)table_quote);
     table_quote = quote_identifier(table);
     initStringInfo(&buf);
     if (!conf) {
