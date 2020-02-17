@@ -12,6 +12,7 @@ static const char *table_quote = NULL;
 static const char *user;
 static const char *user_quote = NULL;
 static int period;
+static Oid oid;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
@@ -69,6 +70,7 @@ static void tick_table(void) {
         ")", schema_quote_point_table_quote, name_quote);
     SPI_begin_my(buf.data);
     SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    oid = DatumGetObjectId(DirectFunctionCall1(regclassin, CStringGetDatum(schema_quote_point_table_quote)));
     SPI_commit_my(buf.data);
     if (name_quote != name.data) pfree((void *)name_quote);
     pfree(name.data);
