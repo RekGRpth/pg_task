@@ -19,6 +19,7 @@ static volatile sig_atomic_t sigterm = false;
 static void tick_schema(void) {
     StringInfoData buf;
     L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
+    set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", schema_quote);
     SPI_begin_my(buf.data);
@@ -43,6 +44,7 @@ static void tick_table(void) {
     StringInfoData buf, name;
     const char *name_quote;
     L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
+    set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     initStringInfo(&name);
     appendStringInfo(&name, "%s_parent_fkey", table);
     name_quote = quote_identifier(name.data);
@@ -74,6 +76,9 @@ static void tick_table(void) {
     SPI_commit_my(buf.data);
     if (name_quote != name.data) pfree((void *)name_quote);
     pfree(name.data);
+    resetStringInfo(&buf);
+    appendStringInfo(&buf, "%d", oid);
+    set_config_option("pg_task.oid", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     pfree(buf.data);
 }
 
@@ -285,22 +290,17 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
         pgstat_report_appname(buf.data);
         pfree(buf.data);
     }
-    if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
-    set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     initStringInfo(&buf);
     appendStringInfo(&buf, "%d", period);
     set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    pfree(buf.data);
     if (schema) tick_schema();
     tick_type();
     tick_table();
-    resetStringInfo(&buf);
-    appendStringInfo(&buf, "%d", oid);
-    set_config_option("pg_task.oid", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     tick_index("dt");
     tick_index("state");
     tick_lock();
     tick_fix();
-    pfree(buf.data);
 }
 
 static void tick_reset(void) {
