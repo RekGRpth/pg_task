@@ -19,7 +19,7 @@ static void tick_schema(void) {
     StringInfoData buf;
     List *names;
     L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
-    set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    set_config_option_my("pg_task.schema", schema);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE SCHEMA %s", schema_quote);
     names = stringToQualifiedNameList(schema_quote);
@@ -55,7 +55,7 @@ static void tick_table(void) {
     const char *name_quote;
     L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
     if (oid) pg_advisory_unlock_int8_my(oid);
-    set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    set_config_option_my("pg_task.table", table);
     initStringInfo(&name);
     appendStringInfo(&name, "%s_parent_fkey", table);
     name_quote = quote_identifier(name.data);
@@ -93,7 +93,7 @@ static void tick_table(void) {
     pfree(name.data);
     resetStringInfo(&buf);
     appendStringInfo(&buf, "%d", oid);
-    set_config_option("pg_task.oid", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    set_config_option_my("pg_task.oid", buf.data);
     pfree(buf.data);
 }
 
@@ -290,7 +290,7 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
     L("data = %s, user = %s, schema = %s, table = %s, period = %d", data, user, schema ? schema : "(null)", table, period);
     initStringInfo(&buf);
     appendStringInfo(&buf, "%d", period);
-    set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
+    set_config_option_my("pg_task.period", buf.data);
     pfree(buf.data);
     if (schema) tick_schema();
     tick_type();
