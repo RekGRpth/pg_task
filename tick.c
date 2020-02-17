@@ -50,6 +50,7 @@ static void tick_type(void) {
 
 static void tick_table(void) {
     StringInfoData buf, name;
+    List *names;
     const char *name_quote;
     L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
     if (oid) pg_advisory_unlock_int8_my(oid);
@@ -79,10 +80,12 @@ static void tick_table(void) {
         "    live interval,\n"
         "    CONSTRAINT %2$s FOREIGN KEY (parent) REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
         ")", schema_quote_point_table_quote, name_quote);
+    names = stringToQualifiedNameList(schema_quote_point_table_quote);
     SPI_begin_my(buf.data);
-    if (!OidIsValid(RangeVarGetRelid(makeRangeVarFromNameList(stringToQualifiedNameList(schema_quote_point_table_quote)), NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    oid = RangeVarGetRelid(makeRangeVarFromNameList(stringToQualifiedNameList(schema_quote_point_table_quote)), NoLock, false);
+    if (!OidIsValid(RangeVarGetRelid(makeRangeVarFromNameList(names), NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    oid = RangeVarGetRelid(makeRangeVarFromNameList(names), NoLock, false);
     SPI_commit_my(buf.data);
+    list_free_deep(names);
     if (name_quote != name.data) pfree((void *)name_quote);
     pfree(name.data);
     resetStringInfo(&buf);
