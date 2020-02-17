@@ -102,7 +102,8 @@ static void tick_index(const char *index) {
 }
 
 static void tick_lock(void) {
-    L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
+    bool locked = pg_advisory_unlock_int8_my(oid);
+    L("data = %s, user = %s, schema = %s, table = %s, locked = %s", data, user, schema ? schema : "(null)", table, locked ? "true" : "false");
     if (!pg_try_advisory_lock_int8_my(oid)) { sigterm = true; W("Already running data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table); }
 }
 

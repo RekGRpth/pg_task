@@ -110,13 +110,6 @@ static void tick_worker(const char *data, const char *user, const char *schema, 
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
-static void conf_unlock(void) {
-    static const char *command = "SELECT pg_advisory_unlock(current_setting('pg_task.oid', true)::int8) AS unlock";
-    SPI_begin_my(command);
-    SPI_execute_with_args_my(command, 0, NULL, NULL, NULL, SPI_OK_SELECT);
-    SPI_commit_my(command);
-}
-
 static void conf_check(void) {
     static SPIPlanPtr plan = NULL;
     static const char *command =
@@ -164,7 +157,6 @@ static void conf_check(void) {
     SPI_commit_my(command);
     if (events & WL_TIMEOUT) {
         update_ps_display(true);
-        conf_unlock();
         tick_init(true, "postgres", "postgres", NULL, pg_task_task, timeout);
     } else if (renamed) {
         timeout = LONG_MAX;
