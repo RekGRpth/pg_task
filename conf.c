@@ -37,14 +37,13 @@ static void update_ps_display(bool conf) {
 }
 
 static void conf_user(const char *user) {
-    int rc;
     StringInfoData buf;
     const char *user_quote = quote_identifier(user);
     ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): user = %s", __func__, __FILE__, __LINE__, user)));
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE USER %s", user_quote);
     SPI_begin_my(buf.data);
-    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_execute_my(buf.data, SPI_OK_UTILITY);
     SPI_commit_my(buf.data);
     if (user_quote != user) pfree((void *)user_quote);
     pfree(buf.data);
@@ -112,10 +111,9 @@ static void tick_worker(const char *data, const char *user, const char *schema, 
 }
 
 static void conf_unlock(void) {
-    int rc;
     static const char *command = "SELECT pg_advisory_unlock(current_setting('pg_task.oid', true)::int8) AS unlock";
     SPI_begin_my(command);
-    if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_execute_my(command, SPI_OK_SELECT);
     SPI_commit_my(command);
 }
 

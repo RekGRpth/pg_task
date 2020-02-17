@@ -14,19 +14,17 @@ static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
 static void tick_schema(void) {
-    int rc;
     StringInfoData buf;
     ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table)));
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE SCHEMA IF NOT EXISTS %s", schema_quote);
     SPI_begin_my(buf.data);
-    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_execute_my(buf.data, SPI_OK_UTILITY);
     SPI_commit_my(buf.data);
     pfree(buf.data);
 }
 
 static void tick_type(void) {
-    int rc;
     static const char *command =
         "DO $$ BEGIN\n"
         "    PERFORM concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), 'state')::regtype;\n"
@@ -34,12 +32,11 @@ static void tick_type(void) {
         "END; $$";
     ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table)));
     SPI_begin_my(command);
-    if ((rc = SPI_execute(command, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_execute_my(command, SPI_OK_UTILITY);
     SPI_commit_my(command);
 }
 
 static void tick_table(void) {
-    int rc;
     StringInfoData buf, name;
     const char *name_q;
     ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table)));
@@ -69,7 +66,7 @@ static void tick_table(void) {
         "    CONSTRAINT %s FOREIGN KEY (parent) REFERENCES %s%s%s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
         ")", schema_quote, point, table_quote, name_q, schema_quote, point, table_quote);
     SPI_begin_my(buf.data);
-    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_execute_my(buf.data, SPI_OK_UTILITY);
     SPI_commit_my(buf.data);
     if (name_q != name.data) pfree((void *)name_q);
     pfree(name.data);
@@ -77,7 +74,6 @@ static void tick_table(void) {
 }
 
 static void tick_index(const char *index) {
-    int rc;
     StringInfoData buf, name;
     const char *name_q;
     const char *index_q = quote_identifier(index);
@@ -88,7 +84,7 @@ static void tick_index(const char *index) {
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE INDEX IF NOT EXISTS %s ON %s%s%s USING btree (%s)", name_q, schema_quote, point, table_quote, index_q);
     SPI_begin_my(buf.data);
-    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UTILITY) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_execute_my(buf.data, SPI_OK_UTILITY);
     SPI_commit_my(buf.data);
     pfree(buf.data);
     pfree(name.data);
@@ -97,13 +93,12 @@ static void tick_index(const char *index) {
 }
 
 static void tick_lock(void) {
-    int rc;
     static const char *command =
         "SELECT pg_try_advisory_lock(concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::int8) AS lock,\n"
         "       set_config('pg_task.oid', concat_ws('.', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false))::regclass::oid::text, false)";
     ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table)));
     SPI_begin_my(command);
-    if ((rc = SPI_execute(command, false, 0)) != SPI_OK_SELECT) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_execute_my(command, SPI_OK_SELECT);
     if (SPI_processed != 1) ereport(ERROR, (errmsg("%s(%s:%d): SPI_processed != 1", __func__, __FILE__, __LINE__))); else {
         bool lock_isnull;
         bool lock = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "lock"), &lock_isnull));
@@ -117,7 +112,6 @@ static void tick_lock(void) {
 }
 
 static void tick_fix(void) {
-    int rc;
     StringInfoData buf;
     ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg("%s(%s:%d): data = %s, user = %s, schema = %s, table = %s", __func__, __FILE__, __LINE__, data, user, schema ? schema : "(null)", table)));
     initStringInfo(&buf);
@@ -130,7 +124,7 @@ static void tick_fix(void) {
         "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), queue, id)\n"
         ") FOR UPDATE SKIP LOCKED) UPDATE %s%s%s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", schema_quote, point, table_quote, schema_quote, point, table_quote);
     SPI_begin_my(buf.data);
-    if ((rc = SPI_execute(buf.data, false, 0)) != SPI_OK_UPDATE) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
+    SPI_execute_my(buf.data, SPI_OK_UPDATE);
     SPI_commit_my(buf.data);
     pfree(buf.data);
 }
