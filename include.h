@@ -37,7 +37,6 @@ void exec_simple_query(const char *query_string);
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
 void SPI_begin_my(const char *command);
 void SPI_commit_my(const char *command);
-void SPI_execute_my(const char *src, int res);
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res);
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res);
 void SPI_rollback_my(const char *command);

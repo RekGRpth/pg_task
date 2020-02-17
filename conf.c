@@ -43,7 +43,7 @@ static void conf_user(const char *user) {
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE USER %s", user_quote);
     SPI_begin_my(buf.data);
-    SPI_execute_my(buf.data, SPI_OK_UTILITY);
+    SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_commit_my(buf.data);
     if (user_quote != user) pfree((void *)user_quote);
     pfree(buf.data);
@@ -113,7 +113,7 @@ static void tick_worker(const char *data, const char *user, const char *schema, 
 static void conf_unlock(void) {
     static const char *command = "SELECT pg_advisory_unlock(current_setting('pg_task.oid', true)::int8) AS unlock";
     SPI_begin_my(command);
-    SPI_execute_my(command, SPI_OK_SELECT);
+    SPI_execute_with_args_my(command, 0, NULL, NULL, NULL, SPI_OK_SELECT);
     SPI_commit_my(command);
 }
 

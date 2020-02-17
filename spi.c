@@ -24,11 +24,6 @@ void SPI_commit_my(const char *command) {
     pgstat_report_activity(STATE_IDLE, NULL);
 }
 
-void SPI_execute_my(const char *src, int res) {
-    int rc;
-    if ((rc = SPI_execute(src, false, 0)) != res) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
-}
-
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res) {
     int rc;
     if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != res) ereport(ERROR, (errmsg("%s(%s:%d): SPI_execute_plan = %s", __func__, __FILE__, __LINE__, SPI_result_code_string(rc))));
