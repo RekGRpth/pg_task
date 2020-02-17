@@ -4,7 +4,9 @@ static const char *data;
 static const char *data_quote = NULL;
 static const char *point;
 static const char *schema;
+static const char *schema_point_table = NULL;
 static const char *schema_quote = NULL;
+static const char *schema_quote_point_table_quote = NULL;
 static const char *table;
 static const char *table_quote = NULL;
 static const char *user;
@@ -260,8 +262,18 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
     point = schema ? "." : "";
     if (table_quote && table_quote != table) pfree((void *)table_quote);
     table_quote = quote_identifier(table);
+    if (schema_point_table) pfree((void *)schema_point_table);
     initStringInfo(&buf);
+    if (schema) appendStringInfo(&buf, "%s.", schema);
+    appendStringInfoString(&buf, table);
+    schema_point_table = buf.data;
+    if (schema_quote_point_table_quote) pfree((void *)schema_quote_point_table_quote);
+    initStringInfo(&buf);
+    if (schema) appendStringInfo(&buf, "%s.", schema_quote);
+    appendStringInfoString(&buf, table_quote);
+    schema_quote_point_table_quote = buf.data;
     if (!conf) {
+        initStringInfo(&buf);
         appendStringInfo(&buf, "%s %d", MyBgworkerEntry->bgw_type, period);
         SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
         pqsignal(SIGHUP, tick_sighup);
@@ -269,10 +281,11 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
         BackgroundWorkerUnblockSignals();
         BackgroundWorkerInitializeConnection(data, user, 0);
         pgstat_report_appname(buf.data);
+        pfree(buf.data);
     }
     if (schema) set_config_option("pg_task.schema", schema, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     set_config_option("pg_task.table", table, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
-    resetStringInfo(&buf);
+    initStringInfo(&buf);
     appendStringInfo(&buf, "%d", period);
     set_config_option("pg_task.period", buf.data, (superuser() ? PGC_SUSET : PGC_USERSET), PGC_S_SESSION, false ? GUC_ACTION_LOCAL : GUC_ACTION_SET, true, 0, false);
     pfree(buf.data);
