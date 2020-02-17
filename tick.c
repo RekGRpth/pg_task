@@ -4,7 +4,6 @@ static const char *data;
 static const char *data_quote = NULL;
 static const char *point;
 static const char *schema;
-static const char *schema_point_table = NULL;
 static const char *schema_quote = NULL;
 static const char *schema_quote_point_table_quote = NULL;
 static const char *table;
@@ -36,6 +35,7 @@ static void tick_type(void) {
         "END; $$";
     L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
     SPI_begin_my(command);
+//    parseTypeString(typ_name_or_oid, &result, &typmod, false);
     SPI_execute_with_args_my(command, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_commit_my(command);
 }
@@ -251,11 +251,6 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
     point = schema ? "." : "";
     if (table_quote && table_quote != table) pfree((void *)table_quote);
     table_quote = quote_identifier(table);
-    if (schema_point_table) pfree((void *)schema_point_table);
-    initStringInfo(&buf);
-    if (schema) appendStringInfo(&buf, "%s.", schema);
-    appendStringInfoString(&buf, table);
-    schema_point_table = buf.data;
     if (schema_quote_point_table_quote) pfree((void *)schema_quote_point_table_quote);
     initStringInfo(&buf);
     if (schema) appendStringInfo(&buf, "%s.", schema_quote);

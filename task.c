@@ -9,7 +9,6 @@ static const char *data_quote;
 static const char *point;
 static const char *queue;
 static const char *schema;
-static const char *schema_point_table;
 static const char *schema_quote;
 static const char *schema_quote_point_table_quote;
 static const char *table;
@@ -330,10 +329,6 @@ static void task_init(void) {
     point = schema ? "." : "";
     table_quote = quote_identifier(table);
     resetStringInfo(&buf);
-    if (schema) appendStringInfo(&buf, "%s.", schema);
-    appendStringInfoString(&buf, table);
-    schema_point_table = buf.data;
-    initStringInfo(&buf);
     if (schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, table_quote);
     schema_quote_point_table_quote = buf.data;
