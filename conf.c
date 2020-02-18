@@ -165,14 +165,14 @@ static void conf_check(void) {
         tick[row].period = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
         SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &tick[row].usename_isnull);
         SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &tick[row].datname_isnull);
-        L("user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", tick[row].user, tick[row].data, tick[row].schema ? tick[row].schema : "(null)", tick[row].table, tick[row].period, tick[row].usename_isnull ? "true" : "false", tick[row].datname_isnull ? "true" : "false");
+        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, tick[row].user, tick[row].data, tick[row].schema ? tick[row].schema : "(null)", tick[row].table, tick[row].period, tick[row].usename_isnull ? "true" : "false", tick[row].datname_isnull ? "true" : "false");
         if (period_isnull) E("period_isnull");
     }
     MemoryContextSwitchTo(oldMemoryContext);
     SPI_processed_my = SPI_processed;
     SPI_commit_my(command);
     for (uint64 row = 0; row < SPI_processed_my; row++) {
-        L("user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", tick[row].user, tick[row].data, tick[row].schema ? tick[row].schema : "(null)", tick[row].table, tick[row].period, tick[row].usename_isnull ? "true" : "false", tick[row].datname_isnull ? "true" : "false");
+        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, tick[row].user, tick[row].data, tick[row].schema ? tick[row].schema : "(null)", tick[row].table, tick[row].period, tick[row].usename_isnull ? "true" : "false", tick[row].datname_isnull ? "true" : "false");
         if (tick[row].usename_isnull) conf_user(tick[row].user);
         if (tick[row].datname_isnull) conf_data(tick[row].user, tick[row].data);
         if (!pg_strncasecmp(tick[row].data, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(tick[row].user, "postgres", sizeof("postgres") - 1) && !tick[row].schema && !pg_strcasecmp(tick[row].table, pg_task_task)) {
