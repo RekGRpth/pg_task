@@ -52,7 +52,7 @@ void SPI_commit_my(const char *command);
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res);
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res);
 void SPI_rollback_my(const char *command);
-void tick_init(const bool conf, const char *data, const char *user, const char *schema, const char *table, int period);
+void tick_init(const bool conf, const char *user, const char *data, const char *schema, const char *table, int period);
 void tick_loop(void);
 
 #define Q(name) #name

@@ -253,19 +253,19 @@ static void tick_check(void) {
     SPI_commit_my(command);
 }
 
-void tick_init(const bool conf, const char *_data, const char *_user, const char *_schema, const char *_table, int _period) {
+void tick_init(const bool conf, const char *_user, const char *_data, const char *_schema, const char *_table, int _period) {
     StringInfoData buf;
-    data = _data; user = _user; schema = _schema; table = _table; period = _period;
+    user = _user; data = _data; schema = _schema; table = _table; period = _period;
     if (!conf) {
         if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
-        if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-        if (!MyProcPort->database_name) MyProcPort->database_name = (char *)data;
         if (!MyProcPort->user_name) MyProcPort->user_name = (char *)user;
+        if (!MyProcPort->database_name) MyProcPort->database_name = (char *)data;
+        if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     }
-    if (data_quote && data_quote != data) pfree((void *)data_quote);
-    data_quote = quote_identifier(data);
     if (user_quote && user_quote != user) pfree((void *)user_quote);
     user_quote = quote_identifier(user);
+    if (data_quote && data_quote != data) pfree((void *)data_quote);
+    data_quote = quote_identifier(data);
     if (schema_quote && schema_quote != schema) pfree((void *)schema_quote);
     schema_quote = schema ? quote_identifier(schema) : NULL;
     point = schema ? "." : "";
@@ -287,7 +287,7 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
         pgstat_report_appname(buf.data);
         pfree(buf.data);
     }
-    L("data = %s, user = %s, schema = %s, table = %s, period = %d", data, user, schema ? schema : "(null)", table, period);
+    L("user = %s, data = %s, schema = %s, table = %s, period = %d", user, data, schema ? schema : "(null)", table, period);
     initStringInfo(&buf);
     appendStringInfo(&buf, "%d", period);
     set_config_option_my("pg_task.period", buf.data);
@@ -313,13 +313,13 @@ static void tick_reload(void) {
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
-    const char *data = MyBgworkerEntry->bgw_extra;
-    const char *user = data + strlen(data) + 1;
-    const char *schema = user + strlen(user) + 1;
+    const char *user = MyBgworkerEntry->bgw_extra;
+    const char *data = user + strlen(user) + 1;
+    const char *schema = data + strlen(data) + 1;
     const char *table = schema + strlen(schema) + 1;
     const int period = *(typeof(period) *)(table + strlen(table) + 1);
     if (table == schema + 1) schema = NULL;
-    tick_init(false, data, user, schema, table, period);
+    tick_init(false, user, data, schema, table, period);
     while (!sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) break;

@@ -111,12 +111,12 @@ static void tick_worker(const char *user, const char *data, const char *schema, 
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
-    if (data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + period_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + period_len);
-    memcpy(worker.bgw_extra, data, data_len);
-    memcpy(worker.bgw_extra + data_len + 1, user, user_len);
-    memcpy(worker.bgw_extra + data_len + 1 + user_len + 1, schema, schema_len);
-    memcpy(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1, table, table_len);
-    *(typeof(period + 0) *)(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1) = period;
+    if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + period_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + period_len);
+    memcpy(worker.bgw_extra, user, user_len);
+    memcpy(worker.bgw_extra + user_len + 1, data, data_len);
+    memcpy(worker.bgw_extra + user_len + 1 + data_len + 1, schema, schema_len);
+    memcpy(worker.bgw_extra + user_len + 1 +  data_len + 1 + schema_len + 1, table, table_len);
+    *(typeof(period + 0) *)(worker.bgw_extra + user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1) = period;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
