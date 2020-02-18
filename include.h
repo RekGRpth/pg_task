@@ -9,6 +9,7 @@
 #include <commands/dbcommands.h>
 #include <commands/defrem.h>
 #include <commands/prepare.h>
+#include <commands/user.h>
 #include <executor/spi.h>
 #include <fmgr.h>
 #include <libpq/libpq-be.h>

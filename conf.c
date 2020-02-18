@@ -39,12 +39,22 @@ static void update_ps_display(bool conf) {
 static void conf_user(const char *user) {
     StringInfoData buf;
     const char *user_quote = quote_identifier(user);
+    ParseState *pstate = make_parsestate(NULL);
+    List *options = NIL;
+    CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
     L("user = %s", user);
     initStringInfo(&buf);
-    appendStringInfo(&buf, "CREATE USER %s", user_quote);
+    appendStringInfo(&buf, "CREATE USER %s WITH LOGIN", user_quote);
+    pstate->p_sourcetext = buf.data;
+    options = lappend(options, makeDefElem("canlogin", (Node *)makeInteger(1), -1));
+    stmt->role = (char *)user;
+    stmt->options = options;
     SPI_begin_my(buf.data);
-    SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    CreateRole(pstate, stmt);
     SPI_commit_my(buf.data);
+    free_parsestate(pstate);
+    list_free_deep(options);
+    pfree(stmt);
     if (user_quote != user) pfree((void *)user_quote);
     pfree(buf.data);
 }
