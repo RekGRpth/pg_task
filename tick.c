@@ -236,15 +236,15 @@ static void tick_check(void) {
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS ("
-        "SELECT      COALESCE(datname, data)::text AS data,\n"
-        "            COALESCE(COALESCE(usename, \"user\"), data)::text AS user,\n"
+        "SELECT      COALESCE(COALESCE(usename, \"user\"), data)::text AS user,\n"
+        "            COALESCE(datname, data)::text AS data,\n"
         "            schema,\n"
         "            COALESCE(\"table\", current_setting('pg_task.task', false)) AS table,\n"
         "            COALESCE(period, current_setting('pg_task.tick', false)::int4) AS period\n"
-        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.config', false)::json) AS s (data text, \"user\" text, schema text, \"table\" text, period int4)\n"
+        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.config', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, period int4)\n"
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT * FROM s WHERE data = current_catalog AND \"user\" = current_user AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND period = current_setting('pg_task.period', false)::int4";
+        ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND period = current_setting('pg_task.period', false)::int4";
     L("user = %s, data = %s, schema = %s, table = %s, period = %d", user, data, schema ? schema : "(null)", table, period);
     SPI_begin_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
