@@ -159,13 +159,14 @@ static void conf_check(void) {
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool period_isnull;
         Tick *t = &tick[row];
-        t->user = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
-        t->data = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
-        t->schema = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
-        t->table = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
-        t->period = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
-        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &t->usename_isnull);
-        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &t->datname_isnull);
+        HeapTuple tuple = SPI_tuptable->vals[row];
+        t->user = SPI_getvalue(tuple, SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
+        t->data = SPI_getvalue(tuple, SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
+        t->schema = SPI_getvalue(tuple, SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
+        t->table = SPI_getvalue(tuple, SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
+        t->period = DatumGetInt32(SPI_getbinval(tuple, SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
+        SPI_getbinval(tuple, SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &t->usename_isnull);
+        SPI_getbinval(tuple, SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &t->datname_isnull);
         L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, t->user, t->data, t->schema ? t->schema : "(null)", t->table, t->period, t->usename_isnull ? "true" : "false", t->datname_isnull ? "true" : "false");
         if (period_isnull) E("period_isnull");
     }
