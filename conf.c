@@ -155,9 +155,8 @@ static void conf_check(void) {
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    SPI_processed_my = SPI_processed;
-    if (!(tick = palloc(SPI_processed_my * sizeof(tick)))) E("!palloc");
-    for (uint64 row = 0; row < SPI_processed_my; row++) {
+    if (!(tick = palloc(SPI_processed * sizeof(tick)))) E("!palloc");
+    for (uint64 row = 0; row < SPI_processed; row++) {
         bool period_isnull;
         tick[row].user = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
         tick[row].data = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
@@ -170,6 +169,7 @@ static void conf_check(void) {
         if (period_isnull) E("period_isnull");
     }
     MemoryContextSwitchTo(oldMemoryContext);
+    SPI_processed_my = SPI_processed;
     SPI_commit_my(command);
     for (uint64 row = 0; row < SPI_processed_my; row++) {
         L("data = %s, user = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", tick[row].data, tick[row].user, tick[row].schema ? tick[row].schema : "(null)", tick[row].table, tick[row].period, tick[row].usename_isnull ? "true" : "false", tick[row].datname_isnull ? "true" : "false");
