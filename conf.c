@@ -158,31 +158,33 @@ static void conf_check(void) {
     if (!(tick = palloc(SPI_processed * sizeof(tick)))) E("!palloc");
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool period_isnull;
-        tick[row].user = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
-        tick[row].data = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
-        tick[row].schema = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
-        tick[row].table = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
-        tick[row].period = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
-        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &tick[row].usename_isnull);
-        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &tick[row].datname_isnull);
-        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, tick[row].user, tick[row].data, tick[row].schema ? tick[row].schema : "(null)", tick[row].table, tick[row].period, tick[row].usename_isnull ? "true" : "false", tick[row].datname_isnull ? "true" : "false");
+        Tick *t = &tick[row];
+        t->user = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
+        t->data = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
+        t->schema = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
+        t->table = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
+        t->period = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
+        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &t->usename_isnull);
+        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &t->datname_isnull);
+        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, t->user, t->data, t->schema ? t->schema : "(null)", t->table, t->period, t->usename_isnull ? "true" : "false", t->datname_isnull ? "true" : "false");
         if (period_isnull) E("period_isnull");
     }
     MemoryContextSwitchTo(oldMemoryContext);
     SPI_processed_my = SPI_processed;
     SPI_commit_my(command);
     for (uint64 row = 0; row < SPI_processed_my; row++) {
-        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, tick[row].user, tick[row].data, tick[row].schema ? tick[row].schema : "(null)", tick[row].table, tick[row].period, tick[row].usename_isnull ? "true" : "false", tick[row].datname_isnull ? "true" : "false");
-        if (tick[row].usename_isnull) conf_user(tick[row].user);
-        if (tick[row].datname_isnull) conf_data(tick[row].user, tick[row].data);
-        if (!pg_strncasecmp(tick[row].data, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(tick[row].user, "postgres", sizeof("postgres") - 1) && !tick[row].schema && !pg_strcasecmp(tick[row].table, pg_task_task)) {
-            timeout = tick[row].period;
+        Tick *t = &tick[row];
+        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, t->user, t->data, t->schema ? t->schema : "(null)", t->table, t->period, t->usename_isnull ? "true" : "false", t->datname_isnull ? "true" : "false");
+        if (t->usename_isnull) conf_user(t->user);
+        if (t->datname_isnull) conf_data(t->user, t->data);
+        if (!pg_strncasecmp(t->data, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(t->user, "postgres", sizeof("postgres") - 1) && !t->schema && !pg_strcasecmp(t->table, pg_task_task)) {
+            timeout = t->period;
             events |= WL_TIMEOUT;
-        } else tick_worker(tick[row].user, tick[row].data, tick[row].schema, tick[row].table, tick[row].period);
-        pfree(tick[row].user);
-        pfree(tick[row].data);
-        if (tick[row].schema) pfree(tick[row].schema);
-        pfree(tick[row].table);
+        } else tick_worker(t->user, t->data, t->schema, t->table, t->period);
+        pfree(t->user);
+        pfree(t->data);
+        if (t->schema) pfree(t->schema);
+        pfree(t->table);
     }
     pfree(tick);
     if (events & WL_TIMEOUT) {
