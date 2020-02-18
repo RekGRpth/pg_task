@@ -134,7 +134,7 @@ static void conf_check(void) {
         "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.config', false)::json) AS s (data text, \"user\" text, schema text, \"table\" text, period int4)\n"
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT s.* FROM s\n"
+        ") SELECT DISTINCT s.* FROM s\n"
         "LEFT JOIN   pg_stat_activity AS a ON a.datname = data AND a.usename = \"user\" AND application_name = concat_ws(' ', 'pg_task', schema, \"table\", period::text) AND pid != pg_backend_pid()\n"
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
         "WHERE       a.pid IS NULL";
@@ -149,8 +149,8 @@ static void conf_check(void) {
         const char *schema = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
         const char *table = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
         const int period = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
-        SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull);
-        SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull);
+        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull);
+        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull);
         L("data = %s, user = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", data, user, schema ? schema : "(null)", table, period, usename_isnull ? "true" : "false", datname_isnull ? "true" : "false");
         if (period_isnull) E("period_isnull");
         if (usename_isnull) conf_user(user);
