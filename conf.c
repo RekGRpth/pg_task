@@ -84,7 +84,7 @@ static void conf_data(const char *user, const char *data) {
     pfree(buf.data);
 }
 
-static void tick_worker(const char *data, const char *user, const char *schema, const char *table, int period) {
+static void tick_worker(const char *data, const char *user, const char *schema, const char *table, const int period) {
     StringInfoData buf;
     int data_len = strlen(data), user_len = strlen(user), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), period_len = sizeof(period);
     BackgroundWorker worker;
@@ -116,7 +116,7 @@ static void tick_worker(const char *data, const char *user, const char *schema, 
     memcpy(worker.bgw_extra + data_len + 1, user, user_len);
     memcpy(worker.bgw_extra + data_len + 1 + user_len + 1, schema, schema_len);
     memcpy(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1, table, table_len);
-    *(typeof(period) *)(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1) = period;
+    *(typeof(period + 0) *)(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1) = period;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
