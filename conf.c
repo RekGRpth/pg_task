@@ -165,8 +165,10 @@ static void conf_check(void) {
         t->data = MemoryContextStrdup(TopMemoryContext, value);
         pfree(value);
         value = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "schema"));
-        t->schema = MemoryContextStrdup(TopMemoryContext, value);
-        if (value) pfree(value);
+        if (!value) t->schema = NULL; else {
+            t->schema = MemoryContextStrdup(TopMemoryContext, value);
+            pfree(value);
+        }
         value = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "table"));
         t->table = MemoryContextStrdup(TopMemoryContext, value);
         pfree(value);
