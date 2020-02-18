@@ -132,6 +132,7 @@ static void conf_check(void) {
         bool datname_isnull;
     } *tick;
     static SPIPlanPtr plan = NULL;
+    MemoryContext oldMemoryContext;
     static const char *command =
         "WITH s AS (\n"
         "SELECT      COALESCE(COALESCE(usename, \"user\"), data)::TEXT AS user,\n"
@@ -152,26 +153,17 @@ static void conf_check(void) {
     SPI_begin_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
-    if (!(tick = MemoryContextAlloc(TopMemoryContext, SPI_processed * sizeof(tick)))) E("!MemoryContextAlloc");
+    oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+    if (!(tick = palloc(SPI_processed * sizeof(tick)))) E("!palloc");
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool period_isnull;
         struct Tick *t = &tick[row];
         HeapTuple tuple = SPI_tuptable->vals[row];
         TupleDesc desc = SPI_tuptable->tupdesc;
-        char *value = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "user"));
-        t->user = MemoryContextStrdup(TopMemoryContext, value);
-        pfree(value);
-        value = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "data"));
-        t->data = MemoryContextStrdup(TopMemoryContext, value);
-        pfree(value);
-        value = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "schema"));
-        if (!value) t->schema = NULL; else {
-            t->schema = MemoryContextStrdup(TopMemoryContext, value);
-            pfree(value);
-        }
-        value = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "table"));
-        t->table = MemoryContextStrdup(TopMemoryContext, value);
-        pfree(value);
+        t->user = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "user"));
+        t->data = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "data"));
+        t->schema = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "schema"));
+        t->table = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "table"));
         t->period = DatumGetInt32(SPI_getbinval(tuple, desc, SPI_fnumber(desc, "period"), &period_isnull));
         SPI_getbinval(tuple, desc, SPI_fnumber(desc, "usename"), &t->usename_isnull);
         SPI_getbinval(tuple, desc, SPI_fnumber(desc, "datname"), &t->datname_isnull);
@@ -179,10 +171,12 @@ static void conf_check(void) {
         if (period_isnull) E("period_isnull");
     }
     SPI_processed_my = SPI_processed;
+    MemoryContextSwitchTo(oldMemoryContext);
     SPI_commit_my(command);
     for (uint64 row = 0; row < SPI_processed_my; row++) {
         struct Tick *t = &tick[row];
         L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, t->user, t->data, t->schema ? t->schema : "(null)", t->table, t->period, t->usename_isnull ? "true" : "false", t->datname_isnull ? "true" : "false");
+        continue;
         if (t->usename_isnull) conf_user(t->user);
         if (t->datname_isnull) conf_data(t->user, t->data);
         if (!pg_strncasecmp(t->data, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(t->user, "postgres", sizeof("postgres") - 1) && !t->schema && !pg_strcasecmp(t->table, pg_task_task)) {
