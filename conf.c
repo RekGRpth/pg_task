@@ -160,13 +160,14 @@ static void conf_check(void) {
         bool period_isnull;
         Tick *t = &tick[row];
         HeapTuple tuple = SPI_tuptable->vals[row];
-        t->user = SPI_getvalue(tuple, SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
-        t->data = SPI_getvalue(tuple, SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
-        t->schema = SPI_getvalue(tuple, SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
-        t->table = SPI_getvalue(tuple, SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
-        t->period = DatumGetInt32(SPI_getbinval(tuple, SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
-        SPI_getbinval(tuple, SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &t->usename_isnull);
-        SPI_getbinval(tuple, SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &t->datname_isnull);
+        TupleDesc desc = SPI_tuptable->tupdesc;
+        t->user = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "user"));
+        t->data = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "data"));
+        t->schema = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "schema"));
+        t->table = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "table"));
+        t->period = DatumGetInt32(SPI_getbinval(tuple, desc, SPI_fnumber(desc, "period"), &period_isnull));
+        SPI_getbinval(tuple, desc, SPI_fnumber(desc, "usename"), &t->usename_isnull);
+        SPI_getbinval(tuple, desc, SPI_fnumber(desc, "datname"), &t->datname_isnull);
         L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, t->user, t->data, t->schema ? t->schema : "(null)", t->table, t->period, t->usename_isnull ? "true" : "false", t->datname_isnull ? "true" : "false");
         if (period_isnull) E("period_isnull");
     }
