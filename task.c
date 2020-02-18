@@ -312,11 +312,11 @@ static void task_init(void) {
     id = MyBgworkerEntry->bgw_main_arg;
     start = GetCurrentTimestamp();
     count = 0;
-    data = MyBgworkerEntry->bgw_extra;
-    if (!MyProcPort->database_name) MyProcPort->database_name = (char *)data;
-    user = data + strlen(data) + 1;
+    user = MyBgworkerEntry->bgw_extra;
     if (!MyProcPort->user_name) MyProcPort->user_name = (char *)user;
-    schema = user + strlen(user) + 1;
+    data = user + strlen(user) + 1;
+    if (!MyProcPort->database_name) MyProcPort->database_name = (char *)data;
+    schema = data + strlen(data) + 1;
     table = schema + strlen(schema) + 1;
     queue = table + strlen(table) + 1;
     max = *(typeof(max) *)(queue + strlen(queue) + 1);
@@ -334,7 +334,7 @@ static void task_init(void) {
     initStringInfo(&buf);
     appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
     SetConfigOptionMy("application_name", buf.data);
-    L("data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     pqsignal(SIGTERM, task_sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(data, user, 0);

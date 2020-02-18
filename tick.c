@@ -18,7 +18,7 @@ static volatile sig_atomic_t sigterm = false;
 static void tick_schema(void) {
     StringInfoData buf;
     List *names;
-    L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
+    L("user = %s, data = %s, schema = %s, table = %s", user, data, schema ? schema : "(null)", table);
     set_config_option_my("pg_task.schema", schema);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE SCHEMA %s", schema_quote);
@@ -34,7 +34,7 @@ static void tick_type(void) {
     StringInfoData buf, name;
     Oid type = InvalidOid;
     int32 typmod;
-    L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
+    L("user = %s, data = %s, schema = %s, table = %s", user, data, schema ? schema : "(null)", table);
     initStringInfo(&name);
     if (schema) appendStringInfo(&name, "%s.", schema_quote);
     appendStringInfoString(&name, "state");
@@ -53,7 +53,7 @@ static void tick_table(void) {
     List *names;
     const RangeVar *relation;
     const char *name_quote;
-    L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
+    L("user = %s, data = %s, schema = %s, table = %s", user, data, schema ? schema : "(null)", table);
     if (oid) pg_advisory_unlock_int8_my(oid);
     set_config_option_my("pg_task.table", table);
     initStringInfo(&name);
@@ -103,7 +103,7 @@ static void tick_index(const char *index) {
     const RangeVar *relation;
     const char *name_quote;
     const char *index_quote = quote_identifier(index);
-    L("data = %s, user = %s, schema = %s, table = %s, index = %s", data, user, schema ? schema : "(null)", table, index);
+    L("user = %s, data = %s, schema = %s, table = %s, index = %s", user, data, schema ? schema : "(null)", table, index);
     initStringInfo(&name);
     appendStringInfo(&name, "%s_%s_idx", table, index);
     name_quote = quote_identifier(name.data);
@@ -124,7 +124,7 @@ static void tick_index(const char *index) {
 
 static void tick_fix(void) {
     StringInfoData buf;
-    L("data = %s, user = %s, schema = %s, table = %s", data, user, schema ? schema : "(null)", table);
+    L("user = %s, data = %s, schema = %s, table = %s", user, data, schema ? schema : "(null)", table);
     initStringInfo(&buf);
     appendStringInfo(&buf,
         "WITH s AS (SELECT id FROM %1$s AS t WHERE state IN ('TAKE'::state, 'WORK'::state) AND pid NOT IN (\n"
@@ -142,9 +142,9 @@ static void tick_fix(void) {
 
 static void task_worker(const Datum id, const char *queue, const int max) {
     StringInfoData buf;
-    int data_len = strlen(data), user_len = strlen(user), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), queue_len = strlen(queue), max_len = sizeof(max), oid_len = sizeof(oid);
+    int user_len = strlen(user), data_len = strlen(data), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), queue_len = strlen(queue), max_len = sizeof(max), oid_len = sizeof(oid);
     BackgroundWorker worker;
-    L("data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = id;
@@ -168,14 +168,14 @@ static void task_worker(const Datum id, const char *queue, const int max) {
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
-    if (data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + max_len + oid_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + max_len + oid_len);
-    memcpy(worker.bgw_extra, data, data_len);
-    memcpy(worker.bgw_extra + data_len + 1, user, user_len);
-    memcpy(worker.bgw_extra + data_len + 1 + user_len + 1, schema, schema_len);
-    memcpy(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1, table, table_len);
-    memcpy(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1, queue, queue_len);
-    *(typeof(max + 0) *)(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1) = max;
-    *(typeof(oid) *)(worker.bgw_extra + data_len + 1 + user_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + max_len) = oid;
+    if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + max_len + oid_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + max_len + oid_len);
+    memcpy(worker.bgw_extra, user, user_len);
+    memcpy(worker.bgw_extra + user_len + 1, data, data_len);
+    memcpy(worker.bgw_extra + user_len + 1 + data_len + 1, schema, schema_len);
+    memcpy(worker.bgw_extra + user_len + 1 + data_len + 1 + schema_len + 1, table, table_len);
+    memcpy(worker.bgw_extra + user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1, queue, queue_len);
+    *(typeof(max + 0) *)(worker.bgw_extra + user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1) = max;
+    *(typeof(oid) *)(worker.bgw_extra + user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + max_len) = oid;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
@@ -245,7 +245,7 @@ static void tick_check(void) {
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
         ") SELECT * FROM s WHERE data = current_catalog AND \"user\" = current_user AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND period = current_setting('pg_task.period', false)::int4";
-    L("data = %s, user = %s, schema = %s, table = %s, period = %d", data, user, schema ? schema : "(null)", table, period);
+    L("user = %s, data = %s, schema = %s, table = %s, period = %d", user, data, schema ? schema : "(null)", table, period);
     SPI_begin_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
