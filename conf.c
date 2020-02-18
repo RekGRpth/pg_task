@@ -131,6 +131,7 @@ static void conf_check(void) {
         bool usename_isnull;
         bool datname_isnull;
     } *tick;
+    TupleDesc desc;
     static SPIPlanPtr plan = NULL;
     MemoryContext oldMemoryContext;
     static const char *command =
@@ -153,13 +154,13 @@ static void conf_check(void) {
     SPI_begin_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
+    desc = SPI_tuptable->tupdesc;
     oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     if (!(tick = palloc(SPI_processed * sizeof(tick)))) E("!palloc");
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool period_isnull;
         struct Tick *t = &tick[row];
         HeapTuple tuple = SPI_tuptable->vals[row];
-        TupleDesc desc = SPI_tuptable->tupdesc;
         t->user = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "user"));
         t->data = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "data"));
         t->schema = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "schema"));
