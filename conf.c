@@ -84,11 +84,11 @@ static void conf_data(const char *user, const char *data) {
     pfree(buf.data);
 }
 
-static void tick_worker(const char *data, const char *user, const char *schema, const char *table, const int period) {
+static void tick_worker(const char *user, const char *data, const char *schema, const char *table, const int period) {
     StringInfoData buf;
     int data_len = strlen(data), user_len = strlen(user), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), period_len = sizeof(period);
     BackgroundWorker worker;
-    L("data = %s, user = %s, schema = %s, table = %s, period = %d", data, user, schema ? schema : "(null)", table, period);
+    L("user = %s, data = %s, schema = %s, table = %s, period = %d", user, data, schema ? schema : "(null)", table, period);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = MyProcPid;
@@ -122,21 +122,24 @@ static void tick_worker(const char *data, const char *user, const char *schema, 
 
 static void conf_check(void) {
     uint64 SPI_processed_my;
-    char **data;
-    char **user;
-    char **schema;
-    char **table;
-    int *period;
-    bool *datname_isnull;
-    bool *usename_isnull;
+    typedef struct Tick {
+        char *user;
+        char *data;
+        char *schema;
+        char *table;
+        int period;
+        bool usename_isnull;
+        bool datname_isnull;
+    } Tick;
+    Tick *tick;
     MemoryContext oldMemoryContext;
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS (\n"
-        "SELECT      COALESCE(datname, data)::text AS data,\n"
-        "            datname,\n"
-        "            COALESCE(COALESCE(usename, \"user\"), data)::TEXT AS user,\n"
+        "SELECT      COALESCE(COALESCE(usename, \"user\"), data)::TEXT AS user,\n"
         "            usename,\n"
+        "            COALESCE(datname, data)::text AS data,\n"
+        "            datname,\n"
         "            schema,\n"
         "            COALESCE(\"table\", current_setting('pg_task.task', false)) AS table,\n"
         "            COALESCE(period, current_setting('pg_task.tick', false)::int4) AS period\n"
@@ -153,47 +156,35 @@ static void conf_check(void) {
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     SPI_processed_my = SPI_processed;
-    if (!(data = palloc(SPI_processed_my * sizeof(data)))) E("!palloc");
-    if (!(user = palloc(SPI_processed_my * sizeof(user)))) E("!palloc");
-    if (!(schema = palloc(SPI_processed_my * sizeof(schema)))) E("!palloc");
-    if (!(table = palloc(SPI_processed_my * sizeof(table)))) E("!palloc");
-    if (!(period = palloc(SPI_processed_my * sizeof(period)))) E("!palloc");
-    if (!(datname_isnull = palloc(SPI_processed_my * sizeof(datname_isnull)))) E("!palloc");
-    if (!(usename_isnull = palloc(SPI_processed_my * sizeof(usename_isnull)))) E("!palloc");
+    if (!(tick = palloc(SPI_processed_my * sizeof(tick)))) E("!palloc");
     for (uint64 row = 0; row < SPI_processed_my; row++) {
         bool period_isnull;
-        data[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
-        user[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
-        schema[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
-        table[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
-        period[row] = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
-        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull[row]);
-        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull[row]);
-        L("data = %s, user = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", data[row], user[row], schema[row] ? schema[row] : "(null)", table[row], period[row], usename_isnull[row] ? "true" : "false", datname_isnull[row] ? "true" : "false");
+        tick[row].user = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
+        tick[row].data = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
+        tick[row].schema = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
+        tick[row].table = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
+        tick[row].period = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
+        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &tick[row].usename_isnull);
+        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &tick[row].datname_isnull);
+        L("data = %s, user = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", tick[row].data, tick[row].user, tick[row].schema ? tick[row].schema : "(null)", tick[row].table, tick[row].period, tick[row].usename_isnull ? "true" : "false", tick[row].datname_isnull ? "true" : "false");
         if (period_isnull) E("period_isnull");
     }
     MemoryContextSwitchTo(oldMemoryContext);
     SPI_commit_my(command);
     for (uint64 row = 0; row < SPI_processed_my; row++) {
-        L("data = %s, user = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", data[row], user[row], schema[row] ? schema[row] : "(null)", table[row], period[row], usename_isnull[row] ? "true" : "false", datname_isnull[row] ? "true" : "false");
-        if (usename_isnull[row]) conf_user(user[row]);
-        if (datname_isnull[row]) conf_data(user[row], data[row]);
-        if (!pg_strncasecmp(data[row], "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(user[row], "postgres", sizeof("postgres") - 1) && !schema[row] && !pg_strcasecmp(table[row], pg_task_task)) {
-            timeout = period[row];
+        L("data = %s, user = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", tick[row].data, tick[row].user, tick[row].schema ? tick[row].schema : "(null)", tick[row].table, tick[row].period, tick[row].usename_isnull ? "true" : "false", tick[row].datname_isnull ? "true" : "false");
+        if (tick[row].usename_isnull) conf_user(tick[row].user);
+        if (tick[row].datname_isnull) conf_data(tick[row].user, tick[row].data);
+        if (!pg_strncasecmp(tick[row].data, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(tick[row].user, "postgres", sizeof("postgres") - 1) && !tick[row].schema && !pg_strcasecmp(tick[row].table, pg_task_task)) {
+            timeout = tick[row].period;
             events |= WL_TIMEOUT;
-        } else tick_worker(data[row], user[row], schema[row], table[row], period[row]);
-        pfree(data[row]);
-        pfree(user[row]);
-        if (schema[row]) pfree(schema[row]);
-        pfree(table[row]);
+        } else tick_worker(tick[row].user, tick[row].data, tick[row].schema, tick[row].table, tick[row].period);
+        pfree(tick[row].user);
+        pfree(tick[row].data);
+        if (tick[row].schema) pfree(tick[row].schema);
+        pfree(tick[row].table);
     }
-    pfree(data);
-    pfree(user);
-    pfree(schema);
-    pfree(table);
-    pfree(period);
-    pfree(usename_isnull);
-    pfree(datname_isnull);
+    pfree(tick);
     if (events & WL_TIMEOUT) {
         update_ps_display(true);
         tick_init(true, "postgres", "postgres", NULL, pg_task_task, timeout);
