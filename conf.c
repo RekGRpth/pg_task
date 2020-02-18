@@ -131,7 +131,6 @@ static void conf_check(void) {
         bool usename_isnull;
         bool datname_isnull;
     } *tick;
-    MemoryContext oldMemoryContext;
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS (\n"
@@ -153,28 +152,32 @@ static void conf_check(void) {
     SPI_begin_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
-    oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-//    L("SPI_processed = %lu", SPI_processed);
-    if (!(tick = palloc(SPI_processed * sizeof(tick)))) E("!palloc");
+    if (!(tick = MemoryContextAlloc(TopMemoryContext, SPI_processed * sizeof(tick)))) E("!MemoryContextAlloc");
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool period_isnull;
         struct Tick *t = &tick[row];
         HeapTuple tuple = SPI_tuptable->vals[row];
         TupleDesc desc = SPI_tuptable->tupdesc;
-        t->user = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "user"));
-        t->data = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "data"));
-        t->schema = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "schema"));
-        t->table = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "table"));
+        char *value = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "user"));
+        t->user = MemoryContextStrdup(TopMemoryContext, value);
+        pfree(value);
+        value = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "data"));
+        t->data = MemoryContextStrdup(TopMemoryContext, value);
+        pfree(value);
+        value = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "schema"));
+        t->schema = MemoryContextStrdup(TopMemoryContext, value);
+        if (value) pfree(value);
+        value = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "table"));
+        t->table = MemoryContextStrdup(TopMemoryContext, value);
+        pfree(value);
         t->period = DatumGetInt32(SPI_getbinval(tuple, desc, SPI_fnumber(desc, "period"), &period_isnull));
         SPI_getbinval(tuple, desc, SPI_fnumber(desc, "usename"), &t->usename_isnull);
         SPI_getbinval(tuple, desc, SPI_fnumber(desc, "datname"), &t->datname_isnull);
         L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, t->user, t->data, t->schema ? t->schema : "(null)", t->table, t->period, t->usename_isnull ? "true" : "false", t->datname_isnull ? "true" : "false");
         if (period_isnull) E("period_isnull");
     }
-    MemoryContextSwitchTo(oldMemoryContext);
     SPI_processed_my = SPI_processed;
     SPI_commit_my(command);
-//    L("SPI_processed_my = %lu", SPI_processed_my);
     for (uint64 row = 0; row < SPI_processed_my; row++) {
         struct Tick *t = &tick[row];
         L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, t->user, t->data, t->schema ? t->schema : "(null)", t->table, t->period, t->usename_isnull ? "true" : "false", t->datname_isnull ? "true" : "false");
