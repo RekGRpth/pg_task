@@ -36,6 +36,9 @@ static void update_ps_display(void) {
     appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
     SetConfigOptionMy("application_name", buf.data);
     pgstat_report_appname(buf.data);
+    resetStringInfo(&buf);
+    appendStringInfo(&buf, "%lu", DatumGetUInt64(id));
+    set_config_option_my("pg_task.id", buf.data);
     pfree(buf.data);
 }
 
@@ -160,7 +163,7 @@ static void task_live(void) {
             "AND     COALESCE(max, ~(1<<31)) >= $" SMAX "\n"
             "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $" SCOUNT " AND $" SSTART " + live > current_timestamp ELSE COALESCE(count, 0) > $" SCOUNT " OR $" SSTART " + COALESCE(live, '0 sec'::interval) > current_timestamp END\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, set_config('pg_task.id', u.id::text, false)", schema_quote_point_table_quote);
+            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id", schema_quote_point_table_quote);
         command = buf.data;
     }
     #undef QUEUE
@@ -319,19 +322,19 @@ static void task_init(void) {
     max = *(typeof(max) *)(queue + strlen(queue) + 1);
     oid = *(typeof(oid) *)(queue + strlen(queue) + 1 + sizeof(max));
     if (table == schema + 1) schema = NULL;
-    initStringInfo(&buf);
-    appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
-    SetConfigOptionMy("application_name", buf.data);
-    L("data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     data_quote = quote_identifier(data);
     user_quote = quote_identifier(user);
     schema_quote = schema ? quote_identifier(schema) : NULL;
     point = schema ? "." : "";
     table_quote = quote_identifier(table);
-    resetStringInfo(&buf);
+    initStringInfo(&buf);
     if (schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, table_quote);
     schema_quote_point_table_quote = buf.data;
+    initStringInfo(&buf);
+    appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
+    SetConfigOptionMy("application_name", buf.data);
+    L("data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     pqsignal(SIGTERM, task_sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(data, user, 0);
@@ -341,9 +344,6 @@ static void task_init(void) {
     if (schema) set_config_option_my("pg_task.schema", schema);
     set_config_option_my("pg_task.table", table);
     set_config_option_my("pg_task.queue", queue);
-    initStringInfo(&buf);
-    appendStringInfo(&buf, "%lu", DatumGetUInt64(id));
-    set_config_option_my("pg_task.id", buf.data);
     resetStringInfo(&buf);
     appendStringInfo(&buf, "%d", oid);
     set_config_option_my("pg_task.oid", buf.data);
