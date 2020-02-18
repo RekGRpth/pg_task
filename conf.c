@@ -30,7 +30,7 @@ static void update_ps_display(bool conf) {
     resetStringInfo(&buf);
     if (!conf) appendStringInfoString(&buf, "pg_task conf");
     else appendStringInfo(&buf, "pg_task %s %ld", pg_task_task, timeout);
-    SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
+    SetConfigOptionMy("application_name", buf.data);
     pgstat_report_appname(buf.data);
     pfree(buf.data);
     renamed = true;
@@ -169,7 +169,7 @@ static void conf_init(void) {
     if (!MyProcPort->user_name) MyProcPort->user_name = "postgres";
     if (!MyProcPort->database_name) MyProcPort->database_name = "postgres";
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-    SetConfigOption("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_OVERRIDE);
+    SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
     pqsignal(SIGHUP, conf_sighup);
     pqsignal(SIGTERM, conf_sigterm);
     BackgroundWorkerUnblockSignals();

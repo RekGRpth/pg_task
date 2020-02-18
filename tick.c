@@ -279,7 +279,7 @@ void tick_init(const bool conf, const char *_data, const char *_user, const char
     if (!conf) {
         initStringInfo(&buf);
         appendStringInfo(&buf, "%s %d", MyBgworkerEntry->bgw_type, period);
-        SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
+        SetConfigOptionMy("application_name", buf.data);
         pqsignal(SIGHUP, tick_sighup);
         pqsignal(SIGTERM, tick_sigterm);
         BackgroundWorkerUnblockSignals();

@@ -34,7 +34,7 @@ static void update_ps_display(void) {
     init_ps_display(buf.data, "", "", "");
     resetStringInfo(&buf);
     appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
-    SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
+    SetConfigOptionMy("application_name", buf.data);
     pgstat_report_appname(buf.data);
     pfree(buf.data);
 }
@@ -321,7 +321,7 @@ static void task_init(void) {
     if (table == schema + 1) schema = NULL;
     initStringInfo(&buf);
     appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
-    SetConfigOption("application_name", buf.data, PGC_USERSET, PGC_S_OVERRIDE);
+    SetConfigOptionMy("application_name", buf.data);
     L("data = %s, user = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", data, user, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     data_quote = quote_identifier(data);
     user_quote = quote_identifier(user);

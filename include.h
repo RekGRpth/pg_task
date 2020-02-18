@@ -45,6 +45,7 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void exec_simple_query(const char *query_string);
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
 void set_config_option_my(const char *name, const char *value);
+void SetConfigOptionMy(const char *name, const char *value);
 void SPI_begin_my(const char *command);
 void SPI_commit_my(const char *command);
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res);
