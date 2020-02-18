@@ -122,7 +122,7 @@ static void tick_worker(const char *user, const char *data, const char *schema, 
 
 static void conf_check(void) {
     uint64 SPI_processed_my;
-    typedef struct Tick {
+    struct Tick {
         char *user;
         char *data;
         char *schema;
@@ -130,8 +130,7 @@ static void conf_check(void) {
         int period;
         bool usename_isnull;
         bool datname_isnull;
-    } Tick;
-    Tick *tick;
+    } *tick;
     MemoryContext oldMemoryContext;
     static SPIPlanPtr plan = NULL;
     static const char *command =
@@ -155,10 +154,11 @@ static void conf_check(void) {
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+//    L("SPI_processed = %lu", SPI_processed);
     if (!(tick = palloc(SPI_processed * sizeof(tick)))) E("!palloc");
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool period_isnull;
-        Tick *t = &tick[row];
+        struct Tick *t = &tick[row];
         HeapTuple tuple = SPI_tuptable->vals[row];
         TupleDesc desc = SPI_tuptable->tupdesc;
         t->user = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "user"));
@@ -174,8 +174,9 @@ static void conf_check(void) {
     MemoryContextSwitchTo(oldMemoryContext);
     SPI_processed_my = SPI_processed;
     SPI_commit_my(command);
+//    L("SPI_processed_my = %lu", SPI_processed_my);
     for (uint64 row = 0; row < SPI_processed_my; row++) {
-        Tick *t = &tick[row];
+        struct Tick *t = &tick[row];
         L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, t->user, t->data, t->schema ? t->schema : "(null)", t->table, t->period, t->usename_isnull ? "true" : "false", t->datname_isnull ? "true" : "false");
         if (t->usename_isnull) conf_user(t->user);
         if (t->datname_isnull) conf_data(t->user, t->data);
