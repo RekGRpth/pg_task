@@ -162,10 +162,11 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     const char **keywords;
     const char **values;
     SocketData *sd;
+    int i = 0;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
-        L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
+//        L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
         if (!opt->val) continue;
         if (pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) list = lappend(list, opt); else application_name = opt->val;
     }
@@ -175,9 +176,11 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     values[list_length(list)] = application_name ? application_name : "queue";
     keywords[list_length(list) + 1] = NULL;
     values[list_length(list) + 1] = NULL;
-    for (ListCell *cell = list_head(list); cell; cell = lnext(cell)) {
+    for (ListCell *cell = list_head(list); cell; cell = lnext(cell), i++) {
         PQconninfoOption *opt = lfirst(cell);
-        L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
+        keywords[i] = opt->keyword;
+        values[i] = opt->val;
+//        L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
     }
     if (!(sd = palloc(sizeof(sd)))) E("!palloc");
     if (!(context = palloc(sizeof(context)))) E("!palloc");
@@ -190,7 +193,7 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     context->queue = pstrdup(queue);
     context->max = max;
     context->application_name = pstrdup(application_name);
-//    socket_data = lappend(socket_data, sd);
+    socket_data = lappend(socket_data, sd);
     pfree(keywords);
     pfree(values);
     list_free(list);
@@ -376,6 +379,22 @@ static void tick_reload(void) {
     tick_check();
 }
 
+static void tick_socket(WaitEvent *event) {
+//    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+//    L("context = %p", PQparameterStatus(context->conn, "application_name"));
+    Context *context = event->user_data;
+    if (event->events & WL_LATCH_SET) L("WL_LATCH_SET");
+    if (event->events & WL_SOCKET_READABLE) L("WL_SOCKET_READABLE");
+    if (event->events & WL_SOCKET_WRITEABLE) L("WL_SOCKET_WRITEABLE");
+    if (event->events & WL_TIMEOUT) L("WL_TIMEOUT");
+    if (event->events & WL_POSTMASTER_DEATH) L("WL_POSTMASTER_DEATH");
+    if (event->events & WL_EXIT_ON_PM_DEATH) L("WL_EXIT_ON_PM_DEATH");
+    if (event->events & WL_SOCKET_CONNECTED) L("WL_SOCKET_CONNECTED");
+    L("list_length(socket_data) = %d", list_length(socket_data));
+//    L("queue = %s", context->queue);
+//    MemoryContextSwitchTo(oldMemoryContext);
+}
+
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     user = MyBgworkerEntry->bgw_extra;
     data = user + strlen(user) + 1;
@@ -386,10 +405,11 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     tick_init(false);
     while (!sigterm) {
         WaitEvent event;
-        int rc = WaitLatchOrSocketMy(MyLatch, &event, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, socket_data, period, PG_WAIT_EXTENSION);
+        int rc = WaitLatchOrSocketMy(MyLatch, &event, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &socket_data, period, PG_WAIT_EXTENSION);
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) tick_reset();
         if (sighup) tick_reload();
         if (rc & WL_TIMEOUT) tick_loop();
+        if (rc & WL_SOCKET_MASK) tick_socket(&event);
     }
 }
