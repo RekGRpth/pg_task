@@ -189,6 +189,12 @@ static void task_worker(const Datum id, const char *queue, const int max) {
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
+static void tick_work(const Datum id, const char *queue, const int max) {
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
+    if (false) task_remote(id, queue, max);
+    else task_worker(id, queue, max);
+}
+
 void tick_loop(void) {
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
@@ -222,8 +228,7 @@ void tick_loop(void) {
         const int max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
         if (id_isnull) E("id_isnull");
         if (max_isnull) E("max_isnull");
-        if (false) task_remote(id, queue, max);
-        else task_worker(id, queue, max);
+        tick_work(id, queue, max);
         pfree((void *)queue);
     }
     SPI_commit_my(command);
