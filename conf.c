@@ -1,6 +1,11 @@
 #include "include.h"
 
 extern char *pg_task_task;
+extern const char *data;
+extern const char *schema;
+extern const char *table;
+extern const char *user;
+extern int period;
 static bool renamed = false;
 static int events = WL_LATCH_SET | WL_POSTMASTER_DEATH;
 static long timeout = LONG_MAX;
@@ -121,12 +126,7 @@ static void tick_worker(const char *user, const char *data, const char *schema, 
 }
 
 static void conf_check(void) {
-    uint64 SPI_processed_my;
-    char **user, **data, **schema, **table;
-    int *period;
-    bool *usename_isnull, *datname_isnull;
     static SPIPlanPtr plan = NULL;
-    MemoryContext oldMemoryContext;
     static const char *command =
         "WITH s AS (\n"
         "SELECT      COALESCE(COALESCE(usename, \"user\"), data)::TEXT AS user,\n"
@@ -147,52 +147,63 @@ static void conf_check(void) {
     SPI_begin_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
-    oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    if (!(user = palloc(SPI_processed * sizeof(user)))) E("!palloc");
-    if (!(data = palloc(SPI_processed * sizeof(data)))) E("!palloc");
-    if (!(schema = palloc(SPI_processed * sizeof(schema)))) E("!palloc");
-    if (!(table = palloc(SPI_processed * sizeof(table)))) E("!palloc");
-    if (!(period = palloc(SPI_processed * sizeof(period)))) E("!palloc");
-    if (!(usename_isnull = palloc(SPI_processed * sizeof(usename_isnull)))) E("!palloc");
-    if (!(datname_isnull = palloc(SPI_processed * sizeof(datname_isnull)))) E("!palloc");
-    for (uint64 row = 0; row < SPI_processed; row++) {
-        bool period_isnull;
-        user[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
-        data[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
-        schema[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
-        table[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
-        period[row] = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
-        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull[row]);
-        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull[row]);
-        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, user[row], data[row], schema[row] ? schema[row] : "(null)", table[row], period[row], usename_isnull[row] ? "true" : "false", datname_isnull[row] ? "true" : "false");
-        if (period_isnull) E("period_isnull");
+    {
+        uint64 SPI_processed_my;
+        char **user, **data, **schema, **table;
+        int *period;
+        bool *usename_isnull, *datname_isnull;
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+        if (!(user = palloc(SPI_processed * sizeof(user)))) E("!palloc");
+        if (!(data = palloc(SPI_processed * sizeof(data)))) E("!palloc");
+        if (!(schema = palloc(SPI_processed * sizeof(schema)))) E("!palloc");
+        if (!(table = palloc(SPI_processed * sizeof(table)))) E("!palloc");
+        if (!(period = palloc(SPI_processed * sizeof(period)))) E("!palloc");
+        if (!(usename_isnull = palloc(SPI_processed * sizeof(usename_isnull)))) E("!palloc");
+        if (!(datname_isnull = palloc(SPI_processed * sizeof(datname_isnull)))) E("!palloc");
+        for (uint64 row = 0; row < SPI_processed; row++) {
+            bool period_isnull;
+            user[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
+            data[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
+            schema[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
+            table[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
+            period[row] = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
+            SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull[row]);
+            SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull[row]);
+            L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, user[row], data[row], schema[row] ? schema[row] : "(null)", table[row], period[row], usename_isnull[row] ? "true" : "false", datname_isnull[row] ? "true" : "false");
+            if (period_isnull) E("period_isnull");
+        }
+        SPI_processed_my = SPI_processed;
+        MemoryContextSwitchTo(oldMemoryContext);
+        SPI_commit_my(command);
+        for (uint64 row = 0; row < SPI_processed_my; row++) {
+            L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, user[row], data[row], schema[row] ? schema[row] : "(null)", table[row], period[row], usename_isnull[row] ? "true" : "false", datname_isnull[row] ? "true" : "false");
+            if (usename_isnull[row]) conf_user(user[row]);
+            if (datname_isnull[row]) conf_data(user[row], data[row]);
+            if (!pg_strncasecmp(data[row], "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(user[row], "postgres", sizeof("postgres") - 1) && !schema[row] && !pg_strcasecmp(table[row], pg_task_task)) {
+                timeout = period[row];
+                events |= WL_TIMEOUT;
+            } else tick_worker(user[row], data[row], schema[row], table[row], period[row]);
+            pfree(user[row]);
+            pfree(data[row]);
+            if (schema[row]) pfree(schema[row]);
+            pfree(table[row]);
+        }
+        pfree(user);
+        pfree(data);
+        pfree(schema);
+        pfree(table);
+        pfree(period);
+        pfree(usename_isnull);
+        pfree(datname_isnull);
     }
-    SPI_processed_my = SPI_processed;
-    MemoryContextSwitchTo(oldMemoryContext);
-    SPI_commit_my(command);
-    for (uint64 row = 0; row < SPI_processed_my; row++) {
-        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, user[row], data[row], schema[row] ? schema[row] : "(null)", table[row], period[row], usename_isnull[row] ? "true" : "false", datname_isnull[row] ? "true" : "false");
-        if (usename_isnull[row]) conf_user(user[row]);
-        if (datname_isnull[row]) conf_data(user[row], data[row]);
-        if (!pg_strncasecmp(data[row], "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(user[row], "postgres", sizeof("postgres") - 1) && !schema[row] && !pg_strcasecmp(table[row], pg_task_task)) {
-            timeout = period[row];
-            events |= WL_TIMEOUT;
-        } else tick_worker(user[row], data[row], schema[row], table[row], period[row]);
-        pfree(user[row]);
-        pfree(data[row]);
-        if (schema[row]) pfree(schema[row]);
-        pfree(table[row]);
-    }
-    pfree(user);
-    pfree(data);
-    pfree(schema);
-    pfree(table);
-    pfree(period);
-    pfree(usename_isnull);
-    pfree(datname_isnull);
     if (events & WL_TIMEOUT) {
         update_ps_display(true);
-        tick_init(true, "postgres", "postgres", NULL, pg_task_task, timeout);
+        user = "postgres";
+        data = "postgres";
+        schema = NULL;
+        table = pg_task_task;
+        period = timeout;
+        tick_init(true);
     } else if (renamed) {
         timeout = LONG_MAX;
         update_ps_display(false);

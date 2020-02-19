@@ -1,16 +1,16 @@
 #include "include.h"
 
-static const char *data;
+const char *data;
+const char *schema;
+const char *table;
+const char *user;
+int period;
 static const char *data_quote = NULL;
 static const char *point;
-static const char *schema;
 static const char *schema_quote = NULL;
 static const char *schema_quote_point_table_quote = NULL;
-static const char *table;
 static const char *table_quote = NULL;
-static const char *user;
 static const char *user_quote = NULL;
-static int period;
 static Oid oid = 0;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
@@ -253,9 +253,8 @@ static void tick_check(void) {
     SPI_commit_my(command);
 }
 
-void tick_init(const bool conf, const char *_user, const char *_data, const char *_schema, const char *_table, int _period) {
+void tick_init(const bool conf) {
     StringInfoData buf;
-    user = _user; data = _data; schema = _schema; table = _table; period = _period;
     if (!conf) {
         if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
         if (!MyProcPort->user_name) MyProcPort->user_name = (char *)user;
@@ -313,13 +312,13 @@ static void tick_reload(void) {
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
-    const char *user = MyBgworkerEntry->bgw_extra;
-    const char *data = user + strlen(user) + 1;
-    const char *schema = data + strlen(data) + 1;
-    const char *table = schema + strlen(schema) + 1;
-    const int period = *(typeof(period) *)(table + strlen(table) + 1);
+    user = MyBgworkerEntry->bgw_extra;
+    data = user + strlen(user) + 1;
+    schema = data + strlen(data) + 1;
+    table = schema + strlen(schema) + 1;
+    period = *(typeof(period) *)(table + strlen(table) + 1);
     if (table == schema + 1) schema = NULL;
-    tick_init(false, user, data, schema, table, period);
+    tick_init(false);
     while (!sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, period, PG_WAIT_EXTENSION);
         if (rc & WL_POSTMASTER_DEATH) break;
