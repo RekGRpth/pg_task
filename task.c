@@ -1,7 +1,6 @@
 #include "include.h"
 
 bool response_isnull;
-int timeout;
 static char *state;
 static const char *data;
 static const char *data_quote;
@@ -41,7 +40,7 @@ static void update_ps_display(void) {
     pfree(buf.data);
 }
 
-static void task_work(char **request) {
+static void task_work(char **request, int *timeout) {
     #define ID 1
     #define SID S(ID)
     static Oid argtypes[] = {[ID - 1] = INT8OID};
@@ -50,7 +49,7 @@ static void task_work(char **request) {
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     update_ps_display();
-    timeout = 0;
+//    timeout = 0;
     count++;
     if (!command) {
         StringInfoData buf;
@@ -73,12 +72,12 @@ static void task_work(char **request) {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         bool timeout_isnull;
         *request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
-        timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
+        *timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
         if (timeout_isnull) E("timeout_isnull");
         MemoryContextSwitchTo(oldMemoryContext);
     }
     SPI_commit_my(command);
-    if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
+//    if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
     state = "DONE";
     state_datum = done;
     response_isnull = true;
@@ -235,14 +234,15 @@ static void task_done(void) {
     if (live) task_live(); else sigterm = true;
 }
 
-static void task_success(char *request) {
+static void task_success(char *request, int timeout) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
     MemoryContextResetAndDeleteChildren(MessageContext);
     InvalidateCatalogSnapshotConditionally();
     MemoryContextSwitchTo(oldMemoryContext);
     SetCurrentStatementStartTimestamp();
     whereToSendOutput = DestDebug;
-    exec_simple_query(request);
+    if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
+    exec_simple_query(request, timeout);
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
 }
@@ -287,11 +287,12 @@ static void task_error(char *request) {
 
 static void task_loop(void) {
     char *request;
+    int timeout;
     if (!pg_try_advisory_lock_int4_my(oid, DatumGetUInt64(id))) E("lock id = %lu, oid = %d", DatumGetUInt64(id), oid);
-    task_work(&request);
+    task_work(&request, &timeout);
     L("id = %lu, timeout = %d, request = %s, count = %u", DatumGetUInt64(id), timeout, request, count);
     PG_TRY();
-        task_success(request);
+        task_success(request, timeout);
     PG_CATCH();
         task_error(request);
     PG_END_TRY();

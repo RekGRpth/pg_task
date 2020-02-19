@@ -45,7 +45,7 @@ bool pg_try_advisory_lock_int8_my(int64 key);
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
 int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, List *socket_data, long timeout, uint32 wait_event_info);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
-void exec_simple_query(const char *query_string);
+void exec_simple_query(const char *query_string, int timeout);
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
 void set_config_option_my(const char *name, const char *value);
 void SetConfigOptionMy(const char *name, const char *value);

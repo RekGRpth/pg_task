@@ -1,7 +1,5 @@
 #include "include.h"
 
-extern int timeout;
-
 /*
  * Flag to keep track of whether we have started a transaction.
  * For extended query protocol this has to be remembered across messages.
@@ -16,10 +14,10 @@ static bool stmt_timeout_active = false;
 static bool check_log_statement(List *stmt_list);
 static int	errdetail_execute(List *raw_parsetree_list);
 static int	errdetail_abort(void);
-static void start_xact_command(void);
+static void start_xact_command(int timeout);
 static void finish_xact_command(void);
 static bool IsTransactionExitStmt(Node *parsetree);
-static void enable_statement_timeout(void);
+static void enable_statement_timeout(int timeout);
 static void disable_statement_timeout(void);
 
 /*
@@ -28,7 +26,7 @@ static void disable_statement_timeout(void);
  * Execute a "simple Query" protocol message.
  */
 void
-exec_simple_query(const char *query_string)
+exec_simple_query(const char *query_string, int timeout)
 {
 	CommandDest dest = whereToSendOutput;
 	MemoryContext oldcontext;
@@ -60,7 +58,7 @@ exec_simple_query(const char *query_string)
 	 * one of those, else bad things will happen in xact.c. (Note that this
 	 * will normally change current memory context.)
 	 */
-	start_xact_command();
+	start_xact_command(timeout);
 
 	/*
 	 * Switch to appropriate context for constructing parsetrees.
@@ -142,7 +140,7 @@ exec_simple_query(const char *query_string)
 					 errdetail_abort()));
 
 		/* Make sure we are in a transaction command */
-		start_xact_command();
+		start_xact_command(timeout);
 
 		/*
 		 * If using an implicit transaction block, and we're not already in a
@@ -419,7 +417,7 @@ errdetail_abort(void)
  * Convenience routines for starting/committing a single command.
  */
 static void
-start_xact_command(void)
+start_xact_command(int timeout)
 {
 	if (!xact_started)
 	{
@@ -435,7 +433,7 @@ start_xact_command(void)
 	 * interceding finish_xact_command() (e.g. parse/bind/execute).  If that's
 	 * not desired, the timeout has to be disabled explicitly.
 	 */
-	enable_statement_timeout();
+	enable_statement_timeout(timeout);
 }
 
 static void
@@ -494,7 +492,7 @@ IsTransactionExitStmt(Node *parsetree)
  * timeout.
  */
 static void
-enable_statement_timeout(void)
+enable_statement_timeout(int timeout)
 {
 	/* must be within an xact */
 	Assert(xact_started);
