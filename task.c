@@ -243,6 +243,7 @@ static void task_success(void) {
     InvalidateCatalogSnapshotConditionally();
     MemoryContextSwitchTo(oldMemoryContext);
     SetCurrentStatementStartTimestamp();
+    whereToSendOutput = DestDebug;
     exec_simple_query(request);
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
