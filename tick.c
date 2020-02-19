@@ -67,7 +67,7 @@ static void tick_table(void) {
         "    dt timestamp NOT NULL DEFAULT current_timestamp,\n"
         "    start timestamp,\n"
         "    stop timestamp,\n"
-        "    queue text NOT NULL DEFAULT 'default',\n"
+        "    queue text NOT NULL DEFAULT 'queue',\n"
         "    max int4,\n"
         "    pid int4,\n"
         "    request text NOT NULL,\n"
