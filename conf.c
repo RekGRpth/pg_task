@@ -44,7 +44,7 @@ static void conf_user(const char *user) {
     CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
     L("user = %s", user);
     initStringInfo(&buf);
-    appendStringInfo(&buf, "CREATE USER %s WITH LOGIN", user_quote);
+    appendStringInfo(&buf, "CREATE ROLE %s WITH LOGIN", user_quote);
     pstate->p_sourcetext = buf.data;
     options = lappend(options, makeDefElem("canlogin", (Node *)makeInteger(1), -1));
     stmt->role = (char *)user;
