@@ -122,16 +122,9 @@ static void tick_worker(const char *user, const char *data, const char *schema, 
 
 static void conf_check(void) {
     uint64 SPI_processed_my;
-    struct Tick {
-        char *user;
-        char *data;
-        char *schema;
-        char *table;
-        int period;
-        bool usename_isnull;
-        bool datname_isnull;
-    } *tick;
-    TupleDesc desc;
+    char **user, **data, **schema, **table;
+    int *period;
+    bool *usename_isnull, *datname_isnull;
     static SPIPlanPtr plan = NULL;
     MemoryContext oldMemoryContext;
     static const char *command =
@@ -154,42 +147,49 @@ static void conf_check(void) {
     SPI_begin_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
-    desc = SPI_tuptable->tupdesc;
     oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    if (!(tick = palloc(SPI_processed * sizeof(tick)))) E("!palloc");
+    if (!(user = palloc(SPI_processed * sizeof(user)))) E("!palloc");
+    if (!(data = palloc(SPI_processed * sizeof(data)))) E("!palloc");
+    if (!(schema = palloc(SPI_processed * sizeof(schema)))) E("!palloc");
+    if (!(table = palloc(SPI_processed * sizeof(table)))) E("!palloc");
+    if (!(period = palloc(SPI_processed * sizeof(period)))) E("!palloc");
+    if (!(usename_isnull = palloc(SPI_processed * sizeof(usename_isnull)))) E("!palloc");
+    if (!(datname_isnull = palloc(SPI_processed * sizeof(datname_isnull)))) E("!palloc");
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool period_isnull;
-        struct Tick *t = &tick[row];
-        HeapTuple tuple = SPI_tuptable->vals[row];
-        t->user = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "user"));
-        t->data = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "data"));
-        t->schema = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "schema"));
-        t->table = SPI_getvalue(tuple, desc, SPI_fnumber(desc, "table"));
-        t->period = DatumGetInt32(SPI_getbinval(tuple, desc, SPI_fnumber(desc, "period"), &period_isnull));
-        SPI_getbinval(tuple, desc, SPI_fnumber(desc, "usename"), &t->usename_isnull);
-        SPI_getbinval(tuple, desc, SPI_fnumber(desc, "datname"), &t->datname_isnull);
-        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, t->user, t->data, t->schema ? t->schema : "(null)", t->table, t->period, t->usename_isnull ? "true" : "false", t->datname_isnull ? "true" : "false");
+        user[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
+        data[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
+        schema[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
+        table[row] = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
+        period[row] = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
+        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull[row]);
+        SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull[row]);
+        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, user[row], data[row], schema[row] ? schema[row] : "(null)", table[row], period[row], usename_isnull[row] ? "true" : "false", datname_isnull[row] ? "true" : "false");
         if (period_isnull) E("period_isnull");
     }
     SPI_processed_my = SPI_processed;
     MemoryContextSwitchTo(oldMemoryContext);
     SPI_commit_my(command);
     for (uint64 row = 0; row < SPI_processed_my; row++) {
-        struct Tick *t = &tick[row];
-        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, t->user, t->data, t->schema ? t->schema : "(null)", t->table, t->period, t->usename_isnull ? "true" : "false", t->datname_isnull ? "true" : "false");
-        continue;
-        if (t->usename_isnull) conf_user(t->user);
-        if (t->datname_isnull) conf_data(t->user, t->data);
-        if (!pg_strncasecmp(t->data, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(t->user, "postgres", sizeof("postgres") - 1) && !t->schema && !pg_strcasecmp(t->table, pg_task_task)) {
-            timeout = t->period;
+        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, user[row], data[row], schema[row] ? schema[row] : "(null)", table[row], period[row], usename_isnull[row] ? "true" : "false", datname_isnull[row] ? "true" : "false");
+        if (usename_isnull[row]) conf_user(user[row]);
+        if (datname_isnull[row]) conf_data(user[row], data[row]);
+        if (!pg_strncasecmp(data[row], "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(user[row], "postgres", sizeof("postgres") - 1) && !schema[row] && !pg_strcasecmp(table[row], pg_task_task)) {
+            timeout = period[row];
             events |= WL_TIMEOUT;
-        } else tick_worker(t->user, t->data, t->schema, t->table, t->period);
-        pfree(t->user);
-        pfree(t->data);
-        if (t->schema) pfree(t->schema);
-        pfree(t->table);
+        } else tick_worker(user[row], data[row], schema[row], table[row], period[row]);
+        pfree(user[row]);
+        pfree(data[row]);
+        if (schema[row]) pfree(schema[row]);
+        pfree(table[row]);
     }
-    pfree(tick);
+    pfree(user);
+    pfree(data);
+    pfree(schema);
+    pfree(table);
+    pfree(period);
+    pfree(usename_isnull);
+    pfree(datname_isnull);
     if (events & WL_TIMEOUT) {
         update_ps_display(true);
         tick_init(true, "postgres", "postgres", NULL, pg_task_task, timeout);
