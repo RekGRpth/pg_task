@@ -6,6 +6,7 @@ typedef struct Context {
     int max;
     const char *application_name;
     PGconn *conn;
+    pgsocket fd;
 } Context;
 
 const char *data;
@@ -170,29 +171,40 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
         if (!opt->val) continue;
         if (pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) list = lappend(list, opt); else application_name = opt->val;
     }
-    if (!(keywords = palloc((list_length(list) + 2) * sizeof(keywords)))) E("!palloc");
-    if (!(values = palloc((list_length(list) + 2) * sizeof(values)))) E("!palloc");
-    keywords[list_length(list)] = "application_name";
-    values[list_length(list)] = application_name ? application_name : "queue";
-    keywords[list_length(list) + 1] = NULL;
-    values[list_length(list) + 1] = NULL;
+    if (!(keywords = palloc0((list_length(list) + 2) * sizeof(keywords)))) E("!palloc");
+    if (!(values = palloc0((list_length(list) + 2) * sizeof(values)))) E("!palloc");
+//    keywords[list_length(list) + 1] = NULL;
+//    values[list_length(list) + 1] = NULL;
     for (ListCell *cell = list_head(list); cell; cell = lnext(cell), i++) {
         PQconninfoOption *opt = lfirst(cell);
         keywords[i] = opt->keyword;
         values[i] = opt->val;
-//        L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
+        L("i = %i, %s = %s", i, keywords[i], values[i]);
     }
-    if (!(sd = palloc(sizeof(sd)))) E("!palloc");
-    if (!(context = palloc(sizeof(context)))) E("!palloc");
+    keywords[i] = "application_name";
+    values[i] = application_name ? application_name : "queue";
+    L("i = %i, %s = %s", i, keywords[i], values[i]);
+    if (!(sd = palloc0(sizeof(sd)))) E("!palloc");
+    if (!(context = palloc0(sizeof(context)))) E("!palloc");
     sd->user_data = context;
-    if (!(context->conn = PQconnectStartParams(keywords, values, false))) E("!PQconnectStartParams");
-    if (PQstatus(context->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD");
-    if (!PQisnonblocking(context->conn) && PQsetnonblocking(context->conn, 1))  E("PQsetnonblocking");
+//    if (!(context->conn = PQconnectStartParams(keywords, values, false))) E("!PQconnectStartParams");
+//    if (!(context->conn = PQconnectdb(pstrdup(queue)))) E("!PQconnectdb");
+    if (!(context->conn = PQconnectStart(pstrdup(queue)))) E("!PQconnectStart");
+    if (PQstatus(context->conn) == CONNECTION_BAD || PQsetnonblocking(context->conn, true) == -1) E("%s", PQerrorMessage(context->conn));
+    L("PQconnectPoll = %i", PQconnectPoll(context->conn));
+//    if (PQstatus(context->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD");
+//    if (!PQisnonblocking(context->conn) && PQsetnonblocking(context->conn, 1))  E("PQsetnonblocking");
     if ((sd->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
+    L("PQsocket = %i", PQsocket(context->conn));
+    L("sd->fd = %i", sd->fd);
+    L("PQoptions = %s", PQoptions(context->conn));
     context->id = id;
     context->queue = pstrdup(queue);
     context->max = max;
     context->application_name = pstrdup(application_name);
+    context->fd = sd->fd;
+    L("context->fd = %i", context->fd);
+    L("context->conn = %p", context->conn);
     socket_data = lappend(socket_data, sd);
     pfree(keywords);
     pfree(values);
@@ -391,6 +403,10 @@ static void tick_socket(WaitEvent *event) {
     if (event->events & WL_EXIT_ON_PM_DEATH) L("WL_EXIT_ON_PM_DEATH");
     if (event->events & WL_SOCKET_CONNECTED) L("WL_SOCKET_CONNECTED");
     L("list_length(socket_data) = %d", list_length(socket_data));
+    L("context->conn = %p", context->conn);
+    L("context->fd = %i", context->fd);
+//    L("PQstatus = %i", PQstatus(context->conn));
+//    L("PQsocket = %i", PQsocket(context->conn));
 //    L("queue = %s", context->queue);
 //    MemoryContextSwitchTo(oldMemoryContext);
 }

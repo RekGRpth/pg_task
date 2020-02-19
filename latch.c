@@ -3,7 +3,10 @@
 int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, List **socket_data, long timeout, uint32 wait_event_info) {
     int ret = 0;
     WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, 2 + list_length(*socket_data));
-    if (list_length(*socket_data) > 0) wakeEvents |= WL_SOCKET_MASK;
+    if (list_length(*socket_data) > 0) {
+        wakeEvents |= WL_SOCKET_MASK;
+        wait_event_info = PG_WAIT_CLIENT;
+    }
     if (wakeEvents & WL_TIMEOUT) Assert(timeout >= 0); else timeout = -1;
     if (wakeEvents & WL_LATCH_SET) AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, latch, NULL);
     Assert(!IsUnderPostmaster || (wakeEvents & WL_EXIT_ON_PM_DEATH) || (wakeEvents & WL_POSTMASTER_DEATH)); /* Postmaster-managed callers must handle postmaster death somehow. */
