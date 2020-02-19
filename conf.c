@@ -179,7 +179,7 @@ static void conf_check(void) {
             L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, user[row], data[row], schema[row] ? schema[row] : "(null)", table[row], period[row], usename_isnull[row] ? "true" : "false", datname_isnull[row] ? "true" : "false");
             if (usename_isnull[row]) conf_user(user[row]);
             if (datname_isnull[row]) conf_data(user[row], data[row]);
-            if (!pg_strncasecmp(data[row], "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(user[row], "postgres", sizeof("postgres") - 1) && !schema[row] && !pg_strcasecmp(table[row], pg_task_task)) {
+            if (!pg_strncasecmp(user[row], "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(data[row], "postgres", sizeof("postgres") - 1) && !schema[row] && !pg_strcasecmp(table[row], pg_task_task)) {
                 timeout = period[row];
                 events |= WL_TIMEOUT;
             } else tick_worker(user[row], data[row], schema[row], table[row], period[row]);
