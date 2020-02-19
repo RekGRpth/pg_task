@@ -8,7 +8,7 @@ extern const char *user;
 extern int period;
 static bool renamed = false;
 static int events = WL_LATCH_SET | WL_POSTMASTER_DEATH;
-static long timeout = LONG_MAX;
+static long timeout = -1L;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
@@ -205,7 +205,7 @@ static void conf_check(void) {
         period = timeout;
         tick_init(true);
     } else if (renamed) {
-        timeout = LONG_MAX;
+        timeout = -1L;
         update_ps_display(false);
     }
 }
