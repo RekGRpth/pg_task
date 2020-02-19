@@ -10,7 +10,7 @@ int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, List *so
     if ((wakeEvents & WL_POSTMASTER_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
     if ((wakeEvents & WL_EXIT_ON_PM_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
     if (wakeEvents & WL_SOCKET_MASK) for (ListCell *cell = list_head(socket_data); cell; cell = lnext(cell)) {
-        SocketData *sd = (SocketData *)lfirst(cell);
+        SocketData *sd = lfirst(cell);
         AddWaitEventToSet(set, wakeEvents & WL_SOCKET_MASK, sd->fd, NULL, sd->user_data);
     }
     if (!WaitEventSetWait(set, timeout, event, 1, wait_event_info)) ret |= WL_TIMEOUT; else ret |= event->events & (WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_MASK);

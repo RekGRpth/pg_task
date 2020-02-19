@@ -1,5 +1,13 @@
 #include "include.h"
 
+typedef struct Context {
+    Datum id;
+    const char *queue;
+    int max;
+    const char *application_name;
+    PGconn *conn;
+} Context;
+
 const char *data;
 const char *schema;
 const char *table;
@@ -141,13 +149,46 @@ static void tick_fix(void) {
     pfree(buf.data);
 }
 
-static void task_remote(const Datum id, const char *queue, const int max) {
-    char *request;
+static void task_remote(const Datum id, const char *queue, const int max, PQconninfoOption *opts) {
+/*    char *request;
     int timeout;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     task_work(id, &request, &timeout);
     L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), timeout, request);
-    pfree(request);
+    pfree(request);*/
+    const char *application_name = NULL;
+    Context *context;
+    List *list = NIL;
+    const char **keywords;
+    const char **values;
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
+    for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
+        L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
+        if (!opt->val) continue;
+        if (pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) list = lappend(list, opt); else application_name = opt->val;
+    }
+    if (!(keywords = palloc((list_length(list) + 2) * sizeof(keywords)))) E("!palloc");
+    if (!(values = palloc((list_length(list) + 2) * sizeof(values)))) E("!palloc");
+    keywords[list_length(list)] = "application_name";
+    values[list_length(list)] = application_name ? application_name : "queue";
+    keywords[list_length(list) + 1] = NULL;
+    values[list_length(list) + 1] = NULL;
+    for (ListCell *cell = list_head(list); cell; cell = lnext(cell)) {
+        PQconninfoOption *opt = lfirst(cell);
+        L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
+    }
+    if (!(context = palloc(sizeof(context)))) E("!palloc");
+//    if (!(context->conn = PQconnectStartParams(keywords, values, false))) E("!PQconnectStartParams");
+//    if (PQstatus(context->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD");
+    context->id = id;
+    context->queue = pstrdup(queue);
+    context->max = max;
+    context->application_name = pstrdup(application_name);
+    pfree(keywords);
+    pfree(values);
+    list_free(list);
+    MemoryContextSwitchTo(oldMemoryContext);
 
 }
 static void task_worker(const Datum id, const char *queue, const int max) {
@@ -190,9 +231,11 @@ static void task_worker(const Datum id, const char *queue, const int max) {
 }
 
 static void tick_work(const Datum id, const char *queue, const int max) {
+    PQconninfoOption *opts;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
-    if (false) task_remote(id, queue, max);
-    else task_worker(id, queue, max);
+    if (!(opts = PQconninfoParse(queue, NULL))) { task_worker(id, queue, max); return; }
+    task_remote(id, queue, max, opts);
+    PQconninfoFree(opts);
 }
 
 void tick_loop(void) {
