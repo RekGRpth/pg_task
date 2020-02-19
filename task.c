@@ -1,6 +1,8 @@
 #include "include.h"
 
 bool response_isnull;
+int timeout;
+static char *request;
 static char *state;
 static const char *data;
 static const char *data_quote;
@@ -40,7 +42,7 @@ static void update_ps_display(void) {
     pfree(buf.data);
 }
 
-static void task_work(char **request, int *timeout, char **remote) {
+static void task_work(Datum id, char **request, int *timeout, char **remote) {
     #define ID 1
     #define SID S(ID)
     static Oid argtypes[] = {[ID - 1] = INT8OID};
@@ -81,6 +83,7 @@ static void task_work(char **request, int *timeout, char **remote) {
     state_datum = done;
     response_isnull = true;
     initStringInfo(&response);
+    if (0 < StatementTimeout && StatementTimeout < *timeout) *timeout = StatementTimeout;
 }
 
 static void task_repeat(void) {
@@ -233,20 +236,19 @@ static void task_done(void) {
     if (live) task_live(); else sigterm = true;
 }
 
-static void task_success(char *request, int timeout) {
+static void task_success(void) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
     MemoryContextResetAndDeleteChildren(MessageContext);
     InvalidateCatalogSnapshotConditionally();
     MemoryContextSwitchTo(oldMemoryContext);
     SetCurrentStatementStartTimestamp();
     whereToSendOutput = DestDebug;
-    if (0 < StatementTimeout && StatementTimeout < timeout) timeout = StatementTimeout;
-    exec_simple_query(request, timeout);
+    exec_simple_query(request);
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
 }
 
-static void task_error(char *request) {
+static void task_error(void) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
     appendStringInfo(&response, "elevel::int4\t%i", edata->elevel);
@@ -285,15 +287,13 @@ static void task_error(char *request) {
 }
 
 static void task_loop(void) {
-    char *request;
-    int timeout;
     if (!pg_try_advisory_lock_int4_my(oid, DatumGetUInt64(id))) E("lock id = %lu, oid = %d", DatumGetUInt64(id), oid);
-    task_work(&request, &timeout, NULL);
+    task_work(id, &request, &timeout, NULL);
     L("id = %lu, timeout = %d, request = %s, count = %u", DatumGetUInt64(id), timeout, request, count);
     PG_TRY();
-        task_success(request, timeout);
+        task_success();
     PG_CATCH();
-        task_error(request);
+        task_error();
     PG_END_TRY();
     pfree(request);
     task_done();
