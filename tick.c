@@ -11,6 +11,8 @@ static const char *schema_quote = NULL;
 static const char *schema_quote_point_table_quote = NULL;
 static const char *table_quote = NULL;
 static const char *user_quote = NULL;
+static int events = WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH;
+static List *socket_data = NIL;
 static Oid oid = 0;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
@@ -327,7 +329,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     if (table == schema + 1) schema = NULL;
     tick_init(false);
     while (!sigterm) {
-        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, period, PG_WAIT_EXTENSION);
+        int rc = WaitLatch(MyLatch, events, period, PG_WAIT_EXTENSION);
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) tick_reset();
         if (sighup) tick_reload();
