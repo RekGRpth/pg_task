@@ -1,10 +1,5 @@
 #include "include.h"
 
-typedef struct SocketData {
-    pgsocket fd;
-    void *user_data;
-} SocketData;
-
 int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, List *socket_data, long timeout, uint32 wait_event_info) {
     int ret = 0;
     WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, 2 + list_length(socket_data));
