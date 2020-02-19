@@ -363,8 +363,7 @@ static void task_reset(void) {
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     task_init();
     while (!sigterm) {
-        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
-        if (rc & WL_POSTMASTER_DEATH) break;
+        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, 0, PG_WAIT_EXTENSION);
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) task_reset();
         if (rc & WL_TIMEOUT) task_loop();

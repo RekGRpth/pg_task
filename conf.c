@@ -7,7 +7,7 @@ extern const char *table;
 extern const char *user;
 extern int period;
 static bool renamed = false;
-static int events = WL_LATCH_SET | WL_POSTMASTER_DEATH;
+static int events = WL_LATCH_SET | WL_EXIT_ON_PM_DEATH;
 static long timeout = -1L;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
@@ -239,7 +239,6 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     conf_init();
     while (!sigterm) {
         int rc = WaitLatch(MyLatch, events, timeout, PG_WAIT_EXTENSION);
-        if (rc & WL_POSTMASTER_DEATH) break;
         if (rc & WL_LATCH_SET) conf_reset();
         if (sighup) conf_reload();
         if (rc & WL_TIMEOUT) tick_loop();
