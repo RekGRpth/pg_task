@@ -161,6 +161,7 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     List *list = NIL;
     const char **keywords;
     const char **values;
+    SocketData *sd;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
@@ -178,13 +179,18 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
         PQconninfoOption *opt = lfirst(cell);
         L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
     }
+    if (!(sd = palloc(sizeof(sd)))) E("!palloc");
     if (!(context = palloc(sizeof(context)))) E("!palloc");
-//    if (!(context->conn = PQconnectStartParams(keywords, values, false))) E("!PQconnectStartParams");
-//    if (PQstatus(context->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD");
+    sd->user_data = context;
+    if (!(context->conn = PQconnectStartParams(keywords, values, false))) E("!PQconnectStartParams");
+    if (PQstatus(context->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD");
+    if (!PQisnonblocking(context->conn) && PQsetnonblocking(context->conn, 1))  E("PQsetnonblocking");
+    if ((sd->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
     context->id = id;
     context->queue = pstrdup(queue);
     context->max = max;
     context->application_name = pstrdup(application_name);
+//    socket_data = lappend(socket_data, sd);
     pfree(keywords);
     pfree(values);
     list_free(list);
