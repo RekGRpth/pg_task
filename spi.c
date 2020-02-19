@@ -107,4 +107,6 @@ static void rDestroy(DestReceiver *self) { }
 
 static const DestReceiver DestReceiverMy = {.receiveSlot = receiveSlot, .rStartup = rStartup, .rShutdown = rShutdown, .rDestroy = rDestroy, .mydest = DestDebug};
 
-DestReceiver *CreateDestReceiverMy(CommandDest dest) { return unconstify(DestReceiver *, &DestReceiverMy); }
+DestReceiver *CreateDestReceiverMy(CommandDest dest) {
+    return dest == DestDebug ? unconstify(DestReceiver *, &DestReceiverMy) : CreateDestReceiver(dest);
+}
