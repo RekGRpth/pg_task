@@ -79,6 +79,7 @@ static void tick_table(void) {
         "    drift boolean NOT NULL DEFAULT true,\n"
         "    count int4,\n"
         "    live interval,\n"
+        "    remote text,\n"
         "    CONSTRAINT %2$s FOREIGN KEY (parent) REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
         ")", schema_quote_point_table_quote, name_quote);
     names = stringToQualifiedNameList(schema_quote_point_table_quote);
@@ -140,6 +141,9 @@ static void tick_fix(void) {
     pfree(buf.data);
 }
 
+static void task_remote(const Datum id, const char *queue, const int max, const char *remote) {
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d, remote = %s", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid, remote);
+}
 static void task_worker(const Datum id, const char *queue, const int max) {
     StringInfoData buf;
     int user_len = strlen(user), data_len = strlen(data), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), queue_len = strlen(queue), max_len = sizeof(max), oid_len = sizeof(oid);
@@ -199,7 +203,7 @@ void tick_loop(void) {
             ") SELECT array_agg(id ORDER BY id) AS id, queue, count FROM s WHERE count > 0 GROUP BY queue, count\n"
             ") SELECT unnest(id[:count]) AS id, queue, count FROM s ORDER BY count DESC\n"
             ") SELECT s.* FROM s INNER JOIN %1$s USING (id) FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", schema_quote_point_table_quote);
+            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max, u.remote", schema_quote_point_table_quote);
         command = buf.data;
     }
     SPI_begin_my(command);
@@ -210,9 +214,12 @@ void tick_loop(void) {
         Datum id = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
         const char *queue = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"));
         const int max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
+        const char *remote = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "remote"));
         if (id_isnull) E("id_isnull");
         if (max_isnull) E("max_isnull");
-        task_worker(id, queue, max);
+        if (remote) task_remote(id, queue, max, remote);
+        else task_worker(id, queue, max);
+        if (remote) pfree((void *)remote);
         pfree((void *)queue);
     }
     SPI_commit_my(command);
