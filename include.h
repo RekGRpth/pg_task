@@ -43,6 +43,7 @@ bool pg_advisory_unlock_int8_my(int64 key);
 bool pg_try_advisory_lock_int4_my(int32 key1, int32 key2);
 bool pg_try_advisory_lock_int8_my(int64 key);
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
+int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, List *socket_data, long timeout, uint32 wait_event_info);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void exec_simple_query(const char *query_string);
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
