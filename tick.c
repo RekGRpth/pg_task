@@ -413,7 +413,7 @@ static void tick_socket(Context *context) {
     switch (PQstatus(context->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: L("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
-        case CONNECTION_BAD: E("PQstatus == CONNECTION_BAD"); break;
+        case CONNECTION_BAD: E("PQstatus == CONNECTION_BAD"); goto done;
         case CONNECTION_CHECK_WRITABLE: L("PQstatus == CONNECTION_CHECK_WRITABLE"); break;
         case CONNECTION_CONSUME: L("PQstatus == CONNECTION_CONSUME"); break;
         case CONNECTION_GSS_STARTUP: L("PQstatus == CONNECTION_GSS_STARTUP"); break;
@@ -425,12 +425,14 @@ static void tick_socket(Context *context) {
         case CONNECTION_STARTED: L("PQstatus == CONNECTION_STARTED"); break;
     }
     switch (PQconnectPoll(context->conn)) {
-        case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); break;
-        case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED"); break;
-        case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); break;
-        case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); lappend(socket_data, context); break;
-        case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); lappend(socket_data, context); break;
+        case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); goto done;
+        case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED"); goto done;
+        case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); goto done;
+        case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); break;
+        case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); break;
     }
+    if (PQstatus(context->conn) == CONNECTION_MADE) PQconnectPoll(context->conn);
+    lappend(socket_data, context);
 done:
     MemoryContextSwitchTo(oldMemoryContext);
 }
