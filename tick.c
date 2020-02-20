@@ -390,25 +390,48 @@ static void tick_reload(void) {
     tick_check();
 }
 
-static void tick_socket(WaitEvent *event) {
+static void tick_socket(Context *context) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
 //    L("context = %p", PQparameterStatus(context->conn, "application_name"));
-    Context *context = event->user_data;
+//    Context *context = event->user_data;
     L("context = %p", context);
     L("CurrentMemoryContext == TopMemoryContext = %s", CurrentMemoryContext == TopMemoryContext ? "true" : "false");
-    if (event->events & WL_LATCH_SET) L("WL_LATCH_SET");
-    if (event->events & WL_SOCKET_READABLE) L("WL_SOCKET_READABLE");
-    if (event->events & WL_SOCKET_WRITEABLE) L("WL_SOCKET_WRITEABLE");
-    if (event->events & WL_TIMEOUT) L("WL_TIMEOUT");
-    if (event->events & WL_POSTMASTER_DEATH) L("WL_POSTMASTER_DEATH");
-    if (event->events & WL_EXIT_ON_PM_DEATH) L("WL_EXIT_ON_PM_DEATH");
-    if (event->events & WL_SOCKET_CONNECTED) L("WL_SOCKET_CONNECTED");
+//    if (event->events & WL_LATCH_SET) L("WL_LATCH_SET");
+//    if (event->events & WL_SOCKET_READABLE) L("WL_SOCKET_READABLE");
+//    if (event->events & WL_SOCKET_WRITEABLE) L("WL_SOCKET_WRITEABLE");
+//    if (event->events & WL_TIMEOUT) L("WL_TIMEOUT");
+//    if (event->events & WL_POSTMASTER_DEATH) L("WL_POSTMASTER_DEATH");
+//    if (event->events & WL_EXIT_ON_PM_DEATH) L("WL_EXIT_ON_PM_DEATH");
+//    if (event->events & WL_SOCKET_CONNECTED) L("WL_SOCKET_CONNECTED");
     L("list_length(socket_data) = %d", list_length(socket_data));
     L("context->conn = %p", context->conn);
     L("context->fd = %i", context->fd);
     L("PQstatus = %i", PQstatus(context->conn));
     L("PQsocket = %i", PQsocket(context->conn));
     L("queue = %s", context->queue);
+    if (PQsocket(context->conn) < 0) E("PQsocket < 0");
+    switch (PQstatus(context->conn)) {
+        case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
+        case CONNECTION_AWAITING_RESPONSE: L("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
+        case CONNECTION_BAD: E("PQstatus == CONNECTION_BAD"); break;
+        case CONNECTION_CHECK_WRITABLE: L("PQstatus == CONNECTION_CHECK_WRITABLE"); break;
+        case CONNECTION_CONSUME: L("PQstatus == CONNECTION_CONSUME"); break;
+        case CONNECTION_GSS_STARTUP: L("PQstatus == CONNECTION_GSS_STARTUP"); break;
+        case CONNECTION_MADE: L("PQstatus == CONNECTION_MADE"); break;
+        case CONNECTION_NEEDED: L("PQstatus == CONNECTION_NEEDED"); break;
+        case CONNECTION_OK: L("PQstatus == CONNECTION_OK"); goto done;
+        case CONNECTION_SETENV: L("PQstatus == CONNECTION_SETENV"); break;
+        case CONNECTION_SSL_STARTUP: L("PQstatus == CONNECTION_SSL_STARTUP"); break;
+        case CONNECTION_STARTED: L("PQstatus == CONNECTION_STARTED"); break;
+    }
+    switch (PQconnectPoll(context->conn)) {
+        case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); break;
+        case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED"); break;
+        case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); break;
+        case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); lappend(socket_data, context); break;
+        case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); lappend(socket_data, context); break;
+    }
+done:
     MemoryContextSwitchTo(oldMemoryContext);
 }
 
@@ -427,6 +450,6 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
         if (rc & WL_LATCH_SET) tick_reset();
         if (sighup) tick_reload();
         if (rc & WL_TIMEOUT) tick_loop();
-        if (rc & WL_SOCKET_MASK) tick_socket(&event);
+        if (rc & WL_SOCKET_MASK) tick_socket(event.user_data);
     }
 }
