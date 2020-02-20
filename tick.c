@@ -149,15 +149,20 @@ static void tick_fix(void) {
 
 static void task_remote(const Datum id, const char *queue, const int max, PQconninfoOption *opts) {
     WaitEventMy *event;
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
+    char *request;
+    int timeout;
+    MemoryContext oldMemoryContext;
+    task_work(id, &request, &timeout);
+    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), timeout, request);
+    oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     if (!(event = palloc(sizeof(event)))) E("!palloc");
-    event->id = id;
-    event->queue = queue;
-    event->max = max;
     event->base.event.events = WL_SOCKET_WRITEABLE;
-//    task_work(id, &event->request, &event->timeout);
-//    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(event->id), event->timeout, event->request);
+    event->id = id;
+    event->max = max;
+    event->queue = queue;
+    event->request = request;
+    event->timeout = timeout;
     if (!(event->conn = PQconnectStart(event->queue))) E("!PQconnectStart");
     if (PQstatus(event->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(event->conn));
     if (!PQisnonblocking(event->conn) && PQsetnonblocking(event->conn, true) == -1) E(PQerrorMessage(event->conn));
@@ -372,7 +377,7 @@ static void tick_socket(WaitEventMy *event) {
         case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED"); goto done;
         case PGRES_POLLING_OK: {
             L("PQconnectPoll == PGRES_POLLING_OK");
-//            L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(event->id), event->timeout, event->request);
+            L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(event->id), event->timeout, event->request);
             //if (!PQsendQuery(context->conn, context->request)) E("!PQsendQuery, %s", PQerrorMessage(context->conn));
             //context->wakeEvents = WL_SOCKET_WRITEABLE;
             goto done;
