@@ -15,12 +15,9 @@ int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, List **list, 
     if ((wakeEvents & WL_EXIT_ON_PM_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
     if (wakeEvents & WL_SOCKET_MASK) {
         for (ListCell *cell = list_head(*list); cell; cell = lnext(cell)) {
-            context_t *context = lfirst(cell);
-            L("context = %p", context);
-            if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
-            L("context->fd = %i", context->fd);
-            L("context->conn = %p", context->conn);
-            AddWaitEventToSet(set, wakeEvents & WL_SOCKET_MASK, context->fd, NULL, context);
+            void *data = lfirst(cell);
+            L("data = %p", data);
+            AddWaitEventToSet(set, wakeEvents & WL_SOCKET_MASK, *(int *)data, NULL, data);
         }
         list_free(*list);
         *list = NIL;

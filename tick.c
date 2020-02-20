@@ -1,5 +1,16 @@
 #include "include.h"
 
+typedef struct {
+    int fd; // !!! always first !!!
+    char *queue;
+    char *request;
+//    const char *application_name;
+    Datum id;
+    int max;
+    int timeout;
+    PGconn *conn;
+} context_t;
+
 const char *data;
 const char *schema;
 const char *table;
