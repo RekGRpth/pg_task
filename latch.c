@@ -2,11 +2,11 @@
 
 //extern MemoryContext RemoteMemoryContext;
 
-int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, List **list, long timeout, uint32 wait_event_info) {
-    int ret = 0;
+int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, queue_t *queue, long timeout, uint32 wait_event_info) {
+    int ret = 0, count = queue_count(queue);
     WaitEvent event;
-    WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, 2 + list_length(*list));
-    if (list_length(*list) > 0) {
+    WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, 2 + count);
+    if (count > 0) {
         wakeEvents |= WL_SOCKET_MASK;
 //        wait_event_info = PG_WAIT_CLIENT;
     }
@@ -16,7 +16,14 @@ int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, List **list, 
     if ((wakeEvents & WL_POSTMASTER_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
     if ((wakeEvents & WL_EXIT_ON_PM_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
     if (wakeEvents & WL_SOCKET_MASK) {
-        for (ListCell *cell = list_head(*list); cell; cell = lnext(cell)) {
+        while (!queue_empty(queue)) {
+            context_t *context = pointer_data(queue_get_pointer(queue), context_t, pointer);
+            pointer_remove(&context->pointer);
+            L("context = %p", context);
+            L("context->conn = %p", context->conn);
+        }
+
+/*        for (ListCell *cell = list_head(*list); cell; cell = lnext(cell)) {
             void *data = lfirst(cell);
             context_t *context = data;
 //            MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
@@ -27,7 +34,7 @@ int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, List **list, 
             AddWaitEventToSet(set, wakeEvents & WL_SOCKET_MASK, *(int *)data, NULL, data);
         }
         list_free(*list);
-        *list = NIL;
+        *list = NIL;*/
     }
     if (!WaitEventSetWait(set, timeout, &event, 1, wait_event_info)) ret |= WL_TIMEOUT; else {
         ret |= event.events & (WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_MASK);

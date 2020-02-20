@@ -11,9 +11,9 @@ static const char *point;
 static const char *schema_quote = NULL;
 static const char *table_quote = NULL;
 static const char *user_quote = NULL;
-static List *socket_data = NIL;
 static MemoryContext RemoteMemoryContext = NULL;
 static Oid oid = 0;
+static queue_t fd_queue;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
@@ -149,7 +149,7 @@ static void tick_fix(void) {
 
 static void task_remote(const Datum id, const char *queue, const int max, PQconninfoOption *opts) {
     context_t *context = NULL;
-//    MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
 //    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
 //    PGconn *conn;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
@@ -194,9 +194,10 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     L("context->conn = %p", context->conn);
 //    L("context = %p", context);
 //    socket_data = lappend(socket_data, context);
+    queue_put_pointer(&fd_queue, &context->pointer);
 //    L("context->fd = %i", context->fd);
     L("context = %p", context);
-//    MemoryContextSwitchTo(oldMemoryContext);
+    MemoryContextSwitchTo(oldMemoryContext);
     L("context = %p", context);
 //    oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
     L("context->conn = %p", context->conn);
@@ -373,6 +374,7 @@ void tick_init(const bool conf) {
     if (!pg_try_advisory_lock_int8_my(oid)) { sigterm = true; W("lock oid = %d", oid); return; }
     tick_fix();
     if (!RemoteMemoryContext) RemoteMemoryContext = AllocSetContextCreate(TopMemoryContext, "RemoteMemoryContext", ALLOCSET_DEFAULT_SIZES);
+    queue_init(&fd_queue);
 }
 
 static void tick_reset(void) {
@@ -387,7 +389,7 @@ static void tick_reload(void) {
 }
 
 static void tick_socket(context_t *context) {
-//    MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
 //    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     L("context = %p", context);
     L("context->conn = %p", context->conn);
@@ -413,9 +415,11 @@ static void tick_socket(context_t *context) {
         case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); break;
     }
     if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
-    lappend(socket_data, context);
-done:;
-//    MemoryContextSwitchTo(oldMemoryContext);
+//    lappend(socket_data, context);
+    queue_put_pointer(&fd_queue, &context->pointer);
+done:
+    ;
+    MemoryContextSwitchTo(oldMemoryContext);
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
@@ -428,7 +432,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     tick_init(false);
     while (!sigterm) {
         void *data;
-        int rc = WaitLatchOrSocketMy(MyLatch, &data, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &socket_data, period, PG_WAIT_EXTENSION);
+        int rc = WaitLatchOrSocketMy(MyLatch, &data, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &fd_queue, period, PG_WAIT_EXTENSION);
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) tick_reset();
         if (sighup) tick_reload();
