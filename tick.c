@@ -4,7 +4,6 @@ typedef struct {
     int fd; // !!! always first !!!
     char *queue;
     char *request;
-//    const char *application_name;
     Datum id;
     int max;
     int timeout;
@@ -174,13 +173,13 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     if (!(context->conn = PQconnectStart(context->queue))) E("!PQconnectStart");
     L("context->conn = %p", context->conn);
     if (PQstatus(context->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD");
-//    L("context = %p", context);
+    L("context = %p", context);
 //    L("context->fd = %i", context->fd);
 //    if ((context->fd = PQsocket(conn)) < 0) E("PQsocket < 0");
 //    L("PQsocket = %i", PQsocket(conn));
 //    L("context = %p", context);
     if (!PQisnonblocking(context->conn) && PQsetnonblocking(context->conn, true) == -1) E(PQerrorMessage(context->conn));
-//    L("context = %p", context);
+    L("context = %p", context);
 /*    if (PQstatus(conn) == CONNECTION_MADE) {
         switch (PQconnectPoll(conn)) {
             case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); break;
@@ -193,8 +192,8 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
 //    L("MemoryContextIsValid = %s", MemoryContextIsValid(CurrentMemoryContext) ? "true" : "false");
 //    L("MemoryContextIsValid = %s", MemoryContextIsValid(TopMemoryContext) ? "true" : "false");
 //    L("MemoryContextIsValid = %s", MemoryContextIsValid(oldMemoryContext) ? "true" : "false");
-//    if ((context->fd = PQsocket(conn)) < 0) E("PQsocket < 0");
-//    L("context->fd = %i", context->fd);
+    if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
+    L("context->fd = %i", context->fd);
 //    context->fd = 67;
 //    L("context = %p", context);
 //    context->conn = (void *)conn;
@@ -202,7 +201,7 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
 //    L("context = %p", context);
     socket_data = lappend(socket_data, context);
 //    L("context->fd = %i", context->fd);
-//    L("context = %p", context);
+    L("context = %p", context);
     MemoryContextSwitchTo(oldMemoryContext);
 
 }
