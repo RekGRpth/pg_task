@@ -72,7 +72,7 @@ void task_work(Datum id, char **request, int *timeout) {
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         bool timeout_isnull;
-        *request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
+        *request = SPI_getvalue_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
         *timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
         L("request = %s, timeout = %i", *request, *timeout);
         if (timeout_isnull) E("timeout_isnull");
