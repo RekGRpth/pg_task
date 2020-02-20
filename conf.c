@@ -44,24 +44,25 @@ static void update_ps_display(bool conf) {
 static void conf_user(const char *user) {
     StringInfoData buf;
     const char *user_quote = quote_identifier(user);
-    ParseState *pstate = make_parsestate(NULL);
-    List *options = NIL, *names;
-    CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
+    List *names;
     L("user = %s", user);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE ROLE %s WITH LOGIN", user_quote);
-    pstate->p_sourcetext = buf.data;
-    options = lappend(options, makeDefElem("canlogin", (Node *)makeInteger(1), -1));
-    stmt->role = (char *)user;
-    stmt->options = options;
     names = stringToQualifiedNameList(user_quote);
     SPI_start_transaction_my(buf.data);
-    if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) CreateRole(pstate, stmt);
+    if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
+        CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
+        ParseState *pstate = make_parsestate(NULL);
+        stmt->role = (char *)user;
+        stmt->options = lappend(stmt->options, makeDefElem("canlogin", (Node *)makeInteger(1), -1));
+        pstate->p_sourcetext = buf.data;
+        CreateRole(pstate, stmt);
+        list_free_deep(stmt->options);
+        free_parsestate(pstate);
+        pfree(stmt);
+    }
     SPI_commit_my(buf.data);
     list_free_deep(names);
-    free_parsestate(pstate);
-    list_free_deep(options);
-    pfree(stmt);
     if (user_quote != user) pfree((void *)user_quote);
     pfree(buf.data);
 }

@@ -38,15 +38,15 @@
 #include <utils/timeout.h>
 #include <utils/varlena.h>
 
-typedef struct context_s {
+typedef struct {
     char *queue;
     char *request;
 //    const char *application_name;
     Datum id;
+    int fd;
     int max;
     int timeout;
     PGconn *conn;
-    pgsocket fd;
 } context_t;
 
 bool pg_advisory_unlock_int4_my(int32 key1, int32 key2);

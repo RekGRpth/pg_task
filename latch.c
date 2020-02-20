@@ -17,6 +17,9 @@ int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, List **list, 
         for (ListCell *cell = list_head(*list); cell; cell = lnext(cell)) {
             context_t *context = lfirst(cell);
             L("context = %p", context);
+            if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
+            L("context->fd = %i", context->fd);
+            L("context->conn = %p", context->conn);
             AddWaitEventToSet(set, wakeEvents & WL_SOCKET_MASK, context->fd, NULL, context);
         }
         list_free(*list);
