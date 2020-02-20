@@ -22,7 +22,7 @@ int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, queue_t *fd_q
 //            L("context = %p", context);
 //            L("context->conn = %p", context->conn);
 //            L("context->fd = %i", context->fd);
-            AddWaitEventToSet(set, wakeEvents & WL_SOCKET_MASK, context->fd, NULL, context);
+            AddWaitEventToSet(set, wakeEvents & context->wakeEvents, context->fd, NULL, context);
         }
 
 /*        for (ListCell *cell = list_head(*list); cell; cell = lnext(cell)) {

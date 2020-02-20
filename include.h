@@ -95,12 +95,13 @@ void tick_loop(void);
 #define W(fmt, ...) ereport(WARNING, (errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
 
 typedef struct {
-    int fd; // !!! always first !!!
     char *queue;
     char *request;
     Datum id;
+    int fd;
     int max;
     int timeout;
+    int wakeEvents;
     PGconn *conn;
     queue_t pointer;
 } context_t;

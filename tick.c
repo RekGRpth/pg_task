@@ -160,6 +160,7 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
 //    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), context->timeout, context->request);
     context->id = id;
     context->queue = (queue);
+    context->wakeEvents = WL_SOCKET_WRITEABLE;
     L("context->queue = %s", context->queue);
     context->max = max;
     L("context = %p", context);
@@ -411,8 +412,8 @@ static void tick_socket(context_t *context) {
         case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); goto done;
         case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED"); goto done;
         case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); goto done;
-        case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); break;
-        case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); break;
+        case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); context->wakeEvents = WL_SOCKET_READABLE; break;
+        case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); context->wakeEvents = WL_SOCKET_WRITEABLE; break;
     }
     if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
 //    lappend(socket_data, context);
