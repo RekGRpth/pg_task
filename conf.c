@@ -45,7 +45,7 @@ static void conf_user(const char *user) {
     StringInfoData buf;
     const char *user_quote = quote_identifier(user);
     ParseState *pstate = make_parsestate(NULL);
-    List *options = NIL;
+    List *options = NIL, *names;
     CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
     L("user = %s", user);
     initStringInfo(&buf);
@@ -54,9 +54,11 @@ static void conf_user(const char *user) {
     options = lappend(options, makeDefElem("canlogin", (Node *)makeInteger(1), -1));
     stmt->role = (char *)user;
     stmt->options = options;
+    names = stringToQualifiedNameList(user_quote);
     SPI_start_transaction_my(buf.data);
-    CreateRole(pstate, stmt);
+    if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) CreateRole(pstate, stmt);
     SPI_commit_my(buf.data);
+    list_free_deep(names);
     free_parsestate(pstate);
     list_free_deep(options);
     pfree(stmt);
@@ -69,7 +71,7 @@ static void conf_data(const char *user, const char *data) {
     const char *user_quote = quote_identifier(user);
     const char *data_quote = quote_identifier(data);
     ParseState *pstate = make_parsestate(NULL);
-    List *options = NIL;
+    List *options = NIL, *names;
     CreatedbStmt *stmt = makeNode(CreatedbStmt);
     L("user = %s, data = %s", user, data);
     initStringInfo(&buf);
@@ -78,9 +80,11 @@ static void conf_data(const char *user, const char *data) {
     options = lappend(options, makeDefElem("owner", (Node *)makeString((char *)user), -1));
     stmt->dbname = (char *)data;
     stmt->options = options;
+    names = stringToQualifiedNameList(data_quote);
     SPI_start_transaction_my(buf.data);
-    createdb(pstate, stmt);
+    if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) createdb(pstate, stmt);
     SPI_commit_my(buf.data);
+    list_free_deep(names);
     free_parsestate(pstate);
     list_free_deep(options);
     pfree(stmt);
