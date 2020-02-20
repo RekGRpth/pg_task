@@ -431,7 +431,8 @@ static void tick_socket(Context *context) {
         case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); break;
         case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); break;
     }
-    if (PQstatus(context->conn) == CONNECTION_MADE) PQconnectPoll(context->conn);
+//    if (PQstatus(context->conn) == CONNECTION_MADE) PQconnectPoll(context->conn);
+    if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
     lappend(socket_data, context);
 done:
     MemoryContextSwitchTo(oldMemoryContext);
