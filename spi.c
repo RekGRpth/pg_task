@@ -3,7 +3,7 @@
 extern bool response_isnull;
 extern StringInfoData response;
 
-void SPI_begin_my(const char *command) {
+void SPI_connect_my(const char *command) {
     int rc;
     SetCurrentStatementStartTimestamp();
     StartTransactionCommand();
@@ -13,7 +13,7 @@ void SPI_begin_my(const char *command) {
     pgstat_report_activity(STATE_RUNNING, command);
 }
 
-void SPI_commit_my(const char *command) {
+void SPI_finish_my(const char *command) {
     int rc;
     disable_timeout(STATEMENT_TIMEOUT, false);
     if ((rc = SPI_finish()) != SPI_OK_FINISH) E("SPI_finish = %s", SPI_result_code_string(rc));

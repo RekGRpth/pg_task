@@ -66,7 +66,7 @@ void task_work(Datum id, char **request, int *timeout) {
     }
     #undef ID
     #undef SID
-    SPI_begin_my(command);
+    SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
@@ -78,7 +78,7 @@ void task_work(Datum id, char **request, int *timeout) {
         if (timeout_isnull) E("timeout_isnull");
         MemoryContextSwitchTo(oldMemoryContext);
     }
-    SPI_commit_my(command);
+    SPI_finish_my(command);
     state = "DONE";
     state_datum = done;
     response_isnull = true;
@@ -107,10 +107,10 @@ static void task_repeat(void) {
     }
     #undef ID
     #undef SID
-    SPI_begin_my(command);
+    SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT);
-    SPI_commit_my(command);
+    SPI_finish_my(command);
 }
 
 static void task_delete(void) {
@@ -129,10 +129,10 @@ static void task_delete(void) {
     }
     #undef ID
     #undef SID
-    SPI_begin_my(command);
+    SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE);
-    SPI_commit_my(command);
+    SPI_finish_my(command);
 }
 
 static void task_live(void) {
@@ -174,7 +174,7 @@ static void task_live(void) {
     #undef SCOUNT
     #undef START
     #undef SSTART
-    SPI_begin_my(command);
+    SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     if (!SPI_processed) sigterm = true; else {
@@ -182,7 +182,7 @@ static void task_live(void) {
         id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
         if (id_isnull) E("id_isnull");
     }
-    SPI_commit_my(command);
+    SPI_finish_my(command);
 }
 
 static void task_done(void) {
@@ -214,7 +214,7 @@ static void task_done(void) {
     #undef SID
     #undef STATE
     #undef SSTATE
-    SPI_begin_my(command);
+    SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
@@ -226,7 +226,7 @@ static void task_done(void) {
         if (repeat_isnull) E("repeat_isnull");
         if (live_isnull) E("live_isnull");
     }
-    SPI_commit_my(command);
+    SPI_finish_my(command);
     if (!response_isnull) pfree((void *)values[RESPONSE - 1]);
     #undef RESPONSE
     #undef SRESPONSE

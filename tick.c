@@ -24,9 +24,9 @@ static void tick_schema(void) {
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE SCHEMA %s", schema_quote);
     names = stringToQualifiedNameList(schema_quote);
-    SPI_begin_my(buf.data);
+    SPI_connect_my(buf.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_commit_my(buf.data);
+    SPI_finish_my(buf.data);
     list_free_deep(names);
     pfree(buf.data);
 }
@@ -41,10 +41,10 @@ static void tick_type(void) {
     appendStringInfoString(&name, "state");
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')", name.data);
-    SPI_begin_my(buf.data);
+    SPI_connect_my(buf.data);
     parseTypeString(name.data, &type, &typmod, true);
     if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_commit_my(buf.data);
+    SPI_finish_my(buf.data);
     pfree(name.data);
     pfree(buf.data);
 }
@@ -84,10 +84,10 @@ static void tick_table(void) {
         ")", schema_quote_point_table_quote, name_quote);
     names = stringToQualifiedNameList(schema_quote_point_table_quote);
     relation = makeRangeVarFromNameList(names);
-    SPI_begin_my(buf.data);
+    SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     oid = RangeVarGetRelid(relation, NoLock, false);
-    SPI_commit_my(buf.data);
+    SPI_finish_my(buf.data);
     pfree((void *)relation);
     list_free_deep(names);
     if (name_quote != name.data) pfree((void *)name_quote);
@@ -112,9 +112,9 @@ static void tick_index(const char *index) {
     appendStringInfo(&buf, "CREATE INDEX %s ON %s USING btree (%s)", name_quote, schema_quote_point_table_quote, index_quote);
     names = stringToQualifiedNameList(name_quote);
     relation = makeRangeVarFromNameList(names);
-    SPI_begin_my(buf.data);
+    SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_commit_my(buf.data);
+    SPI_finish_my(buf.data);
     pfree((void *)relation);
     list_free_deep(names);
     pfree(buf.data);
@@ -135,9 +135,9 @@ static void tick_fix(void) {
         "    AND     usename = current_user\n"
         "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), queue, id)\n"
         ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", schema_quote_point_table_quote);
-    SPI_begin_my(buf.data);
+    SPI_connect_my(buf.data);
     SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UPDATE);
-    SPI_commit_my(buf.data);
+    SPI_finish_my(buf.data);
     pfree(buf.data);
 }
 
@@ -292,7 +292,7 @@ void tick_loop(void) {
             ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", schema_quote_point_table_quote);
         command = buf.data;
     }
-    SPI_begin_my(command);
+    SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING);
     for (uint64 row = 0; row < SPI_processed; row++) {
@@ -305,7 +305,7 @@ void tick_loop(void) {
         tick_work(id, queue, max);
         pfree((void *)queue);
     }
-    SPI_commit_my(command);
+    SPI_finish_my(command);
 }
 
 static void tick_sighup(SIGNAL_ARGS) {
@@ -336,11 +336,11 @@ static void tick_check(void) {
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
         ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND period = current_setting('pg_task.period', false)::int4";
     L("user = %s, data = %s, schema = %s, table = %s, period = %d", user, data, schema ? schema : "(null)", table, period);
-    SPI_begin_my(command);
+    SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     if (!SPI_processed) sigterm = true;
-    SPI_commit_my(command);
+    SPI_finish_my(command);
 }
 
 void tick_init(const bool conf) {

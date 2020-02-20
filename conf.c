@@ -54,9 +54,9 @@ static void conf_user(const char *user) {
     options = lappend(options, makeDefElem("canlogin", (Node *)makeInteger(1), -1));
     stmt->role = (char *)user;
     stmt->options = options;
-    SPI_begin_my(buf.data);
+    SPI_connect_my(buf.data);
     CreateRole(pstate, stmt);
-    SPI_commit_my(buf.data);
+    SPI_finish_my(buf.data);
     free_parsestate(pstate);
     list_free_deep(options);
     pfree(stmt);
@@ -78,9 +78,9 @@ static void conf_data(const char *user, const char *data) {
     options = lappend(options, makeDefElem("owner", (Node *)makeString((char *)user), -1));
     stmt->dbname = (char *)data;
     stmt->options = options;
-    SPI_begin_my(buf.data);
+    SPI_connect_my(buf.data);
     createdb(pstate, stmt);
-    SPI_commit_my(buf.data);
+    SPI_finish_my(buf.data);
     free_parsestate(pstate);
     list_free_deep(options);
     pfree(stmt);
@@ -144,7 +144,7 @@ static void conf_check(void) {
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
         "WHERE       a.pid IS NULL";
     events &= ~WL_TIMEOUT;
-    SPI_begin_my(command);
+    SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     {
@@ -174,7 +174,7 @@ static void conf_check(void) {
         }
         SPI_processed_my = SPI_processed;
         MemoryContextSwitchTo(oldMemoryContext);
-        SPI_commit_my(command);
+        SPI_finish_my(command);
         for (uint64 row = 0; row < SPI_processed_my; row++) {
             L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, user[row], data[row], schema[row] ? schema[row] : "(null)", table[row], period[row], usename_isnull[row] ? "true" : "false", datname_isnull[row] ? "true" : "false");
             if (usename_isnull[row]) conf_user(user[row]);
