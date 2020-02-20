@@ -369,13 +369,24 @@ static void tick_socket(context_t *context) {
     switch (PQconnectPoll(context->conn)) {
         case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); goto done;
         case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED"); goto done;
-        case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); goto done;
+        case PGRES_POLLING_OK: {
+            L("PQconnectPoll == PGRES_POLLING_OK");
+            //if (!PQsendQuery(context->conn, context->request)) E("!PQsendQuery, %s", PQerrorMessage(context->conn));
+            //context->wakeEvents = WL_SOCKET_WRITEABLE;
+            goto done;
+        } break;
         case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); context->wakeEvents = WL_SOCKET_READABLE; break;
         case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); context->wakeEvents = WL_SOCKET_WRITEABLE; break;
     }
     if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
     queue_put_pointer(&fd_queue, &context->pointer);
+//ok:
 done:
+/*    if (PQstatus(context->conn) == CONNECTION_OK) {
+        if (!PQsendQuery(context->conn, context->request)) E("!PQsendQuery, %s", PQerrorMessage(context->conn));
+        context->wakeEvents = WL_SOCKET_WRITEABLE;
+        queue_put_pointer(&fd_queue, &context->pointer);
+    }*/
     MemoryContextSwitchTo(oldMemoryContext);
 }
 
