@@ -391,8 +391,8 @@ static void tick_reload(void) {
 static void tick_socket(context_t *context) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
 //    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    L("context = %p", context);
-    L("context->conn = %p", context->conn);
+//    L("context = %p", context);
+//    L("context->conn = %p", context->conn);
     switch (PQstatus(context->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: L("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;

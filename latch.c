@@ -2,8 +2,8 @@
 
 //extern MemoryContext RemoteMemoryContext;
 
-int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, queue_t *queue, long timeout, uint32 wait_event_info) {
-    int ret = 0, count = queue_count(queue);
+int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, queue_t *fd_queue, long timeout, uint32 wait_event_info) {
+    int ret = 0, count = queue_count(fd_queue);
     WaitEvent event;
     WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, 2 + count);
     if (count > 0) {
@@ -16,11 +16,13 @@ int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, queue_t *queu
     if ((wakeEvents & WL_POSTMASTER_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
     if ((wakeEvents & WL_EXIT_ON_PM_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
     if (wakeEvents & WL_SOCKET_MASK) {
-        while (!queue_empty(queue)) {
-            context_t *context = pointer_data(queue_get_pointer(queue), context_t, pointer);
-            pointer_remove(&context->pointer);
-            L("context = %p", context);
-            L("context->conn = %p", context->conn);
+//        while (!queue_empty(queue)) {
+        queue_each(fd_queue, queue) {
+            context_t *context = pointer_data(queue, context_t, pointer);
+//            L("context = %p", context);
+//            L("context->conn = %p", context->conn);
+//            L("context->fd = %i", context->fd);
+            AddWaitEventToSet(set, wakeEvents & WL_SOCKET_MASK, context->fd, NULL, context);
         }
 
 /*        for (ListCell *cell = list_head(*list); cell; cell = lnext(cell)) {
@@ -41,8 +43,9 @@ int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, queue_t *queu
         if (data) *data = event.user_data;
         if (data && *data) {
             context_t *context = *data;
-            L("context = %p", context);
-            L("context->conn = %p", context->conn);
+            pointer_remove(&context->pointer);
+//            L("context = %p", context);
+//            L("context->conn = %p", context->conn);
         }
         if (ret & WL_LATCH_SET) L("WL_LATCH_SET");
         if (ret & WL_SOCKET_READABLE) L("WL_SOCKET_READABLE");
