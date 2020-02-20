@@ -152,16 +152,13 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     if (!(event = palloc(sizeof(event)))) E("!palloc");
-//    L("event = %p", event);
     event->id = id;
     event->queue = queue;
     event->max = max;
-//    event->base.event.user_data = event;
     event->base.event.events = WL_SOCKET_WRITEABLE;
 //    task_work(id, &event->request, &event->timeout);
 //    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), event->timeout, event->request);
     if (!(event->conn = PQconnectStart(event->queue))) E("!PQconnectStart");
-//    L("event->queue = %s", event->queue);
     if (PQstatus(event->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(event->conn));
     if (!PQisnonblocking(event->conn) && PQsetnonblocking(event->conn, true) == -1) E(PQerrorMessage(event->conn));
     if ((event->base.event.fd = PQsocket(event->conn)) < 0) E("PQsocket < 0, %s", PQerrorMessage(event->conn));
@@ -355,7 +352,6 @@ static void tick_reload(void) {
 
 static void tick_socket(WaitEventMy *event) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
-//    L("event = %p", event);
     pointer_remove(&event->pointer);
     switch (PQstatus(event->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
@@ -385,7 +381,6 @@ static void tick_socket(WaitEventMy *event) {
     }
     if ((event->base.event.fd = PQsocket(event->conn)) < 0) E("PQsocket < 0");
     queue_put_pointer(&event_queue, &event->pointer);
-//ok:
 done:
 /*    if (PQstatus(context->conn) == CONNECTION_OK) {
         if (!PQsendQuery(context->conn, context->request)) E("!PQsendQuery, %s", PQerrorMessage(context->conn));
