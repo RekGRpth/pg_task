@@ -152,6 +152,7 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     if (!(event = palloc(sizeof(event)))) E("!palloc");
+    L("event = %p", event);
     event->id = id;
     event->queue = queue;
     event->max = max;
@@ -355,6 +356,7 @@ static void tick_reload(void) {
 static void tick_socket(WaitEventMy *event) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
     L("event = %p", event);
+    pointer_remove(&event->pointer);
     switch (PQstatus(event->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: L("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
@@ -402,12 +404,14 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     if (table == schema + 1) schema = NULL;
     tick_init(false);
     while (!sigterm) {
-        WaitEventMy event;
+        WaitEvent event;
         int rc = WaitLatchOrSocketMy(MyLatch, &event, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &event_queue, period, PG_WAIT_EXTENSION);
+        if (rc & WL_SOCKET_READABLE) L("WL_SOCKET_READABLE");
+        if (rc & WL_SOCKET_WRITEABLE) L("WL_SOCKET_WRITEABLE");
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) tick_reset();
         if (sighup) tick_reload();
         if (rc & WL_TIMEOUT) tick_loop();
-        if (rc & WL_SOCKET_MASK) tick_socket(&event);
+        if (rc & WL_SOCKET_MASK) tick_socket(event.user_data);
     }
 }
