@@ -44,7 +44,6 @@
 #include "queue.h"
 
 typedef struct WaitEventMy {
-    union { WaitEvent event; } base;
     bool send;
     char *request;
     const char *queue;
@@ -53,6 +52,7 @@ typedef struct WaitEventMy {
     int timeout;
     PGconn *conn;
     queue_t pointer;
+    WaitEvent event;
 } WaitEventMy;
 
 bool pg_advisory_unlock_int4_my(int32 key1, int32 key2);

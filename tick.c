@@ -157,7 +157,7 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     if (!(event = palloc(sizeof(event)))) E("!palloc");
-    event->base.event.events = WL_SOCKET_WRITEABLE;
+    event->event.events = WL_SOCKET_WRITEABLE;
     event->id = id;
     event->max = max;
     event->queue = queue;
@@ -167,7 +167,7 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     if (!(event->conn = PQconnectStart(event->queue))) E("!PQconnectStart");
     if (PQstatus(event->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(event->conn));
     if (!PQisnonblocking(event->conn) && PQsetnonblocking(event->conn, true) == -1) E(PQerrorMessage(event->conn));
-    if ((event->base.event.fd = PQsocket(event->conn)) < 0) E("PQsocket < 0, %s", PQerrorMessage(event->conn));
+    if ((event->event.fd = PQsocket(event->conn)) < 0) E("PQsocket < 0, %s", PQerrorMessage(event->conn));
     queue_put_pointer(&event_queue, &event->pointer);
     MemoryContextSwitchTo(oldMemoryContext);
 }
@@ -404,18 +404,18 @@ static void tick_socket(WaitEventMy *event) {
         case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); goto done;
         case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED");
         case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); goto ok;
-        case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); event->base.event.events = WL_SOCKET_READABLE; break;
-        case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); event->base.event.events = WL_SOCKET_WRITEABLE; break;
+        case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); event->event.events = WL_SOCKET_READABLE; break;
+        case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); event->event.events = WL_SOCKET_WRITEABLE; break;
     }
-    if ((event->base.event.fd = PQsocket(event->conn)) < 0) E("PQsocket < 0");
+    if ((event->event.fd = PQsocket(event->conn)) < 0) E("PQsocket < 0");
     goto done;
 ok:
-    if (event->base.event.events & WL_SOCKET_READABLE) {
+    if (event->event.events & WL_SOCKET_READABLE) {
         L("WL_SOCKET_READABLE");
         if (!event->send) {
             L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(event->id), event->timeout, event->request);
             if (!PQsendQuery(event->conn, event->request)) E("!PQsendQuery, %s", PQerrorMessage(event->conn));
-            event->base.event.events = WL_SOCKET_WRITEABLE;
+            event->event.events = WL_SOCKET_WRITEABLE;
             event->send = true;
         } else {
             if (!PQconsumeInput(event->conn)) E("!PQconsumeInput, %s", PQerrorMessage(event->conn));
@@ -434,10 +434,10 @@ ok:
             }
         }
     }
-    if (event->base.event.events & WL_SOCKET_WRITEABLE) {
+    if (event->event.events & WL_SOCKET_WRITEABLE) {
         L("WL_SOCKET_WRITEABLE");
         switch (PQflush(event->conn)) {
-            case 0: L("PQflush = 0"); event->base.event.events = WL_SOCKET_READABLE; break;
+            case 0: L("PQflush = 0"); event->event.events = WL_SOCKET_READABLE; break;
             case 1: L("PQflush = 1"); break;
             default: E("PQflush");
         }
