@@ -1,6 +1,8 @@
 #include "include.h"
 
 bool response_isnull;
+extern const char *schema_quote_point_table_quote;
+extern MemoryContext myMemoryContext;
 int timeout;
 static char *request;
 static char *state;
@@ -10,7 +12,6 @@ static const char *point;
 static const char *queue;
 static const char *schema;
 static const char *schema_quote;
-extern const char *schema_quote_point_table_quote;
 static const char *table;
 static const char *table_quote;
 static const char *user;
@@ -70,7 +71,7 @@ void task_work(Datum id, char **request, int *timeout) {
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
-        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
         bool timeout_isnull;
         *request = SPI_getvalue_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
         *timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
@@ -254,7 +255,7 @@ static void task_success(void) {
 }
 
 static void task_error(void) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
     ErrorData *edata = CopyErrorData();
     appendStringInfo(&response, "elevel::int4\t%i", edata->elevel);
     appendStringInfo(&response, "\noutput_to_server::bool\t%s", edata->output_to_server ? "true" : "false");
@@ -358,6 +359,7 @@ static void task_init(void) {
     done = CStringGetTextDatum("DONE");
     fail = CStringGetTextDatum("FAIL");
     queue_datum = CStringGetTextDatum(queue);
+    if (!myMemoryContext) myMemoryContext = AllocSetContextCreate(TopMemoryContext, "myMemoryContext", ALLOCSET_DEFAULT_SIZES);
 }
 
 static void task_reset(void) {

@@ -1,6 +1,7 @@
 #include "include.h"
 
 extern bool response_isnull;
+extern MemoryContext myMemoryContext;
 extern StringInfoData response;
 
 void SPI_start_transaction_my(const char *command) {
@@ -91,7 +92,7 @@ static const char *SPI_gettype_my(TupleDesc tupdesc, int fnumber) {
 }
 
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
     response_isnull = false;
     if (!response.len && slot->tts_tupleDescriptor->natts > 1) {
         for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
