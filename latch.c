@@ -5,7 +5,7 @@ int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, List **list, 
     WaitEvent event;
     WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, 2 + list_length(*list));
     if (list_length(*list) > 0) {
-        L("CurrentMemoryContext == TopMemoryContext = %s", CurrentMemoryContext == TopMemoryContext ? "true" : "false");
+//        L("CurrentMemoryContext == TopMemoryContext = %s", CurrentMemoryContext == TopMemoryContext ? "true" : "false");
         wakeEvents |= WL_SOCKET_MASK;
 //        wait_event_info = PG_WAIT_CLIENT;
     }
@@ -17,7 +17,7 @@ int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, List **list, 
     if (wakeEvents & WL_SOCKET_MASK) {
         for (ListCell *cell = list_head(*list); cell; cell = lnext(cell)) {
             Context *context = lfirst(cell);
-            L("context = %p", context);
+//            L("context = %p", context);
             AddWaitEventToSet(set, wakeEvents & WL_SOCKET_MASK, context->fd, NULL, context);
         }
         list_free(*list);
