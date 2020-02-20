@@ -199,7 +199,15 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
 //    L("PQconnectPoll = %i", PQconnectPoll(context->conn));
 //    if (PQstatus(context->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD");
 //    if (!PQisnonblocking(context->conn) && PQsetnonblocking(context->conn, 1))  E("PQsetnonblocking");
-    if (PQstatus(context->conn) == CONNECTION_MADE) PQconnectPoll(context->conn);
+    if (PQstatus(context->conn) == CONNECTION_MADE) {
+        switch (PQconnectPoll(context->conn)) {
+            case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); break;
+            case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED"); break;
+            case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); break;
+            case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); break;
+            case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); break;
+        }
+    }
     if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
 //    L("sd->fd = %i", sd->fd);
 //    L("PQoptions = %s", PQoptions(context->conn));
@@ -411,6 +419,7 @@ static void tick_socket(Context *context) {
 //    L("PQsocket = %i", PQsocket(context->conn));
 //    L("queue = %s", context->queue);
 //    if (PQsocket(context->conn) < 0) E("PQsocket < 0");
+//    if (PQstatus(context->conn) == CONNECTION_MADE) PQconnectPoll(context->conn);
     switch (PQstatus(context->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: L("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
@@ -432,7 +441,15 @@ static void tick_socket(Context *context) {
         case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); break;
         case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); break;
     }
-//    if (PQstatus(context->conn) == CONNECTION_MADE) PQconnectPoll(context->conn);
+/*    if (PQstatus(context->conn) == CONNECTION_MADE) {
+        switch (PQconnectPoll(context->conn)) {
+            case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); break;
+            case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED"); break;
+            case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); break;
+            case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); break;
+            case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); break;
+        }
+    }*/
     if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
     lappend(socket_data, context);
 done:
