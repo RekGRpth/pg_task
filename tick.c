@@ -151,31 +151,19 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     context_t *context = NULL;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
-//    L("context = %p", context);
     if (!(context = palloc(sizeof(context)))) E("!palloc");
-//    L("context = %p", context);
-//    task_work(id, &context->request, &context->timeout);
-//    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), context->timeout, context->request);
+    task_work(id, &context->request, &context->timeout);
+    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), context->timeout, context->request);
     context->id = id;
     context->queue = (queue);
     context->wakeEvents = WL_SOCKET_WRITEABLE;
-//    L("context->queue = %s", context->queue);
     context->max = max;
-//    L("context = %p", context);
     if (!(context->conn = PQconnectStart(context->queue))) E("!PQconnectStart");
-//    L("context->conn = %p", context->conn);
     if (PQstatus(context->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(context->conn));
-//    L("context = %p", context);
     if (!PQisnonblocking(context->conn) && PQsetnonblocking(context->conn, true) == -1) E(PQerrorMessage(context->conn));
-//    L("context = %p", context);
     if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0, %s", PQerrorMessage(context->conn));
-//    L("context->fd = %i", context->fd);
-//    L("context->conn = %p", context->conn);
     queue_put_pointer(&fd_queue, &context->pointer);
-//    L("context = %p", context);
     MemoryContextSwitchTo(oldMemoryContext);
-//    L("context = %p", context);
-//    L("context->conn = %p", context->conn);
 }
 
 static void task_worker(const Datum id, const char *queue, const int max) {
