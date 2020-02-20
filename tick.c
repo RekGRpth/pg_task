@@ -1,27 +1,18 @@
 #include "include.h"
 
-typedef struct {
-    int fd; // !!! always first !!!
-    char *queue;
-    char *request;
-    Datum id;
-    int max;
-    int timeout;
-    PGconn *conn;
-} context_t;
-
 const char *data;
 const char *schema;
+const char *schema_quote_point_table_quote = NULL;
 const char *table;
 const char *user;
 int period;
 static const char *data_quote = NULL;
 static const char *point;
 static const char *schema_quote = NULL;
-const char *schema_quote_point_table_quote = NULL;
 static const char *table_quote = NULL;
 static const char *user_quote = NULL;
 static List *socket_data = NIL;
+static MemoryContext RemoteMemoryContext = NULL;
 static Oid oid = 0;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
@@ -158,21 +149,24 @@ static void tick_fix(void) {
 
 static void task_remote(const Datum id, const char *queue, const int max, PQconninfoOption *opts) {
     context_t *context = NULL;
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+//    MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
+//    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
 //    PGconn *conn;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     L("context = %p", context);
-    if (!(context = palloc0(sizeof(context)))) E("!palloc");
+    if (!(context = palloc(sizeof(context)))) E("!palloc");
     L("context = %p", context);
 //    task_work(id, &context->request, &context->timeout);
 //    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), context->timeout, context->request);
     context->id = id;
-    context->queue = pstrdup(queue);
+    context->queue = (queue);
+    L("context->queue = %s", context->queue);
     context->max = max;
     L("context = %p", context);
     if (!(context->conn = PQconnectStart(context->queue))) E("!PQconnectStart");
     L("context->conn = %p", context->conn);
-    if (PQstatus(context->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD");
+//    L("PQsocket = %i", PQsocket(context->conn));
+    if (PQstatus(context->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(context->conn));
     L("context = %p", context);
 //    L("context->fd = %i", context->fd);
 //    if ((context->fd = PQsocket(conn)) < 0) E("PQsocket < 0");
@@ -192,19 +186,23 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
 //    L("MemoryContextIsValid = %s", MemoryContextIsValid(CurrentMemoryContext) ? "true" : "false");
 //    L("MemoryContextIsValid = %s", MemoryContextIsValid(TopMemoryContext) ? "true" : "false");
 //    L("MemoryContextIsValid = %s", MemoryContextIsValid(oldMemoryContext) ? "true" : "false");
-    if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
+    if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0, %s", PQerrorMessage(context->conn));
     L("context->fd = %i", context->fd);
 //    context->fd = 67;
 //    L("context = %p", context);
 //    context->conn = (void *)conn;
     L("context->conn = %p", context->conn);
 //    L("context = %p", context);
-    socket_data = lappend(socket_data, context);
+//    socket_data = lappend(socket_data, context);
 //    L("context->fd = %i", context->fd);
     L("context = %p", context);
-    MemoryContextSwitchTo(oldMemoryContext);
-
+//    MemoryContextSwitchTo(oldMemoryContext);
+    L("context = %p", context);
+//    oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
+    L("context->conn = %p", context->conn);
+//    MemoryContextSwitchTo(oldMemoryContext);
 }
+
 static void task_worker(const Datum id, const char *queue, const int max) {
     StringInfoData buf;
     int user_len = strlen(user), data_len = strlen(data), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), queue_len = strlen(queue), max_len = sizeof(max), oid_len = sizeof(oid);
@@ -374,6 +372,7 @@ void tick_init(const bool conf) {
     tick_index("state");
     if (!pg_try_advisory_lock_int8_my(oid)) { sigterm = true; W("lock oid = %d", oid); return; }
     tick_fix();
+    if (!RemoteMemoryContext) RemoteMemoryContext = AllocSetContextCreate(TopMemoryContext, "RemoteMemoryContext", ALLOCSET_DEFAULT_SIZES);
 }
 
 static void tick_reset(void) {
@@ -388,8 +387,10 @@ static void tick_reload(void) {
 }
 
 static void tick_socket(context_t *context) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+//    MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
+//    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     L("context = %p", context);
+    L("context->conn = %p", context->conn);
     switch (PQstatus(context->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: L("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
@@ -413,8 +414,8 @@ static void tick_socket(context_t *context) {
     }
     if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
     lappend(socket_data, context);
-done:
-    MemoryContextSwitchTo(oldMemoryContext);
+done:;
+//    MemoryContextSwitchTo(oldMemoryContext);
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {

@@ -1,5 +1,7 @@
 #include "include.h"
 
+//extern MemoryContext RemoteMemoryContext;
+
 int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, List **list, long timeout, uint32 wait_event_info) {
     int ret = 0;
     WaitEvent event;
@@ -16,7 +18,12 @@ int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, List **list, 
     if (wakeEvents & WL_SOCKET_MASK) {
         for (ListCell *cell = list_head(*list); cell; cell = lnext(cell)) {
             void *data = lfirst(cell);
+            context_t *context = data;
+//            MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
             L("data = %p", data);
+            L("context = %p", context);
+            L("context->conn = %p", context->conn);
+//            MemoryContextSwitchTo(oldMemoryContext);
             AddWaitEventToSet(set, wakeEvents & WL_SOCKET_MASK, *(int *)data, NULL, data);
         }
         list_free(*list);
@@ -25,6 +32,11 @@ int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, List **list, 
     if (!WaitEventSetWait(set, timeout, &event, 1, wait_event_info)) ret |= WL_TIMEOUT; else {
         ret |= event.events & (WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_MASK);
         if (data) *data = event.user_data;
+        if (data && *data) {
+            context_t *context = *data;
+            L("context = %p", context);
+            L("context->conn = %p", context->conn);
+        }
         if (ret & WL_LATCH_SET) L("WL_LATCH_SET");
         if (ret & WL_SOCKET_READABLE) L("WL_SOCKET_READABLE");
         if (ret & WL_SOCKET_WRITEABLE) L("WL_SOCKET_WRITEABLE");

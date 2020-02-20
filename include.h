@@ -1,3 +1,6 @@
+#ifndef _INCLUDE_H_
+#define _INCLUDE_H_
+
 #include <postgres.h>
 
 #include <access/printtup.h>
@@ -37,6 +40,8 @@
 #include <utils/syscache.h>
 #include <utils/timeout.h>
 #include <utils/varlena.h>
+
+#include "queue.h"
 
 bool pg_advisory_unlock_int4_my(int32 key1, int32 key2);
 bool pg_advisory_unlock_int8_my(int64 key);
@@ -88,3 +93,15 @@ void tick_loop(void);
 #define F(fmt, ...) ereport(FATAL, (errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
 #define L(fmt, ...) ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
 #define W(fmt, ...) ereport(WARNING, (errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
+
+typedef struct {
+    int fd; // !!! always first !!!
+    char *queue;
+    char *request;
+    Datum id;
+    int max;
+    int timeout;
+    PGconn *conn;
+} context_t;
+
+#endif // _INCLUDE_H_

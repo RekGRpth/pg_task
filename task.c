@@ -354,7 +354,7 @@ static void task_init(void) {
     appendStringInfo(&buf, "%d", oid);
     set_config_option_my("pg_task.oid", buf.data);
     pfree(buf.data);
-    MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
+    if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     done = CStringGetTextDatum("DONE");
     fail = CStringGetTextDatum("FAIL");
     queue_datum = CStringGetTextDatum(queue);
