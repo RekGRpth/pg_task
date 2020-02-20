@@ -152,7 +152,7 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     if (!(event = palloc(sizeof(event)))) E("!palloc");
-    L("event = %p", event);
+//    L("event = %p", event);
     event->id = id;
     event->queue = queue;
     event->max = max;
@@ -355,7 +355,7 @@ static void tick_reload(void) {
 
 static void tick_socket(WaitEventMy *event) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
-    L("event = %p", event);
+//    L("event = %p", event);
     pointer_remove(&event->pointer);
     switch (PQstatus(event->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
