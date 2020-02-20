@@ -38,12 +38,21 @@
 #include <utils/timeout.h>
 #include <utils/varlena.h>
 
+typedef struct Context {
+    Datum id;
+    char *queue;
+    int max;
+//    const char *application_name;
+    PGconn *conn;
+    pgsocket fd;
+} Context;
+
 bool pg_advisory_unlock_int4_my(int32 key1, int32 key2);
 bool pg_advisory_unlock_int8_my(int64 key);
 bool pg_try_advisory_lock_int4_my(int32 key1, int32 key2);
 bool pg_try_advisory_lock_int8_my(int64 key);
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
-int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, List **list, long timeout, uint32 wait_event_info);
+int WaitLatchOrSocketMy(Latch *latch, Context **context, int wakeEvents, List **list, long timeout, uint32 wait_event_info);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void exec_simple_query(const char *query_string);
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
@@ -85,17 +94,3 @@ void tick_loop(void);
 #define F(fmt, ...) ereport(FATAL, (errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
 #define L(fmt, ...) ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
 #define W(fmt, ...) ereport(WARNING, (errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
-
-/*typedef struct SocketData {
-    pgsocket fd;
-    void *user_data;
-} SocketData;*/
-
-typedef struct Context {
-    Datum id;
-    char *queue;
-    int max;
-//    const char *application_name;
-    PGconn *conn;
-    pgsocket fd;
-} Context;

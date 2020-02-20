@@ -1,7 +1,8 @@
 #include "include.h"
 
-int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, List **list, long timeout, uint32 wait_event_info) {
+int WaitLatchOrSocketMy(Latch *latch, Context **context, int wakeEvents, List **list, long timeout, uint32 wait_event_info) {
     int ret = 0;
+    WaitEvent event;
     WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, 2 + list_length(*list));
     if (list_length(*list) > 0) {
         L("CurrentMemoryContext == TopMemoryContext = %s", CurrentMemoryContext == TopMemoryContext ? "true" : "false");
@@ -22,7 +23,10 @@ int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, List **l
         list_free(*list);
         *list = NIL;
     }
-    if (!WaitEventSetWait(set, timeout, event, 1, wait_event_info)) ret |= WL_TIMEOUT; else ret |= event->events & (WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_MASK);
+    if (!WaitEventSetWait(set, timeout, &event, 1, wait_event_info)) ret |= WL_TIMEOUT; else {
+        ret |= event.events & (WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_MASK);
+        *context = event.user_data;
+    }
     FreeWaitEventSet(set);
     return ret;
 }

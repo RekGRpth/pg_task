@@ -444,12 +444,12 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     if (table == schema + 1) schema = NULL;
     tick_init(false);
     while (!sigterm) {
-        WaitEvent event;
-        int rc = WaitLatchOrSocketMy(MyLatch, &event, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &socket_data, period, PG_WAIT_EXTENSION);
+        Context *context;
+        int rc = WaitLatchOrSocketMy(MyLatch, &context, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &socket_data, period, PG_WAIT_EXTENSION);
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) tick_reset();
         if (sighup) tick_reload();
         if (rc & WL_TIMEOUT) tick_loop();
-        if (rc & WL_SOCKET_MASK) tick_socket(event.user_data);
+        if (rc & WL_SOCKET_MASK) tick_socket(context);
     }
 }
