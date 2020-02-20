@@ -39,10 +39,12 @@
 #include <utils/varlena.h>
 
 typedef struct Context {
-    Datum id;
     char *queue;
-    int max;
+    char *request;
 //    const char *application_name;
+    Datum id;
+    int max;
+    int timeout;
     PGconn *conn;
     pgsocket fd;
 } Context;

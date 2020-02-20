@@ -10,7 +10,7 @@ static const char *point;
 static const char *queue;
 static const char *schema;
 static const char *schema_quote;
-static const char *schema_quote_point_table_quote;
+extern const char *schema_quote_point_table_quote;
 static const char *table;
 static const char *table_quote;
 static const char *user;
@@ -74,6 +74,7 @@ void task_work(Datum id, char **request, int *timeout) {
         bool timeout_isnull;
         *request = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
         *timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
+        L("request = %s, timeout = %i", *request, *timeout);
         if (timeout_isnull) E("timeout_isnull");
         MemoryContextSwitchTo(oldMemoryContext);
     }

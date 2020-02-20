@@ -8,7 +8,7 @@ int period;
 static const char *data_quote = NULL;
 static const char *point;
 static const char *schema_quote = NULL;
-static const char *schema_quote_point_table_quote = NULL;
+const char *schema_quote_point_table_quote = NULL;
 static const char *table_quote = NULL;
 static const char *user_quote = NULL;
 static List *socket_data = NIL;
@@ -177,6 +177,8 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
 //    L("i = %i, %s = %s", i, keywords[i], values[i]);
 //    if (!(sd = palloc0(sizeof(sd)))) E("!palloc");
     if (!(context = palloc(sizeof(context)))) E("!palloc");
+    task_work(id, &context->request, &context->timeout);
+    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), context->timeout, context->request);
 //    L("context = %p", context);
     context->id = id;
     context->queue = pstrdup(queue);
