@@ -148,7 +148,7 @@ static void tick_fix(void) {
 
 static void task_remote(const Datum id, const char *queue, const int max, PQconninfoOption *opts) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    Context *context;
+    context_t *context;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     if (!(context = palloc(sizeof(context)))) E("!palloc");
     L("context = %p", context);
@@ -162,6 +162,9 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     L("context = %p", context);
     if (PQstatus(context->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD");
     L("context = %p", context);
+//    if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
+    L("PQsocket = %i", PQsocket(context->conn));
+    L("context = %p", context);
     if (!PQisnonblocking(context->conn) && PQsetnonblocking(context->conn, true) == -1) E(PQerrorMessage(context->conn));
     L("context = %p", context);
 /*    if (PQstatus(context->conn) == CONNECTION_MADE) {
@@ -173,9 +176,13 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
             case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); break;
         }
     }*/
-    if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
+    L("MemoryContextIsValid = %s", MemoryContextIsValid(CurrentMemoryContext) ? "true" : "false");
+    L("MemoryContextIsValid = %s", MemoryContextIsValid(TopMemoryContext) ? "true" : "false");
+    L("MemoryContextIsValid = %s", MemoryContextIsValid(oldMemoryContext) ? "true" : "false");
+//    if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
+    context->fd = 67;
     L("context = %p", context);
-    socket_data = lappend(socket_data, context);
+//    socket_data = lappend(socket_data, context);
     MemoryContextSwitchTo(oldMemoryContext);
 
 }
@@ -253,6 +260,7 @@ void tick_loop(void) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING);
+    SPI_commit_my(command);
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool id_isnull, max_isnull;
         Datum id = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
@@ -263,7 +271,6 @@ void tick_loop(void) {
         tick_work(id, queue, max);
         pfree((void *)queue);
     }
-    SPI_commit_my(command);
     SPI_finish_my(command);
 }
 
@@ -361,7 +368,7 @@ static void tick_reload(void) {
     tick_check();
 }
 
-static void tick_socket(Context *context) {
+static void tick_socket(context_t *context) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     L("context = %p", context);
     switch (PQstatus(context->conn)) {
@@ -400,12 +407,12 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     if (table == schema + 1) schema = NULL;
     tick_init(false);
     while (!sigterm) {
-        Context *context;
-        int rc = WaitLatchOrSocketMy(MyLatch, (void **)&context, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &socket_data, period, PG_WAIT_EXTENSION);
+        void *data;
+        int rc = WaitLatchOrSocketMy(MyLatch, &data, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &socket_data, period, PG_WAIT_EXTENSION);
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) tick_reset();
         if (sighup) tick_reload();
         if (rc & WL_TIMEOUT) tick_loop();
-        if (rc & WL_SOCKET_MASK) tick_socket(context);
+        if (rc & WL_SOCKET_MASK) tick_socket(data);
     }
 }
