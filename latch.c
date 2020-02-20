@@ -10,22 +10,13 @@ int WaitLatchOrSocketMy(Latch *latch, WaitEventMy *event, int wakeEvents, queue_
     if ((wakeEvents & WL_EXIT_ON_PM_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
     queue_each(event_queue, queue) {
         WaitEventMy *event = pointer_data(queue, WaitEventMy, pointer);
-        wakeEvents |= event->base.event.events;
-        if (wakeEvents & WL_EXIT_ON_PM_DEATH) L("WL_EXIT_ON_PM_DEATH");
-        if (wakeEvents & WL_LATCH_SET) L("WL_LATCH_SET");
-        if (wakeEvents & WL_POSTMASTER_DEATH) L("WL_POSTMASTER_DEATH");
-        if (wakeEvents & WL_SOCKET_CONNECTED) L("WL_SOCKET_CONNECTED");
-        if (wakeEvents & WL_SOCKET_READABLE) L("WL_SOCKET_READABLE");
-        if (wakeEvents & WL_SOCKET_WRITEABLE) L("WL_SOCKET_WRITEABLE");
-        if (wakeEvents & WL_TIMEOUT) L("WL_TIMEOUT");
-        AddWaitEventToSet(set, wakeEvents, event->base.event.fd, NULL, event->base.event.user_data);
+        AddWaitEventToSet(set, event->base.event.events, event->base.event.fd, NULL, event->base.event.user_data);
     }
     if (!WaitEventSetWait(set, timeout, &event->base.event, 1, wait_event_info)) ret |= WL_TIMEOUT; else {
         ret |= event->base.event.events & (WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_MASK);
         if (ret & WL_EXIT_ON_PM_DEATH) L("WL_EXIT_ON_PM_DEATH");
         if (ret & WL_LATCH_SET) L("WL_LATCH_SET");
         if (ret & WL_POSTMASTER_DEATH) L("WL_POSTMASTER_DEATH");
-        if (ret & WL_SOCKET_CONNECTED) L("WL_SOCKET_CONNECTED");
         if (ret & WL_SOCKET_READABLE) L("WL_SOCKET_READABLE");
         if (ret & WL_SOCKET_WRITEABLE) L("WL_SOCKET_WRITEABLE");
         if (ret & WL_TIMEOUT) L("WL_TIMEOUT");
