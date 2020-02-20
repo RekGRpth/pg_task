@@ -356,6 +356,34 @@ static void tick_reload(void) {
     tick_check();
 }
 
+static const char *PQftypeMy(const PGresult *res, int column_number) {
+    HeapTuple typeTuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(PQftype(res, column_number)));
+    const char *result;
+    if (!HeapTupleIsValid(typeTuple)) E("SPI_ERROR_TYPUNKNOWN");
+    result = NameStr(((Form_pg_type)GETSTRUCT(typeTuple))->typname);
+    ReleaseSysCache(typeTuple);
+    return result;
+}
+
+static void tick_sucess(PGresult *result) {
+    StringInfoData response;
+    initStringInfo(&response);
+    if (PQnfields(result) > 1) {
+        for (int col = 0; col < PQnfields(result); col++) {
+            if (col > 0) appendStringInfoString(&response, "\t");
+            appendStringInfo(&response, "%s::%s", PQfname(result, col), PQftypeMy(result, col));
+        }
+    }
+    if (response.len) appendStringInfoString(&response, "\n");
+    for (int row = 0; row < PQntuples(result); row++) {
+        for (int col = 0; col < PQnfields(result); col++) {
+            if (col > 1) appendStringInfoString(&response, "\t");
+            appendStringInfoString(&response, PQgetisnull(result, row, col) ? "(null)" : PQgetvalue(result, row, col));
+        }
+    }
+    L("response = %s", response.data);
+}
+
 static void tick_socket(WaitEventMy *event) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
     switch (PQstatus(event->conn)) {
@@ -402,7 +430,7 @@ ok:
                 case PGRES_FATAL_ERROR: L("PGRES_FATAL_ERROR"); break;
                 case PGRES_NONFATAL_ERROR: L("PGRES_NONFATAL_ERROR"); break;
                 case PGRES_SINGLE_TUPLE: L("PGRES_SINGLE_TUPLE"); break;
-                case PGRES_TUPLES_OK: L("PGRES_TUPLES_OK"); break;
+                case PGRES_TUPLES_OK: L("PGRES_TUPLES_OK"); tick_sucess(result); break;
             }
         }
     }
