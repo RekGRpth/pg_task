@@ -151,14 +151,14 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     WaitEventMy *event;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
-    if (!(event = palloc(sizeof(event)))) E("!palloc");
+    if (!(event = palloc0(sizeof(event)))) E("!palloc");
     event->id = id;
     event->queue = queue;
     event->max = max;
     event->base.event.user_data = event;
     event->base.event.events = WL_SOCKET_WRITEABLE;
-    task_work(id, &event->request, &event->timeout);
-    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), event->timeout, event->request);
+//    task_work(id, &event->request, &event->timeout);
+//    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), event->timeout, event->request);
     if (!(event->conn = PQconnectStart(event->queue))) E("!PQconnectStart");
     L("event->queue = %s", event->queue);
     if (PQstatus(event->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(event->conn));
