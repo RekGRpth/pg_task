@@ -410,7 +410,7 @@ static void tick_socket(Context *context) {
 //    L("PQstatus = %i", PQstatus(context->conn));
 //    L("PQsocket = %i", PQsocket(context->conn));
 //    L("queue = %s", context->queue);
-    if (PQsocket(context->conn) < 0) E("PQsocket < 0");
+//    if (PQsocket(context->conn) < 0) E("PQsocket < 0");
     switch (PQstatus(context->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: L("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
