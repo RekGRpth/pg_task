@@ -383,16 +383,38 @@ static void tick_socket(WaitEventMy *event) {
     if ((event->base.event.fd = PQsocket(event->conn)) < 0) E("PQsocket < 0");
     goto done;
 ok:
-    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(event->id), event->timeout, event->request);
     if (event->base.event.events & WL_SOCKET_READABLE) {
         L("WL_SOCKET_READABLE");
-//        if (!PQsendQuery(context->conn, context->request)) E("!PQsendQuery, %s", PQerrorMessage(context->conn));
-//        event->base.event.events = WL_SOCKET_WRITEABLE;
+        if (!sended) {
+            L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(event->id), event->timeout, event->request);
+            if (!PQsendQuery(event->conn, event->request)) E("!PQsendQuery, %s", PQerrorMessage(event->conn));
+            event->base.event.events = WL_SOCKET_WRITEABLE;
+            sended = true;
+        } else {
+            if (!PQconsumeInput(event->conn)) E("!PQconsumeInput, %s", PQerrorMessage(event->conn));
+            if (!PQisBusy(event->conn)) pointer_remove(&event->pointer);
+            for (PGresult *result; (result = PQgetResult(event->conn)); PQclear(result)) switch (PQresultStatus(result)) {
+                case PGRES_BAD_RESPONSE: L("PGRES_BAD_RESPONSE"); break;
+                case PGRES_COMMAND_OK: L("PGRES_COMMAND_OK"); break;
+                case PGRES_COPY_BOTH: L("PGRES_COPY_BOTH"); break;
+                case PGRES_COPY_IN: L("PGRES_COPY_IN"); break;
+                case PGRES_COPY_OUT: L("PGRES_COPY_OUT"); break;
+                case PGRES_EMPTY_QUERY: L("PGRES_EMPTY_QUERY"); break;
+                case PGRES_FATAL_ERROR: L("PGRES_FATAL_ERROR"); break;
+                case PGRES_NONFATAL_ERROR: L("PGRES_NONFATAL_ERROR"); break;
+                case PGRES_SINGLE_TUPLE: L("PGRES_SINGLE_TUPLE"); break;
+                case PGRES_TUPLES_OK: L("PGRES_TUPLES_OK"); break;
+            }
+        }
     }
     if (event->base.event.events & WL_SOCKET_WRITEABLE) {
         L("WL_SOCKET_WRITEABLE");
+        switch (PQflush(event->conn)) {
+            case 0: L("PQflush = 0"); event->base.event.events = WL_SOCKET_READABLE; break;
+            case 1: L("PQflush = 1"); break;
+            default: E("PQflush");
+        }
     }
-//    pointer_remove(&event->pointer);
 done:
     MemoryContextSwitchTo(oldMemoryContext);
 }
