@@ -26,6 +26,7 @@ static void tick_schema(void) {
     names = stringToQualifiedNameList(schema_quote);
     SPI_connect_my(buf.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_commit_my(buf.data);
     SPI_finish_my(buf.data);
     list_free_deep(names);
     pfree(buf.data);
@@ -44,6 +45,7 @@ static void tick_type(void) {
     SPI_connect_my(buf.data);
     parseTypeString(name.data, &type, &typmod, true);
     if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_commit_my(buf.data);
     SPI_finish_my(buf.data);
     pfree(name.data);
     pfree(buf.data);
@@ -87,6 +89,7 @@ static void tick_table(void) {
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     oid = RangeVarGetRelid(relation, NoLock, false);
+    SPI_commit_my(buf.data);
     SPI_finish_my(buf.data);
     pfree((void *)relation);
     list_free_deep(names);
@@ -114,6 +117,7 @@ static void tick_index(const char *index) {
     relation = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_commit_my(buf.data);
     SPI_finish_my(buf.data);
     pfree((void *)relation);
     list_free_deep(names);
@@ -137,6 +141,7 @@ static void tick_fix(void) {
         ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", schema_quote_point_table_quote);
     SPI_connect_my(buf.data);
     SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UPDATE);
+    SPI_commit_my(buf.data);
     SPI_finish_my(buf.data);
     pfree(buf.data);
 }
@@ -295,6 +300,7 @@ void tick_loop(void) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING);
+    SPI_commit_my(command);
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool id_isnull, max_isnull;
         Datum id = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
@@ -340,6 +346,7 @@ static void tick_check(void) {
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     if (!SPI_processed) sigterm = true;
+    SPI_commit_my(command);
     SPI_finish_my(command);
 }
 

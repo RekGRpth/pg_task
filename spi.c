@@ -3,25 +3,36 @@
 extern bool response_isnull;
 extern StringInfoData response;
 
-void SPI_connect_my(const char *command) {
-    int rc;
-    SetCurrentStatementStartTimestamp();
-    StartTransactionCommand();
-    if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) E("SPI_connect_ext = %s", SPI_result_code_string(rc));
-    PushActiveSnapshot(GetTransactionSnapshot());
+void SPI_start_transaction_my(const char *command) {
+    SPI_start_transaction();
     if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else disable_timeout(STATEMENT_TIMEOUT, false);
     pgstat_report_activity(STATE_RUNNING, command);
 }
 
-void SPI_finish_my(const char *command) {
+void SPI_connect_my(const char *command) {
     int rc;
+    if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) E("SPI_connect_ext = %s", SPI_result_code_string(rc));
+    SPI_start_transaction_my(command);
+}
+
+void SPI_commit_my(const char *command) {
     disable_timeout(STATEMENT_TIMEOUT, false);
-    if ((rc = SPI_finish()) != SPI_OK_FINISH) E("SPI_finish = %s", SPI_result_code_string(rc));
-    PopActiveSnapshot();
-    CommitTransactionCommand();
+    SPI_commit();
     ProcessCompletedNotifies();
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
+}
+
+void SPI_finish_my(const char *command) {
+    int rc;
+    if ((rc = SPI_finish()) != SPI_OK_FINISH) E("SPI_finish = %s", SPI_result_code_string(rc));
+}
+
+char *SPI_getvalue_my(HeapTuple tuple, TupleDesc tupdesc, int fnumber) {
+    bool isnull;
+    Datum datum = SPI_getbinval(tuple, tupdesc, fnumber, &isnull);
+    if (isnull) return NULL;
+    return TextDatumGetCString(datum);
 }
 
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
@@ -56,7 +67,7 @@ static const char *SPI_fname_my(TupleDesc tupdesc, int fnumber) {
     return NameStr((fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1) : SystemAttributeDefinition(fnumber))->attname);
 }
 
-static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
+static char *SPI_getvalue_my2(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
     Datum val;
     bool isnull;
     Oid foutoid;
@@ -90,7 +101,7 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     }
     if (response.len) appendStringInfoString(&response, "\n");
     for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
-        const char *value = SPI_getvalue_my(slot, slot->tts_tupleDescriptor, col);
+        const char *value = SPI_getvalue_my2(slot, slot->tts_tupleDescriptor, col);
         if (col > 1) appendStringInfoString(&response, "\t");
         appendStringInfoString(&response, value ? value : "(null)");
         if (value) pfree((void *)value);

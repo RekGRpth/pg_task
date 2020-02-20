@@ -78,6 +78,7 @@ void task_work(Datum id, char **request, int *timeout) {
         if (timeout_isnull) E("timeout_isnull");
         MemoryContextSwitchTo(oldMemoryContext);
     }
+    SPI_commit_my(command);
     SPI_finish_my(command);
     state = "DONE";
     state_datum = done;
@@ -110,6 +111,7 @@ static void task_repeat(void) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT);
+    SPI_commit_my(command);
     SPI_finish_my(command);
 }
 
@@ -132,6 +134,7 @@ static void task_delete(void) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE);
+    SPI_commit_my(command);
     SPI_finish_my(command);
 }
 
@@ -182,6 +185,7 @@ static void task_live(void) {
         id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
         if (id_isnull) E("id_isnull");
     }
+    SPI_commit_my(command);
     SPI_finish_my(command);
 }
 
@@ -226,6 +230,7 @@ static void task_done(void) {
         if (repeat_isnull) E("repeat_isnull");
         if (live_isnull) E("live_isnull");
     }
+    SPI_commit_my(command);
     SPI_finish_my(command);
     if (!response_isnull) pfree((void *)values[RESPONSE - 1]);
     #undef RESPONSE
