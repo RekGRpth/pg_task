@@ -150,59 +150,32 @@ static void tick_fix(void) {
 static void task_remote(const Datum id, const char *queue, const int max, PQconninfoOption *opts) {
     context_t *context = NULL;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
-//    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-//    PGconn *conn;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
-    L("context = %p", context);
+//    L("context = %p", context);
     if (!(context = palloc(sizeof(context)))) E("!palloc");
-    L("context = %p", context);
+//    L("context = %p", context);
 //    task_work(id, &context->request, &context->timeout);
 //    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), context->timeout, context->request);
     context->id = id;
     context->queue = (queue);
     context->wakeEvents = WL_SOCKET_WRITEABLE;
-    L("context->queue = %s", context->queue);
+//    L("context->queue = %s", context->queue);
     context->max = max;
-    L("context = %p", context);
+//    L("context = %p", context);
     if (!(context->conn = PQconnectStart(context->queue))) E("!PQconnectStart");
-    L("context->conn = %p", context->conn);
-//    L("PQsocket = %i", PQsocket(context->conn));
+//    L("context->conn = %p", context->conn);
     if (PQstatus(context->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(context->conn));
-    L("context = %p", context);
-//    L("context->fd = %i", context->fd);
-//    if ((context->fd = PQsocket(conn)) < 0) E("PQsocket < 0");
-//    L("PQsocket = %i", PQsocket(conn));
 //    L("context = %p", context);
     if (!PQisnonblocking(context->conn) && PQsetnonblocking(context->conn, true) == -1) E(PQerrorMessage(context->conn));
-    L("context = %p", context);
-/*    if (PQstatus(conn) == CONNECTION_MADE) {
-        switch (PQconnectPoll(conn)) {
-            case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); break;
-            case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED"); break;
-            case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); break;
-            case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); break;
-            case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); break;
-        }
-    }*/
-//    L("MemoryContextIsValid = %s", MemoryContextIsValid(CurrentMemoryContext) ? "true" : "false");
-//    L("MemoryContextIsValid = %s", MemoryContextIsValid(TopMemoryContext) ? "true" : "false");
-//    L("MemoryContextIsValid = %s", MemoryContextIsValid(oldMemoryContext) ? "true" : "false");
+//    L("context = %p", context);
     if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0, %s", PQerrorMessage(context->conn));
-    L("context->fd = %i", context->fd);
-//    context->fd = 67;
-//    L("context = %p", context);
-//    context->conn = (void *)conn;
-    L("context->conn = %p", context->conn);
-//    L("context = %p", context);
-//    socket_data = lappend(socket_data, context);
-    queue_put_pointer(&fd_queue, &context->pointer);
 //    L("context->fd = %i", context->fd);
-    L("context = %p", context);
+//    L("context->conn = %p", context->conn);
+    queue_put_pointer(&fd_queue, &context->pointer);
+//    L("context = %p", context);
     MemoryContextSwitchTo(oldMemoryContext);
-    L("context = %p", context);
-//    oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
-    L("context->conn = %p", context->conn);
-//    MemoryContextSwitchTo(oldMemoryContext);
+//    L("context = %p", context);
+//    L("context->conn = %p", context->conn);
 }
 
 static void task_worker(const Datum id, const char *queue, const int max) {
@@ -391,9 +364,6 @@ static void tick_reload(void) {
 
 static void tick_socket(context_t *context) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
-//    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-//    L("context = %p", context);
-//    L("context->conn = %p", context->conn);
     switch (PQstatus(context->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: L("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
@@ -416,10 +386,8 @@ static void tick_socket(context_t *context) {
         case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); context->wakeEvents = WL_SOCKET_WRITEABLE; break;
     }
     if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
-//    lappend(socket_data, context);
     queue_put_pointer(&fd_queue, &context->pointer);
 done:
-    ;
     MemoryContextSwitchTo(oldMemoryContext);
 }
 
