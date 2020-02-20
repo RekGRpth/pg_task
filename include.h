@@ -43,13 +43,24 @@
 
 #include "queue.h"
 
+typedef struct WaitEventMy {
+    union { WaitEvent event; } base;
+    char *queue;
+    char *request;
+    Datum id;
+    int max;
+    int timeout;
+    PGconn *conn;
+    queue_t pointer;
+} WaitEventMy;
+
 bool pg_advisory_unlock_int4_my(int32 key1, int32 key2);
 bool pg_advisory_unlock_int8_my(int64 key);
 bool pg_try_advisory_lock_int4_my(int32 key1, int32 key2);
 bool pg_try_advisory_lock_int8_my(int64 key);
 char *SPI_getvalue_my(HeapTuple tuple, TupleDesc tupdesc, int fnumber);
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
-int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, queue_t *queue, long timeout, uint32 wait_event_info);
+int WaitLatchOrSocketMy(Latch *latch, WaitEventMy *eventMy, int wakeEvents, queue_t *event_queue, long timeout, uint32 wait_event_info);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void exec_simple_query(const char *query_string);
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
@@ -93,17 +104,5 @@ void tick_loop(void);
 #define F(fmt, ...) ereport(FATAL, (errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
 #define L(fmt, ...) ereport(LOG, (errhidestmt(true), errhidecontext(true), errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
 #define W(fmt, ...) ereport(WARNING, (errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
-
-typedef struct {
-    char *queue;
-    char *request;
-    Datum id;
-    int fd;
-    int max;
-    int timeout;
-    int wakeEvents;
-    PGconn *conn;
-    queue_t pointer;
-} context_t;
 
 #endif // _INCLUDE_H_

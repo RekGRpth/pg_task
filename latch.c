@@ -1,8 +1,7 @@
 #include "include.h"
 
-int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, queue_t *fd_queue, long timeout, uint32 wait_event_info) {
-    int ret = 0, count = queue_count(fd_queue);
-    WaitEvent event;
+int WaitLatchOrSocketMy(Latch *latch, WaitEventMy *event, int wakeEvents, queue_t *event_queue, long timeout, uint32 wait_event_info) {
+    int ret = 0, count = queue_count(event_queue);
     WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, 2 + count);
     if (count > 0) {
         wakeEvents |= WL_SOCKET_MASK;
@@ -14,18 +13,14 @@ int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, queue_t *fd_q
     if ((wakeEvents & WL_POSTMASTER_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
     if ((wakeEvents & WL_EXIT_ON_PM_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
     if (wakeEvents & WL_SOCKET_MASK) {
-        queue_each(fd_queue, queue) {
-            context_t *context = pointer_data(queue, context_t, pointer);
-            AddWaitEventToSet(set, wakeEvents & context->wakeEvents, context->fd, NULL, context);
+        queue_each(event_queue, queue) {
+            WaitEventMy *event = pointer_data(queue, WaitEventMy, pointer);
+            AddWaitEventToSet(set, wakeEvents & event->base.event.events, event->base.event.fd, NULL, event->base.event.user_data);
         }
     }
-    if (!WaitEventSetWait(set, timeout, &event, 1, wait_event_info)) ret |= WL_TIMEOUT; else {
-        ret |= event.events & (WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_MASK);
-        if (data) *data = event.user_data;
-        if (data && *data) {
-            context_t *context = *data;
-            pointer_remove(&context->pointer);
-        }
+    if (!WaitEventSetWait(set, timeout, &event->base.event, 1, wait_event_info)) ret |= WL_TIMEOUT; else {
+        ret |= event->base.event.events & (WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_MASK);
+        if (ret & WL_SOCKET_MASK) pointer_remove(&event->pointer);
         if (ret & WL_LATCH_SET) L("WL_LATCH_SET");
         if (ret & WL_SOCKET_READABLE) L("WL_SOCKET_READABLE");
         if (ret & WL_SOCKET_WRITEABLE) L("WL_SOCKET_WRITEABLE");

@@ -13,7 +13,7 @@ static const char *table_quote = NULL;
 static const char *user_quote = NULL;
 static MemoryContext RemoteMemoryContext = NULL;
 static Oid oid = 0;
-static queue_t fd_queue;
+static queue_t event_queue;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
@@ -148,21 +148,24 @@ static void tick_fix(void) {
 }
 
 static void task_remote(const Datum id, const char *queue, const int max, PQconninfoOption *opts) {
-    context_t *context = NULL;
+    WaitEvent *event;
+    WaitEventMy *eventMy;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
-    if (!(context = palloc(sizeof(context)))) E("!palloc");
-    task_work(id, &context->request, &context->timeout);
-    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), context->timeout, context->request);
-    context->id = id;
-    context->queue = (queue);
-    context->wakeEvents = WL_SOCKET_WRITEABLE;
-    context->max = max;
-    if (!(context->conn = PQconnectStart(context->queue))) E("!PQconnectStart");
-    if (PQstatus(context->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(context->conn));
-    if (!PQisnonblocking(context->conn) && PQsetnonblocking(context->conn, true) == -1) E(PQerrorMessage(context->conn));
-    if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0, %s", PQerrorMessage(context->conn));
-    queue_put_pointer(&fd_queue, &context->pointer);
+    if (!(eventMy = palloc(sizeof(eventMy)))) E("!palloc");
+    eventMy->id = id;
+    eventMy->queue = (char *)queue;
+    eventMy->max = max;
+    event = (WaitEvent *)eventMy;
+    event->user_data = eventMy;
+    event->events = WL_SOCKET_WRITEABLE;
+    task_work(id, &eventMy->request, &eventMy->timeout);
+    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), eventMy->timeout, eventMy->request);
+    if (!(eventMy->conn = PQconnectStart(eventMy->queue))) E("!PQconnectStart");
+    if (PQstatus(eventMy->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(eventMy->conn));
+    if (!PQisnonblocking(eventMy->conn) && PQsetnonblocking(eventMy->conn, true) == -1) E(PQerrorMessage(eventMy->conn));
+    if ((event->fd = PQsocket(eventMy->conn)) < 0) E("PQsocket < 0, %s", PQerrorMessage(eventMy->conn));
+    queue_put_pointer(&event_queue, &eventMy->pointer);
     MemoryContextSwitchTo(oldMemoryContext);
 }
 
@@ -336,7 +339,7 @@ void tick_init(const bool conf) {
     if (!pg_try_advisory_lock_int8_my(oid)) { sigterm = true; W("lock oid = %d", oid); return; }
     tick_fix();
     if (!RemoteMemoryContext) RemoteMemoryContext = AllocSetContextCreate(TopMemoryContext, "RemoteMemoryContext", ALLOCSET_DEFAULT_SIZES);
-    queue_init(&fd_queue);
+    queue_init(&event_queue);
 }
 
 static void tick_reset(void) {
@@ -350,9 +353,10 @@ static void tick_reload(void) {
     tick_check();
 }
 
-static void tick_socket(context_t *context) {
+static void tick_socket(WaitEventMy *eventMy) {
+    WaitEvent *event = (WaitEvent *)eventMy;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(RemoteMemoryContext);
-    switch (PQstatus(context->conn)) {
+    switch (PQstatus(eventMy->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: L("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
         case CONNECTION_BAD: E("PQstatus == CONNECTION_BAD"); goto done;
@@ -366,7 +370,7 @@ static void tick_socket(context_t *context) {
         case CONNECTION_SSL_STARTUP: L("PQstatus == CONNECTION_SSL_STARTUP"); break;
         case CONNECTION_STARTED: L("PQstatus == CONNECTION_STARTED"); break;
     }
-    switch (PQconnectPoll(context->conn)) {
+    switch (PQconnectPoll(eventMy->conn)) {
         case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); goto done;
         case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED"); goto done;
         case PGRES_POLLING_OK: {
@@ -375,11 +379,11 @@ static void tick_socket(context_t *context) {
             //context->wakeEvents = WL_SOCKET_WRITEABLE;
             goto done;
         } break;
-        case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); context->wakeEvents = WL_SOCKET_READABLE; break;
-        case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); context->wakeEvents = WL_SOCKET_WRITEABLE; break;
+        case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); event->events = WL_SOCKET_READABLE; break;
+        case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); event->events = WL_SOCKET_WRITEABLE; break;
     }
-    if ((context->fd = PQsocket(context->conn)) < 0) E("PQsocket < 0");
-    queue_put_pointer(&fd_queue, &context->pointer);
+    if ((event->fd = PQsocket(eventMy->conn)) < 0) E("PQsocket < 0");
+    queue_put_pointer(&event_queue, &eventMy->pointer);
 //ok:
 done:
 /*    if (PQstatus(context->conn) == CONNECTION_OK) {
@@ -399,12 +403,12 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     if (table == schema + 1) schema = NULL;
     tick_init(false);
     while (!sigterm) {
-        void *data;
-        int rc = WaitLatchOrSocketMy(MyLatch, &data, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &fd_queue, period, PG_WAIT_EXTENSION);
+        WaitEventMy eventMy;
+        int rc = WaitLatchOrSocketMy(MyLatch, &eventMy, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &event_queue, period, PG_WAIT_EXTENSION);
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) tick_reset();
         if (sighup) tick_reload();
         if (rc & WL_TIMEOUT) tick_loop();
-        if (rc & WL_SOCKET_MASK) tick_socket(data);
+        if (rc & WL_SOCKET_MASK) tick_socket(&eventMy);
     }
 }
