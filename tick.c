@@ -156,7 +156,7 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     event->id = id;
     event->queue = queue;
     event->max = max;
-    event->base.event.user_data = event;
+//    event->base.event.user_data = event;
     event->base.event.events = WL_SOCKET_WRITEABLE;
 //    task_work(id, &event->request, &event->timeout);
 //    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), event->timeout, event->request);

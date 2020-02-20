@@ -24,7 +24,7 @@ int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, queue_t 
 //        if (event->base.event.events & WL_SOCKET_READABLE) L("WL_SOCKET_READABLE");
 //        if (event->base.event.events & WL_SOCKET_WRITEABLE) L("WL_SOCKET_WRITEABLE");
 //        if (event->base.event.events & WL_TIMEOUT) L("WL_TIMEOUT");
-        AddWaitEventToSet(set, event->base.event.events, event->base.event.fd, NULL, event->base.event.user_data);
+        AddWaitEventToSet(set, event->base.event.events, event->base.event.fd, NULL, event);
     }
     if (!WaitEventSetWait(set, timeout, event, 1, wait_event_info)) ret |= WL_TIMEOUT; else {
         ret |= event->events & (WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_MASK);
