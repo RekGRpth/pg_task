@@ -162,6 +162,7 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     event->max = max;
     event->queue = queue;
     event->request = request;
+    event->send = false;
     event->timeout = timeout;
     if (!(event->conn = PQconnectStart(event->queue))) E("!PQconnectStart");
     if (PQstatus(event->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(event->conn));
@@ -355,8 +356,6 @@ static void tick_reload(void) {
     tick_check();
 }
 
-static bool sended = false;
-
 static void tick_socket(WaitEventMy *event) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
     switch (PQstatus(event->conn)) {
@@ -385,11 +384,11 @@ static void tick_socket(WaitEventMy *event) {
 ok:
     if (event->base.event.events & WL_SOCKET_READABLE) {
         L("WL_SOCKET_READABLE");
-        if (!sended) {
+        if (!event->send) {
             L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(event->id), event->timeout, event->request);
             if (!PQsendQuery(event->conn, event->request)) E("!PQsendQuery, %s", PQerrorMessage(event->conn));
             event->base.event.events = WL_SOCKET_WRITEABLE;
-            sended = true;
+            event->send = true;
         } else {
             if (!PQconsumeInput(event->conn)) E("!PQconsumeInput, %s", PQerrorMessage(event->conn));
             if (!PQisBusy(event->conn)) pointer_remove(&event->pointer);

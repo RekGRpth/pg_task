@@ -45,6 +45,7 @@
 
 typedef struct WaitEventMy {
     union { WaitEvent event; } base;
+    bool send;
     char *request;
     const char *queue;
     Datum id;
