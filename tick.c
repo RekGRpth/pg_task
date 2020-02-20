@@ -355,6 +355,8 @@ static void tick_reload(void) {
     tick_check();
 }
 
+static bool sended = false;
+
 static void tick_socket(WaitEventMy *event) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
     switch (PQstatus(event->conn)) {
@@ -382,9 +384,15 @@ static void tick_socket(WaitEventMy *event) {
     goto done;
 ok:
     L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(event->id), event->timeout, event->request);
-            //if (!PQsendQuery(context->conn, context->request)) E("!PQsendQuery, %s", PQerrorMessage(context->conn));
-            //context->wakeEvents = WL_SOCKET_WRITEABLE;
-    pointer_remove(&event->pointer);
+    if (event->base.event.events & WL_SOCKET_READABLE) {
+        L("WL_SOCKET_READABLE");
+//        if (!PQsendQuery(context->conn, context->request)) E("!PQsendQuery, %s", PQerrorMessage(context->conn));
+//        event->base.event.events = WL_SOCKET_WRITEABLE;
+    }
+    if (event->base.event.events & WL_SOCKET_WRITEABLE) {
+        L("WL_SOCKET_WRITEABLE");
+    }
+//    pointer_remove(&event->pointer);
 done:
     MemoryContextSwitchTo(oldMemoryContext);
 }
@@ -400,8 +408,6 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     while (!sigterm) {
         WaitEvent event;
         int rc = WaitLatchOrSocketMy(MyLatch, &event, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &event_queue, period, PG_WAIT_EXTENSION);
-        if (rc & WL_SOCKET_READABLE) L("WL_SOCKET_READABLE");
-        if (rc & WL_SOCKET_WRITEABLE) L("WL_SOCKET_WRITEABLE");
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) tick_reset();
         if (sighup) tick_reload();
