@@ -1,6 +1,6 @@
 #include "include.h"
 
-int WaitLatchOrSocketMy(Latch *latch, Context **context, int wakeEvents, List **list, long timeout, uint32 wait_event_info) {
+int WaitLatchOrSocketMy(Latch *latch, void **data, int wakeEvents, List **list, long timeout, uint32 wait_event_info) {
     int ret = 0;
     WaitEvent event;
     WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, 2 + list_length(*list));
@@ -25,7 +25,7 @@ int WaitLatchOrSocketMy(Latch *latch, Context **context, int wakeEvents, List **
     }
     if (!WaitEventSetWait(set, timeout, &event, 1, wait_event_info)) ret |= WL_TIMEOUT; else {
         ret |= event.events & (WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_MASK);
-        *context = event.user_data;
+        if (data) *data = event.user_data;
         if (ret & WL_LATCH_SET) L("WL_LATCH_SET");
         if (ret & WL_SOCKET_READABLE) L("WL_SOCKET_READABLE");
         if (ret & WL_SOCKET_WRITEABLE) L("WL_SOCKET_WRITEABLE");

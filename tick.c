@@ -448,7 +448,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     tick_init(false);
     while (!sigterm) {
         Context *context;
-        int rc = WaitLatchOrSocketMy(MyLatch, &context, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &socket_data, period, PG_WAIT_EXTENSION);
+        int rc = WaitLatchOrSocketMy(MyLatch, (void **)&context, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &socket_data, period, PG_WAIT_EXTENSION);
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) tick_reset();
         if (sighup) tick_reload();
