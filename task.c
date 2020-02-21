@@ -250,7 +250,6 @@ static void task_error(Task *task) {
 }
 
 static bool task_loop(Task *task) {
-    bool exit = false;
     if (!pg_try_advisory_lock_int4_my(task->work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, task->work->oid);
     task_work(task);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
@@ -267,8 +266,7 @@ static bool task_loop(Task *task) {
     if (task->response.data) pfree(task->response.data);
     task->response.data = NULL;
     pg_advisory_unlock_int4_my(task->work->oid, task->id);
-    if (task->live) exit = task_live(task); else exit = true;
-    return exit;
+    return !task->live || task_live(task);
 }
 
 static void task_sigterm(SIGNAL_ARGS) {
