@@ -5,6 +5,7 @@ static volatile sig_atomic_t sigterm = false;
 void task_work(Task *task) {
     #define ID 1
     #define SID S(ID)
+    Work *work = &task->work;
     static Oid argtypes[] = {[ID - 1] = INT8OID};
     Datum values[] = {[ID - 1] = Int64GetDatum(task->id)};
     static SPIPlanPtr plan = NULL;
@@ -27,7 +28,7 @@ void task_work(Task *task) {
             "SET     state = 'WORK'::state,\n"
             "        start = current_timestamp,\n"
             "        pid = pg_backend_pid()\n"
-            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout", task->work->schema_table);
+            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout", work->schema_table);
         command = buf.data;
     }
     #undef ID
@@ -36,7 +37,7 @@ void task_work(Task *task) {
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
-        MemoryContext oldMemoryContext = MemoryContextSwitchTo(task->work->context);
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
         bool timeout_isnull;
         task->request = SPI_getvalue_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
         task->timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
@@ -58,6 +59,7 @@ static void task_repeat(Task *task) {
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     if (!command) {
+        Work *work = &task->work;
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
@@ -65,7 +67,7 @@ static void task_repeat(Task *task) {
             "SELECT CASE WHEN drift THEN current_timestamp + repeat\n"
             "ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
             "END AS dt, queue, max, request, timeout, delete, repeat, drift, count, live\n"
-            "FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::state, 'FAIL'::state) LIMIT 1", task->work->schema_table);
+            "FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::state, 'FAIL'::state) LIMIT 1", work->schema_table);
         command = buf.data;
     }
     #undef ID
@@ -86,9 +88,10 @@ static void task_delete(Task *task) {
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     if (!command) {
+        Work *work = &task->work;
         StringInfoData buf;
         initStringInfo(&buf);
-        appendStringInfo(&buf, "DELETE FROM %s WHERE id = $" SID, task->work->schema_table);
+        appendStringInfo(&buf, "DELETE FROM %s WHERE id = $" SID, work->schema_table);
         command = buf.data;
     }
     #undef ID
@@ -116,6 +119,7 @@ static bool task_live(Task *task) {
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     if (!command) {
+        Work *work = &task->work;
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
@@ -128,7 +132,7 @@ static bool task_live(Task *task) {
             "AND     COALESCE(max, ~(1<<31)) >= $" SMAX "\n"
             "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $" SCOUNT " AND $" SSTART " + live > current_timestamp ELSE COALESCE(count, 0) > $" SCOUNT " OR $" SSTART " + COALESCE(live, '0 sec'::interval) > current_timestamp END\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id", task->work->schema_table);
+            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id", work->schema_table);
         command = buf.data;
     }
     #undef MAX
@@ -169,12 +173,13 @@ static void task_done(Task *task) {
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     L("id = %lu, response = %s, state = %s", task->id, task->response.data ? task->response.data : "(null)", task->state);
     if (!command) {
+        Work *work = &task->work;
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " FOR UPDATE\n)\n"
             "UPDATE %1$s AS u SET state = $" SSTATE "::state, stop = current_timestamp, response = $" SRESPONSE " FROM s WHERE u.id = s.id\n"
-            "RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live", task->work->schema_table);
+            "RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live", work->schema_table);
         command = buf.data;
     }
     #undef ID
@@ -213,7 +218,8 @@ static void task_success(Task *task) {
 }
 
 static void task_error(Task *task) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(task->work->context);
+    Work *work = &task->work;
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
     ErrorData *edata = CopyErrorData();
     initStringInfo(&task->response);
     appendStringInfo(&task->response, "elevel::int4\t%i", edata->elevel);
@@ -250,7 +256,8 @@ static void task_error(Task *task) {
 }
 
 static bool task_loop(Task *task) {
-    if (!pg_try_advisory_lock_int4_my(task->work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, task->work->oid);
+    Work *work = &task->work;
+    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
     task_work(task);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     PG_TRY();
@@ -265,7 +272,7 @@ static bool task_loop(Task *task) {
     if (task->delete && !task->response.data) task_delete(task);
     if (task->response.data) pfree(task->response.data);
     task->response.data = NULL;
-    pg_advisory_unlock_int4_my(task->work->oid, task->id);
+    pg_advisory_unlock_int4_my(work->oid, task->id);
     return !task->live || task_live(task);
 }
 
@@ -322,7 +329,7 @@ static void task_init_work(Work *work) {
 }
 
 static void task_init_task(Task *task) {
-    Work *work = task->work;
+    Work *work = &task->work;
     Conf *conf = &work->conf;
     task->id = MyBgworkerEntry->bgw_main_arg;
     task->start = GetCurrentTimestamp();
@@ -346,12 +353,9 @@ static void task_reset(void) {
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     Task task;
-    Work work;
     MemSet(&task, 0, sizeof(task));
-    MemSet(&work, 0, sizeof(work));
-    task.work = &work;
-    task_init_conf(&work.conf);
-    task_init_work(&work);
+    task_init_conf(&task.work.conf);
+    task_init_work(&task.work);
     task_init_task(&task);
     while (!sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, 0, PG_WAIT_EXTENSION);

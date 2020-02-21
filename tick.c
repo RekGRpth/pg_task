@@ -144,7 +144,7 @@ static void tick_fix(Work *work) {
 }
 
 static void task_remote(Task *task) {
-    Work *work = task->work;
+    Work *work = &task->work;
     Conf *conf = &work->conf;
     Remote *remote;
     MemoryContext oldMemoryContext;
@@ -159,12 +159,12 @@ static void task_remote(Task *task) {
     if (PQstatus(remote->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(remote->conn));
     if (!PQisnonblocking(remote->conn) && PQsetnonblocking(remote->conn, true) == -1) E(PQerrorMessage(remote->conn));
     if ((remote->event.fd = PQsocket(remote->conn)) < 0) E("PQsocket < 0, %s", PQerrorMessage(remote->conn));
-    queue_insert_tail(&work->queue, &remote->queue);
+    queue_insert_tail(work->queue, &remote->queue);
     MemoryContextSwitchTo(oldMemoryContext);
 }
 
 static void task_worker(Task *task) {
-    Work *work = task->work;
+    Work *work = &task->work;
     Conf *conf = &work->conf;
     StringInfoData buf;
     int user_len = strlen(conf->user), data_len = strlen(conf->data), schema_len = conf->schema ? strlen(conf->schema) : 0, table_len = strlen(conf->table), queue_len = strlen(task->queue), max_len = sizeof(task->max), oid_len = sizeof(work->oid);
@@ -213,7 +213,7 @@ static void task_worker(Task *task) {
 }
 
 static void tick_work(Task *task) {
-    Work *work = task->work;
+    Work *work = &task->work;
     Conf *conf = &work->conf;
     PQconninfoOption *opts;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->queue, task->max, work->oid);
@@ -254,7 +254,7 @@ void tick_loop(Work *work) {
         bool id_isnull, max_isnull;
         Task task;
         MemSet(&task, 0, sizeof(task));
-        task.work = work;
+        task.work = *work;
         task.id = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull));
         task.queue = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"));
         task.max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
@@ -340,13 +340,6 @@ bool tick_init_work(const bool is_conf, Work *work) {
     work->schema_table = buf.data;
     if (conf->schema && schema_quote && conf->schema != schema_quote) pfree((void *)schema_quote);
     if (conf->table != table_quote) pfree((void *)table_quote);
-/*    if (!is_conf) {
-        initStringInfo(&buf);
-        appendStringInfo(&buf, "%s %d", MyBgworkerEntry->bgw_type, period);
-        SetConfigOptionMy("application_name", buf.data);
-        pgstat_report_appname(buf.data);
-        pfree(buf.data);
-    }*/
     L("user = %s, data = %s, schema = %s, table = %s, period = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, conf->period);
     if (conf->schema) tick_schema(conf);
     tick_type(conf);
@@ -362,7 +355,8 @@ bool tick_init_work(const bool is_conf, Work *work) {
     if (!pg_try_advisory_lock_int8_my(work->oid)) { W("lock oid = %d", work->oid); return true; }
     tick_fix(work);
     if (!work->context) work->context = AllocSetContextCreate(TopMemoryContext, "myMemoryContext", ALLOCSET_DEFAULT_SIZES);
-    queue_init(&work->queue);
+    if (!work->queue && !(work->queue = palloc0(sizeof(work->queue)))) E("!palloc0");
+    queue_init(work->queue);
     return false;
 }
 
@@ -399,7 +393,7 @@ static void tick_sucess(PGresult *result) {
 
 static void tick_socket(Remote *remote) {
     Task *task = &remote->task;
-    Work *work = task->work;
+    Work *work = &task->work;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
     switch (PQstatus(remote->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
@@ -466,7 +460,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     sigterm = tick_init_work(false, &work);
     while (!sigterm) {
         WaitEvent event;
-        int rc = WaitLatchOrSocketMy(MyLatch, &event, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &work.queue, work.conf.period, PG_WAIT_EXTENSION);
+        int rc = WaitLatchOrSocketMy(MyLatch, &event, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, work.queue, work.conf.period, PG_WAIT_EXTENSION);
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) tick_reset();
         if (sighup) tick_reload();

@@ -57,7 +57,7 @@ typedef struct Work {
     char *schema_table;
     MemoryContext context;
     Oid oid;
-    queue_t queue;
+    queue_t *queue;
 } Work;
 
 typedef struct Event {
@@ -80,7 +80,7 @@ typedef struct Task {
     int timeout;
     StringInfoData response;
     TimestampTz start;
-    Work *work;
+    Work work;
 } Task;
 
 typedef struct Remote {
