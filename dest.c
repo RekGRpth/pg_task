@@ -19,15 +19,6 @@ static char *SPI_getvalue_my2(TupleTableSlot *slot, TupleDesc tupdesc, int fnumb
     return OidOutputFunctionCall(foutoid, val);
 }
 
-const char *SPI_gettype_my(Oid oid) {
-    const char *result;
-    HeapTuple typeTuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(oid));
-    if (!HeapTupleIsValid(typeTuple)) E("SPI_ERROR_TYPUNKNOWN");
-    result = NameStr(((Form_pg_type)GETSTRUCT(typeTuple))->typname);
-    ReleaseSysCache(typeTuple);
-    return result;
-}
-
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
     if (!response.data) initStringInfo(&response);

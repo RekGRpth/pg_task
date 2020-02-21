@@ -61,7 +61,6 @@ bool pg_try_advisory_lock_int4_my(int32 key1, int32 key2);
 bool pg_try_advisory_lock_int8_my(int64 key);
 char *SPI_getvalue_my(HeapTuple tuple, TupleDesc tupdesc, int fnumber);
 const char *PQftypeMy(const PGresult *res, int column_number);
-const char *SPI_gettype_my(Oid oid);
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
 int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, queue_t *task_queue, long timeout, uint32 wait_event_info);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
