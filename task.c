@@ -14,7 +14,7 @@ void task_work(Task *task) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf, "%lu", task->id);
-        set_config_option_my("pg_task.id", buf.data);
+        SetConfigOptionMy("pg_task.id", buf.data);
         pfree(buf.data);
     }
     task->count++;
@@ -295,10 +295,10 @@ static void task_init_conf(Conf *conf) {
     if (!MyProcPort->database_name) MyProcPort->database_name = conf->data;
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
     L("user = %s, data = %s, schema = %s, table = %s", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table);
-    set_config_option_my("pg_task.data", conf->data);
-    set_config_option_my("pg_task.user", conf->user);
-    if (conf->schema) set_config_option_my("pg_task.schema", conf->schema);
-    set_config_option_my("pg_task.table", conf->table);
+    SetConfigOptionMy("pg_task.data", conf->data);
+    SetConfigOptionMy("pg_task.user", conf->user);
+    if (conf->schema) SetConfigOptionMy("pg_task.schema", conf->schema);
+    SetConfigOptionMy("pg_task.table", conf->table);
 }
 
 static void task_init_work(Work *work) {
@@ -315,7 +315,7 @@ static void task_init_work(Work *work) {
     L("oid = %d", work->oid);
     initStringInfo(&buf);
     appendStringInfo(&buf, "%d", work->oid);
-    set_config_option_my("pg_task.oid", buf.data);
+    SetConfigOptionMy("pg_task.oid", buf.data);
     pfree(buf.data);
     if (!work->context) work->context = AllocSetContextCreate(TopMemoryContext, "myMemoryContext", ALLOCSET_DEFAULT_SIZES);
     if (conf->schema && schema_quote && conf->schema != schema_quote) pfree((void *)schema_quote);
@@ -338,7 +338,7 @@ static void task_init_task(Task *task) {
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(conf->data, conf->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
-    set_config_option_my("pg_task.queue", task->queue);
+    SetConfigOptionMy("pg_task.queue", task->queue);
 }
 
 static void task_reset(void) {

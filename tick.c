@@ -9,7 +9,7 @@ static void tick_schema(Conf *conf) {
     List *names;
     const char *schema_quote = quote_identifier(conf->schema);
     L("user = %s, data = %s, schema = %s, table = %s", conf->user, conf->data, conf->schema, conf->table);
-    set_config_option_my("pg_task.schema", conf->schema);
+    SetConfigOptionMy("pg_task.schema", conf->schema);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE SCHEMA %s", schema_quote);
     names = stringToQualifiedNameList(schema_quote);
@@ -20,7 +20,7 @@ static void tick_schema(Conf *conf) {
     list_free_deep(names);
     if (schema_quote != conf->schema) pfree((void *)schema_quote);
     pfree(buf.data);
-    set_config_option_my("pg_task.schema", conf->schema);
+    SetConfigOptionMy("pg_task.schema", conf->schema);
 }
 
 static void tick_type(Conf *conf) {
@@ -52,7 +52,7 @@ static void tick_table(Work *work) {
     const char *name_quote;
     L("user = %s, data = %s, schema = %s, table = %s", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table);
     if (work->oid) pg_advisory_unlock_int8_my(work->oid);
-    set_config_option_my("pg_task.table", conf->table);
+    SetConfigOptionMy("pg_task.table", conf->table);
     initStringInfo(&name);
     appendStringInfo(&name, "%s_parent_fkey", conf->table);
     name_quote = quote_identifier(name.data);
@@ -89,10 +89,10 @@ static void tick_table(Work *work) {
     list_free_deep(names);
     if (name_quote != name.data) pfree((void *)name_quote);
     pfree(name.data);
-    set_config_option_my("pg_task.table", conf->table);
+    SetConfigOptionMy("pg_task.table", conf->table);
     resetStringInfo(&buf);
     appendStringInfo(&buf, "%d", work->oid);
-    set_config_option_my("pg_task.oid", buf.data);
+    SetConfigOptionMy("pg_task.oid", buf.data);
     pfree(buf.data);
 }
 
@@ -353,11 +353,11 @@ bool tick_init_work(const bool is_conf, Work *work) {
     tick_table(work);
     tick_index(work, "dt");
     tick_index(work, "state");
-    set_config_option_my("pg_task.data", conf->data);
-    set_config_option_my("pg_task.user", conf->user);
+    SetConfigOptionMy("pg_task.data", conf->data);
+    SetConfigOptionMy("pg_task.user", conf->user);
     initStringInfo(&buf);
     appendStringInfo(&buf, "%d", conf->period);
-    set_config_option_my("pg_task.period", buf.data);
+    SetConfigOptionMy("pg_task.period", buf.data);
     pfree(buf.data);
     if (!pg_try_advisory_lock_int8_my(work->oid)) { W("lock oid = %d", work->oid); return true; }
     tick_fix(work);

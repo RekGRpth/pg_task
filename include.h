@@ -104,7 +104,7 @@ int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, queue_t 
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void exec_simple_query(Task *task);
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
-void set_config_option_my(const char *name, const char *value);
+//void set_config_option_my(const char *name, const char *value);
 void SetConfigOptionMy(const char *name, const char *value);
 void SPI_commit_my(const char *command);
 void SPI_connect_my(const char *command);
