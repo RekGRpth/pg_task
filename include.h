@@ -75,7 +75,7 @@ typedef struct Task {
     char *queue;
     char *request;
     char *state;
-    Datum id;
+    int64 id;
     int count;
     int max;
     int timeout;

@@ -6,14 +6,14 @@ void task_work(Task *task) {
     #define ID 1
     #define SID S(ID)
     static Oid argtypes[] = {[ID - 1] = INT8OID};
-    Datum values[] = {[ID - 1] = task->id};
+    Datum values[] = {[ID - 1] = Int64GetDatum(task->id)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     if (!task->remote) {
         StringInfoData buf;
         initStringInfo(&buf);
-        appendStringInfo(&buf, "%lu", DatumGetUInt64(task->id));
+        appendStringInfo(&buf, "%lu", task->id);
         set_config_option_my("pg_task.id", buf.data);
         pfree(buf.data);
     }
@@ -53,7 +53,7 @@ static void task_repeat(Task *task) {
     #define ID 1
     #define SID S(ID)
     static Oid argtypes[] = {[ID - 1] = INT8OID};
-    Datum values[] = {[ID - 1] = task->id};
+    Datum values[] = {[ID - 1] = Int64GetDatum(task->id)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -81,7 +81,7 @@ static void task_delete(Task *task) {
     #define ID 1
     #define SID S(ID)
     static Oid argtypes[] = {[ID - 1] = INT8OID};
-    Datum values[] = {[ID - 1] = task->id};
+    Datum values[] = {[ID - 1] = Int64GetDatum(task->id)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -142,7 +142,7 @@ static bool task_live(Task *task) {
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     if (!SPI_processed) exit = true; else {
         bool id_isnull;
-        task->id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
+        task->id = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull));
         if (id_isnull) E("id_isnull");
     }
     SPI_commit_my(command);
@@ -161,13 +161,13 @@ static void task_done(Task *task) {
     #define RESPONSE 3
     #define SRESPONSE S(RESPONSE)
     static Oid argtypes[] = {[ID - 1] = INT8OID, [STATE - 1] = TEXTOID, [RESPONSE - 1] = TEXTOID};
-    Datum values[] = {[ID - 1] = task->id, [STATE - 1] = CStringGetTextDatum(task->state), [RESPONSE - 1] = task->response.data ? CStringGetTextDatum(task->response.data) : (Datum)NULL};
+    Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [STATE - 1] = CStringGetTextDatum(task->state), [RESPONSE - 1] = task->response.data ? CStringGetTextDatum(task->response.data) : (Datum)NULL};
     char nulls[] = {[ID - 1] = ' ', [STATE - 1] = ' ', [RESPONSE - 1] = task->response.data ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    L("id = %lu, response = %s, state = %s", DatumGetUInt64(task->id), task->response.data ? task->response.data : "(null)", task->state);
+    L("id = %lu, response = %s, state = %s", task->id, task->response.data ? task->response.data : "(null)", task->state);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -251,9 +251,9 @@ static void task_error(Task *task) {
 
 static bool task_loop(Task *task) {
     bool exit = false;
-    if (!pg_try_advisory_lock_int4_my(task->work->oid, DatumGetUInt64(task->id))) E("lock id = %lu, oid = %d", DatumGetUInt64(task->id), task->work->oid);
+    if (!pg_try_advisory_lock_int4_my(task->work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, task->work->oid);
     task_work(task);
-    L("id = %lu, timeout = %d, request = %s, count = %u", DatumGetUInt64(task->id), task->timeout, task->request, task->count);
+    L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     PG_TRY();
         task_success(task);
     PG_CATCH();
@@ -265,7 +265,7 @@ static bool task_loop(Task *task) {
     if (task->delete && !task->response.data) task_delete(task);
     pfree(task->response.data);
     task->response.data = NULL;
-    pg_advisory_unlock_int4_my(task->work->oid, DatumGetUInt64(task->id));
+    pg_advisory_unlock_int4_my(task->work->oid, task->id);
     if (task->live) exit = task_live(task);
     return exit;
 }
@@ -332,7 +332,7 @@ static void task_init_task(Task *task) {
     task->max = *(typeof(task->max) *)conf->p;
     conf->p += sizeof(task->max);
     if (conf->p) E("conf->p");
-    L("id = %lu, queue = %s, max = %u", DatumGetUInt64(task->id), task->queue, task->max);
+    L("id = %lu, queue = %s, max = %u", task->id, task->queue, task->max);
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
     pqsignal(SIGTERM, task_sigterm);
     BackgroundWorkerUnblockSignals();

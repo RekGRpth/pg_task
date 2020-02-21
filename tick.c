@@ -149,9 +149,9 @@ static void task_remote(Task *task) {
     Remote *remote;
     MemoryContext oldMemoryContext;
     task_work(task);
-    L("id = %lu, timeout = %d, request = %s, count = %u", DatumGetUInt64(task->id), task->timeout, task->request, task->count);
+    L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     oldMemoryContext = MemoryContextSwitchTo(work->context);
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, DatumGetUInt64(task->id), task->queue, task->max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->queue, task->max, work->oid);
     if (!(remote = palloc0(sizeof(remote)))) E("!palloc");
     remote->task = task;
     remote->event.events = WL_SOCKET_WRITEABLE;
@@ -169,7 +169,7 @@ static void task_worker(Task *task) {
     StringInfoData buf;
     int user_len = strlen(conf->user), data_len = strlen(conf->data), schema_len = conf->schema ? strlen(conf->schema) : 0, table_len = strlen(conf->table), queue_len = strlen(task->queue), max_len = sizeof(task->max), oid_len = sizeof(work->oid);
     BackgroundWorker worker;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, DatumGetUInt64(task->id), task->queue, task->max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->queue, task->max, work->oid);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = task->id;
@@ -218,7 +218,7 @@ static void tick_work(Task *task) {
     Work *work = task->work;
     Conf *conf = work->conf;
     PQconninfoOption *opts;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, DatumGetUInt64(task->id), task->queue, task->max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->queue, task->max, work->oid);
     if (!(opts = PQconninfoParse(task->queue, NULL))) task_worker(task); else {
         task_remote(task);
         PQconninfoFree(opts);
@@ -226,6 +226,7 @@ static void tick_work(Task *task) {
 }
 
 void tick_loop(Work *work) {
+    Conf *conf = work->conf;
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     if (!command) {
@@ -253,16 +254,19 @@ void tick_loop(Work *work) {
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING);
     SPI_commit_my(command);
     for (uint64 row = 0; row < SPI_processed; row++) {
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
         bool id_isnull, max_isnull;
         Task *task;
         if (!(task = palloc0(sizeof(task)))) E("!palloc");
         task->work = work;
-        task->id = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
+        task->id = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull));
         task->queue = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"));
         task->max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
         if (id_isnull) E("id_isnull");
         if (max_isnull) E("max_isnull");
+        L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->queue, task->max, work->oid);
         tick_work(task);
+        MemoryContextSwitchTo(oldMemoryContext);
     }
     SPI_finish_my(command);
 }
@@ -428,7 +432,7 @@ static void tick_socket(Remote *remote) {
 ok:
     if (remote->event.events & WL_SOCKET_READABLE) {
         if (!remote->send) {
-            L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(task->id), task->timeout, task->request);
+            L("id = %lu, timeout = %d, request = %s", task->id, task->timeout, task->request);
             if (!PQsendQuery(remote->conn, task->request)) E("!PQsendQuery, %s", PQerrorMessage(remote->conn));
             remote->event.events = WL_SOCKET_WRITEABLE;
             remote->send = true;
