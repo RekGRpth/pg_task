@@ -207,7 +207,6 @@ static void task_success(Task *task) {
     InvalidateCatalogSnapshotConditionally();
     MemoryContextSwitchTo(oldMemoryContext);
     SetCurrentStatementStartTimestamp();
-    L("request = %s, timeout = %i", task->request, task->timeout);
     exec_simple_query(task);
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
