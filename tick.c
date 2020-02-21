@@ -13,7 +13,7 @@ static const char *schema_quote = NULL;
 static const char *table_quote = NULL;
 static const char *user_quote = NULL;
 static Oid oid = 0;
-static queue_t event_queue;
+static queue_t task_queue;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
@@ -148,7 +148,7 @@ static void tick_fix(void) {
 }
 
 static void task_remote(const Datum id, const char *queue, const int max, PQconninfoOption *opts) {
-    WaitEventMy *event;
+    Task *task;
     char *request;
     int timeout;
     MemoryContext oldMemoryContext;
@@ -156,19 +156,19 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), timeout, request);
     oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
-    if (!(event = palloc(sizeof(event)))) E("!palloc");
-    event->event.events = WL_SOCKET_WRITEABLE;
-    event->id = id;
-    event->max = max;
-    event->queue = queue;
-    event->request = request;
-    event->send = false;
-    event->timeout = timeout;
-    if (!(event->conn = PQconnectStart(event->queue))) E("!PQconnectStart");
-    if (PQstatus(event->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(event->conn));
-    if (!PQisnonblocking(event->conn) && PQsetnonblocking(event->conn, true) == -1) E(PQerrorMessage(event->conn));
-    if ((event->event.fd = PQsocket(event->conn)) < 0) E("PQsocket < 0, %s", PQerrorMessage(event->conn));
-    queue_put_pointer(&event_queue, &event->pointer);
+    if (!(task = palloc(sizeof(task)))) E("!palloc");
+    task->event.events = WL_SOCKET_WRITEABLE;
+    task->id = id;
+    task->max = max;
+    task->queue = queue;
+    task->request = request;
+    task->send = false;
+    task->timeout = timeout;
+    if (!(task->conn = PQconnectStart(task->queue))) E("!PQconnectStart");
+    if (PQstatus(task->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(task->conn));
+    if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) E(PQerrorMessage(task->conn));
+    if ((task->event.fd = PQsocket(task->conn)) < 0) E("PQsocket < 0, %s", PQerrorMessage(task->conn));
+    queue_put_pointer(&task_queue, &task->pointer);
     MemoryContextSwitchTo(oldMemoryContext);
 }
 
@@ -342,7 +342,7 @@ void tick_init(const bool conf) {
     if (!pg_try_advisory_lock_int8_my(oid)) { sigterm = true; W("lock oid = %d", oid); return; }
     tick_fix();
     if (!myMemoryContext) myMemoryContext = AllocSetContextCreate(TopMemoryContext, "myMemoryContext", ALLOCSET_DEFAULT_SIZES);
-    queue_init(&event_queue);
+    queue_init(&task_queue);
 }
 
 static void tick_reset(void) {
@@ -384,9 +384,9 @@ static void tick_sucess(PGresult *result) {
     L("response = %s", response.data);
 }
 
-static void tick_socket(WaitEventMy *event) {
+static void tick_socket(Task *task) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
-    switch (PQstatus(event->conn)) {
+    switch (PQstatus(task->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: L("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
         case CONNECTION_BAD: E("PQstatus == CONNECTION_BAD");
@@ -400,27 +400,27 @@ static void tick_socket(WaitEventMy *event) {
         case CONNECTION_SSL_STARTUP: L("PQstatus == CONNECTION_SSL_STARTUP"); break;
         case CONNECTION_STARTED: L("PQstatus == CONNECTION_STARTED"); break;
     }
-    switch (PQconnectPoll(event->conn)) {
+    switch (PQconnectPoll(task->conn)) {
         case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); goto done;
         case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED");
         case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); goto ok;
-        case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); event->event.events = WL_SOCKET_READABLE; break;
-        case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); event->event.events = WL_SOCKET_WRITEABLE; break;
+        case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); task->event.events = WL_SOCKET_READABLE; break;
+        case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); task->event.events = WL_SOCKET_WRITEABLE; break;
     }
-    if ((event->event.fd = PQsocket(event->conn)) < 0) E("PQsocket < 0");
+    if ((task->event.fd = PQsocket(task->conn)) < 0) E("PQsocket < 0");
     goto done;
 ok:
-    if (event->event.events & WL_SOCKET_READABLE) {
+    if (task->event.events & WL_SOCKET_READABLE) {
         L("WL_SOCKET_READABLE");
-        if (!event->send) {
-            L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(event->id), event->timeout, event->request);
-            if (!PQsendQuery(event->conn, event->request)) E("!PQsendQuery, %s", PQerrorMessage(event->conn));
-            event->event.events = WL_SOCKET_WRITEABLE;
-            event->send = true;
+        if (!task->send) {
+            L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(task->id), task->timeout, task->request);
+            if (!PQsendQuery(task->conn, task->request)) E("!PQsendQuery, %s", PQerrorMessage(task->conn));
+            task->event.events = WL_SOCKET_WRITEABLE;
+            task->send = true;
         } else {
-            if (!PQconsumeInput(event->conn)) E("!PQconsumeInput, %s", PQerrorMessage(event->conn));
-            if (!PQisBusy(event->conn)) pointer_remove(&event->pointer);
-            for (PGresult *result; (result = PQgetResult(event->conn)); PQclear(result)) switch (PQresultStatus(result)) {
+            if (!PQconsumeInput(task->conn)) E("!PQconsumeInput, %s", PQerrorMessage(task->conn));
+            if (!PQisBusy(task->conn)) pointer_remove(&task->pointer);
+            for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
                 case PGRES_BAD_RESPONSE: L("PGRES_BAD_RESPONSE"); break;
                 case PGRES_COMMAND_OK: L("PGRES_COMMAND_OK"); break;
                 case PGRES_COPY_BOTH: L("PGRES_COPY_BOTH"); break;
@@ -434,10 +434,10 @@ ok:
             }
         }
     }
-    if (event->event.events & WL_SOCKET_WRITEABLE) {
+    if (task->event.events & WL_SOCKET_WRITEABLE) {
         L("WL_SOCKET_WRITEABLE");
-        switch (PQflush(event->conn)) {
-            case 0: L("PQflush = 0"); event->event.events = WL_SOCKET_READABLE; break;
+        switch (PQflush(task->conn)) {
+            case 0: L("PQflush = 0"); task->event.events = WL_SOCKET_READABLE; break;
             case 1: L("PQflush = 1"); break;
             default: E("PQflush");
         }
@@ -456,7 +456,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     tick_init(false);
     while (!sigterm) {
         WaitEvent event;
-        int rc = WaitLatchOrSocketMy(MyLatch, &event, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &event_queue, period, PG_WAIT_EXTENSION);
+        int rc = WaitLatchOrSocketMy(MyLatch, &event, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &task_queue, period, PG_WAIT_EXTENSION);
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) tick_reset();
         if (sighup) tick_reload();
