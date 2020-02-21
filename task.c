@@ -183,8 +183,7 @@ static void task_live(void) {
     SPI_finish_my(command);
 }
 
-static void task_done(Datum id, const char *response) {
-    bool delete, repeat, live;
+static void task_done(const Datum id, const char *response, bool *delete, bool *repeat, bool *live) {
     #define ID 1
     #define SID S(ID)
     #define STATE 2
@@ -217,9 +216,9 @@ static void task_done(Datum id, const char *response) {
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
         bool delete_isnull, repeat_isnull, live_isnull;
-        delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &delete_isnull));
-        repeat = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &repeat_isnull));
-        live = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "live"), &live_isnull));
+        *delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &delete_isnull));
+        *repeat = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &repeat_isnull));
+        *live = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "live"), &live_isnull));
         if (delete_isnull) E("delete_isnull");
         if (repeat_isnull) E("repeat_isnull");
         if (live_isnull) E("live_isnull");
@@ -229,9 +228,6 @@ static void task_done(Datum id, const char *response) {
     if (response) pfree((void *)values[RESPONSE - 1]);
     #undef RESPONSE
     #undef SRESPONSE
-    if (repeat) task_repeat();
-    if (delete && !response) task_delete();
-    if (live) task_live(); else sigterm = true;
 }
 
 static void task_success(void) {
@@ -285,6 +281,7 @@ static void task_error(void) {
 }
 
 static void task_loop(void) {
+    bool delete, repeat, live;
     if (!pg_try_advisory_lock_int4_my(oid, DatumGetUInt64(id))) E("lock id = %lu, oid = %d", DatumGetUInt64(id), oid);
     task_work(id, &request, &timeout);
     L("id = %lu, timeout = %d, request = %s, count = %u", DatumGetUInt64(id), timeout, request, count);
@@ -294,8 +291,11 @@ static void task_loop(void) {
         task_error();
     PG_END_TRY();
     pfree(request);
-    task_done(id, response.data);
+    task_done(id, response.data, &delete, &repeat, &live);
+    if (repeat) task_repeat();
+    if (delete && !response.data) task_delete();
     pfree(response.data);
+    if (live) task_live(); else sigterm = true;
 }
 
 static void task_sigterm(SIGNAL_ARGS) {
