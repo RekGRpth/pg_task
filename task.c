@@ -1,7 +1,7 @@
 #include "include.h"
 
 bool response_isnull;
-extern const char *schema_quote_point_table_quote;
+extern const char *schema_table;
 extern MemoryContext myMemoryContext;
 int timeout;
 static char *request;
@@ -57,7 +57,7 @@ void task_work(Datum id, char **request, int *timeout) {
             "SET     state = 'WORK'::state,\n"
             "        start = current_timestamp,\n"
             "        pid = pg_backend_pid()\n"
-            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout", schema_quote_point_table_quote);
+            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout", schema_table);
         command = buf.data;
     }
     #undef ID
@@ -99,7 +99,7 @@ static void task_repeat(void) {
             "SELECT CASE WHEN drift THEN current_timestamp + repeat\n"
             "ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
             "END AS dt, queue, max, request, timeout, delete, repeat, drift, count, live\n"
-            "FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::state, 'FAIL'::state) LIMIT 1", schema_quote_point_table_quote);
+            "FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::state, 'FAIL'::state) LIMIT 1", schema_table);
         command = buf.data;
     }
     #undef ID
@@ -122,7 +122,7 @@ static void task_delete(void) {
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
-        appendStringInfo(&buf, "DELETE FROM %s WHERE id = $" SID, schema_quote_point_table_quote);
+        appendStringInfo(&buf, "DELETE FROM %s WHERE id = $" SID, schema_table);
         command = buf.data;
     }
     #undef ID
@@ -162,7 +162,7 @@ static void task_live(void) {
             "AND     COALESCE(max, ~(1<<31)) >= $" SMAX "\n"
             "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $" SCOUNT " AND $" SSTART " + live > current_timestamp ELSE COALESCE(count, 0) > $" SCOUNT " OR $" SSTART " + COALESCE(live, '0 sec'::interval) > current_timestamp END\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id", schema_quote_point_table_quote);
+            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id", schema_table);
         command = buf.data;
     }
     #undef QUEUE
@@ -207,7 +207,7 @@ static void task_done(void) {
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " FOR UPDATE\n)\n"
             "UPDATE %1$s AS u SET state = $" SSTATE "::state, stop = current_timestamp, response = $" SRESPONSE " FROM s WHERE u.id = s.id\n"
-            "RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live", schema_quote_point_table_quote);
+            "RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live", schema_table);
         command = buf.data;
     }
     #undef ID
@@ -331,7 +331,7 @@ static void task_init(void) {
     initStringInfo(&buf);
     if (schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, table_quote);
-    schema_quote_point_table_quote = buf.data;
+    schema_table = buf.data;
     initStringInfo(&buf);
     appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
     SetConfigOptionMy("application_name", buf.data);

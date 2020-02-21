@@ -2,7 +2,7 @@
 
 const char *data;
 const char *schema;
-const char *schema_quote_point_table_quote = NULL;
+const char *schema_table = NULL;
 const char *table;
 const char *user;
 int period;
@@ -83,8 +83,8 @@ static void tick_table(void) {
         "    count int4,\n"
         "    live interval,\n"
         "    CONSTRAINT %2$s FOREIGN KEY (parent) REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
-        ")", schema_quote_point_table_quote, name_quote);
-    names = stringToQualifiedNameList(schema_quote_point_table_quote);
+        ")", schema_table, name_quote);
+    names = stringToQualifiedNameList(schema_table);
     relation = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
@@ -112,7 +112,7 @@ static void tick_index(const char *index) {
     appendStringInfo(&name, "%s_%s_idx", table, index);
     name_quote = quote_identifier(name.data);
     initStringInfo(&buf);
-    appendStringInfo(&buf, "CREATE INDEX %s ON %s USING btree (%s)", name_quote, schema_quote_point_table_quote, index_quote);
+    appendStringInfo(&buf, "CREATE INDEX %s ON %s USING btree (%s)", name_quote, schema_table, index_quote);
     names = stringToQualifiedNameList(name_quote);
     relation = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
@@ -138,7 +138,7 @@ static void tick_fix(void) {
         "    WHERE   datname = current_catalog\n"
         "    AND     usename = current_user\n"
         "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), queue, id)\n"
-        ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", schema_quote_point_table_quote);
+        ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", schema_table);
     SPI_connect_my(buf.data);
     SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UPDATE);
     SPI_commit_my(buf.data);
@@ -239,7 +239,7 @@ void tick_loop(void) {
             ") SELECT array_agg(id ORDER BY id) AS id, queue, count FROM s WHERE count > 0 GROUP BY queue, count\n"
             ") SELECT unnest(id[:count]) AS id, queue, count FROM s ORDER BY count DESC\n"
             ") SELECT s.* FROM s INNER JOIN %1$s USING (id) FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", schema_quote_point_table_quote);
+            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", schema_table);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -311,11 +311,11 @@ void tick_init(const bool conf) {
     schema_quote = schema ? quote_identifier(schema) : NULL;
     if (table_quote && table_quote != table) pfree((void *)table_quote);
     table_quote = quote_identifier(table);
-    if (schema_quote_point_table_quote) pfree((void *)schema_quote_point_table_quote);
+    if (schema_table) pfree((void *)schema_table);
     initStringInfo(&buf);
     if (schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, table_quote);
-    schema_quote_point_table_quote = buf.data;
+    schema_table = buf.data;
     if (!conf) {
         initStringInfo(&buf);
         appendStringInfo(&buf, "%s %d", MyBgworkerEntry->bgw_type, period);
