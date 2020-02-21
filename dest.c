@@ -30,10 +30,10 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     }
     if (response.len) appendStringInfoString(&response, "\n");
     for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
-        const char *value = SPI_getvalue_my2(slot, slot->tts_tupleDescriptor, col);
+        char *value = SPI_getvalue_my2(slot, slot->tts_tupleDescriptor, col);
         if (col > 1) appendStringInfoString(&response, "\t");
         appendStringInfoString(&response, value ? value : "(null)");
-        if (value) pfree((void *)value);
+        if (value) pfree(value);
     }
     MemoryContextSwitchTo(oldMemoryContext);
     return true;
