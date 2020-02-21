@@ -8,7 +8,6 @@ const char *user;
 int period;
 MemoryContext myMemoryContext = NULL;
 static const char *data_quote = NULL;
-static const char *point;
 static const char *schema_quote = NULL;
 static const char *table_quote = NULL;
 static const char *user_quote = NULL;
@@ -310,7 +309,6 @@ void tick_init(const bool conf) {
     data_quote = quote_identifier(data);
     if (schema_quote && schema_quote != schema) pfree((void *)schema_quote);
     schema_quote = schema ? quote_identifier(schema) : NULL;
-    point = schema ? "." : "";
     if (table_quote && table_quote != table) pfree((void *)table_quote);
     table_quote = quote_identifier(table);
     if (schema_quote_point_table_quote) pfree((void *)schema_quote_point_table_quote);
