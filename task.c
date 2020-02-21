@@ -37,7 +37,7 @@ static void update_ps_display(void) {
     pfree(buf.data);
 }
 
-void task_work(Datum id, char **request, int *timeout) {
+void task_work(const Datum id, char **request, int *timeout) {
     #define ID 1
     #define SID S(ID)
     static Oid argtypes[] = {[ID - 1] = INT8OID};

@@ -75,7 +75,7 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_finish_my(const char *command);
 void SPI_rollback_my(const char *command);
 void SPI_start_transaction_my(const char *command);
-void task_work(Datum id, char **request, int *timeout);
+void task_work(const Datum id, char **request, int *timeout);
 void tick_init(const bool conf);
 void tick_loop(void);
 
