@@ -63,7 +63,7 @@ typedef struct Work {
 typedef struct Event {
     int events;
     long timeout;
-    Work *work;
+    Work work;
 } Event;
 
 typedef struct Task {
