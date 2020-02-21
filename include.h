@@ -54,7 +54,6 @@ typedef struct Conf {
 
 typedef struct Work {
     Conf *conf;
-//    char *queue;
     char *schema_table;
     MemoryContext context;
     Oid oid;
