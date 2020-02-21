@@ -1,14 +1,6 @@
 #include "include.h"
 
 extern char *pg_task_task;
-extern const char *data;
-extern const char *schema;
-extern const char *table;
-extern const char *user;
-extern int period;
-static bool renamed = false;
-static int events = WL_LATCH_SET | WL_EXIT_ON_PM_DEATH;
-static long timeout = -1L;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
@@ -24,21 +16,6 @@ static void conf_sigterm(SIGNAL_ARGS) {
     sigterm = true;
     SetLatch(MyLatch);
     errno = save_errno;
-}
-
-static void update_ps_display(bool conf) {
-    StringInfoData buf;
-    initStringInfo(&buf);
-    if (!conf) appendStringInfoString(&buf, "postgres postgres pg_task conf");
-    else appendStringInfo(&buf, "postgres postgres pg_task %s %ld", pg_task_task, timeout);
-    init_ps_display(buf.data, "", "", "");
-    resetStringInfo(&buf);
-    if (!conf) appendStringInfoString(&buf, "pg_task conf");
-    else appendStringInfo(&buf, "pg_task %s %ld", pg_task_task, timeout);
-    SetConfigOptionMy("application_name", buf.data);
-    pgstat_report_appname(buf.data);
-    pfree(buf.data);
-    renamed = true;
 }
 
 static void conf_user(const char *user) {
@@ -95,11 +72,11 @@ static void conf_data(const char *user, const char *data) {
     pfree(buf.data);
 }
 
-static void tick_worker(const char *user, const char *data, const char *schema, const char *table, const int period) {
+static void tick_work(Conf *conf) {
     StringInfoData buf;
-    int data_len = strlen(data), user_len = strlen(user), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), period_len = sizeof(period);
+    int data_len = strlen(conf->data), user_len = strlen(conf->user), schema_len = conf->schema ? strlen(conf->schema) : 0, table_len = strlen(conf->table), period_len = sizeof(conf->period);
     BackgroundWorker worker;
-    L("user = %s, data = %s, schema = %s, table = %s, period = %d", user, data, schema ? schema : "(null)", table, period);
+    L("user = %s, data = %s, schema = %s, table = %s, period = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, conf->period);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = MyProcPid;
@@ -114,24 +91,31 @@ static void tick_worker(const char *user, const char *data, const char *schema, 
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_function_name, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "pg_task %s%s%s", schema ? schema : "", schema ? " " : "", table);
+    appendStringInfo(&buf, "pg_task %s%s%s", conf->schema ? conf->schema : "", conf->schema ? " " : "", conf->table);
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s %s pg_task %s%s%s %d", user, data, schema ? schema : "", schema ? " " : "", table, period);
+    appendStringInfo(&buf, "%s %s %s", conf->user, conf->data, worker.bgw_type);
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
     if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + period_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + period_len);
-    memcpy(worker.bgw_extra, user, user_len);
-    memcpy(worker.bgw_extra + user_len + 1, data, data_len);
-    memcpy(worker.bgw_extra + user_len + 1 + data_len + 1, schema, schema_len);
-    memcpy(worker.bgw_extra + user_len + 1 +  data_len + 1 + schema_len + 1, table, table_len);
-    *(typeof(period + 0) *)(worker.bgw_extra + user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1) = period;
+    conf->p = worker.bgw_extra;
+    memcpy(conf->p, conf->user, user_len);
+    conf->p += user_len + 1;
+    memcpy(conf->p, conf->data, data_len);
+    conf->p += data_len + 1;
+    memcpy(conf->p, conf->schema, schema_len);
+    conf->p += schema_len + 1;
+    memcpy(conf->p, conf->table, table_len);
+    conf->p += table_len + 1;
+    *(typeof(conf->period) *)conf->p = conf->period;
+    conf->p += period_len;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
-static void conf_check(void) {
+static bool conf_check(Event *event) {
+    bool exit = false;
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS (\n"
@@ -149,46 +133,59 @@ static void conf_check(void) {
         "LEFT JOIN   pg_stat_activity AS a ON a.usename = \"user\" AND a.datname = data AND application_name = concat_ws(' ', 'pg_task', schema, \"table\", period::text) AND pid != pg_backend_pid()\n"
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
         "WHERE       a.pid IS NULL";
-    events &= ~WL_TIMEOUT;
+    event->events &= ~WL_TIMEOUT;
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     SPI_commit_my(command);
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool period_isnull, usename_isnull, datname_isnull;
-        char *user = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
-        char *data = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
-        char *schema = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
-        char *table = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
-        int period = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
+        Conf conf = {
+            .user = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user")),
+            .data = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data")),
+            .schema = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema")),
+            .table = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table")),
+            .period = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull))
+        };
         SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull);
         SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull);
-        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, user, data, schema ? schema : "(null)", table, period, usename_isnull ? "true" : "false", datname_isnull ? "true" : "false");
+        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, conf.user, conf.data, conf.schema ? conf.schema : "(null)", conf.table, conf.period, usename_isnull ? "true" : "false", datname_isnull ? "true" : "false");
         if (period_isnull) E("period_isnull");
-        if (usename_isnull) conf_user(user);
-        if (datname_isnull) conf_data(user, data);
-        if (!pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !schema && !pg_strcasecmp(table, pg_task_task)) {
-            timeout = period;
-            events |= WL_TIMEOUT;
-        } else tick_worker(user, data, schema, table, period);
-        pfree(user);
-        pfree(data);
-        if (schema) pfree(schema);
-        pfree(table);
+        if (usename_isnull) conf_user(conf.user);
+        if (datname_isnull) conf_data(conf.user, conf.data);
+        if (!pg_strncasecmp(conf.user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(conf.data, "postgres", sizeof("postgres") - 1) && !conf.schema && !pg_strcasecmp(conf.table, pg_task_task)) {
+            event->timeout = conf.period;
+            event->events |= WL_TIMEOUT;
+        } else tick_work(&conf);
+        pfree(conf.user);
+        pfree(conf.data);
+        if (conf.schema) pfree(conf.schema);
+        pfree(conf.table);
     }
     SPI_finish_my(command);
-    if (events & WL_TIMEOUT) {
-        update_ps_display(true);
-        user = "postgres";
-        data = "postgres";
-        schema = NULL;
-        table = pg_task_task;
-        period = timeout;
-        tick_init(true);
-    } else if (renamed) {
-        timeout = -1L;
-        update_ps_display(false);
+    if (event->events & WL_TIMEOUT) {
+        Work *work = event->work;
+        Conf *conf;
+        if (!work && !(work = palloc0(sizeof(work)))) E("!palloc0");
+        conf = work->conf;
+        if (!conf && !(conf = palloc0(sizeof(conf)))) E("!palloc0");
+        conf->user = "postgres";
+        conf->data = "postgres";
+        conf->schema = NULL;
+        conf->table = pg_task_task;
+        conf->period = event->timeout;
+        exit = tick_init_work(true, work);
+    } else {
+        Work *work = event->work;
+        event->timeout = -1L;
+        if (work) {
+            Conf *conf = work->conf;
+            if (conf) pfree(conf);
+            pfree(work);
+            event->work = NULL;
+        }
     }
+    return exit;
 }
 
 static void conf_init(void) {
@@ -202,7 +199,6 @@ static void conf_init(void) {
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
-    conf_check();
 }
 
 static void conf_reset(void) {
@@ -210,18 +206,20 @@ static void conf_reset(void) {
     CHECK_FOR_INTERRUPTS();
 }
 
-static void conf_reload(void) {
+static bool conf_reload(Event *event) {
     sighup = false;
     ProcessConfigFile(PGC_SIGHUP);
-    conf_check();
+    return conf_check(event);
 }
 
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
+    Event event = {.events = WL_LATCH_SET | WL_EXIT_ON_PM_DEATH, .timeout = -1L, .work = NULL};
     conf_init();
+    sigterm = conf_check(&event);
     while (!sigterm) {
-        int rc = WaitLatch(MyLatch, events, timeout, PG_WAIT_EXTENSION);
+        int rc = WaitLatch(MyLatch, event.events, event.timeout, PG_WAIT_EXTENSION);
         if (rc & WL_LATCH_SET) conf_reset();
-        if (sighup) conf_reload();
-        if (rc & WL_TIMEOUT) tick_loop();
+        if (sighup) sigterm = conf_reload(&event);
+        if (rc & WL_TIMEOUT && event.work) tick_loop(event.work);
     }
 }

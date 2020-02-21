@@ -43,29 +43,66 @@
 
 #include "queue.h"
 
+typedef struct Conf {
+    char *data;
+    char *p;
+    char *schema;
+    char *table;
+    char *user;
+    int period;
+} Conf;
+
+typedef struct Work {
+    Conf *conf;
+//    char *queue;
+    char *schema_table;
+    MemoryContext context;
+    Oid oid;
+    queue_t queue;
+} Work;
+
+typedef struct Event {
+    int events;
+    long timeout;
+    Work *work;
+} Event;
+
 typedef struct Task {
-    bool send;
+    bool delete;
+    bool live;
+    bool remote;
+    bool repeat;
+    char *queue;
     char *request;
-    const char *queue;
+    char *state;
     Datum id;
     int count;
     int max;
     int timeout;
-    PGconn *conn;
-    queue_t pointer;
-    WaitEvent event;
+    StringInfoData response;
+    TimestampTz start;
+    Work *work;
 } Task;
+
+typedef struct Remote {
+    bool send;
+    PGconn *conn;
+    queue_t queue;
+    Task *task;
+    WaitEvent event;
+} Remote;
 
 bool pg_advisory_unlock_int4_my(int32 key1, int32 key2);
 bool pg_advisory_unlock_int8_my(int64 key);
 bool pg_try_advisory_lock_int4_my(int32 key1, int32 key2);
 bool pg_try_advisory_lock_int8_my(int64 key);
+bool tick_init_work(const bool is_conf, Work *work);
 char *SPI_getvalue_my(HeapTuple tuple, TupleDesc tupdesc, int fnumber);
 const char *PQftypeMy(const PGresult *res, int column_number);
-DestReceiver *CreateDestReceiverMy(CommandDest dest);
-int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, queue_t *task_queue, long timeout, uint32 wait_event_info);
+DestReceiver *CreateDestReceiverMy(CommandDest dest, Task *task);
+int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, queue_t *work_queue, long timeout, uint32 wait_event_info);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
-void exec_simple_query(const char *query_string);
+void exec_simple_query(Task *task);
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
 void set_config_option_my(const char *name, const char *value);
 void SetConfigOptionMy(const char *name, const char *value);
@@ -76,9 +113,8 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_finish_my(const char *command);
 void SPI_rollback_my(const char *command);
 void SPI_start_transaction_my(const char *command);
-void task_work(const Datum id, char **request, int *timeout, int *count);
-void tick_init(const bool conf);
-void tick_loop(void);
+void task_work(Task *task);
+void tick_loop(Work *work);
 
 #define Q(name) #name
 #define S(macro) Q(macro)

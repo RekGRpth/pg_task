@@ -1,6 +1,6 @@
 #include "include.h"
 
-extern int timeout;
+static int timeout;
 
 /*
  * Flag to keep track of whether we have started a transaction.
@@ -28,9 +28,10 @@ static void disable_statement_timeout(void);
  * Execute a "simple Query" protocol message.
  */
 void
-exec_simple_query(const char *query_string)
+exec_simple_query(Task *task)
 {
-	CommandDest dest = whereToSendOutput;
+	const char *query_string = task->request;
+	CommandDest dest = DestDebug;
 	MemoryContext oldcontext;
 	List	   *parsetree_list;
 	ListCell   *parsetree_item;
@@ -38,6 +39,8 @@ exec_simple_query(const char *query_string)
 	bool		was_logged = false;
 	bool		use_implicit_block;
 	char		msec_str[32];
+
+	timeout = task->timeout;
 
 	/*
 	 * Report query to various monitoring facilities.
@@ -237,7 +240,7 @@ exec_simple_query(const char *query_string)
 		/*
 		 * Now we can create the destination receiver object.
 		 */
-		receiver = CreateDestReceiverMy(dest);
+		receiver = CreateDestReceiverMy(dest, task);
 		if (dest == DestRemote)
 			SetRemoteDestReceiverParams(receiver, portal);
 

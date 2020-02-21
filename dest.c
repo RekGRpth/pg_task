@@ -1,7 +1,6 @@
 #include "include.h"
 
-extern MemoryContext myMemoryContext;
-extern StringInfoData response;
+static Task *task;
 
 static Oid SPI_gettypeid_my(TupleDesc tupdesc, int fnumber) {
     if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) E("SPI_ERROR_NOATTRIBUTE");
@@ -20,19 +19,21 @@ static char *SPI_getvalue_my2(TupleTableSlot *slot, TupleDesc tupdesc, int fnumb
 }
 
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
-    if (!response.data) initStringInfo(&response);
-    if (!response.len && slot->tts_tupleDescriptor->natts > 1) {
+    Work *work = task->work;
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
+    StringInfoData *buf = &task->response;
+    if (!buf->data) initStringInfo(buf);
+    if (!buf->len && slot->tts_tupleDescriptor->natts > 1) {
         for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
-            if (col > 1) appendStringInfoString(&response, "\t");
-            appendStringInfo(&response, "%s::%s", SPI_fname(slot->tts_tupleDescriptor, col), SPI_gettype(slot->tts_tupleDescriptor, col));
+            if (col > 1) appendStringInfoString(buf, "\t");
+            appendStringInfo(buf, "%s::%s", SPI_fname(slot->tts_tupleDescriptor, col), SPI_gettype(slot->tts_tupleDescriptor, col));
         }
     }
-    if (response.len) appendStringInfoString(&response, "\n");
+    if (buf->len) appendStringInfoString(buf, "\n");
     for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
         char *value = SPI_getvalue_my2(slot, slot->tts_tupleDescriptor, col);
-        if (col > 1) appendStringInfoString(&response, "\t");
-        appendStringInfoString(&response, value ? value : "(null)");
+        if (col > 1) appendStringInfoString(buf, "\t");
+        appendStringInfoString(buf, value ? value : "(null)");
         if (value) pfree(value);
     }
     MemoryContextSwitchTo(oldMemoryContext);
@@ -47,6 +48,7 @@ static void rDestroy(DestReceiver *self) { }
 
 static const DestReceiver DestReceiverMy = {.receiveSlot = receiveSlot, .rStartup = rStartup, .rShutdown = rShutdown, .rDestroy = rDestroy, .mydest = DestDebug};
 
-DestReceiver *CreateDestReceiverMy(CommandDest dest) {
+DestReceiver *CreateDestReceiverMy(CommandDest dest, Task *_task) {
+    task = _task;
     return dest == DestDebug ? unconstify(DestReceiver *, &DestReceiverMy) : CreateDestReceiver(dest);
 }

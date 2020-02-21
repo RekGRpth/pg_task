@@ -1,52 +1,23 @@
 #include "include.h"
 
-extern const char *schema_table;
-extern MemoryContext myMemoryContext;
-int timeout;
-static char *request;
-static char *state;
-static const char *data;
-static const char *queue;
-static const char *schema;
-static const char *table;
-static const char *user;
-static Datum done;
-static Datum fail;
-static Datum id;
-static Datum queue_datum;
-static Datum state_datum;
-static int count;
-static int max;
-static Oid oid = 0;
-static TimestampTz start;
 static volatile sig_atomic_t sigterm = false;
-StringInfoData response;
 
-static void update_ps_display(void) {
-    StringInfoData buf;
-    initStringInfo(&buf);
-    appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_name, DatumGetUInt64(id));
-    init_ps_display(buf.data, "", "", "");
-    resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
-    SetConfigOptionMy("application_name", buf.data);
-    pgstat_report_appname(buf.data);
-    resetStringInfo(&buf);
-    appendStringInfo(&buf, "%lu", DatumGetUInt64(id));
-    set_config_option_my("pg_task.id", buf.data);
-    pfree(buf.data);
-}
-
-void task_work(const Datum id, char **request, int *timeout, int *count) {
+void task_work(Task *task) {
     #define ID 1
     #define SID S(ID)
     static Oid argtypes[] = {[ID - 1] = INT8OID};
-    Datum values[] = {[ID - 1] = id};
+    Datum values[] = {[ID - 1] = task->id};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    update_ps_display();
-    (*count)++;
+    if (!task->remote) {
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfo(&buf, "%lu", DatumGetUInt64(task->id));
+        set_config_option_my("pg_task.id", buf.data);
+        pfree(buf.data);
+    }
+    task->count++;
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -56,7 +27,7 @@ void task_work(const Datum id, char **request, int *timeout, int *count) {
             "SET     state = 'WORK'::state,\n"
             "        start = current_timestamp,\n"
             "        pid = pg_backend_pid()\n"
-            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout", schema_table);
+            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout", task->work->schema_table);
         command = buf.data;
     }
     #undef ID
@@ -65,27 +36,24 @@ void task_work(const Datum id, char **request, int *timeout, int *count) {
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
-        MemoryContext oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(task->work->context);
         bool timeout_isnull;
-        *request = SPI_getvalue_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
-        *timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
-        L("request = %s, timeout = %i", *request, *timeout);
+        task->request = SPI_getvalue_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
+        task->timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
+        if (0 < StatementTimeout && StatementTimeout < task->timeout) task->timeout = StatementTimeout;
+        L("request = %s, timeout = %i", task->request, task->timeout);
         if (timeout_isnull) E("timeout_isnull");
         MemoryContextSwitchTo(oldMemoryContext);
     }
     SPI_commit_my(command);
     SPI_finish_my(command);
-    state = "DONE";
-    state_datum = done;
-    response.data = NULL;
-    if (0 < StatementTimeout && StatementTimeout < *timeout) *timeout = StatementTimeout;
 }
 
-static void task_repeat(void) {
+static void task_repeat(Task *task) {
     #define ID 1
     #define SID S(ID)
     static Oid argtypes[] = {[ID - 1] = INT8OID};
-    Datum values[] = {[ID - 1] = id};
+    Datum values[] = {[ID - 1] = task->id};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -97,7 +65,7 @@ static void task_repeat(void) {
             "SELECT CASE WHEN drift THEN current_timestamp + repeat\n"
             "ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
             "END AS dt, queue, max, request, timeout, delete, repeat, drift, count, live\n"
-            "FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::state, 'FAIL'::state) LIMIT 1", schema_table);
+            "FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::state, 'FAIL'::state) LIMIT 1", task->work->schema_table);
         command = buf.data;
     }
     #undef ID
@@ -109,18 +77,18 @@ static void task_repeat(void) {
     SPI_finish_my(command);
 }
 
-static void task_delete(void) {
+static void task_delete(Task *task) {
     #define ID 1
     #define SID S(ID)
     static Oid argtypes[] = {[ID - 1] = INT8OID};
-    Datum values[] = {[ID - 1] = id};
+    Datum values[] = {[ID - 1] = task->id};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
-        appendStringInfo(&buf, "DELETE FROM %s WHERE id = $" SID, schema_table);
+        appendStringInfo(&buf, "DELETE FROM %s WHERE id = $" SID, task->work->schema_table);
         command = buf.data;
     }
     #undef ID
@@ -132,7 +100,7 @@ static void task_delete(void) {
     SPI_finish_my(command);
 }
 
-static void task_live(void) {
+static bool task_live(Task *task) {
     #define QUEUE 1
     #define SQUEUE S(QUEUE)
     #define MAX 2
@@ -141,12 +109,12 @@ static void task_live(void) {
     #define SCOUNT S(COUNT)
     #define START 4
     #define SSTART S(START)
+    bool exit = false;
     static Oid argtypes[] = {[QUEUE - 1] = TEXTOID, [MAX - 1] = INT4OID, [COUNT - 1] = INT4OID, [START - 1] = TIMESTAMPTZOID};
-    Datum values[] = {[QUEUE - 1] = queue_datum, [MAX - 1] = Int32GetDatum(max), [COUNT - 1] = Int32GetDatum(count), [START - 1] = TimestampTzGetDatum(start)};
+    Datum values[] = {[QUEUE - 1] = CStringGetTextDatum(task->queue), [MAX - 1] = Int32GetDatum(task->max), [COUNT - 1] = Int32GetDatum(task->count), [START - 1] = TimestampTzGetDatum(task->start)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    pg_advisory_unlock_int4_my(oid, DatumGetUInt64(id));
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -160,11 +128,9 @@ static void task_live(void) {
             "AND     COALESCE(max, ~(1<<31)) >= $" SMAX "\n"
             "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $" SCOUNT " AND $" SSTART " + live > current_timestamp ELSE COALESCE(count, 0) > $" SCOUNT " OR $" SSTART " + COALESCE(live, '0 sec'::interval) > current_timestamp END\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id", schema_table);
+            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id", task->work->schema_table);
         command = buf.data;
     }
-    #undef QUEUE
-    #undef SQUEUE
     #undef MAX
     #undef SMAX
     #undef COUNT
@@ -174,16 +140,20 @@ static void task_live(void) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
-    if (!SPI_processed) sigterm = true; else {
+    if (!SPI_processed) exit = true; else {
         bool id_isnull;
-        id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
+        task->id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
         if (id_isnull) E("id_isnull");
     }
     SPI_commit_my(command);
     SPI_finish_my(command);
+    pfree((void *)values[QUEUE - 1]);
+    #undef QUEUE
+    #undef SQUEUE
+    return exit;
 }
 
-static void task_done(const Datum id, const char *response, bool *delete, bool *repeat, bool *live) {
+static void task_done(Task *task) {
     #define ID 1
     #define SID S(ID)
     #define STATE 2
@@ -191,111 +161,113 @@ static void task_done(const Datum id, const char *response, bool *delete, bool *
     #define RESPONSE 3
     #define SRESPONSE S(RESPONSE)
     static Oid argtypes[] = {[ID - 1] = INT8OID, [STATE - 1] = TEXTOID, [RESPONSE - 1] = TEXTOID};
-    Datum values[] = {[ID - 1] = id, [STATE - 1] = state_datum, [RESPONSE - 1] = response ? CStringGetTextDatum(response) : (Datum)NULL};
-    char nulls[] = {[ID - 1] = ' ', [STATE - 1] = ' ', [RESPONSE - 1] = response ? ' ' : 'n'};
+    Datum values[] = {[ID - 1] = task->id, [STATE - 1] = CStringGetTextDatum(task->state), [RESPONSE - 1] = task->response.data ? CStringGetTextDatum(task->response.data) : (Datum)NULL};
+    char nulls[] = {[ID - 1] = ' ', [STATE - 1] = ' ', [RESPONSE - 1] = task->response.data ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    L("id = %lu, response = %s, state = %s", DatumGetUInt64(id), response ? response : "(null)", state);
+    L("id = %lu, response = %s, state = %s", DatumGetUInt64(task->id), task->response.data ? task->response.data : "(null)", task->state);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " FOR UPDATE\n)\n"
             "UPDATE %1$s AS u SET state = $" SSTATE "::state, stop = current_timestamp, response = $" SRESPONSE " FROM s WHERE u.id = s.id\n"
-            "RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live", schema_table);
+            "RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live", task->work->schema_table);
         command = buf.data;
     }
     #undef ID
     #undef SID
-    #undef STATE
-    #undef SSTATE
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
         bool delete_isnull, repeat_isnull, live_isnull;
-        *delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &delete_isnull));
-        *repeat = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &repeat_isnull));
-        *live = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "live"), &live_isnull));
+        task->delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &delete_isnull));
+        task->repeat = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &repeat_isnull));
+        task->live = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "live"), &live_isnull));
         if (delete_isnull) E("delete_isnull");
         if (repeat_isnull) E("repeat_isnull");
         if (live_isnull) E("live_isnull");
     }
     SPI_commit_my(command);
     SPI_finish_my(command);
-    if (response) pfree((void *)values[RESPONSE - 1]);
+    pfree((void *)values[STATE - 1]);
+    #undef STATE
+    #undef SSTATE
+    if (task->response.data) pfree((void *)values[RESPONSE - 1]);
     #undef RESPONSE
     #undef SRESPONSE
 }
 
-static void task_success(void) {
+static void task_success(Task *task) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
     MemoryContextResetAndDeleteChildren(MessageContext);
     InvalidateCatalogSnapshotConditionally();
     MemoryContextSwitchTo(oldMemoryContext);
     SetCurrentStatementStartTimestamp();
-    whereToSendOutput = DestDebug;
-    exec_simple_query(request);
+    exec_simple_query(task);
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
 }
 
-static void task_error(void) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
+static void task_error(Task *task) {
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(task->work->context);
     ErrorData *edata = CopyErrorData();
-    initStringInfo(&response);
-    appendStringInfo(&response, "elevel::int4\t%i", edata->elevel);
-    appendStringInfo(&response, "\noutput_to_server::bool\t%s", edata->output_to_server ? "true" : "false");
-    appendStringInfo(&response, "\noutput_to_client::bool\t%s", edata->output_to_client ? "true" : "false");
-    appendStringInfo(&response, "\nshow_funcname::bool\t%s", edata->show_funcname ? "true" : "false");
-    appendStringInfo(&response, "\nhide_stmt::bool\t%s", edata->hide_stmt ? "true" : "false");
-    appendStringInfo(&response, "\nhide_ctx::bool\t%s", edata->hide_ctx ? "true" : "false");
-    if (edata->filename) appendStringInfo(&response, "\nfilename::text\t%s", edata->filename);
-    if (edata->lineno) appendStringInfo(&response, "\nlineno::int4\t%i", edata->lineno);
-    if (edata->funcname) appendStringInfo(&response, "\nfuncname::text\t%s", edata->funcname);
-    if (edata->domain) appendStringInfo(&response, "\ndomain::text\t%s", edata->domain);
-    if (edata->context_domain) appendStringInfo(&response, "\ncontext_domain::text\t%s", edata->context_domain);
-    if (edata->sqlerrcode) appendStringInfo(&response, "\nsqlerrcode::int4\t%i", edata->sqlerrcode);
-    if (edata->message) appendStringInfo(&response, "\nmessage::text\t%s", edata->message);
-    if (edata->detail) appendStringInfo(&response, "\ndetail::text\t%s", edata->detail);
-    if (edata->detail_log) appendStringInfo(&response, "\ndetail_log::text\t%s", edata->detail_log);
-    if (edata->hint) appendStringInfo(&response, "\nhint::text\t%s", edata->hint);
-    if (edata->context) appendStringInfo(&response, "\ncontext::text\t%s", edata->context);
-    if (edata->message_id) appendStringInfo(&response, "\nmessage_id::text\t%s", edata->message_id);
-    if (edata->schema_name) appendStringInfo(&response, "\nschema_name::text\t%s", edata->schema_name);
-    if (edata->table_name) appendStringInfo(&response, "\ntable_name::text\t%s", edata->table_name);
-    if (edata->column_name) appendStringInfo(&response, "\ncolumn_name::text\t%s", edata->column_name);
-    if (edata->datatype_name) appendStringInfo(&response, "\ndatatype_name::text\t%s", edata->datatype_name);
-    if (edata->constraint_name) appendStringInfo(&response, "\nconstraint_name::text\t%s", edata->constraint_name);
-    if (edata->cursorpos) appendStringInfo(&response, "\ncursorpos::int4\t%i", edata->cursorpos);
-    if (edata->internalpos) appendStringInfo(&response, "\ninternalpos::int4\t%i", edata->internalpos);
-    if (edata->internalquery) appendStringInfo(&response, "\ninternalquery::text\t%s", edata->internalquery);
-    if (edata->saved_errno) appendStringInfo(&response, "\nsaved_errno::int4\t%i", edata->saved_errno);
+    initStringInfo(&task->response);
+    appendStringInfo(&task->response, "elevel::int4\t%i", edata->elevel);
+    appendStringInfo(&task->response, "\noutput_to_server::bool\t%s", edata->output_to_server ? "true" : "false");
+    appendStringInfo(&task->response, "\noutput_to_client::bool\t%s", edata->output_to_client ? "true" : "false");
+    appendStringInfo(&task->response, "\nshow_funcname::bool\t%s", edata->show_funcname ? "true" : "false");
+    appendStringInfo(&task->response, "\nhide_stmt::bool\t%s", edata->hide_stmt ? "true" : "false");
+    appendStringInfo(&task->response, "\nhide_ctx::bool\t%s", edata->hide_ctx ? "true" : "false");
+    if (edata->filename) appendStringInfo(&task->response, "\nfilename::text\t%s", edata->filename);
+    if (edata->lineno) appendStringInfo(&task->response, "\nlineno::int4\t%i", edata->lineno);
+    if (edata->funcname) appendStringInfo(&task->response, "\nfuncname::text\t%s", edata->funcname);
+    if (edata->domain) appendStringInfo(&task->response, "\ndomain::text\t%s", edata->domain);
+    if (edata->context_domain) appendStringInfo(&task->response, "\ncontext_domain::text\t%s", edata->context_domain);
+    if (edata->sqlerrcode) appendStringInfo(&task->response, "\nsqlerrcode::int4\t%i", edata->sqlerrcode);
+    if (edata->message) appendStringInfo(&task->response, "\nmessage::text\t%s", edata->message);
+    if (edata->detail) appendStringInfo(&task->response, "\ndetail::text\t%s", edata->detail);
+    if (edata->detail_log) appendStringInfo(&task->response, "\ndetail_log::text\t%s", edata->detail_log);
+    if (edata->hint) appendStringInfo(&task->response, "\nhint::text\t%s", edata->hint);
+    if (edata->context) appendStringInfo(&task->response, "\ncontext::text\t%s", edata->context);
+    if (edata->message_id) appendStringInfo(&task->response, "\nmessage_id::text\t%s", edata->message_id);
+    if (edata->schema_name) appendStringInfo(&task->response, "\nschema_name::text\t%s", edata->schema_name);
+    if (edata->table_name) appendStringInfo(&task->response, "\ntable_name::text\t%s", edata->table_name);
+    if (edata->column_name) appendStringInfo(&task->response, "\ncolumn_name::text\t%s", edata->column_name);
+    if (edata->datatype_name) appendStringInfo(&task->response, "\ndatatype_name::text\t%s", edata->datatype_name);
+    if (edata->constraint_name) appendStringInfo(&task->response, "\nconstraint_name::text\t%s", edata->constraint_name);
+    if (edata->cursorpos) appendStringInfo(&task->response, "\ncursorpos::int4\t%i", edata->cursorpos);
+    if (edata->internalpos) appendStringInfo(&task->response, "\ninternalpos::int4\t%i", edata->internalpos);
+    if (edata->internalquery) appendStringInfo(&task->response, "\ninternalquery::text\t%s", edata->internalquery);
+    if (edata->saved_errno) appendStringInfo(&task->response, "\nsaved_errno::int4\t%i", edata->saved_errno);
     FreeErrorData(edata);
-    state = "FAIL";
-    state_datum = fail;
+    task->state = "FAIL";
     MemoryContextSwitchTo(oldMemoryContext);
-    SPI_rollback_my(request);
+    SPI_rollback_my(task->request);
 }
 
-static void task_loop(void) {
-    bool delete, repeat, live;
-    if (!pg_try_advisory_lock_int4_my(oid, DatumGetUInt64(id))) E("lock id = %lu, oid = %d", DatumGetUInt64(id), oid);
-    task_work(id, &request, &timeout, &count);
-    L("id = %lu, timeout = %d, request = %s, count = %u", DatumGetUInt64(id), timeout, request, count);
+static bool task_loop(Task *task) {
+    bool exit = false;
+    if (!pg_try_advisory_lock_int4_my(task->work->oid, DatumGetUInt64(task->id))) E("lock id = %lu, oid = %d", DatumGetUInt64(task->id), task->work->oid);
+    task_work(task);
+    L("id = %lu, timeout = %d, request = %s, count = %u", DatumGetUInt64(task->id), task->timeout, task->request, task->count);
     PG_TRY();
-        task_success();
+        task_success(task);
     PG_CATCH();
-        task_error();
+        task_error(task);
     PG_END_TRY();
-    pfree(request);
-    task_done(id, response.data, &delete, &repeat, &live);
-    if (repeat) task_repeat();
-    if (delete && !response.data) task_delete();
-    pfree(response.data);
-    if (live) task_live(); else sigterm = true;
+    pfree(task->request);
+    task_done(task);
+    if (task->repeat) task_repeat(task);
+    if (task->delete && !task->response.data) task_delete(task);
+    pfree(task->response.data);
+    task->response.data = NULL;
+    pg_advisory_unlock_int4_my(task->work->oid, DatumGetUInt64(task->id));
+    if (task->live) exit = task_live(task);
+    return exit;
 }
 
 static void task_sigterm(SIGNAL_ARGS) {
@@ -305,55 +277,68 @@ static void task_sigterm(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
-static void task_init(void) {
-    StringInfoData buf;
-    const char *schema_quote;
-    const char *table_quote;
+static void task_init_conf(Conf *conf) {
+    conf->p = MyBgworkerEntry->bgw_extra;
+    conf->user = conf->p;
+    conf->p += strlen(conf->user) + 1;
+    conf->data = conf->p;
+    conf->p += strlen(conf->data) + 1;
+    conf->schema = conf->p;
+    conf->p += strlen(conf->schema) + 1;
+    conf->table = conf->p;
+    conf->p += strlen(conf->table) + 1;
+    if (conf->table == conf->schema + 1) conf->schema = NULL;
+    if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-    id = MyBgworkerEntry->bgw_main_arg;
-    start = GetCurrentTimestamp();
-    count = 0;
-    user = MyBgworkerEntry->bgw_extra;
-    if (!MyProcPort->user_name) MyProcPort->user_name = (char *)user;
-    data = user + strlen(user) + 1;
-    if (!MyProcPort->database_name) MyProcPort->database_name = (char *)data;
-    schema = data + strlen(data) + 1;
-    table = schema + strlen(schema) + 1;
-    queue = table + strlen(table) + 1;
-    max = *(typeof(max) *)(queue + strlen(queue) + 1);
-    oid = *(typeof(oid) *)(queue + strlen(queue) + 1 + sizeof(max));
-    if (table == schema + 1) schema = NULL;
-    schema_quote = schema ? quote_identifier(schema) : NULL;
-    table_quote = quote_identifier(table);
+    if (!MyProcPort->user_name) MyProcPort->user_name = conf->user;
+    if (!MyProcPort->database_name) MyProcPort->database_name = conf->data;
+    L("user = %s, data = %s, schema = %s, table = %s", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table);
+    set_config_option_my("pg_task.data", conf->data);
+    set_config_option_my("pg_task.user", conf->user);
+    if (conf->schema) set_config_option_my("pg_task.schema", conf->schema);
+    set_config_option_my("pg_task.table", conf->table);
+}
+
+static void task_init_work(Work *work) {
+    StringInfoData buf;
+    Conf *conf = work->conf;
+    const char *schema_quote = conf->schema ? quote_identifier(conf->schema) : NULL;
+    const char *table_quote = quote_identifier(conf->table);
     initStringInfo(&buf);
-    if (schema) appendStringInfo(&buf, "%s.", schema_quote);
+    if (conf->schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, table_quote);
-    schema_table = buf.data;
+    work->schema_table = buf.data;
+    work->oid = *(typeof(work->oid) *)conf->p;
+    conf->p += sizeof(work->oid);
+    L("oid = %d", work->oid);
     initStringInfo(&buf);
-    appendStringInfo(&buf, "%s %lu", MyBgworkerEntry->bgw_type, DatumGetUInt64(id));
-    SetConfigOptionMy("application_name", buf.data);
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
-    pqsignal(SIGTERM, task_sigterm);
-    BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnection(data, user, 0);
-    pgstat_report_appname(buf.data);
-    set_config_option_my("pg_task.data", data);
-    set_config_option_my("pg_task.user", user);
-    if (schema) set_config_option_my("pg_task.schema", schema);
-    set_config_option_my("pg_task.table", table);
-    set_config_option_my("pg_task.queue", queue);
-    resetStringInfo(&buf);
-    appendStringInfo(&buf, "%d", oid);
+    appendStringInfo(&buf, "%d", work->oid);
     set_config_option_my("pg_task.oid", buf.data);
     pfree(buf.data);
-    if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
-    done = CStringGetTextDatum("DONE");
-    fail = CStringGetTextDatum("FAIL");
-    queue_datum = CStringGetTextDatum(queue);
-    if (!myMemoryContext) myMemoryContext = AllocSetContextCreate(TopMemoryContext, "myMemoryContext", ALLOCSET_DEFAULT_SIZES);
-    if (schema && schema_quote && schema != schema_quote) pfree((void *)schema_quote);
-    if (table != table_quote) pfree((void *)table_quote);
+    if (!work->context) work->context = AllocSetContextCreate(TopMemoryContext, "myMemoryContext", ALLOCSET_DEFAULT_SIZES);
+    if (conf->schema && schema_quote && conf->schema != schema_quote) pfree((void *)schema_quote);
+    if (conf->table != table_quote) pfree((void *)table_quote);
+}
+
+static void task_init_task(Task *task) {
+    Work *work = task->work;
+    Conf *conf = work->conf;
+    task->id = MyBgworkerEntry->bgw_main_arg;
+    task->start = GetCurrentTimestamp();
+    task->count = 0;
+    task->queue = conf->p;
+    conf->p += strlen(task->queue) + 1;
+    task->max = *(typeof(task->max) *)conf->p;
+    conf->p += sizeof(task->max);
+    if (conf->p) E("conf->p");
+    L("id = %lu, queue = %s, max = %u", DatumGetUInt64(task->id), task->queue, task->max);
+    SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
+    pqsignal(SIGTERM, task_sigterm);
+    BackgroundWorkerUnblockSignals();
+    BackgroundWorkerInitializeConnection(conf->data, conf->user, 0);
+    pgstat_report_appname(MyBgworkerEntry->bgw_type);
+    set_config_option_my("pg_task.queue", task->queue);
 }
 
 static void task_reset(void) {
@@ -362,11 +347,21 @@ static void task_reset(void) {
 }
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
-    task_init();
+    Conf conf;
+    Task task;
+    Work work;
+    MemSet(&conf, 0, sizeof(conf));
+    MemSet(&task, 0, sizeof(task));
+    MemSet(&work, 0, sizeof(work));
+    task.work = &work;
+    work.conf = &conf;
+    task_init_conf(&conf);
+    task_init_work(&work);
+    task_init_task(&task);
     while (!sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, 0, PG_WAIT_EXTENSION);
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) task_reset();
-        if (rc & WL_TIMEOUT) task_loop();
+        if (rc & WL_TIMEOUT) sigterm = task_loop(&task);
     }
 }
