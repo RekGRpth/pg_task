@@ -261,12 +261,13 @@ static bool task_loop(Task *task) {
     PG_END_TRY();
     pfree(task->request);
     task_done(task);
+    L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
     if (task->repeat) task_repeat(task);
     if (task->delete && !task->response.data) task_delete(task);
     if (task->response.data) pfree(task->response.data);
     task->response.data = NULL;
     pg_advisory_unlock_int4_my(task->work->oid, task->id);
-    if (task->live) exit = task_live(task);
+    if (task->live) exit = task_live(task); else exit = true;
     return exit;
 }
 
