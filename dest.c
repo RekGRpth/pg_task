@@ -8,11 +8,6 @@ static Oid SPI_gettypeid_my(TupleDesc tupdesc, int fnumber) {
     return (fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1) : SystemAttributeDefinition(fnumber))->atttypid;
 }
 
-static const char *SPI_fname_my(TupleDesc tupdesc, int fnumber) {
-    if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) E("SPI_ERROR_NOATTRIBUTE");
-    return NameStr((fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1) : SystemAttributeDefinition(fnumber))->attname);
-}
-
 static char *SPI_getvalue_my2(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
     Oid oid = SPI_gettypeid_my(tupdesc, fnumber);
     bool isnull;
@@ -43,7 +38,7 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     if (!response.len && slot->tts_tupleDescriptor->natts > 1) {
         for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
             if (col > 1) appendStringInfoString(&response, "\t");
-            appendStringInfo(&response, "%s::%s", SPI_fname_my(slot->tts_tupleDescriptor, col), SPI_gettype_my2(slot->tts_tupleDescriptor, col));
+            appendStringInfo(&response, "%s::%s", SPI_fname(slot->tts_tupleDescriptor, col), SPI_gettype_my2(slot->tts_tupleDescriptor, col));
         }
     }
     if (response.len) appendStringInfoString(&response, "\n");
