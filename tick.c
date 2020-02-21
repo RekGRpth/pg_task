@@ -249,12 +249,12 @@ void tick_loop(void) {
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool id_isnull, max_isnull;
         Datum id = SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull);
-        const char *queue = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"));
-        const int max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
+        char *queue = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"));
+        int max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
         if (id_isnull) E("id_isnull");
         if (max_isnull) E("max_isnull");
         tick_work(id, queue, max);
-        pfree((void *)queue);
+        pfree(queue);
     }
     SPI_finish_my(command);
 }
