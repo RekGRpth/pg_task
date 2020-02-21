@@ -1,6 +1,5 @@
 #include "include.h"
 
-bool response_isnull;
 extern const char *schema_table;
 extern MemoryContext myMemoryContext;
 int timeout;
@@ -78,8 +77,7 @@ void task_work(Datum id, char **request, int *timeout) {
     SPI_finish_my(command);
     state = "DONE";
     state_datum = done;
-    response_isnull = true;
-    initStringInfo(&response);
+    response.data = NULL;
     if (0 < StatementTimeout && StatementTimeout < *timeout) *timeout = StatementTimeout;
 }
 
@@ -194,13 +192,13 @@ static void task_done(void) {
     #define RESPONSE 3
     #define SRESPONSE S(RESPONSE)
     static Oid argtypes[] = {[ID - 1] = INT8OID, [STATE - 1] = TEXTOID, [RESPONSE - 1] = TEXTOID};
-    Datum values[] = {[ID - 1] = id, [STATE - 1] = state_datum, [RESPONSE - 1] = !response_isnull ? CStringGetTextDatum(response.data) : (Datum)NULL};
-    char nulls[] = {[ID - 1] = ' ', [STATE - 1] = ' ', [RESPONSE - 1] = !response_isnull ? ' ' : 'n'};
+    Datum values[] = {[ID - 1] = id, [STATE - 1] = state_datum, [RESPONSE - 1] = response.data ? CStringGetTextDatum(response.data) : (Datum)NULL};
+    char nulls[] = {[ID - 1] = ' ', [STATE - 1] = ' ', [RESPONSE - 1] = response.data ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    L("id = %lu, response = %s, state = %s", DatumGetUInt64(id), !response_isnull ? response.data : "(null)", state);
+    L("id = %lu, response = %s, state = %s", DatumGetUInt64(id), response.data ? response.data : "(null)", state);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -228,11 +226,11 @@ static void task_done(void) {
     }
     SPI_commit_my(command);
     SPI_finish_my(command);
-    if (!response_isnull) pfree((void *)values[RESPONSE - 1]);
+    if (response.data) pfree((void *)values[RESPONSE - 1]);
     #undef RESPONSE
     #undef SRESPONSE
     if (repeat) task_repeat();
-    if (delete && response_isnull) task_delete();
+    if (delete && !response.data) task_delete();
     pfree(response.data);
     if (live) task_live(); else sigterm = true;
 }
@@ -252,6 +250,7 @@ static void task_success(void) {
 static void task_error(void) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
     ErrorData *edata = CopyErrorData();
+    initStringInfo(&response);
     appendStringInfo(&response, "elevel::int4\t%i", edata->elevel);
     appendStringInfo(&response, "\noutput_to_server::bool\t%s", edata->output_to_server ? "true" : "false");
     appendStringInfo(&response, "\noutput_to_client::bool\t%s", edata->output_to_client ? "true" : "false");
@@ -282,7 +281,6 @@ static void task_error(void) {
     FreeErrorData(edata);
     state = "FAIL";
     state_datum = fail;
-    response_isnull = false;
     MemoryContextSwitchTo(oldMemoryContext);
     SPI_rollback_my(request);
 }
