@@ -354,15 +354,6 @@ static void tick_reload(void) {
     tick_check();
 }
 
-static const char *PQftypeMy(const PGresult *res, int column_number) {
-    HeapTuple typeTuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(PQftype(res, column_number)));
-    const char *result;
-    if (!HeapTupleIsValid(typeTuple)) E("SPI_ERROR_TYPUNKNOWN");
-    result = NameStr(((Form_pg_type)GETSTRUCT(typeTuple))->typname);
-    ReleaseSysCache(typeTuple);
-    return result;
-}
-
 static void tick_sucess(PGresult *result) {
     StringInfoData response;
     initStringInfo(&response);
