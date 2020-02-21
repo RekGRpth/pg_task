@@ -22,6 +22,7 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     Work *work = task->work;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
     StringInfoData *buf = &task->response;
+    task->state = "DONE";
     if (!buf->data) initStringInfo(buf);
     if (!buf->len && slot->tts_tupleDescriptor->natts > 1) {
         for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
