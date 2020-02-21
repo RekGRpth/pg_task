@@ -157,7 +157,7 @@ static bool task_live(Task *task) {
     return exit;
 }
 
-static void task_done(Task *task) {
+void task_done(Task *task) {
     #define ID 1
     #define SID S(ID)
     #define STATE 2

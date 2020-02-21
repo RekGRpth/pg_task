@@ -372,6 +372,8 @@ static void tick_reload(void) {
 }
 
 static void tick_sucess(Task *task, PGresult *result) {
+//    Work *work = &task->work;
+//    MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
     StringInfoData *buf = &task->response;
     initStringInfo(buf);
     if (PQnfields(result) > 1) {
@@ -388,12 +390,13 @@ static void tick_sucess(Task *task, PGresult *result) {
         }
     }
     L("response = %s", buf->data);
+//    MemoryContextSwitchTo(oldMemoryContext);
 }
 
 static void tick_socket(Remote *remote) {
     Task *task = &remote->task;
-    Work *work = &task->work;
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
+//    Work *work = &task->work;
+//    MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
     switch (PQstatus(remote->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: L("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
@@ -437,7 +440,12 @@ ok:
                 case PGRES_FATAL_ERROR: L("PGRES_FATAL_ERROR"); break;
                 case PGRES_NONFATAL_ERROR: L("PGRES_NONFATAL_ERROR"); break;
                 case PGRES_SINGLE_TUPLE: L("PGRES_SINGLE_TUPLE"); break;
-                case PGRES_TUPLES_OK: L("PGRES_TUPLES_OK"); tick_sucess(task, result); goto done;
+                case PGRES_TUPLES_OK: L("PGRES_TUPLES_OK"); {
+                    tick_sucess(task, result);
+                    pfree(task->request);
+//                    task_done(task);
+//                    L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
+                } goto done;
             }
         }
     }
@@ -448,8 +456,8 @@ ok:
             default: E("PQflush");
         }
     }
-done:
-    MemoryContextSwitchTo(oldMemoryContext);
+done:;
+//    MemoryContextSwitchTo(oldMemoryContext);
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {

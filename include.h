@@ -111,6 +111,7 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_finish_my(const char *command);
 void SPI_rollback_my(const char *command);
 void SPI_start_transaction_my(const char *command);
+void task_done(Task *task);
 void task_work(Task *task);
 void tick_loop(Work *work);
 
