@@ -11,7 +11,6 @@ static const char *queue;
 static const char *schema;
 static const char *table;
 static const char *user;
-static const char *user_quote;
 static Datum done;
 static Datum fail;
 static Datum id;
@@ -327,7 +326,6 @@ static void task_init(void) {
     max = *(typeof(max) *)(queue + strlen(queue) + 1);
     oid = *(typeof(oid) *)(queue + strlen(queue) + 1 + sizeof(max));
     if (table == schema + 1) schema = NULL;
-    user_quote = quote_identifier(user);
     schema_quote = schema ? quote_identifier(schema) : NULL;
     table_quote = quote_identifier(table);
     initStringInfo(&buf);
