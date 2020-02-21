@@ -207,6 +207,7 @@ static void task_success(Task *task) {
     InvalidateCatalogSnapshotConditionally();
     MemoryContextSwitchTo(oldMemoryContext);
     SetCurrentStatementStartTimestamp();
+    L("request = %s, timeout = %i", task->request, task->timeout);
     exec_simple_query(task);
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
@@ -332,7 +333,6 @@ static void task_init_task(Task *task) {
     conf->p += strlen(task->queue) + 1;
     task->max = *(typeof(task->max) *)conf->p;
     conf->p += sizeof(task->max);
-    if (conf->p) E("conf->p");
     L("id = %lu, queue = %s, max = %u", task->id, task->queue, task->max);
     pqsignal(SIGTERM, task_sigterm);
     BackgroundWorkerUnblockSignals();

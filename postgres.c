@@ -31,7 +31,7 @@ void
 exec_simple_query(Task *task)
 {
 	const char *query_string = task->request;
-	CommandDest dest = DestDebug;
+	CommandDest dest = whereToSendOutput = DestDebug;
 	MemoryContext oldcontext;
 	List	   *parsetree_list;
 	ListCell   *parsetree_item;
