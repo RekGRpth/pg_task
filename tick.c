@@ -375,6 +375,7 @@ static void tick_sucess(Task *task, PGresult *result) {
 //    Work *work = &task->work;
 //    MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
     StringInfoData *buf = &task->response;
+    task->state = "DONE";
     initStringInfo(buf);
     if (PQnfields(result) > 1) {
         for (int col = 0; col < PQnfields(result); col++) {
@@ -443,8 +444,8 @@ ok:
                 case PGRES_TUPLES_OK: L("PGRES_TUPLES_OK"); {
                     tick_sucess(task, result);
                     pfree(task->request);
-//                    task_done(task);
-//                    L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
+                    task_done(task);
+                    L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
                 } goto done;
             }
         }
