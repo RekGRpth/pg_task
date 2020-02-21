@@ -371,24 +371,23 @@ static void tick_reload(void) {
     tick_check();
 }
 
-static void tick_sucess(PGresult *result) {
-    StringInfoData response;
-    initStringInfo(&response);
+static void tick_sucess(Task *task, PGresult *result) {
+    StringInfoData *buf = &task->response;
+    initStringInfo(buf);
     if (PQnfields(result) > 1) {
         for (int col = 0; col < PQnfields(result); col++) {
-            if (col > 0) appendStringInfoString(&response, "\t");
-            appendStringInfo(&response, "%s::%s", PQfname(result, col), PQftypeMy(result, col));
+            if (col > 0) appendStringInfoString(buf, "\t");
+            appendStringInfo(buf, "%s::%s", PQfname(result, col), PQftypeMy(result, col));
         }
     }
-    if (response.len) appendStringInfoString(&response, "\n");
+    if (buf->len) appendStringInfoString(buf, "\n");
     for (int row = 0; row < PQntuples(result); row++) {
         for (int col = 0; col < PQnfields(result); col++) {
-            if (col > 1) appendStringInfoString(&response, "\t");
-            appendStringInfoString(&response, PQgetisnull(result, row, col) ? "(null)" : PQgetvalue(result, row, col));
+            if (col > 1) appendStringInfoString(buf, "\t");
+            appendStringInfoString(buf, PQgetisnull(result, row, col) ? "(null)" : PQgetvalue(result, row, col));
         }
     }
-    L("response = %s", response.data);
-    pfree(response.data);
+    L("response = %s", buf->data);
 }
 
 static void tick_socket(Remote *remote) {
@@ -438,7 +437,7 @@ ok:
                 case PGRES_FATAL_ERROR: L("PGRES_FATAL_ERROR"); break;
                 case PGRES_NONFATAL_ERROR: L("PGRES_NONFATAL_ERROR"); break;
                 case PGRES_SINGLE_TUPLE: L("PGRES_SINGLE_TUPLE"); break;
-                case PGRES_TUPLES_OK: L("PGRES_TUPLES_OK"); tick_sucess(result); goto done;
+                case PGRES_TUPLES_OK: L("PGRES_TUPLES_OK"); tick_sucess(task, result); goto done;
             }
         }
     }
