@@ -28,17 +28,13 @@ const char *SPI_gettype_my(Oid oid) {
     return result;
 }
 
-static const char *SPI_gettype_my2(TupleDesc tupdesc, int fnumber) {
-    return SPI_gettype_my(SPI_gettypeid_my(tupdesc, fnumber));
-}
-
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
     if (!response.data) initStringInfo(&response);
     if (!response.len && slot->tts_tupleDescriptor->natts > 1) {
         for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
             if (col > 1) appendStringInfoString(&response, "\t");
-            appendStringInfo(&response, "%s::%s", SPI_fname(slot->tts_tupleDescriptor, col), SPI_gettype_my2(slot->tts_tupleDescriptor, col));
+            appendStringInfo(&response, "%s::%s", SPI_fname(slot->tts_tupleDescriptor, col), SPI_gettype(slot->tts_tupleDescriptor, col));
         }
     }
     if (response.len) appendStringInfoString(&response, "\n");
