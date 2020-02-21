@@ -412,7 +412,7 @@ static void tick_socket(Task *task) {
     goto done;
 ok:
     if (task->event.events & WL_SOCKET_READABLE) {
-        L("WL_SOCKET_READABLE");
+//        L("WL_SOCKET_READABLE");
         if (!task->send) {
             L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(task->id), task->timeout, task->request);
             if (!PQsendQuery(task->conn, task->request)) E("!PQsendQuery, %s", PQerrorMessage(task->conn));
@@ -431,12 +431,12 @@ ok:
                 case PGRES_FATAL_ERROR: L("PGRES_FATAL_ERROR"); break;
                 case PGRES_NONFATAL_ERROR: L("PGRES_NONFATAL_ERROR"); break;
                 case PGRES_SINGLE_TUPLE: L("PGRES_SINGLE_TUPLE"); break;
-                case PGRES_TUPLES_OK: L("PGRES_TUPLES_OK"); tick_sucess(result); break;
+                case PGRES_TUPLES_OK: L("PGRES_TUPLES_OK"); tick_sucess(result); goto done;
             }
         }
     }
     if (task->event.events & WL_SOCKET_WRITEABLE) {
-        L("WL_SOCKET_WRITEABLE");
+//        L("WL_SOCKET_WRITEABLE");
         switch (PQflush(task->conn)) {
             case 0: L("PQflush = 0"); task->event.events = WL_SOCKET_READABLE; break;
             case 1: L("PQflush = 1"); break;
