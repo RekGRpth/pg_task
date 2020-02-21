@@ -3,28 +3,31 @@
 extern MemoryContext myMemoryContext;
 extern StringInfoData response;
 
+static Oid SPI_gettypeid_my(TupleDesc tupdesc, int fnumber) {
+    if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) E("SPI_ERROR_NOATTRIBUTE");
+    return (fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1) : SystemAttributeDefinition(fnumber))->atttypid;
+}
+
 static const char *SPI_fname_my(TupleDesc tupdesc, int fnumber) {
     if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) E("SPI_ERROR_NOATTRIBUTE");
     return NameStr((fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1) : SystemAttributeDefinition(fnumber))->attname);
 }
 
 static char *SPI_getvalue_my2(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
-    Datum val;
+    Oid oid = SPI_gettypeid_my(tupdesc, fnumber);
     bool isnull;
     Oid foutoid;
     bool typisvarlena;
-    if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) E("SPI_ERROR_NOATTRIBUTE");
-    val = slot_getattr(slot, fnumber, &isnull);
+    Datum val = slot_getattr(slot, fnumber, &isnull);
     if (isnull) return NULL;
-    getTypeOutputInfo(fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1)->atttypid : (SystemAttributeDefinition(fnumber))->atttypid, &foutoid, &typisvarlena);
+    getTypeOutputInfo(oid, &foutoid, &typisvarlena);
     return OidOutputFunctionCall(foutoid, val);
 }
 
 static const char *SPI_gettype_my(TupleDesc tupdesc, int fnumber) {
-    HeapTuple typeTuple;
+    Oid oid = SPI_gettypeid_my(tupdesc, fnumber);
     const char *result;
-    if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) E("SPI_ERROR_NOATTRIBUTE");
-    typeTuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1)->atttypid : (SystemAttributeDefinition(fnumber))->atttypid));
+    HeapTuple typeTuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(oid));
     if (!HeapTupleIsValid(typeTuple)) E("SPI_ERROR_TYPUNKNOWN");
     result = NameStr(((Form_pg_type)GETSTRUCT(typeTuple))->typname);
     ReleaseSysCache(typeTuple);
