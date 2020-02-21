@@ -153,7 +153,7 @@ static void task_remote(Task *task) {
     oldMemoryContext = MemoryContextSwitchTo(work->context);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->queue, task->max, work->oid);
     if (!(remote = palloc0(sizeof(remote)))) E("!palloc");
-    remote->task = task;
+    remote->task = *task;
     remote->event.events = WL_SOCKET_WRITEABLE;
     if (!(remote->conn = PQconnectStart(task->queue))) E("!PQconnectStart");
     if (PQstatus(remote->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(remote->conn));
@@ -224,7 +224,6 @@ static void tick_work(Task *task) {
 }
 
 void tick_loop(Work *work) {
-    Conf *conf = work->conf;
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     if (!command) {
@@ -399,7 +398,7 @@ static void tick_sucess(PGresult *result) {
 }
 
 static void tick_socket(Remote *remote) {
-    Task *task = remote->task;
+    Task *task = &remote->task;
     Work *work = task->work;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
     switch (PQstatus(remote->conn)) {

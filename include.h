@@ -88,7 +88,7 @@ typedef struct Remote {
     bool send;
     PGconn *conn;
     queue_t queue;
-    Task *task;
+    Task task;
     WaitEvent event;
 } Remote;
 
