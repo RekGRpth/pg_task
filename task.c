@@ -10,9 +10,7 @@ static const char *data;
 static const char *data_quote;
 static const char *queue;
 static const char *schema;
-static const char *schema_quote;
 static const char *table;
-static const char *table_quote;
 static const char *user;
 static const char *user_quote;
 static Datum done;
@@ -313,6 +311,8 @@ static void task_sigterm(SIGNAL_ARGS) {
 
 static void task_init(void) {
     StringInfoData buf;
+    const char *schema_quote;
+    const char *table_quote;
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     id = MyBgworkerEntry->bgw_main_arg;
@@ -358,6 +358,8 @@ static void task_init(void) {
     fail = CStringGetTextDatum("FAIL");
     queue_datum = CStringGetTextDatum(queue);
     if (!myMemoryContext) myMemoryContext = AllocSetContextCreate(TopMemoryContext, "myMemoryContext", ALLOCSET_DEFAULT_SIZES);
+    if (schema && schema_quote && schema != schema_quote) pfree((void *)schema_quote);
+    if (table != table_quote) pfree((void *)table_quote);
 }
 
 static void task_reset(void) {
