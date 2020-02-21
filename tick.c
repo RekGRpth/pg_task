@@ -210,6 +210,8 @@ static void task_worker(Task *task) {
     *(typeof(task->max) *)conf->p = task->max;
     conf->p += max_len;
     RegisterDynamicBackgroundWorker_my(&worker);
+    pfree(task->queue);
+    pfree(task);
 }
 
 static void tick_work(Task *task) {
@@ -318,8 +320,8 @@ static void tick_init_conf(Conf *conf) {
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     if (!MyProcPort->user_name) MyProcPort->user_name = conf->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = conf->data;
-    L("user = %s, data = %s, schema = %s, table = %s, period = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, conf->period);
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
+    L("user = %s, data = %s, schema = %s, table = %s, period = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, conf->period);
     pqsignal(SIGHUP, tick_sighup);
     pqsignal(SIGTERM, tick_sigterm);
     BackgroundWorkerUnblockSignals();
