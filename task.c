@@ -8,7 +8,6 @@ static char *request;
 static char *state;
 static const char *data;
 static const char *data_quote;
-static const char *point;
 static const char *queue;
 static const char *schema;
 static const char *schema_quote;
@@ -332,7 +331,6 @@ static void task_init(void) {
     data_quote = quote_identifier(data);
     user_quote = quote_identifier(user);
     schema_quote = schema ? quote_identifier(schema) : NULL;
-    point = schema ? "." : "";
     table_quote = quote_identifier(table);
     initStringInfo(&buf);
     if (schema) appendStringInfo(&buf, "%s.", schema_quote);
