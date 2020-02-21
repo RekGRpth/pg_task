@@ -210,7 +210,6 @@ static void task_worker(Task *task) {
     *(typeof(task->max) *)conf->p = task->max;
     conf->p += max_len;
     RegisterDynamicBackgroundWorker_my(&worker);
-    pfree(task->queue);
 }
 
 static void tick_work(Task *task) {
@@ -263,6 +262,7 @@ void tick_loop(Work *work) {
         if (id_isnull) E("id_isnull");
         if (max_isnull) E("max_isnull");
         tick_work(&task);
+        pfree(task.queue);
     }
     SPI_finish_my(command);
 }
