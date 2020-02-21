@@ -183,7 +183,7 @@ static void task_live(void) {
     SPI_finish_my(command);
 }
 
-static void task_done(void) {
+static void task_done(Datum id, const char *response) {
     bool delete, repeat, live;
     #define ID 1
     #define SID S(ID)
@@ -192,13 +192,13 @@ static void task_done(void) {
     #define RESPONSE 3
     #define SRESPONSE S(RESPONSE)
     static Oid argtypes[] = {[ID - 1] = INT8OID, [STATE - 1] = TEXTOID, [RESPONSE - 1] = TEXTOID};
-    Datum values[] = {[ID - 1] = id, [STATE - 1] = state_datum, [RESPONSE - 1] = response.data ? CStringGetTextDatum(response.data) : (Datum)NULL};
-    char nulls[] = {[ID - 1] = ' ', [STATE - 1] = ' ', [RESPONSE - 1] = response.data ? ' ' : 'n'};
+    Datum values[] = {[ID - 1] = id, [STATE - 1] = state_datum, [RESPONSE - 1] = response ? CStringGetTextDatum(response) : (Datum)NULL};
+    char nulls[] = {[ID - 1] = ' ', [STATE - 1] = ' ', [RESPONSE - 1] = response ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    L("id = %lu, response = %s, state = %s", DatumGetUInt64(id), response.data ? response.data : "(null)", state);
+    L("id = %lu, response = %s, state = %s", DatumGetUInt64(id), response ? response : "(null)", state);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -226,12 +226,11 @@ static void task_done(void) {
     }
     SPI_commit_my(command);
     SPI_finish_my(command);
-    if (response.data) pfree((void *)values[RESPONSE - 1]);
+    if (response) pfree((void *)values[RESPONSE - 1]);
     #undef RESPONSE
     #undef SRESPONSE
     if (repeat) task_repeat();
-    if (delete && !response.data) task_delete();
-    pfree(response.data);
+    if (delete && !response) task_delete();
     if (live) task_live(); else sigterm = true;
 }
 
@@ -295,7 +294,8 @@ static void task_loop(void) {
         task_error();
     PG_END_TRY();
     pfree(request);
-    task_done();
+    task_done(id, response.data);
+    pfree(response.data);
 }
 
 static void task_sigterm(SIGNAL_ARGS) {
