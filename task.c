@@ -7,7 +7,6 @@ int timeout;
 static char *request;
 static char *state;
 static const char *data;
-static const char *data_quote;
 static const char *queue;
 static const char *schema;
 static const char *table;
@@ -328,7 +327,6 @@ static void task_init(void) {
     max = *(typeof(max) *)(queue + strlen(queue) + 1);
     oid = *(typeof(oid) *)(queue + strlen(queue) + 1 + sizeof(max));
     if (table == schema + 1) schema = NULL;
-    data_quote = quote_identifier(data);
     user_quote = quote_identifier(user);
     schema_quote = schema ? quote_identifier(schema) : NULL;
     table_quote = quote_identifier(table);
