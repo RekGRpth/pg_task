@@ -37,7 +37,7 @@ static void update_ps_display(void) {
     pfree(buf.data);
 }
 
-void task_work(const Datum id, char **request, int *timeout) {
+void task_work(const Datum id, char **request, int *timeout, int *count) {
     #define ID 1
     #define SID S(ID)
     static Oid argtypes[] = {[ID - 1] = INT8OID};
@@ -46,7 +46,7 @@ void task_work(const Datum id, char **request, int *timeout) {
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     update_ps_display();
-    count++;
+    (*count)++;
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -283,7 +283,7 @@ static void task_error(void) {
 static void task_loop(void) {
     bool delete, repeat, live;
     if (!pg_try_advisory_lock_int4_my(oid, DatumGetUInt64(id))) E("lock id = %lu, oid = %d", DatumGetUInt64(id), oid);
-    task_work(id, &request, &timeout);
+    task_work(id, &request, &timeout, &count);
     L("id = %lu, timeout = %d, request = %s, count = %u", DatumGetUInt64(id), timeout, request, count);
     PG_TRY();
         task_success();

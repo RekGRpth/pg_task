@@ -150,14 +150,16 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     Task *task;
     char *request;
     int timeout;
+    int count;
     MemoryContext oldMemoryContext;
-    task_work(id, &request, &timeout);
-    L("id = %lu, timeout = %d, request = %s", DatumGetUInt64(id), timeout, request);
+    task_work(id, &request, &timeout, &count);
+    L("id = %lu, timeout = %d, request = %s, count = %u", DatumGetUInt64(id), timeout, request, count);
     oldMemoryContext = MemoryContextSwitchTo(myMemoryContext);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", user, data, schema ? schema : "(null)", table, DatumGetUInt64(id), queue, max, oid);
     if (!(task = palloc(sizeof(task)))) E("!palloc");
     task->event.events = WL_SOCKET_WRITEABLE;
     task->id = id;
+    task->count = 0;
     task->max = max;
     task->queue = queue;
     task->request = request;

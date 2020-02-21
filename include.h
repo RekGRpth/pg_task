@@ -48,6 +48,7 @@ typedef struct Task {
     char *request;
     const char *queue;
     Datum id;
+    int count;
     int max;
     int timeout;
     PGconn *conn;
@@ -75,7 +76,7 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_finish_my(const char *command);
 void SPI_rollback_my(const char *command);
 void SPI_start_transaction_my(const char *command);
-void task_work(const Datum id, char **request, int *timeout);
+void task_work(const Datum id, char **request, int *timeout, int *count);
 void tick_init(const bool conf);
 void tick_loop(void);
 
