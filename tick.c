@@ -211,7 +211,6 @@ static void task_worker(Task *task) {
     conf->p += max_len;
     RegisterDynamicBackgroundWorker_my(&worker);
     pfree(task->queue);
-    pfree(task);
 }
 
 static void tick_work(Task *task) {
@@ -254,19 +253,16 @@ void tick_loop(Work *work) {
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING);
     SPI_commit_my(command);
     for (uint64 row = 0; row < SPI_processed; row++) {
-        MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
         bool id_isnull, max_isnull;
-        Task *task;
-        if (!(task = palloc0(sizeof(task)))) E("!palloc");
-        task->work = work;
-        task->id = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull));
-        task->queue = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"));
-        task->max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
+        Task task;
+        MemSet(&task, 0, sizeof(task));
+        task.work = work;
+        task.id = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull));
+        task.queue = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"));
+        task.max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
         if (id_isnull) E("id_isnull");
         if (max_isnull) E("max_isnull");
-        L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->queue, task->max, work->oid);
-        tick_work(task);
-        MemoryContextSwitchTo(oldMemoryContext);
+        tick_work(&task);
     }
     SPI_finish_my(command);
 }
