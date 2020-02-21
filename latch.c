@@ -8,8 +8,8 @@ int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, queue_t 
     Assert(!IsUnderPostmaster || (wakeEvents & WL_EXIT_ON_PM_DEATH) || (wakeEvents & WL_POSTMASTER_DEATH));
     if ((wakeEvents & WL_POSTMASTER_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
     if ((wakeEvents & WL_EXIT_ON_PM_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
-    for (queue_t *queue = task_queue->next; queue != task_queue; queue = queue->next) {
-        Task *task = pointer_data(queue, Task, pointer);
+    queue_each(task_queue, queue) {
+        Task *task = queue_data(queue, Task, pointer);
         AddWaitEventToSet(set, task->event.events, task->event.fd, NULL, task);
     }
     if (!WaitEventSetWait(set, timeout, event, 1, wait_event_info)) ret |= WL_TIMEOUT; else ret |= event->events & (WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_MASK);

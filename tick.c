@@ -167,7 +167,7 @@ static void task_remote(const Datum id, const char *queue, const int max, PQconn
     if (PQstatus(task->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(task->conn));
     if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) E(PQerrorMessage(task->conn));
     if ((task->event.fd = PQsocket(task->conn)) < 0) E("PQsocket < 0, %s", PQerrorMessage(task->conn));
-    queue_put_pointer(&task_queue, &task->pointer);
+    queue_insert_tail(&task_queue, &task->pointer);
     MemoryContextSwitchTo(oldMemoryContext);
 }
 
@@ -409,7 +409,7 @@ ok:
             task->send = true;
         } else {
             if (!PQconsumeInput(task->conn)) E("!PQconsumeInput, %s", PQerrorMessage(task->conn));
-            if (!PQisBusy(task->conn)) pointer_remove(&task->pointer);
+            if (!PQisBusy(task->conn)) queue_remove(&task->pointer);
             for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
                 case PGRES_BAD_RESPONSE: L("PGRES_BAD_RESPONSE"); break;
                 case PGRES_COMMAND_OK: L("PGRES_COMMAND_OK"); break;
