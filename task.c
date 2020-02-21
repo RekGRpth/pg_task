@@ -302,7 +302,7 @@ static void task_init_conf(Conf *conf) {
 
 static void task_init_work(Work *work) {
     StringInfoData buf;
-    Conf *conf = work->conf;
+    Conf *conf = &work->conf;
     const char *schema_quote = conf->schema ? quote_identifier(conf->schema) : NULL;
     const char *table_quote = quote_identifier(conf->table);
     initStringInfo(&buf);
@@ -323,7 +323,7 @@ static void task_init_work(Work *work) {
 
 static void task_init_task(Task *task) {
     Work *work = task->work;
-    Conf *conf = work->conf;
+    Conf *conf = &work->conf;
     task->id = MyBgworkerEntry->bgw_main_arg;
     task->start = GetCurrentTimestamp();
     task->count = 0;
@@ -345,15 +345,12 @@ static void task_reset(void) {
 }
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
-    Conf conf;
     Task task;
     Work work;
-    MemSet(&conf, 0, sizeof(conf));
     MemSet(&task, 0, sizeof(task));
     MemSet(&work, 0, sizeof(work));
     task.work = &work;
-    work.conf = &conf;
-    task_init_conf(&conf);
+    task_init_conf(&work.conf);
     task_init_work(&work);
     task_init_task(&task);
     while (!sigterm) {

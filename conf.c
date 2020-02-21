@@ -167,8 +167,7 @@ static bool conf_check(Event *event) {
         Work *work = event->work;
         Conf *conf;
         if (!work && !(work = palloc0(sizeof(work)))) E("!palloc0");
-        conf = work->conf;
-        if (!conf && !(conf = palloc0(sizeof(conf)))) E("!palloc0");
+        conf = &work->conf;
         conf->user = "postgres";
         conf->data = "postgres";
         conf->schema = NULL;
@@ -178,12 +177,8 @@ static bool conf_check(Event *event) {
     } else {
         Work *work = event->work;
         event->timeout = -1L;
-        if (work) {
-            Conf *conf = work->conf;
-            if (conf) pfree(conf);
-            pfree(work);
-            event->work = NULL;
-        }
+        if (work) pfree(work);
+        event->work = NULL;
     }
     return exit;
 }

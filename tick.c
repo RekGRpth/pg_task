@@ -45,7 +45,7 @@ static void tick_type(Conf *conf) {
 }
 
 static void tick_table(Work *work) {
-    Conf *conf = work->conf;
+    Conf *conf = &work->conf;
     StringInfoData buf, name;
     List *names;
     const RangeVar *relation;
@@ -97,7 +97,7 @@ static void tick_table(Work *work) {
 }
 
 static void tick_index(Work *work, const char *index) {
-    Conf *conf = work->conf;
+    Conf *conf = &work->conf;
     StringInfoData buf, name;
     List *names;
     const RangeVar *relation;
@@ -124,7 +124,7 @@ static void tick_index(Work *work, const char *index) {
 }
 
 static void tick_fix(Work *work) {
-    Conf *conf = work->conf;
+    Conf *conf = &work->conf;
     StringInfoData buf;
     L("user = %s, data = %s, schema = %s, table = %s", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table);
     initStringInfo(&buf);
@@ -145,7 +145,7 @@ static void tick_fix(Work *work) {
 
 static void task_remote(Task *task) {
     Work *work = task->work;
-    Conf *conf = work->conf;
+    Conf *conf = &work->conf;
     Remote *remote;
     MemoryContext oldMemoryContext;
     task_work(task);
@@ -165,7 +165,7 @@ static void task_remote(Task *task) {
 
 static void task_worker(Task *task) {
     Work *work = task->work;
-    Conf *conf = work->conf;
+    Conf *conf = &work->conf;
     StringInfoData buf;
     int user_len = strlen(conf->user), data_len = strlen(conf->data), schema_len = conf->schema ? strlen(conf->schema) : 0, table_len = strlen(conf->table), queue_len = strlen(task->queue), max_len = sizeof(task->max), oid_len = sizeof(work->oid);
     BackgroundWorker worker;
@@ -214,7 +214,7 @@ static void task_worker(Task *task) {
 
 static void tick_work(Task *task) {
     Work *work = task->work;
-    Conf *conf = work->conf;
+    Conf *conf = &work->conf;
     PQconninfoOption *opts;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->queue, task->max, work->oid);
     if (!(opts = PQconninfoParse(task->queue, NULL))) task_worker(task); else {
@@ -329,7 +329,7 @@ static void tick_init_conf(Conf *conf) {
 }
 
 bool tick_init_work(const bool is_conf, Work *work) {
-    Conf *conf = work->conf;
+    Conf *conf = &work->conf;
     const char *schema_quote = conf->schema ? quote_identifier(conf->schema) : NULL;
     const char *table_quote = quote_identifier(conf->table);
     StringInfoData buf;
@@ -460,16 +460,13 @@ done:
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
-    Conf conf;
     Work work;
-    MemSet(&conf, 0, sizeof(conf));
     MemSet(&work, 0, sizeof(work));
-    work.conf = &conf;
-    tick_init_conf(&conf);
+    tick_init_conf(&work.conf);
     sigterm = tick_init_work(false, &work);
     while (!sigterm) {
         WaitEvent event;
-        int rc = WaitLatchOrSocketMy(MyLatch, &event, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &work.queue, conf.period, PG_WAIT_EXTENSION);
+        int rc = WaitLatchOrSocketMy(MyLatch, &event, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &work.queue, work.conf.period, PG_WAIT_EXTENSION);
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) tick_reset();
         if (sighup) tick_reload();

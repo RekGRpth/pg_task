@@ -53,7 +53,7 @@ typedef struct Conf {
 } Conf;
 
 typedef struct Work {
-    Conf *conf;
+    Conf conf;
     char *schema_table;
     MemoryContext context;
     Oid oid;
