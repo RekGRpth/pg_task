@@ -293,6 +293,7 @@ static void task_init_conf(Conf *conf) {
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     if (!MyProcPort->user_name) MyProcPort->user_name = conf->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = conf->data;
+    SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
     L("user = %s, data = %s, schema = %s, table = %s", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table);
     set_config_option_my("pg_task.data", conf->data);
     set_config_option_my("pg_task.user", conf->user);
@@ -333,7 +334,6 @@ static void task_init_task(Task *task) {
     conf->p += sizeof(task->max);
     if (conf->p) E("conf->p");
     L("id = %lu, queue = %s, max = %u", task->id, task->queue, task->max);
-    SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
     pqsignal(SIGTERM, task_sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(conf->data, conf->user, 0);
