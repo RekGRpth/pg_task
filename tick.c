@@ -382,6 +382,7 @@ static void tick_sucess(PGresult *result) {
         }
     }
     L("response = %s", response.data);
+    pfree(response.data);
 }
 
 static void tick_socket(Task *task) {
