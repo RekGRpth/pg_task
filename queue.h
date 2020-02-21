@@ -1,12 +1,10 @@
 #ifndef _QUEUE_H_
 #define _QUEUE_H_
 
-typedef struct queue_s queue_t;
-
-struct queue_s {
-    queue_t *prev;
-    queue_t *next;
-};
+typedef struct queue_t {
+    struct queue_t *prev;
+    struct queue_t *next;
+} queue_t;
 
 int queue_count(queue_t *queue);
 
