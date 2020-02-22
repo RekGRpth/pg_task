@@ -228,6 +228,7 @@ static void task_worker(Task *task) {
     *(typeof(task->max) *)conf->p = task->max;
     conf->p += max_len;
     RegisterDynamicBackgroundWorker_my(&worker);
+    pfree(task->queue);
 }
 
 static void tick_work(Task *task) {
