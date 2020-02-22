@@ -5,7 +5,7 @@ static volatile sig_atomic_t sigterm = false;
 void task_work(Task *task) {
     #define ID 1
     #define SID S(ID)
-    Work *work = &task->work;
+    Work *work = task->work;
     static Oid argtypes[] = {[ID - 1] = INT8OID};
     Datum values[] = {[ID - 1] = Int64GetDatum(task->id)};
     static SPIPlanPtr plan = NULL;
@@ -59,7 +59,7 @@ static void task_repeat(Task *task) {
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     if (!command) {
-        Work *work = &task->work;
+        Work *work = task->work;
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
@@ -88,7 +88,7 @@ static void task_delete(Task *task) {
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     if (!command) {
-        Work *work = &task->work;
+        Work *work = task->work;
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf, "DELETE FROM %s WHERE id = $" SID, work->schema_table);
@@ -119,7 +119,7 @@ static bool task_live(Task *task) {
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     if (!command) {
-        Work *work = &task->work;
+        Work *work = task->work;
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
@@ -173,7 +173,7 @@ void task_done(Task *task) {
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     L("id = %lu, response = %s, state = %s", task->id, task->response.data ? task->response.data : "(null)", task->state);
     if (!command) {
-        Work *work = &task->work;
+        Work *work = task->work;
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
@@ -218,7 +218,7 @@ static void task_success(Task *task) {
 }
 
 static void task_error(Task *task) {
-    Work *work = &task->work;
+    Work *work = task->work;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
     ErrorData *edata = CopyErrorData();
     initStringInfo(&task->response);
@@ -256,7 +256,7 @@ static void task_error(Task *task) {
 }
 
 static bool task_loop(Task *task) {
-    Work *work = &task->work;
+    Work *work = task->work;
     if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
     task_work(task);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
@@ -329,7 +329,7 @@ static void task_init_work(Work *work) {
 }
 
 static void task_init_task(Task *task) {
-    Work *work = &task->work;
+    Work *work = task->work;
     Conf *conf = &work->conf;
     task->id = MyBgworkerEntry->bgw_main_arg;
     task->start = GetCurrentTimestamp();
@@ -353,9 +353,12 @@ static void task_reset(void) {
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     Task task;
+    Work work;
     MemSet(&task, 0, sizeof(task));
-    task_init_conf(&task.work.conf);
-    task_init_work(&task.work);
+    MemSet(&work, 0, sizeof(work));
+    task.work = &work;
+    task_init_conf(&work.conf);
+    task_init_work(&work);
     task_init_task(&task);
     while (!sigterm) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, 0, PG_WAIT_EXTENSION);

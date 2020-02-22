@@ -19,7 +19,7 @@ static char *SPI_getvalue_my2(TupleTableSlot *slot, TupleDesc tupdesc, int fnumb
 }
 
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
-    Work *work = &task->work;
+    Work *work = task->work;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
     StringInfoData *buf = &task->response;
     task->state = "DONE";
