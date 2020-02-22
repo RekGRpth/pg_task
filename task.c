@@ -164,30 +164,32 @@ static bool task_live(Task *task) {
 void task_done(Task *task) {
     #define ID 1
     #define SID S(ID)
-    #define STATE 2
-    #define SSTATE S(STATE)
+    #define SUCCESS 2
+    #define SSUCCESS S(SUCCESS)
     #define RESPONSE 3
     #define SRESPONSE S(RESPONSE)
-    static Oid argtypes[] = {[ID - 1] = INT8OID, [STATE - 1] = TEXTOID, [RESPONSE - 1] = TEXTOID};
-    Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [STATE - 1] = CStringGetTextDatum(task->state), [RESPONSE - 1] = task->response.data ? CStringGetTextDatum(task->response.data) : (Datum)NULL};
-    char nulls[] = {[ID - 1] = ' ', [STATE - 1] = ' ', [RESPONSE - 1] = task->response.data ? ' ' : 'n'};
+    static Oid argtypes[] = {[ID - 1] = INT8OID, [SUCCESS - 1] = BOOLOID, [RESPONSE - 1] = TEXTOID};
+    Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [SUCCESS - 1] = BoolGetDatum(task->success), [RESPONSE - 1] = task->response.data ? CStringGetTextDatum(task->response.data) : (Datum)NULL};
+    char nulls[] = {[ID - 1] = ' ', [SUCCESS - 1] = ' ', [RESPONSE - 1] = task->response.data ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    L("id = %lu, response = %s, state = %s", task->id, task->response.data ? task->response.data : "(null)", task->state);
+    L("id = %lu, response = %s, success = %s", task->id, task->response.data ? task->response.data : "(null)", task->success ? "true" : "false");
     if (!command) {
         Work *work = task->work;
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " FOR UPDATE\n)\n"
-            "UPDATE %1$s AS u SET state = $" SSTATE "::state, stop = current_timestamp, response = $" SRESPONSE " FROM s WHERE u.id = s.id\n"
+            "UPDATE %1$s AS u SET state = CASE WHEN $" SSUCCESS " THEN 'DONE'::state ELSE 'FAIL'::state END, stop = current_timestamp, response = $" SRESPONSE " FROM s WHERE u.id = s.id\n"
             "RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live", work->schema_table);
         command = buf.data;
     }
     #undef ID
     #undef SID
+    #undef SUCCESS
+    #undef SSUCCESS
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING);
@@ -202,9 +204,6 @@ void task_done(Task *task) {
     }
     SPI_commit_my(command);
     SPI_finish_my(command);
-    pfree((void *)values[STATE - 1]);
-    #undef STATE
-    #undef SSTATE
     if (task->response.data) pfree((void *)values[RESPONSE - 1]);
     #undef RESPONSE
     #undef SRESPONSE
@@ -254,7 +253,6 @@ static void task_error(Task *task) {
     if (edata->internalquery) appendStringInfo(&task->response, "\ninternalquery::text\t%s", edata->internalquery);
     if (edata->saved_errno) appendStringInfo(&task->response, "\nsaved_errno::int4\t%i", edata->saved_errno);
     FreeErrorData(edata);
-    task->state = "FAIL";
     MemoryContextSwitchTo(oldMemoryContext);
     SPI_rollback_my(task->request);
 }

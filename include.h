@@ -71,9 +71,9 @@ typedef struct Task {
     bool live;
     bool remote;
     bool repeat;
+    bool success;
     char *queue;
     char *request;
-    char *state;
     int64 id;
     int count;
     int max;
