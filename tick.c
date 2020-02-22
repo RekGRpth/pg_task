@@ -155,7 +155,7 @@ static void tick_finish(Remote *remote, bool success) {
     task_done(task);
     if (task->response.data) pfree(task->response.data);
     task->response.data = NULL;
-//    pfree(task->queue);
+    pfree(task->queue);
     pfree(remote);
 }
 
@@ -269,6 +269,7 @@ void tick_loop(Work *work) {
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING);
     SPI_commit_my(command);
     for (uint64 row = 0; row < SPI_processed; row++) {
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
         bool id_isnull, max_isnull;
         Task task;
         MemSet(&task, 0, sizeof(task));
@@ -278,6 +279,7 @@ void tick_loop(Work *work) {
         task.max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
         if (id_isnull) E("id_isnull");
         if (max_isnull) E("max_isnull");
+        MemoryContextSwitchTo(oldMemoryContext);
         tick_work(&task);
     }
     SPI_finish_my(command);
