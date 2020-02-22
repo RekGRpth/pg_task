@@ -5,9 +5,11 @@ static volatile sig_atomic_t sigterm = false;
 void task_work(Task *task) {
     #define ID 1
     #define SID S(ID)
+    #define PID 2
+    #define SPID S(PID)
     Work *work = task->work;
-    static Oid argtypes[] = {[ID - 1] = INT8OID};
-    Datum values[] = {[ID - 1] = Int64GetDatum(task->id)};
+    static Oid argtypes[] = {[ID - 1] = INT8OID, [PID - 1] = INT4OID};
+    Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [PID - 1] = Int32GetDatum(task->pid)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -27,12 +29,14 @@ void task_work(Task *task) {
             "UPDATE  %1$s AS u\n"
             "SET     state = 'WORK'::state,\n"
             "        start = current_timestamp,\n"
-            "        pid = pg_backend_pid()\n"
+            "        pid = $" SPID "\n"
             "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout", work->schema_table);
         command = buf.data;
     }
     #undef ID
     #undef SID
+    #undef PID
+    #undef SPID
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
@@ -331,6 +335,7 @@ static void task_init_work(Work *work) {
 static void task_init_task(Task *task) {
     Work *work = task->work;
     Conf *conf = &work->conf;
+    task->pid = MyProcPid;
     task->id = MyBgworkerEntry->bgw_main_arg;
     task->start = GetCurrentTimestamp();
     task->count = 0;

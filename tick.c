@@ -439,6 +439,7 @@ static void tick_socket(Remote *remote) {
         case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); remote->event.events = WL_SOCKET_WRITEABLE; break;
     }
     if ((remote->event.fd = PQsocket(remote->conn)) < 0) E("PQsocket < 0");
+    task->pid = PQbackendPID(remote->conn);
     goto done;
 ok:
     if (remote->event.events & WL_SOCKET_READABLE) {

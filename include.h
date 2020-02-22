@@ -77,6 +77,7 @@ typedef struct Task {
     int64 id;
     int count;
     int max;
+    int pid;
     int timeout;
     StringInfoData response;
     TimestampTz start;
