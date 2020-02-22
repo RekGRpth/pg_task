@@ -376,8 +376,10 @@ static void tick_sucess(Task *task, PGresult *result) {
     initStringInfo(&task->response);
     if (PQnfields(result) > 1) {
         for (int col = 0; col < PQnfields(result); col++) {
+            char *type = PQftypeMy(result, col);
             if (col > 0) appendStringInfoString(&task->response, "\t");
-            appendStringInfo(&task->response, "%s::%s", PQfname(result, col), PQftypeMy(result, col));
+            appendStringInfo(&task->response, "%s::%s", PQfname(result, col), type);
+            pfree(type);
         }
     }
     if (task->response.len) appendStringInfoString(&task->response, "\n");

@@ -1,6 +1,6 @@
 #include "include.h"
 
-const char *PQftypeMy(const PGresult *res, int column_number) {
+char *PQftypeMy(const PGresult *res, int column_number) {
     Oid oid = PQftype(res, column_number);
     StringInfoData buf;
     initStringInfo(&buf);
