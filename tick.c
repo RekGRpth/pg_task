@@ -374,24 +374,47 @@ static void tick_reload(void) {
 static void tick_sucess(Task *task, PGresult *result) {
 //    Work *work = &task->work;
 //    MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
-    StringInfoData *buf = &task->response;
-    task->state = "DONE";
-    initStringInfo(buf);
+    initStringInfo(&task->response);
     if (PQnfields(result) > 1) {
         for (int col = 0; col < PQnfields(result); col++) {
-            if (col > 0) appendStringInfoString(buf, "\t");
-            appendStringInfo(buf, "%s::%s", PQfname(result, col), PQftypeMy(result, col));
+            if (col > 0) appendStringInfoString(&task->response, "\t");
+            appendStringInfo(&task->response, "%s::%s", PQfname(result, col), PQftypeMy(result, col));
         }
     }
-    if (buf->len) appendStringInfoString(buf, "\n");
+    if (task->response.len) appendStringInfoString(&task->response, "\n");
     for (int row = 0; row < PQntuples(result); row++) {
         for (int col = 0; col < PQnfields(result); col++) {
-            if (col > 1) appendStringInfoString(buf, "\t");
-            appendStringInfoString(buf, PQgetisnull(result, row, col) ? "(null)" : PQgetvalue(result, row, col));
+            if (col > 1) appendStringInfoString(&task->response, "\t");
+            appendStringInfoString(&task->response, PQgetisnull(result, row, col) ? "(null)" : PQgetvalue(result, row, col));
         }
     }
-    L("response = %s", buf->data);
+    task->state = "DONE";
+//    L("response = %s", buf->data);
 //    MemoryContextSwitchTo(oldMemoryContext);
+}
+
+static void tick_error(Task *task, PGresult *result) {
+    char *value;
+    initStringInfo(&task->response);
+    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->response, "severity::text\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY_NONLOCALIZED))) appendStringInfo(&task->response, "\nseverity_nonlocalized::text\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&task->response, "\nsqlstate::text\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY))) appendStringInfo(&task->response, "\nmessage_primary::text\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL))) appendStringInfo(&task->response, "\nmessage_detail::text\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))) appendStringInfo(&task->response, "\nmessage_hint::text\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_STATEMENT_POSITION))) appendStringInfo(&task->response, "\nstatement_position::int4\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_POSITION))) appendStringInfo(&task->response, "\ninternal_position::int4\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_QUERY))) appendStringInfo(&task->response, "\ninternal_query::text\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_CONTEXT))) appendStringInfo(&task->response, "\ncontext::text\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SCHEMA_NAME))) appendStringInfo(&task->response, "\nschema_name::text\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_TABLE_NAME))) appendStringInfo(&task->response, "\ntable_name::text\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_COLUMN_NAME))) appendStringInfo(&task->response, "\ncolumn_name::text\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_DATATYPE_NAME))) appendStringInfo(&task->response, "\ndatatype_name::text\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_CONSTRAINT_NAME))) appendStringInfo(&task->response, "\nconstraint_name::text\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FILE))) appendStringInfo(&task->response, "\nsource_file::text\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_LINE))) appendStringInfo(&task->response, "\nsource_line::int4\t%s", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->response, "\nsource_function::text\t%s", value);
+    task->state = "FAIL";
 }
 
 static void tick_socket(Remote *remote) {
@@ -438,16 +461,15 @@ ok:
                 case PGRES_COPY_IN: L("PGRES_COPY_IN"); break;
                 case PGRES_COPY_OUT: L("PGRES_COPY_OUT"); break;
                 case PGRES_EMPTY_QUERY: L("PGRES_EMPTY_QUERY"); break;
-                case PGRES_FATAL_ERROR: L("PGRES_FATAL_ERROR"); break;
+                case PGRES_FATAL_ERROR: L("PGRES_FATAL_ERROR"); tick_error(task, result); break;
                 case PGRES_NONFATAL_ERROR: L("PGRES_NONFATAL_ERROR"); break;
                 case PGRES_SINGLE_TUPLE: L("PGRES_SINGLE_TUPLE"); break;
-                case PGRES_TUPLES_OK: L("PGRES_TUPLES_OK"); {
-                    tick_sucess(task, result);
-                    pfree(task->request);
-                    task_done(task);
-                    L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
-                } goto done;
+                case PGRES_TUPLES_OK: L("PGRES_TUPLES_OK"); tick_sucess(task, result); break;
             }
+            pfree(task->request);
+            task_done(task);
+            L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
+            goto done;
         }
     }
     if (remote->event.events & WL_SOCKET_WRITEABLE) {
