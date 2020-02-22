@@ -143,6 +143,22 @@ static void tick_fix(Work *work) {
     pfree(buf.data);
 }
 
+static void tick_finish(Remote *remote, bool success) {
+    Task *task = &remote->task;
+    queue_remove(&remote->queue);
+    PQfinish(remote->conn);
+    if (!success) {
+        W(PQerrorMessage(remote->conn));
+        initStringInfo(&task->response);
+        appendStringInfoString(&task->response, PQerrorMessage(remote->conn));
+    }
+    task_done(task);
+    if (task->response.data) pfree(task->response.data);
+    task->response.data = NULL;
+//    pfree(task->queue);
+    pfree(remote);
+}
+
 static void task_remote(Task *task) {
     Work *work = task->work;
     Conf *conf = &work->conf;
@@ -154,12 +170,14 @@ static void task_remote(Task *task) {
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->queue, task->max, work->oid);
     if (!(remote = palloc0(sizeof(remote)))) E("!palloc");
     remote->task = *task;
-    remote->event.events = WL_SOCKET_WRITEABLE;
-    if (!(remote->conn = PQconnectStart(task->queue))) E("!PQconnectStart");
-    if (PQstatus(remote->conn) == CONNECTION_BAD) E("PQstatus == CONNECTION_BAD, %s", PQerrorMessage(remote->conn));
-    if (!PQisnonblocking(remote->conn) && PQsetnonblocking(remote->conn, true) == -1) E(PQerrorMessage(remote->conn));
-    if ((remote->event.fd = PQsocket(remote->conn)) < 0) E("PQsocket < 0, %s", PQerrorMessage(remote->conn));
-    queue_insert_tail(&work->queue, &remote->queue);
+    remote->conn = PQconnectStart(task->queue);
+    if (PQstatus(remote->conn) == CONNECTION_BAD || (!PQisnonblocking(remote->conn) && PQsetnonblocking(remote->conn, true) == -1) || (remote->event.fd = PQsocket(remote->conn)) < 0) {
+        tick_finish(remote, false);
+    } else {
+        remote->event.events = WL_SOCKET_WRITEABLE;
+        remote->state = CONNECT;
+        queue_insert_tail(&work->queue, &remote->queue);
+    }
     MemoryContextSwitchTo(oldMemoryContext);
 }
 
@@ -261,7 +279,6 @@ void tick_loop(Work *work) {
         if (id_isnull) E("id_isnull");
         if (max_isnull) E("max_isnull");
         tick_work(&task);
-        pfree(task.queue);
     }
     SPI_finish_my(command);
 }
@@ -414,68 +431,86 @@ static void tick_error(Task *task, PGresult *result) {
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->response, "\nsource_function::text\t%s", value);
 }
 
-static void tick_socket(Remote *remote) {
+static void tick_idle(Remote *remote) {
+}
+
+static void tick_flush(Remote *remote) {
+    switch (PQflush(remote->conn)) {
+        case 0: L("PQflush = 0"); remote->event.events = WL_SOCKET_READABLE; break;
+        case 1: L("PQflush = 1"); break;
+        default: tick_finish(remote, false); return;
+    }
+}
+
+static void tick_result(Remote *remote) {
+    if (remote->event.events & WL_SOCKET_WRITEABLE) tick_flush(remote);
+    if (remote->event.events & WL_SOCKET_READABLE) {
+        Task *task = &remote->task;
+        if (!PQconsumeInput(remote->conn)) { tick_finish(remote, false); return; }
+//        if (PQisBusy(remote->conn)) { W("PQisBusy"); return; }
+        for (PGresult *result; (result = PQgetResult(remote->conn)); PQclear(result)) switch (PQresultStatus(result)) {
+            case PGRES_BAD_RESPONSE: L("PGRES_BAD_RESPONSE"); break;
+            case PGRES_COMMAND_OK: L("PGRES_COMMAND_OK"); break;
+            case PGRES_COPY_BOTH: L("PGRES_COPY_BOTH"); break;
+            case PGRES_COPY_IN: L("PGRES_COPY_IN"); break;
+            case PGRES_COPY_OUT: L("PGRES_COPY_OUT"); break;
+            case PGRES_EMPTY_QUERY: L("PGRES_EMPTY_QUERY"); break;
+            case PGRES_FATAL_ERROR: L("PGRES_FATAL_ERROR"); remote->state = IDLE; tick_error(task, result); break;
+            case PGRES_NONFATAL_ERROR: L("PGRES_NONFATAL_ERROR"); break;
+            case PGRES_SINGLE_TUPLE: L("PGRES_SINGLE_TUPLE"); break;
+            case PGRES_TUPLES_OK: L("PGRES_TUPLES_OK"); remote->state = IDLE; tick_sucess(task, result); break;
+        }
+        pfree(task->request);
+        tick_finish(remote, true);
+//        L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
+    }
+}
+
+static void tick_query(Remote *remote) {
+    if (remote->event.events & WL_SOCKET_WRITEABLE) tick_flush(remote);
+    if (remote->event.events & WL_SOCKET_READABLE) {
+        Task *task = &remote->task;
+        if (!PQconsumeInput(remote->conn)) { tick_finish(remote, false); return; }
+        if (PQisBusy(remote->conn)) { W("PQisBusy"); return; }
+        if (!PQsendQuery(remote->conn, task->request)) { tick_finish(remote, false); return; }
+        remote->event.events = WL_SOCKET_WRITEABLE;
+        remote->state = RESULT; // add timeout!
+    }
+}
+
+static void tick_connect(Remote *remote) {
     Task *task = &remote->task;
     switch (PQstatus(remote->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: L("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
-        case CONNECTION_BAD: E("PQstatus == CONNECTION_BAD");
+        case CONNECTION_BAD: E("PQstatus == CONNECTION_BAD"); tick_finish(remote, false); return;
         case CONNECTION_CHECK_WRITABLE: L("PQstatus == CONNECTION_CHECK_WRITABLE"); break;
         case CONNECTION_CONSUME: L("PQstatus == CONNECTION_CONSUME"); break;
         case CONNECTION_GSS_STARTUP: L("PQstatus == CONNECTION_GSS_STARTUP"); break;
         case CONNECTION_MADE: L("PQstatus == CONNECTION_MADE"); break;
         case CONNECTION_NEEDED: L("PQstatus == CONNECTION_NEEDED"); break;
-        case CONNECTION_OK: L("PQstatus == CONNECTION_OK"); goto ok;
+        case CONNECTION_OK: L("PQstatus == CONNECTION_OK"); remote->state = QUERY; task->pid = PQbackendPID(remote->conn); tick_query(remote); return;
         case CONNECTION_SETENV: L("PQstatus == CONNECTION_SETENV"); break;
         case CONNECTION_SSL_STARTUP: L("PQstatus == CONNECTION_SSL_STARTUP"); break;
         case CONNECTION_STARTED: L("PQstatus == CONNECTION_STARTED"); break;
     }
     switch (PQconnectPoll(remote->conn)) {
-        case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); goto done;
-        case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED");
-        case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); goto ok;
+        case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); break;
+        case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED"); tick_finish(remote, false); return;
+        case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); remote->state = QUERY; task->pid = PQbackendPID(remote->conn); tick_query(remote); return;
         case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); remote->event.events = WL_SOCKET_READABLE; break;
         case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); remote->event.events = WL_SOCKET_WRITEABLE; break;
     }
-    if ((remote->event.fd = PQsocket(remote->conn)) < 0) E("PQsocket < 0");
-    task->pid = PQbackendPID(remote->conn);
-    goto done;
-ok:
-    if (remote->event.events & WL_SOCKET_READABLE) {
-        if (!remote->send) {
-            L("id = %lu, timeout = %d, request = %s", task->id, task->timeout, task->request);
-            if (!PQsendQuery(remote->conn, task->request)) E("!PQsendQuery, %s", PQerrorMessage(remote->conn));
-            remote->event.events = WL_SOCKET_WRITEABLE;
-            remote->send = true;
-        } else {
-            if (!PQconsumeInput(remote->conn)) E("!PQconsumeInput, %s", PQerrorMessage(remote->conn));
-            if (!PQisBusy(remote->conn)) queue_remove(&remote->queue);
-            for (PGresult *result; (result = PQgetResult(remote->conn)); PQclear(result)) switch (PQresultStatus(result)) {
-                case PGRES_BAD_RESPONSE: L("PGRES_BAD_RESPONSE"); break;
-                case PGRES_COMMAND_OK: L("PGRES_COMMAND_OK"); break;
-                case PGRES_COPY_BOTH: L("PGRES_COPY_BOTH"); break;
-                case PGRES_COPY_IN: L("PGRES_COPY_IN"); break;
-                case PGRES_COPY_OUT: L("PGRES_COPY_OUT"); break;
-                case PGRES_EMPTY_QUERY: L("PGRES_EMPTY_QUERY"); break;
-                case PGRES_FATAL_ERROR: L("PGRES_FATAL_ERROR"); tick_error(task, result); break;
-                case PGRES_NONFATAL_ERROR: L("PGRES_NONFATAL_ERROR"); break;
-                case PGRES_SINGLE_TUPLE: L("PGRES_SINGLE_TUPLE"); break;
-                case PGRES_TUPLES_OK: L("PGRES_TUPLES_OK"); tick_sucess(task, result); break;
-            }
-            pfree(task->request);
-            task_done(task);
-            L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
-            goto done;
-        }
+    if ((remote->event.fd = PQsocket(remote->conn)) < 0) tick_finish(remote, false);
+}
+
+static void tick_socket(Remote *remote) {
+    switch (remote->state) {
+        case CONNECT: tick_connect(remote); break;
+        case QUERY: tick_query(remote); break;
+        case RESULT: tick_result(remote); break;
+        case IDLE: tick_idle(remote); break;
     }
-    if (remote->event.events & WL_SOCKET_WRITEABLE) {
-        switch (PQflush(remote->conn)) {
-            case 0: L("PQflush = 0"); remote->event.events = WL_SOCKET_READABLE; break;
-            case 1: L("PQflush = 1"); break;
-            default: E("PQflush");
-        }
-    }
-done:;
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {

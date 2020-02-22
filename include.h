@@ -43,6 +43,13 @@
 
 #include "queue.h"
 
+typedef enum {
+    CONNECT,
+    QUERY,
+    RESULT,
+    IDLE
+} STATE;
+
 typedef struct Conf {
     char *data;
     char *p;
@@ -85,9 +92,9 @@ typedef struct Task {
 } Task;
 
 typedef struct Remote {
-    bool send;
     PGconn *conn;
     queue_t queue;
+    STATE state;
     Task task;
     WaitEvent event;
 } Remote;
