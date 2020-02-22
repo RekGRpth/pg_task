@@ -374,10 +374,11 @@ static void tick_sucess(Task *task, PGresult *result) {
     initStringInfo(&task->response);
     if (PQnfields(result) > 1) {
         for (int col = 0; col < PQnfields(result); col++) {
-            char *type = PQftypeMy(result, col);
+            Oid oid = PQftype(result, col);
+            const char *type = PQftypeMy(oid);
             if (col > 0) appendStringInfoString(&task->response, "\t");
-            appendStringInfo(&task->response, "%s::%s", PQfname(result, col), type);
-            pfree(type);
+            if (type) appendStringInfo(&task->response, "%s::%s", PQfname(result, col), type);
+            else appendStringInfo(&task->response, "%s::%d", PQfname(result, col), oid);
         }
     }
     if (task->response.len) appendStringInfoString(&task->response, "\n");
