@@ -371,8 +371,6 @@ static void tick_reload(void) {
 }
 
 static void tick_sucess(Task *task, PGresult *result) {
-//    Work *work = task->work;
-//    MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
     initStringInfo(&task->response);
     if (PQnfields(result) > 1) {
         for (int col = 0; col < PQnfields(result); col++) {
@@ -390,8 +388,6 @@ static void tick_sucess(Task *task, PGresult *result) {
         }
     }
     task->state = "DONE";
-//    L("response = %s", buf->data);
-//    MemoryContextSwitchTo(oldMemoryContext);
 }
 
 static void tick_error(Task *task, PGresult *result) {
@@ -420,8 +416,6 @@ static void tick_error(Task *task, PGresult *result) {
 
 static void tick_socket(Remote *remote) {
     Task *task = &remote->task;
-//    Work *work = task->work;
-//    MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
     switch (PQstatus(remote->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: L("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
@@ -481,7 +475,6 @@ ok:
         }
     }
 done:;
-//    MemoryContextSwitchTo(oldMemoryContext);
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
