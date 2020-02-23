@@ -226,11 +226,11 @@ static void task_error(Task *task) {
     ErrorData *edata = CopyErrorData();
     initStringInfo(&task->response);
     appendStringInfo(&task->response, "elevel::int4\t%i", edata->elevel);
-    appendStringInfo(&task->response, "\noutput_to_server::bool\t%s", edata->output_to_server ? "true" : "false");
-    appendStringInfo(&task->response, "\noutput_to_client::bool\t%s", edata->output_to_client ? "true" : "false");
-    appendStringInfo(&task->response, "\nshow_funcname::bool\t%s", edata->show_funcname ? "true" : "false");
-    appendStringInfo(&task->response, "\nhide_stmt::bool\t%s", edata->hide_stmt ? "true" : "false");
-    appendStringInfo(&task->response, "\nhide_ctx::bool\t%s", edata->hide_ctx ? "true" : "false");
+    if (edata->output_to_server) appendStringInfoString(&task->response, "\noutput_to_server::bool\ttrue");
+    if (edata->output_to_client) appendStringInfoString(&task->response, "\noutput_to_client::bool\ttrue");
+    if (edata->show_funcname) appendStringInfoString(&task->response, "\nshow_funcname::bool\ttrue");
+    if (edata->hide_stmt) appendStringInfoString(&task->response, "\nhide_stmt::bool\ttrue");
+    if (edata->hide_ctx) appendStringInfoString(&task->response, "\nhide_ctx::bool\ttrue");
     if (edata->filename) appendStringInfo(&task->response, "\nfilename::text\t%s", edata->filename);
     if (edata->lineno) appendStringInfo(&task->response, "\nlineno::int4\t%i", edata->lineno);
     if (edata->funcname) appendStringInfo(&task->response, "\nfuncname::text\t%s", edata->funcname);
