@@ -262,11 +262,21 @@ static bool task_loop(Task *task) {
     if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
     task_work(task);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
-    PG_TRY();
-        task_success(task);
-    PG_CATCH();
-        task_error(task);
-    PG_END_TRY();
+    do {
+        sigjmp_buf *save_exception_stack = PG_exception_stack;
+        ErrorContextCallback *save_context_stack = error_context_stack;
+        sigjmp_buf local_sigjmp_buf;
+        if (sigsetjmp(local_sigjmp_buf, 1) == 0) {
+            PG_exception_stack = &local_sigjmp_buf;
+            task_success(task);
+        } else {
+            PG_exception_stack = save_exception_stack;
+            error_context_stack = save_context_stack;
+            task_error(task);
+        }
+        PG_exception_stack = save_exception_stack;
+        error_context_stack = save_context_stack;
+    } while (0);
     pfree(task->request);
     task_done(task);
     L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
