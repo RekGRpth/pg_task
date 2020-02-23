@@ -54,6 +54,8 @@ void SPI_rollback_my(const char *command) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     EmitErrorReport();
     AbortCurrentTransaction();
+    PortalErrorCleanup();
+    SPICleanup();
     FlushErrorState();
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
