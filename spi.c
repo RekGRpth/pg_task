@@ -1,18 +1,18 @@
 #include "include.h"
 
-void SPI_start_transaction_my(const char *command) {
+void SPI_start_transaction_my(const char *src) {
     SPI_start_transaction();
     if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else disable_timeout(STATEMENT_TIMEOUT, false);
-    pgstat_report_activity(STATE_RUNNING, command);
+    pgstat_report_activity(STATE_RUNNING, src);
 }
 
-void SPI_connect_my(const char *command) {
+void SPI_connect_my(const char *src) {
     int rc;
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) E("SPI_connect_ext = %s", SPI_result_code_string(rc));
-    SPI_start_transaction_my(command);
+    SPI_start_transaction_my(src);
 }
 
-void SPI_commit_my(const char *command) {
+void SPI_commit_my(const char *src) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     SPI_commit();
     ProcessCompletedNotifies();
@@ -20,7 +20,7 @@ void SPI_commit_my(const char *command) {
     pgstat_report_activity(STATE_IDLE, NULL);
 }
 
-void SPI_finish_my(const char *command) {
+void SPI_finish_my(const char *src) {
     int rc;
     if ((rc = SPI_finish()) != SPI_OK_FINISH) E("SPI_finish = %s", SPI_result_code_string(rc));
 }
