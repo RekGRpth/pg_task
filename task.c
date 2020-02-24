@@ -1,5 +1,7 @@
 #include "include.h"
 
+extern bool stmt_timeout_active;
+extern bool xact_started;
 static volatile sig_atomic_t sigterm = false;
 
 void task_work(Task *task) {
@@ -254,7 +256,24 @@ static void task_error(Task *task) {
     if (edata->saved_errno) appendStringInfo(&task->response, "\nsaved_errno::int4\t%i", edata->saved_errno);
     FreeErrorData(edata);
     MemoryContextSwitchTo(oldMemoryContext);
-    SPI_rollback_my(task->request);
+    HOLD_INTERRUPTS();
+    disable_all_timeouts(false);
+    QueryCancelPending = false;
+    stmt_timeout_active = false;
+    EmitErrorReport();
+    debug_query_string = NULL;
+    AbortCurrentTransaction();
+    PortalErrorCleanup();
+    SPICleanup();
+    if (MyReplicationSlot) ReplicationSlotRelease();
+    ReplicationSlotCleanup();
+    jit_reset_after_error();
+    MemoryContextSwitchTo(TopMemoryContext);
+    FlushErrorState();
+    xact_started = false;
+    RESUME_INTERRUPTS();
+    pgstat_report_stat(false);
+    pgstat_report_activity(STATE_IDLE, NULL);
 }
 
 static bool task_loop(Task *task) {
