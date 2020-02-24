@@ -439,16 +439,8 @@ static void tick_error(Task *task, PGresult *result) {
 static void tick_idle(Remote *remote) {
 }
 
-static void tick_flush(Remote *remote) {
-    switch (PQflush(remote->conn)) {
-        case 0: L("PQflush = 0"); remote->event.events = WL_SOCKET_READABLE; break;
-        case 1: L("PQflush = 1"); break;
-        default: tick_finish(remote, false); return;
-    }
-}
-
 static void tick_result(Remote *remote) {
-    if (remote->event.events & WL_SOCKET_WRITEABLE) tick_flush(remote);
+    if (remote->event.events & WL_SOCKET_WRITEABLE) remote->event.events = WL_SOCKET_READABLE;
     if (remote->event.events & WL_SOCKET_READABLE) {
         Task *task = &remote->task;
         if (!PQconsumeInput(remote->conn)) { tick_finish(remote, false); return; }
@@ -480,7 +472,7 @@ static void tick_result(Remote *remote) {
 }
 
 static void tick_query(Remote *remote) {
-    if (remote->event.events & WL_SOCKET_WRITEABLE) tick_flush(remote);
+    if (remote->event.events & WL_SOCKET_WRITEABLE) remote->event.events = WL_SOCKET_READABLE;
     if (remote->event.events & WL_SOCKET_READABLE) {
         Task *task = &remote->task;
         if (!PQconsumeInput(remote->conn)) { tick_finish(remote, false); return; }
