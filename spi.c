@@ -1,5 +1,8 @@
 #include "include.h"
 
+extern bool stmt_timeout_active;
+extern bool xact_started;
+
 void SPI_start_transaction_my(const char *command) {
     SPI_start_transaction();
     if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else disable_timeout(STATEMENT_TIMEOUT, false);
@@ -51,12 +54,26 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 }
 
 void SPI_rollback_my(const char *command) {
-    disable_timeout(STATEMENT_TIMEOUT, false);
+    HOLD_INTERRUPTS();
+    disable_all_timeouts(false);
+    QueryCancelPending = false;
+    stmt_timeout_active = false;
     EmitErrorReport();
-    AbortCurrentTransaction();
+    debug_query_string = NULL;
+//    AbortSubTransaction();
+//    AbortCurrentTransaction();
+//    UserAbortTransactionBlock(false);
+//    RollbackAndReleaseCurrentSubTransaction();
+    AbortOutOfAnyTransaction();
     PortalErrorCleanup();
     SPICleanup();
+    if (MyReplicationSlot) ReplicationSlotRelease();
+    ReplicationSlotCleanup();
+    jit_reset_after_error();
+    MemoryContextSwitchTo(TopMemoryContext);
     FlushErrorState();
+    xact_started = false;
+    RESUME_INTERRUPTS();
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
 }

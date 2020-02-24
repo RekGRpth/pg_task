@@ -15,6 +15,7 @@
 #include <commands/user.h>
 #include <executor/spi.h>
 #include <fmgr.h>
+#include <jit/jit.h>
 #include <libpq-fe.h>
 #include <libpq/libpq-be.h>
 #include <miscadmin.h>
@@ -24,6 +25,7 @@
 #include <parser/parse_type.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
+#include <replication/slot.h>
 #include <storage/ipc.h>
 #include <storage/pmsignal.h>
 #include <storage/procarray.h>

@@ -6,12 +6,12 @@ static int timeout;
  * Flag to keep track of whether we have started a transaction.
  * For extended query protocol this has to be remembered across messages.
  */
-static bool xact_started = false;
+bool xact_started = false;
 
 /*
  * Flag to keep track of whether statement timeout timer is active.
  */
-static bool stmt_timeout_active = false;
+bool stmt_timeout_active = false;
 
 static bool check_log_statement(List *stmt_list);
 static int	errdetail_execute(List *raw_parsetree_list);

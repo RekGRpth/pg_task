@@ -190,9 +190,13 @@ void task_done(Task *task) {
     #undef SID
     #undef SUCCESS
     #undef SSUCCESS
+    L("IsTransactionState = %s, IsAbortedTransactionBlockState = %s", IsTransactionState() ? "true" : "false", IsAbortedTransactionBlockState() ? "true": "false");
     SPI_connect_my(command);
+    L("IsTransactionState = %s, IsAbortedTransactionBlockState = %s", IsTransactionState() ? "true" : "false", IsAbortedTransactionBlockState() ? "true": "false");
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
+    L("hi3");
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING);
+    L("hi4");
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
         bool delete_isnull, repeat_isnull, live_isnull;
         task->delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &delete_isnull));
@@ -262,21 +266,13 @@ static bool task_loop(Task *task) {
     if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
     task_work(task);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
-    do {
-        sigjmp_buf *save_exception_stack = PG_exception_stack;
-        ErrorContextCallback *save_context_stack = error_context_stack;
-        sigjmp_buf local_sigjmp_buf;
-        if (sigsetjmp(local_sigjmp_buf, 1) == 0) {
-            PG_exception_stack = &local_sigjmp_buf;
-            task_success(task);
-        } else {
-            PG_exception_stack = save_exception_stack;
-            error_context_stack = save_context_stack;
-            task_error(task);
-        }
-        PG_exception_stack = save_exception_stack;
-        error_context_stack = save_context_stack;
-    } while (0);
+    L("PG_exception_stack = %p", PG_exception_stack);
+    L("error_context_stack = %p", error_context_stack);
+    PG_TRY();
+        task_success(task);
+    PG_CATCH();
+        task_error(task);
+    PG_END_TRY();
     pfree(task->request);
     task_done(task);
     L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
