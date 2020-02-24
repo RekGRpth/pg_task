@@ -190,13 +190,9 @@ void task_done(Task *task) {
     #undef SID
     #undef SUCCESS
     #undef SSUCCESS
-    L("IsTransactionState = %s, IsAbortedTransactionBlockState = %s", IsTransactionState() ? "true" : "false", IsAbortedTransactionBlockState() ? "true": "false");
     SPI_connect_my(command);
-    L("IsTransactionState = %s, IsAbortedTransactionBlockState = %s", IsTransactionState() ? "true" : "false", IsAbortedTransactionBlockState() ? "true": "false");
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
-    L("hi3");
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING);
-    L("hi4");
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
         bool delete_isnull, repeat_isnull, live_isnull;
         task->delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &delete_isnull));
