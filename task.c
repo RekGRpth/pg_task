@@ -262,8 +262,6 @@ static bool task_loop(Task *task) {
     if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
     task_work(task);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
-    L("PG_exception_stack = %p", PG_exception_stack);
-    L("error_context_stack = %p", error_context_stack);
     PG_TRY();
         task_success(task);
     PG_CATCH();
