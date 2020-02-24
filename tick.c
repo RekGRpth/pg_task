@@ -149,7 +149,7 @@ static void tick_finish(Remote *remote, bool success) {
     PQfinish(remote->conn);
     if (!success) {
         W(PQerrorMessage(remote->conn));
-        initStringInfo(&task->response);
+//        initStringInfo(&task->response);
         appendStringInfoString(&task->response, PQerrorMessage(remote->conn));
     }
     task_done(task);
@@ -393,7 +393,7 @@ static void tick_reload(void) {
 static void tick_sucess(Task *task, PGresult *result) {
     task->success = true;
 //    pfree(task->response.data);
-//    initStringInfo(&task->response);
+    initStringInfo(&task->response);
     if (PQnfields(result) > 1) {
         for (int col = 0; col < PQnfields(result); col++) {
             Oid oid = PQftype(result, col);
@@ -415,7 +415,7 @@ static void tick_sucess(Task *task, PGresult *result) {
 static void tick_error(Task *task, PGresult *result) {
     char *value;
 //    pfree(task->response.data);
-//    initStringInfo(&task->response);
+    initStringInfo(&task->response);
     if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->response, "severity::text\t%s", value);
     if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY_NONLOCALIZED))) appendStringInfo(&task->response, "\nseverity_nonlocalized::text\t%s", value);
     if ((value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&task->response, "\nsqlstate::text\t%s", value);
@@ -445,23 +445,24 @@ static void tick_result(Remote *remote) {
         Task *task = &remote->task;
         if (!PQconsumeInput(remote->conn)) { tick_finish(remote, false); return; }
 //        if (PQisBusy(remote->conn)) { W("PQisBusy"); return; }
-        initStringInfo(&task->response);
+//        initStringInfo(&task->response);
         for (PGresult *result; (result = PQgetResult(remote->conn)); PQclear(result)) {
-//            L(PQcmdStatus(result));
-//            L(PQcmdTuples(result));
-//            L(PQresStatus(PQresultStatus(result)));
+            L(PQcmdStatus(result));
+            L(PQcmdTuples(result));
+            L(PQresStatus(PQresultStatus(result)));
+            if (!strlen(PQcmdStatus(result))) continue;
             if (!strlen(PQcmdTuples(result))) continue;
             switch (PQresultStatus(result)) {
-                case PGRES_BAD_RESPONSE: L("PGRES_BAD_RESPONSE"); appendStringInfoString(&task->response, "PGRES_BAD_RESPONSE"); break;
-                case PGRES_COMMAND_OK: L("PGRES_COMMAND_OK"); appendStringInfoString(&task->response, "PGRES_COMMAND_OK"); break;
-                case PGRES_COPY_BOTH: L("PGRES_COPY_BOTH"); appendStringInfoString(&task->response, "PGRES_COPY_BOTH"); break;
-                case PGRES_COPY_IN: L("PGRES_COPY_IN"); appendStringInfoString(&task->response, "PGRES_COPY_IN"); break;
-                case PGRES_COPY_OUT: L("PGRES_COPY_OUT"); appendStringInfoString(&task->response, "PGRES_COPY_OUT"); break;
-                case PGRES_EMPTY_QUERY: L("PGRES_EMPTY_QUERY"); appendStringInfoString(&task->response, "PGRES_EMPTY_QUERY"); break;
-                case PGRES_FATAL_ERROR: L("PGRES_FATAL_ERROR"); tick_error(task, result); break;
-                case PGRES_NONFATAL_ERROR: L("PGRES_NONFATAL_ERROR"); appendStringInfoString(&task->response, "PGRES_NONFATAL_ERROR"); break;
-                case PGRES_SINGLE_TUPLE: L("PGRES_SINGLE_TUPLE"); appendStringInfoString(&task->response, "PGRES_SINGLE_TUPLE"); break;
-                case PGRES_TUPLES_OK: L("PGRES_TUPLES_OK"); tick_sucess(task, result); break;
+                case PGRES_BAD_RESPONSE: break;
+                case PGRES_COMMAND_OK: break;
+                case PGRES_COPY_BOTH: break;
+                case PGRES_COPY_IN: break;
+                case PGRES_COPY_OUT: break;
+                case PGRES_EMPTY_QUERY: break;
+                case PGRES_FATAL_ERROR: tick_error(task, result); break;
+                case PGRES_NONFATAL_ERROR: break;
+                case PGRES_SINGLE_TUPLE: break;
+                case PGRES_TUPLES_OK: tick_sucess(task, result); break;
             }
         }
         remote->state = IDLE;
