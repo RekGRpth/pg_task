@@ -60,10 +60,6 @@ void SPI_rollback_my(const char *command) {
     stmt_timeout_active = false;
     EmitErrorReport();
     debug_query_string = NULL;
-//    AbortSubTransaction();
-//    AbortCurrentTransaction();
-//    UserAbortTransactionBlock(false);
-//    RollbackAndReleaseCurrentSubTransaction();
     AbortOutOfAnyTransaction();
     PortalErrorCleanup();
     SPICleanup();
