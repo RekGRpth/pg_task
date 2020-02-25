@@ -15,13 +15,13 @@ void task_work(Task *task, bool notify) {
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    if (!task->remote) {
+/*    if (!task->remote) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf, "%lu", task->id);
         SetConfigOptionMy("pg_task.id", buf.data);
         pfree(buf.data);
-    }
+    }*/
     task->count++;
     if (!command) {
         StringInfoData buf;

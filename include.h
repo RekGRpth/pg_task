@@ -79,7 +79,7 @@ typedef struct Event {
 typedef struct Task {
     bool delete;
     bool live;
-    bool remote;
+//    bool remote;
     bool repeat;
     bool success;
     char *queue;
