@@ -41,7 +41,7 @@ void task_work(Task *task, bool notify) {
     #undef SPID
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, false);
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
         bool timeout_isnull;
@@ -52,6 +52,7 @@ void task_work(Task *task, bool notify) {
         if (timeout_isnull) E("timeout_isnull");
         MemoryContextSwitchTo(oldMemoryContext);
     }
+    SPI_commit_my();
     SPI_finish_my(notify);
 }
 
