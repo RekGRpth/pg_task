@@ -72,12 +72,6 @@ typedef struct Work {
     queue_t queue;
 } Work;
 
-/*typedef struct Event {
-    int events;
-    long timeout;
-    Work work;
-} Event;*/
-
 typedef struct Task {
     bool delete;
     bool live;
