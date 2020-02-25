@@ -63,18 +63,20 @@ typedef struct Conf {
 } Conf;
 
 typedef struct Work {
-    Conf conf;
     char *schema_table;
+    Conf conf;
+    int events;
+    long timeout;
     MemoryContext context;
     Oid oid;
     queue_t queue;
 } Work;
 
-typedef struct Event {
+/*typedef struct Event {
     int events;
     long timeout;
     Work work;
-} Event;
+} Event;*/
 
 typedef struct Task {
     bool delete;

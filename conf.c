@@ -114,7 +114,7 @@ static void tick_work(Conf *conf) {
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
-static bool conf_check(Event *event) {
+static bool conf_check(Work *work) {
     bool exit = false;
     static SPIPlanPtr plan = NULL;
     static const char *command =
@@ -133,7 +133,7 @@ static bool conf_check(Event *event) {
         "LEFT JOIN   pg_stat_activity AS a ON a.usename = \"user\" AND a.datname = data AND application_name = concat_ws(' ', 'pg_task', schema, \"table\", period::text) AND pid != pg_backend_pid()\n"
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
         "WHERE       a.pid IS NULL";
-    event->events &= ~WL_TIMEOUT;
+    work->events &= ~WL_TIMEOUT;
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
@@ -153,8 +153,8 @@ static bool conf_check(Event *event) {
         if (usename_isnull) conf_user(conf.user);
         if (datname_isnull) conf_data(conf.user, conf.data);
         if (!pg_strncasecmp(conf.user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(conf.data, "postgres", sizeof("postgres") - 1) && !conf.schema && !pg_strcasecmp(conf.table, pg_task_task)) {
-            event->timeout = conf.period;
-            event->events |= WL_TIMEOUT;
+            work->timeout = conf.period;
+            work->events |= WL_TIMEOUT;
         } else tick_work(&conf);
         pfree(conf.user);
         pfree(conf.data);
@@ -162,22 +162,21 @@ static bool conf_check(Event *event) {
         pfree(conf.table);
     }
     SPI_finish_my(true);
-    if (event->events & WL_TIMEOUT) {
-        Work *work = &event->work;
+    if (work->events & WL_TIMEOUT) {
         Conf *conf = &work->conf;
         conf->user = "postgres";
         conf->data = "postgres";
         conf->schema = NULL;
         conf->table = pg_task_task;
-        conf->period = event->timeout;
+        conf->period = work->timeout;
         exit = tick_init_work(true, work);
-    } else event->timeout = -1L;
+    } else work->timeout = -1L;
     return exit;
 }
 
-static void conf_init(Event *event) {
-    event->events = WL_LATCH_SET | WL_EXIT_ON_PM_DEATH;
-    event->timeout = -1L;
+static void conf_init(Work *work) {
+    work->events = WL_LATCH_SET | WL_EXIT_ON_PM_DEATH;
+    work->timeout = -1L;
     if (!MyProcPort && !(MyProcPort = (Port *)calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->user_name) MyProcPort->user_name = "postgres";
     if (!MyProcPort->database_name) MyProcPort->database_name = "postgres";
@@ -195,21 +194,21 @@ static void conf_reset(void) {
     CHECK_FOR_INTERRUPTS();
 }
 
-static bool conf_reload(Event *event) {
+static bool conf_reload(Work *work) {
     sighup = false;
     ProcessConfigFile(PGC_SIGHUP);
-    return conf_check(event);
+    return conf_check(work);
 }
 
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
-    Event event;
-    MemSet(&event, 0, sizeof(event));
-    conf_init(&event);
-    sigterm = conf_check(&event);
+    Work work;
+    MemSet(&work, 0, sizeof(work));
+    conf_init(&work);
+    sigterm = conf_check(&work);
     while (!sigterm) {
-        int rc = WaitLatch(MyLatch, event.events, event.timeout, PG_WAIT_EXTENSION);
+        int rc = WaitLatch(MyLatch, work.events, work.timeout, PG_WAIT_EXTENSION);
         if (rc & WL_LATCH_SET) conf_reset();
-        if (sighup) sigterm = conf_reload(&event);
-        if (rc & WL_TIMEOUT) tick_loop(&event.work);
+        if (sighup) sigterm = conf_reload(&work);
+        if (rc & WL_TIMEOUT) tick_loop(&work);
     }
 }
