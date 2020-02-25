@@ -15,8 +15,8 @@ static void tick_schema(Conf *conf) {
     names = stringToQualifiedNameList(schema_quote);
     SPI_connect_my(buf.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_commit_my(buf.data);
-    SPI_finish_my(buf.data);
+    SPI_commit_my();
+    SPI_finish_my();
     list_free_deep(names);
     if (schema_quote != conf->schema) pfree((void *)schema_quote);
     pfree(buf.data);
@@ -37,8 +37,8 @@ static void tick_type(Conf *conf) {
     SPI_connect_my(buf.data);
     parseTypeString(name.data, &type, &typmod, true);
     if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_commit_my(buf.data);
-    SPI_finish_my(buf.data);
+    SPI_commit_my();
+    SPI_finish_my();
     if (conf->schema && schema_quote && conf->schema != schema_quote) pfree((void *)schema_quote);
     pfree(name.data);
     pfree(buf.data);
@@ -83,8 +83,8 @@ static void tick_table(Work *work) {
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     work->oid = RangeVarGetRelid(relation, NoLock, false);
-    SPI_commit_my(buf.data);
-    SPI_finish_my(buf.data);
+    SPI_commit_my();
+    SPI_finish_my();
     pfree((void *)relation);
     list_free_deep(names);
     if (name_quote != name.data) pfree((void *)name_quote);
@@ -113,8 +113,8 @@ static void tick_index(Work *work, const char *index) {
     relation = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_commit_my(buf.data);
-    SPI_finish_my(buf.data);
+    SPI_commit_my();
+    SPI_finish_my();
     pfree((void *)relation);
     list_free_deep(names);
     pfree(buf.data);
@@ -138,8 +138,8 @@ static void tick_fix(Work *work) {
         ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", work->schema_table);
     SPI_connect_my(buf.data);
     SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UPDATE);
-    SPI_commit_my(buf.data);
-    SPI_finish_my(buf.data);
+    SPI_commit_my();
+    SPI_finish_my();
     pfree(buf.data);
 }
 
@@ -149,7 +149,7 @@ static void tick_finish(Remote *remote, bool success) {
     PQfinish(remote->conn);
     if (!success) {
         W(PQerrorMessage(remote->conn));
-//        initStringInfo(&task->response);
+        initStringInfo(&task->response);
         appendStringInfoString(&task->response, PQerrorMessage(remote->conn));
     }
     task_done(task);
@@ -268,7 +268,7 @@ void tick_loop(Work *work) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING);
-    SPI_commit_my(command);
+    SPI_commit_my();
     for (uint64 row = 0; row < SPI_processed; row++) {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
         bool id_isnull, max_isnull;
@@ -283,7 +283,7 @@ void tick_loop(Work *work) {
         MemoryContextSwitchTo(oldMemoryContext);
         tick_work(&task);
     }
-    SPI_finish_my(command);
+    SPI_finish_my();
 }
 
 static void tick_sighup(SIGNAL_ARGS) {
@@ -317,8 +317,8 @@ static void tick_check(void) {
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     if (!SPI_processed) sigterm = true;
-    SPI_commit_my(command);
-    SPI_finish_my(command);
+    SPI_commit_my();
+    SPI_finish_my();
 }
 
 static void tick_init_conf(Conf *conf) {
@@ -392,7 +392,6 @@ static void tick_reload(void) {
 
 static void tick_sucess(Task *task, PGresult *result) {
     task->success = true;
-//    pfree(task->response.data);
     initStringInfo(&task->response);
     if (PQnfields(result) > 1) {
         for (int col = 0; col < PQnfields(result); col++) {
@@ -414,7 +413,6 @@ static void tick_sucess(Task *task, PGresult *result) {
 
 static void tick_error(Task *task, PGresult *result) {
     char *value;
-//    pfree(task->response.data);
     initStringInfo(&task->response);
     if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->response, "severity::text\t%s", value);
     if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY_NONLOCALIZED))) appendStringInfo(&task->response, "\nseverity_nonlocalized::text\t%s", value);
@@ -444,8 +442,6 @@ static void tick_result(Remote *remote) {
     if (remote->event.events & WL_SOCKET_READABLE) {
         Task *task = &remote->task;
         if (!PQconsumeInput(remote->conn)) { tick_finish(remote, false); return; }
-//        if (PQisBusy(remote->conn)) { W("PQisBusy"); return; }
-//        initStringInfo(&task->response);
         for (PGresult *result; (result = PQgetResult(remote->conn)); PQclear(result)) {
             L(PQcmdStatus(result));
             L(PQcmdTuples(result));

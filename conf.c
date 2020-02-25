@@ -38,7 +38,7 @@ static void conf_user(const char *user) {
         free_parsestate(pstate);
         pfree(stmt);
     }
-    SPI_commit_my(buf.data);
+    SPI_commit_my();
     list_free_deep(names);
     if (user_quote != user) pfree((void *)user_quote);
     pfree(buf.data);
@@ -65,7 +65,7 @@ static void conf_data(const char *user, const char *data) {
         free_parsestate(pstate);
         pfree(stmt);
     }
-    SPI_commit_my(buf.data);
+    SPI_commit_my();
     list_free_deep(names);
     if (user_quote != user) pfree((void *)user_quote);
     if (data_quote != data) pfree((void *)data_quote);
@@ -137,7 +137,7 @@ static bool conf_check(Event *event) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
-    SPI_commit_my(command);
+    SPI_commit_my();
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool period_isnull, usename_isnull, datname_isnull;
         Conf conf = {
@@ -162,7 +162,7 @@ static bool conf_check(Event *event) {
         if (conf.schema) pfree(conf.schema);
         pfree(conf.table);
     }
-    SPI_finish_my(command);
+    SPI_finish_my();
     if (event->events & WL_TIMEOUT) {
         Work *work = &event->work;
         Conf *conf = &work->conf;

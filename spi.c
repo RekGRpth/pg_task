@@ -12,14 +12,14 @@ void SPI_connect_my(const char *src) {
     SPI_start_transaction_my(src);
 }
 
-void SPI_commit_my(const char *src) {
+void SPI_commit_my(void) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     SPI_commit();
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
 }
 
-void SPI_finish_my(const char *src) {
+void SPI_finish_my(void) {
     int rc;
     if ((rc = SPI_finish()) != SPI_OK_FINISH) E("SPI_finish = %s", SPI_result_code_string(rc));
     ProcessCompletedNotifies();
