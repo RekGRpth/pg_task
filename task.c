@@ -218,6 +218,7 @@ static void task_success(Task *task) {
     MemoryContextSwitchTo(oldMemoryContext);
     SetCurrentStatementStartTimestamp();
     exec_simple_query(task);
+    AbortOutOfAnyTransaction();
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
 }
