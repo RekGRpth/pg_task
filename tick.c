@@ -468,7 +468,7 @@ static void tick_result(Remote *remote) {
         remote->state = IDLE;
         pfree(task->request);
         tick_finish(remote, true);
-//        L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
+        L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
     }
 }
 

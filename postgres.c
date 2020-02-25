@@ -160,8 +160,6 @@ exec_simple_query(Task *task)
 		/* If we got a cancel signal in parsing or prior command, quit */
 		CHECK_FOR_INTERRUPTS();
 
-		if (!IsA(parsetree->stmt, TransactionStmt)) {
-
 		/*
 		 * Set up a snapshot if parse analysis/planning will need one.
 		 */
@@ -265,8 +263,6 @@ exec_simple_query(Task *task)
 		receiver->rDestroy(receiver);
 
 		PortalDrop(portal, false);
-
-		}
 
 		if (lnext(parsetree_item) == NULL)
 		{

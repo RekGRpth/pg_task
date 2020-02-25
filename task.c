@@ -262,7 +262,7 @@ static void task_error(Task *task) {
     stmt_timeout_active = false;
     EmitErrorReport();
     debug_query_string = NULL;
-    AbortCurrentTransaction();
+    AbortOutOfAnyTransaction();
     PortalErrorCleanup();
     SPICleanup();
     if (MyReplicationSlot) ReplicationSlotRelease();
