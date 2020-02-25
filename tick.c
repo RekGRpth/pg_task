@@ -169,10 +169,10 @@ static void task_remote(Task *task) {
     if (!(remote = palloc0(sizeof(remote)))) E("!palloc");
     remote->task = *task;
     remote->conn = PQconnectStart(task->queue);
-    if (PQstatus(remote->conn) == CONNECTION_BAD || (!PQisnonblocking(remote->conn) && PQsetnonblocking(remote->conn, true) == -1) || (remote->event.fd = PQsocket(remote->conn)) < 0) {
+    if (PQstatus(remote->conn) == CONNECTION_BAD || (!PQisnonblocking(remote->conn) && PQsetnonblocking(remote->conn, true) == -1) || (remote->fd = PQsocket(remote->conn)) < 0) {
         tick_finish(remote);
     } else {
-        remote->event.events = WL_SOCKET_WRITEABLE;
+        remote->events = WL_SOCKET_WRITEABLE;
         remote->state = CONNECT;
         queue_insert_tail(&work->queue, &remote->queue);
     }
@@ -438,7 +438,7 @@ static void tick_query(Remote *remote) {
     if (!PQconsumeInput(remote->conn)) { tick_finish(remote); return; }
     if (PQisBusy(remote->conn)) { W("PQisBusy"); return; }
     if (!PQsendQuery(remote->conn, task->request)) { tick_finish(remote); return; }
-    remote->event.events = WL_SOCKET_WRITEABLE;
+    remote->events = WL_SOCKET_WRITEABLE;
     remote->state = RESULT; // add timeout!
 }
 
@@ -503,10 +503,10 @@ static void tick_connect(Remote *remote) {
         case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); break;
         case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED"); tick_finish(remote); return;
         case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); remote->state = QUERY; task->pid = PQbackendPID(remote->conn); tick_query(remote); return;
-        case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); remote->event.events = WL_SOCKET_READABLE; break;
-        case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); remote->event.events = WL_SOCKET_WRITEABLE; break;
+        case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); remote->events = WL_SOCKET_READABLE; break;
+        case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); remote->events = WL_SOCKET_WRITEABLE; break;
     }
-    if ((remote->event.fd = PQsocket(remote->conn)) < 0) tick_finish(remote);
+    if ((remote->fd = PQsocket(remote->conn)) < 0) tick_finish(remote);
 }
 
 static void tick_socket(Remote *remote) {

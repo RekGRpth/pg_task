@@ -91,11 +91,12 @@ typedef struct Task {
 } Task;
 
 typedef struct Remote {
+    int events;
+    int fd;
     PGconn *conn;
     queue_t queue;
     STATE state;
     Task task;
-    WaitEvent event;
 } Remote;
 
 bool pg_advisory_unlock_int4_my(int32 key1, int32 key2);
