@@ -4,7 +4,7 @@ extern bool stmt_timeout_active;
 extern bool xact_started;
 static volatile sig_atomic_t sigterm = false;
 
-void task_work(Task *task) {
+void task_work(Task *task, bool notify) {
     #define ID 1
     #define SID S(ID)
     #define PID 2
@@ -53,7 +53,7 @@ void task_work(Task *task) {
         MemoryContextSwitchTo(oldMemoryContext);
     }
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(notify);
 }
 
 static void task_repeat(Task *task) {
@@ -82,7 +82,7 @@ static void task_repeat(Task *task) {
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT);
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(true);
 }
 
 static void task_delete(Task *task) {
@@ -106,7 +106,7 @@ static void task_delete(Task *task) {
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE);
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(true);
 }
 
 static bool task_live(Task *task) {
@@ -156,7 +156,7 @@ static bool task_live(Task *task) {
         if (id_isnull) E("id_isnull");
     }
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(true);
     pfree((void *)values[QUEUE - 1]);
     #undef QUEUE
     #undef SQUEUE
@@ -205,7 +205,7 @@ void task_done(Task *task) {
         if (live_isnull) E("live_isnull");
     }
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(true);
     if (task->response.data) pfree((void *)values[RESPONSE - 1]);
     #undef RESPONSE
     #undef SRESPONSE
@@ -280,7 +280,7 @@ static void task_error(Task *task) {
 static bool task_loop(Task *task) {
     Work *work = task->work;
     if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
-    task_work(task);
+    task_work(task, true);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     PG_TRY();
         task_success(task);

@@ -119,10 +119,10 @@ void SPI_commit_my(void);
 void SPI_connect_my(const char *src);
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res);
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res);
-void SPI_finish_my(void);
+void SPI_finish_my(bool notify);
 void SPI_start_transaction_my(const char *src);
 void task_done(Task *task);
-void task_work(Task *task);
+void task_work(Task *task, bool notify);
 void tick_loop(Work *work);
 
 #define Q(name) #name

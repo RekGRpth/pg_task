@@ -16,7 +16,7 @@ static void tick_schema(Conf *conf) {
     SPI_connect_my(buf.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(true);
     list_free_deep(names);
     if (schema_quote != conf->schema) pfree((void *)schema_quote);
     pfree(buf.data);
@@ -38,7 +38,7 @@ static void tick_type(Conf *conf) {
     parseTypeString(name.data, &type, &typmod, true);
     if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(true);
     if (conf->schema && schema_quote && conf->schema != schema_quote) pfree((void *)schema_quote);
     pfree(name.data);
     pfree(buf.data);
@@ -84,7 +84,7 @@ static void tick_table(Work *work) {
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     work->oid = RangeVarGetRelid(relation, NoLock, false);
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(true);
     pfree((void *)relation);
     list_free_deep(names);
     if (name_quote != name.data) pfree((void *)name_quote);
@@ -114,7 +114,7 @@ static void tick_index(Work *work, const char *index) {
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(true);
     pfree((void *)relation);
     list_free_deep(names);
     pfree(buf.data);
@@ -139,7 +139,7 @@ static void tick_fix(Work *work) {
     SPI_connect_my(buf.data);
     SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UPDATE);
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(true);
     pfree(buf.data);
 }
 
@@ -164,7 +164,7 @@ static void task_remote(Task *task) {
     Conf *conf = &work->conf;
     Remote *remote;
     MemoryContext oldMemoryContext;
-    task_work(task);
+    task_work(task, false);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     oldMemoryContext = MemoryContextSwitchTo(work->context);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->queue, task->max, work->oid);
@@ -283,7 +283,7 @@ void tick_loop(Work *work) {
         MemoryContextSwitchTo(oldMemoryContext);
         tick_work(&task);
     }
-    SPI_finish_my();
+    SPI_finish_my(true);
 }
 
 static void tick_sighup(SIGNAL_ARGS) {
@@ -318,7 +318,7 @@ static void tick_check(void) {
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     if (!SPI_processed) sigterm = true;
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(true);
 }
 
 static void tick_init_conf(Conf *conf) {

@@ -162,7 +162,7 @@ static bool conf_check(Event *event) {
         if (conf.schema) pfree(conf.schema);
         pfree(conf.table);
     }
-    SPI_finish_my();
+    SPI_finish_my(true);
     if (event->events & WL_TIMEOUT) {
         Work *work = &event->work;
         Conf *conf = &work->conf;

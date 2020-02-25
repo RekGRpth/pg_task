@@ -19,10 +19,10 @@ void SPI_commit_my(void) {
     pgstat_report_activity(STATE_IDLE, NULL);
 }
 
-void SPI_finish_my(void) {
+void SPI_finish_my(bool notify) {
     int rc;
     if ((rc = SPI_finish()) != SPI_OK_FINISH) E("SPI_finish = %s", SPI_result_code_string(rc));
-    ProcessCompletedNotifies();
+    if (notify) ProcessCompletedNotifies();
 }
 
 char *SPI_getvalue_my(HeapTuple tuple, TupleDesc tupdesc, int fnumber) {
