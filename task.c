@@ -41,7 +41,7 @@ void task_work(Task *task, bool notify) {
     #undef SPID
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
         bool timeout_isnull;
@@ -52,7 +52,6 @@ void task_work(Task *task, bool notify) {
         if (timeout_isnull) E("timeout_isnull");
         MemoryContextSwitchTo(oldMemoryContext);
     }
-    SPI_commit_my();
     SPI_finish_my(notify);
 }
 
@@ -80,8 +79,7 @@ static void task_repeat(Task *task) {
     #undef SID
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT);
-    SPI_commit_my();
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT, true);
     SPI_finish_my(true);
 }
 
@@ -104,8 +102,7 @@ static void task_delete(Task *task) {
     #undef SID
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE);
-    SPI_commit_my();
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE, true);
     SPI_finish_my(true);
 }
 
@@ -149,13 +146,12 @@ static bool task_live(Task *task) {
     #undef SSTART
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     if (!SPI_processed) exit = true; else {
         bool id_isnull;
         task->id = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull));
         if (id_isnull) E("id_isnull");
     }
-    SPI_commit_my();
     SPI_finish_my(true);
     pfree((void *)values[QUEUE - 1]);
     #undef QUEUE
@@ -194,7 +190,7 @@ void task_done(Task *task) {
     #undef SSUCCESS
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
-    SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING);
+    SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
         bool delete_isnull, repeat_isnull, live_isnull;
         task->delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &delete_isnull));
@@ -204,7 +200,6 @@ void task_done(Task *task) {
         if (repeat_isnull) E("repeat_isnull");
         if (live_isnull) E("live_isnull");
     }
-    SPI_commit_my();
     SPI_finish_my(true);
     if (task->response.data) pfree((void *)values[RESPONSE - 1]);
     #undef RESPONSE

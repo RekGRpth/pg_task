@@ -136,8 +136,7 @@ static bool conf_check(Event *event) {
     event->events &= ~WL_TIMEOUT;
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
-    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
-    SPI_commit_my();
+    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool period_isnull, usename_isnull, datname_isnull;
         Conf conf = {

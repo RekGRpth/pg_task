@@ -14,7 +14,7 @@ static void tick_schema(Conf *conf) {
     appendStringInfo(&buf, "CREATE SCHEMA %s", schema_quote);
     names = stringToQualifiedNameList(schema_quote);
     SPI_connect_my(buf.data);
-    if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
     SPI_finish_my(true);
     list_free_deep(names);
@@ -36,7 +36,7 @@ static void tick_type(Conf *conf) {
     appendStringInfo(&buf, "CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')", name.data);
     SPI_connect_my(buf.data);
     parseTypeString(name.data, &type, &typmod, true);
-    if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
     SPI_finish_my(true);
     if (conf->schema && schema_quote && conf->schema != schema_quote) pfree((void *)schema_quote);
@@ -81,7 +81,7 @@ static void tick_table(Work *work) {
     names = stringToQualifiedNameList(work->schema_table);
     relation = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
-    if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     work->oid = RangeVarGetRelid(relation, NoLock, false);
     SPI_commit_my();
     SPI_finish_my(true);
@@ -112,7 +112,7 @@ static void tick_index(Work *work, const char *index) {
     names = stringToQualifiedNameList(name_quote);
     relation = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
-    if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
     SPI_finish_my(true);
     pfree((void *)relation);
@@ -137,8 +137,7 @@ static void tick_fix(Work *work) {
         "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), queue, id)\n"
         ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", work->schema_table);
     SPI_connect_my(buf.data);
-    SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UPDATE);
-    SPI_commit_my();
+    SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UPDATE, true);
     SPI_finish_my(true);
     pfree(buf.data);
 }
@@ -267,8 +266,7 @@ void tick_loop(Work *work) {
     }
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
-    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING);
-    SPI_commit_my();
+    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_processed; row++) {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
         bool id_isnull, max_isnull;
@@ -315,9 +313,8 @@ static void tick_check(void) {
         ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND period = current_setting('pg_task.period', false)::int4";
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
-    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
+    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
     if (!SPI_processed) sigterm = true;
-    SPI_commit_my();
     SPI_finish_my(true);
 }
 
