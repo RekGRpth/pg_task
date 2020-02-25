@@ -452,6 +452,7 @@ static void tick_result(Remote *remote) {
         L(PQresStatus(PQresultStatus(result)));
         if (!strlen(PQcmdStatus(result))) continue;
         if (!strlen(PQcmdTuples(result))) continue;
+        if (!pg_strncasecmp(PQcmdTuples(result), "0", sizeof("0") - 1)) continue;
         switch (PQresultStatus(result)) {
             case PGRES_BAD_RESPONSE: break;
             case PGRES_COMMAND_OK: break;
