@@ -1,6 +1,6 @@
 #include "include.h"
 
-Work work;
+//Work work;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
@@ -161,6 +161,7 @@ static void task_remote(Task *task) {
     Conf *conf = &work->conf;
     Remote *remote;
     MemoryContext oldMemoryContext;
+    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
     task_work(task, false);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     oldMemoryContext = MemoryContextSwitchTo(work->context);
@@ -432,53 +433,52 @@ static void tick_error(Task *task, PGresult *result) {
 static void tick_idle(Remote *remote) {
 }
 
-static void tick_result(Remote *remote) {
-    if (remote->event.events & WL_SOCKET_WRITEABLE) remote->event.events = WL_SOCKET_READABLE;
-    if (remote->event.events & WL_SOCKET_READABLE) {
-        Task *task = &remote->task;
-        if (!PQconsumeInput(remote->conn)) { tick_finish(remote); return; }
-        for (PGresult *result; (result = PQgetResult(remote->conn)); PQclear(result)) {
-            L(PQcmdStatus(result));
-            L(PQcmdTuples(result));
-            L(PQresStatus(PQresultStatus(result)));
-            if (!strlen(PQcmdStatus(result))) continue;
-            if (!strlen(PQcmdTuples(result))) continue;
-            switch (PQresultStatus(result)) {
-                case PGRES_BAD_RESPONSE: break;
-                case PGRES_COMMAND_OK: break;
-                case PGRES_COPY_BOTH: break;
-                case PGRES_COPY_IN: break;
-                case PGRES_COPY_OUT: break;
-                case PGRES_EMPTY_QUERY: break;
-                case PGRES_FATAL_ERROR: tick_error(task, result); break;
-                case PGRES_NONFATAL_ERROR: break;
-                case PGRES_SINGLE_TUPLE: break;
-                case PGRES_TUPLES_OK: tick_sucess(task, result); break;
-            }
-        }
-        remote->state = IDLE;
-        pfree(task->request);
-        task_done(task);
-        if (task->response.data) pfree(task->response.data);
-        task->response.data = NULL;
-        pfree(task->queue);
+static void tick_query(Remote *remote) {
+    Task *task = &remote->task;
+    if (!PQconsumeInput(remote->conn)) { tick_finish(remote); return; }
+    if (PQisBusy(remote->conn)) { W("PQisBusy"); return; }
+    if (!PQsendQuery(remote->conn, task->request)) { tick_finish(remote); return; }
+    remote->event.events = WL_SOCKET_WRITEABLE;
+    remote->state = RESULT; // add timeout!
+}
 
+static void tick_result(Remote *remote) {
+    Task *task = &remote->task;
+    Work *work = task->work;
+    if (!PQconsumeInput(remote->conn)) { tick_finish(remote); return; }
+    for (PGresult *result; (result = PQgetResult(remote->conn)); PQclear(result)) {
+        L(PQcmdStatus(result));
+        L(PQcmdTuples(result));
+        L(PQresStatus(PQresultStatus(result)));
+        if (!strlen(PQcmdStatus(result))) continue;
+        if (!strlen(PQcmdTuples(result))) continue;
+        switch (PQresultStatus(result)) {
+            case PGRES_BAD_RESPONSE: break;
+            case PGRES_COMMAND_OK: break;
+            case PGRES_COPY_BOTH: break;
+            case PGRES_COPY_IN: break;
+            case PGRES_COPY_OUT: break;
+            case PGRES_EMPTY_QUERY: break;
+            case PGRES_FATAL_ERROR: tick_error(task, result); break;
+            case PGRES_NONFATAL_ERROR: break;
+            case PGRES_SINGLE_TUPLE: break;
+            case PGRES_TUPLES_OK: tick_sucess(task, result); break;
+        }
+    }
+    remote->state = IDLE;
+    pfree(task->request);
+    task_done(task);
+    L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
+    if (task->repeat) task_repeat(task);
+    if (task->delete && !task->response.data) task_delete(task);
+    if (task->response.data) pfree(task->response.data);
+    task->response.data = NULL;
+    pg_advisory_unlock_int4_my(work->oid, task->id);
+    if (task->live && task_live(task)) tick_query(remote); else {
+        pfree(task->queue);
         queue_remove(&remote->queue);
         PQfinish(remote->conn);
         pfree(remote);
-        L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
-    }
-}
-
-static void tick_query(Remote *remote) {
-    if (remote->event.events & WL_SOCKET_WRITEABLE) remote->event.events = WL_SOCKET_READABLE;
-    if (remote->event.events & WL_SOCKET_READABLE) {
-        Task *task = &remote->task;
-        if (!PQconsumeInput(remote->conn)) { tick_finish(remote); return; }
-        if (PQisBusy(remote->conn)) { W("PQisBusy"); return; }
-        if (!PQsendQuery(remote->conn, task->request)) { tick_finish(remote); return; }
-        remote->event.events = WL_SOCKET_WRITEABLE;
-        remote->state = RESULT; // add timeout!
     }
 }
 

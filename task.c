@@ -56,7 +56,7 @@ void task_work(Task *task, bool notify) {
     SPI_finish_my(notify);
 }
 
-static void task_repeat(Task *task) {
+void task_repeat(Task *task) {
     #define ID 1
     #define SID S(ID)
     static Oid argtypes[] = {[ID - 1] = INT8OID};
@@ -84,7 +84,7 @@ static void task_repeat(Task *task) {
     SPI_finish_my(true);
 }
 
-static void task_delete(Task *task) {
+void task_delete(Task *task) {
     #define ID 1
     #define SID S(ID)
     static Oid argtypes[] = {[ID - 1] = INT8OID};
@@ -107,7 +107,7 @@ static void task_delete(Task *task) {
     SPI_finish_my(true);
 }
 
-static bool task_live(Task *task) {
+bool task_live(Task *task) {
     #define QUEUE 1
     #define SQUEUE S(QUEUE)
     #define MAX 2

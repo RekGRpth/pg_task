@@ -106,6 +106,7 @@ bool pg_advisory_unlock_int4_my(int32 key1, int32 key2);
 bool pg_advisory_unlock_int8_my(int64 key);
 bool pg_try_advisory_lock_int4_my(int32 key1, int32 key2);
 bool pg_try_advisory_lock_int8_my(int64 key);
+bool task_live(Task *task);
 bool tick_init_work(const bool is_conf, Work *work);
 char *SPI_getvalue_my(HeapTuple tuple, TupleDesc tupdesc, int fnumber);
 const char *PQftypeMy(Oid oid);
@@ -121,7 +122,9 @@ void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int 
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res, bool commit);
 void SPI_finish_my(bool notify);
 void SPI_start_transaction_my(const char *src);
+void task_delete(Task *task);
 void task_done(Task *task);
+void task_repeat(Task *task);
 void task_work(Task *task, bool notify);
 void tick_loop(Work *work);
 
