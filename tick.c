@@ -524,8 +524,8 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     tick_init_conf(&work.conf);
     sigterm = tick_init_work(false, &work);
     while (!sigterm) {
-        WaitEvent event;
-        int rc = WaitLatchOrSocketMy(MyLatch, &event, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, &work.queue, work.conf.period, PG_WAIT_EXTENSION);
+        WaitEvent event = {.events = WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH};
+        int rc = WaitLatchOrSocketMy(MyLatch, &event, &work.queue, work.conf.period, PG_WAIT_EXTENSION);
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) tick_reset();
         if (sighup) tick_reload();

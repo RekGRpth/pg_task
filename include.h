@@ -108,7 +108,7 @@ bool tick_init_work(const bool is_conf, Work *work);
 char *SPI_getvalue_my(HeapTuple tuple, TupleDesc tupdesc, int fnumber);
 const char *PQftypeMy(Oid oid);
 DestReceiver *CreateDestReceiverMy(CommandDest dest, Task *task);
-int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, queue_t *work_queue, long timeout, uint32 wait_event_info);
+int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, queue_t *work_queue, long timeout, uint32 wait_event_info);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void exec_simple_query(Task *task);
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);

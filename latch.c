@@ -1,13 +1,13 @@
 #include "include.h"
 
-int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, int wakeEvents, queue_t *work_queue, long timeout, uint32 wait_event_info) {
+int WaitLatchOrSocketMy(Latch *latch, WaitEvent *event, queue_t *work_queue, long timeout, uint32 wait_event_info) {
     int ret = 0;
     WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, 2 + queue_count(work_queue));
-    if (wakeEvents & WL_TIMEOUT) Assert(timeout >= 0); else timeout = -1;
-    if (wakeEvents & WL_LATCH_SET) AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, latch, NULL);
-    Assert(!IsUnderPostmaster || (wakeEvents & WL_EXIT_ON_PM_DEATH) || (wakeEvents & WL_POSTMASTER_DEATH));
-    if ((wakeEvents & WL_POSTMASTER_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
-    if ((wakeEvents & WL_EXIT_ON_PM_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
+    if (event->events & WL_TIMEOUT) Assert(timeout >= 0); else timeout = -1;
+    if (event->events & WL_LATCH_SET) AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, latch, NULL);
+    Assert(!IsUnderPostmaster || (event->events & WL_EXIT_ON_PM_DEATH) || (event->events & WL_POSTMASTER_DEATH));
+    if ((event->events & WL_POSTMASTER_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
+    if ((event->events & WL_EXIT_ON_PM_DEATH) && IsUnderPostmaster) AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
     queue_each(work_queue, queue) {
         Remote *remote = queue_data(queue, Remote, queue);
         AddWaitEventToSet(set, remote->events & WL_SOCKET_MASK, remote->fd, NULL, remote);
