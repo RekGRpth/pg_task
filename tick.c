@@ -260,8 +260,8 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
             arg++;
 //            L("%d: %s = %s", arg, opt->keyword, opt->val ? opt->val : "(null)");
         }
-        if (!(keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(**keywords)))) E("!MemoryContextAlloc");
-        if (!(values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(**values)))) E("!MemoryContextAlloc");
+        if (!(keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords)))) E("!MemoryContextAlloc");
+        if (!(values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values)))) E("!MemoryContextAlloc");
 //        if (!(keywords = palloc(arg * sizeof(**keywords)))) E("!palloc");
 //        if (!(values = palloc(arg * sizeof(**values)))) E("!palloc");
         initStringInfo(&buf);
