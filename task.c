@@ -69,10 +69,10 @@ void task_repeat(Task *task) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "INSERT INTO %1$s (dt, group, max, request, timeout, delete, repeat, drift, count, live)\n"
+            "INSERT INTO %1$s (dt, \"group\", max, request, timeout, delete, repeat, drift, count, live)\n"
             "SELECT CASE WHEN drift THEN current_timestamp + repeat\n"
             "ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
-            "END AS dt, group, max, request, timeout, delete, repeat, drift, count, live\n"
+            "END AS dt, \"group\", max, request, timeout, delete, repeat, drift, count, live\n"
             "FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::state, 'FAIL'::state) LIMIT 1", work->schema_table);
         command = buf.data;
     }
@@ -132,7 +132,7 @@ bool task_live(Task *task) {
             "FROM    %1$s\n"
             "WHERE   state = 'PLAN'::state\n"
             "AND     dt <= current_timestamp\n"
-            "AND     group = $" SGROUP "\n"
+            "AND     \"group\" = $" SGROUP "\n"
             "AND     COALESCE(max, ~(1<<31)) >= $" SMAX "\n"
             "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $" SCOUNT " AND $" SSTART " + live > current_timestamp ELSE COALESCE(count, 0) > $" SCOUNT " OR $" SSTART " + COALESCE(live, '0 sec'::interval) > current_timestamp END\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"

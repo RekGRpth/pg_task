@@ -62,7 +62,7 @@ static void tick_table(Work *work) {
         "    dt timestamp NOT NULL DEFAULT current_timestamp,\n"
         "    start timestamp,\n"
         "    stop timestamp,\n"
-        "    group text NOT NULL DEFAULT 'group',\n"
+        "    \"group\" text NOT NULL DEFAULT 'group',\n"
         "    max int4,\n"
         "    pid int4,\n"
         "    request text NOT NULL,\n"
@@ -130,7 +130,7 @@ static void tick_fix(Work *work) {
         "    FROM    pg_stat_activity\n"
         "    WHERE   datname = current_catalog\n"
         "    AND     usename = current_user\n"
-        "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), group, id)\n"
+        "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), \"group\", id)\n"
         ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", work->schema_table);
     SPI_connect_my(buf.data);
     SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UPDATE, true);
@@ -237,17 +237,17 @@ void tick_loop(Work *work) {
         initStringInfo(&buf);
         appendStringInfo(&buf,
             "WITH s AS (WITH s AS (WITH s AS (WITH s AS (WITH s AS (\n"
-            "SELECT      id, group, COALESCE(max, ~(1<<31)) AS max, a.pid\n"
+            "SELECT      id, \"group\", COALESCE(max, ~(1<<31)) AS max, a.pid\n"
             "FROM        %1$s AS t\n"
             "LEFT JOIN   pg_stat_activity AS a\n"
             "ON          datname = current_catalog\n"
             "AND         usename = current_user\n"
-            "AND         backend_type = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), group)\n"
+            "AND         backend_type = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), \"group\")\n"
             "WHERE       t.state = 'PLAN'::state\n"
             "AND         dt <= current_timestamp\n"
-            ") SELECT id, group, max - count(pid) AS count FROM s GROUP BY id, group, max\n"
-            ") SELECT array_agg(id ORDER BY id) AS id, group, count FROM s WHERE count > 0 GROUP BY group, count\n"
-            ") SELECT unnest(id[:count]) AS id, group, count FROM s ORDER BY count DESC\n"
+            ") SELECT id, \"group\", max - count(pid) AS count FROM s GROUP BY id, \"group\", max\n"
+            ") SELECT array_agg(id ORDER BY id) AS id, \"group\", count FROM s WHERE count > 0 GROUP BY \"group\", count\n"
+            ") SELECT unnest(id[:count]) AS id, \"group\", count FROM s ORDER BY count DESC\n"
             ") SELECT s.* FROM s INNER JOIN %1$s USING (id) FOR UPDATE SKIP LOCKED\n"
             ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, u.group, COALESCE(u.max, ~(1<<31)) AS max", work->schema_table);
         command = buf.data;
