@@ -55,8 +55,11 @@ void task_work(Task *task, bool notify) {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         L("hi");
         task->request = SPI_getvalue_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
+        L("hi");
         MemoryContextSwitchTo(oldMemoryContext);
+        L("hi");
         task->timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
+        L("hi");
         if (0 < StatementTimeout && StatementTimeout < task->timeout) task->timeout = StatementTimeout;
         L("request = %s, timeout = %i", task->request, task->timeout);
         if (timeout_isnull) E("timeout_isnull");
