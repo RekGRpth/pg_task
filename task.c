@@ -4,7 +4,7 @@ extern bool stmt_timeout_active;
 extern bool xact_started;
 static volatile sig_atomic_t sigterm = false;
 
-void task_work(Task *task, bool notify) {
+void task_work(Task *task) {
     #define ID 1
     #define SID S(ID)
     #define PID 2
@@ -54,7 +54,7 @@ void task_work(Task *task, bool notify) {
         L("request = %s, timeout = %i", task->request, task->timeout);
         if (timeout_isnull) E("timeout_isnull");
     }
-    SPI_finish_my(notify);
+    SPI_finish_my();
 }
 
 void task_repeat(Task *task) {
@@ -82,7 +82,7 @@ void task_repeat(Task *task) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT, true);
-    SPI_finish_my(true);
+    SPI_finish_my();
 }
 
 void task_delete(Task *task) {
@@ -105,7 +105,7 @@ void task_delete(Task *task) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE, true);
-    SPI_finish_my(true);
+    SPI_finish_my();
 }
 
 bool task_live(Task *task) {
@@ -154,7 +154,7 @@ bool task_live(Task *task) {
         task->id = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull));
         if (id_isnull) E("id_isnull");
     }
-    SPI_finish_my(true);
+    SPI_finish_my();
     pfree((void *)values[GROUP - 1]);
     #undef GROUP
     #undef SGROUP
@@ -203,7 +203,7 @@ void task_done(Task *task) {
         if (repeat_isnull) E("repeat_isnull");
         if (live_isnull) E("live_isnull");
     }
-    SPI_finish_my(true);
+    SPI_finish_my();
     if (task->response.data) pfree((void *)values[RESPONSE - 1]);
     #undef RESPONSE
     #undef SRESPONSE
@@ -281,7 +281,7 @@ static void task_error(Task *task) {
 }
 
 static bool task_loop(Task *task) {
-    task_work(task, true);
+    task_work(task);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     PG_TRY();
         task_success(task);

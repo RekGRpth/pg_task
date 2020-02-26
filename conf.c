@@ -159,7 +159,7 @@ static bool conf_check(Work *work) {
         if (work->schema) pfree(work->schema);
         pfree(work->table);
     }
-    SPI_finish_my(true);
+    SPI_finish_my();
     if (work->events & WL_TIMEOUT) {
         work->user = "postgres";
         work->data = "postgres";

@@ -14,7 +14,7 @@ static void tick_schema(Work *work) {
     SPI_connect_my(buf.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
-    SPI_finish_my(true);
+    SPI_finish_my();
     list_free_deep(names);
     if (schema_quote != work->schema) pfree((void *)schema_quote);
     pfree(buf.data);
@@ -36,7 +36,7 @@ static void tick_type(Work *work) {
     parseTypeString(name.data, &type, &typmod, true);
     if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
-    SPI_finish_my(true);
+    SPI_finish_my();
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     pfree(name.data);
     pfree(buf.data);
@@ -81,7 +81,7 @@ static void tick_table(Work *work) {
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     work->oid = RangeVarGetRelid(relation, NoLock, false);
     SPI_commit_my();
-    SPI_finish_my(true);
+    SPI_finish_my();
     pfree((void *)relation);
     list_free_deep(names);
     if (name_quote != name.data) pfree((void *)name_quote);
@@ -110,7 +110,7 @@ static void tick_index(Work *work, const char *index) {
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
-    SPI_finish_my(true);
+    SPI_finish_my();
     pfree((void *)relation);
     list_free_deep(names);
     pfree(buf.data);
@@ -133,7 +133,7 @@ static void tick_fix(Work *work) {
         ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", work->schema_table);
     SPI_connect_my(buf.data);
     SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UPDATE, true);
-    SPI_finish_my(true);
+    SPI_finish_my();
     pfree(buf.data);
 }
 
@@ -299,7 +299,7 @@ void tick_loop(Work *work) {
         tick_work(work, id, group, max);
         pfree(group);
     }
-    SPI_finish_my(true);
+    SPI_finish_my();
 }
 
 static void tick_sighup(SIGNAL_ARGS) {
@@ -333,7 +333,7 @@ static void tick_check(void) {
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
     if (!SPI_processed) sigterm = true;
-    SPI_finish_my(true);
+    SPI_finish_my();
 }
 
 static void tick_init_conf(Work *work) {
@@ -455,7 +455,7 @@ static void tick_query(Task *task) {
     if (!PQconsumeInput(task->conn)) { tick_finish(task, "!PQconsumeInput"); return; }
     if (PQisBusy(task->conn)) { W("PQisBusy"); return; }
     if (!(task->pid = PQbackendPID(task->conn))) { tick_finish(task, "!PQbackendPID"); return; }
-    task_work(task, true);
+    task_work(task);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     if (task->timeout) {
         StringInfoData buf;
