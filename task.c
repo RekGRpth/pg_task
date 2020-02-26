@@ -26,6 +26,8 @@ void task_work(Task *task, bool notify) {
     if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
     L("hi");
     task->count++;
+    L("count = %i", task->count);
+    task->timeout = 0;
     L("hi");
     if (!command) {
         StringInfoData buf;

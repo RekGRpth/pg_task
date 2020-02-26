@@ -260,7 +260,7 @@ void tick_loop(Work *work) {
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool id_isnull, max_isnull;
         Task *task;
-        if (!(task = MemoryContextAllocZero(TopMemoryContext, sizeof(task)))) E("!MemoryContextAllocZero");
+        if (!(task = MemoryContextAllocZeroAligned(TopMemoryContext, sizeof(task)))) E("!MemoryContextAllocZero");
         task->work = work;
         task->id = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull));
         task->group = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "group"));
