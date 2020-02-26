@@ -425,23 +425,25 @@ static void tick_query(Task *task) {
 static void tick_result(Task *task) {
     if (!PQconsumeInput(task->conn)) { tick_finish(task); return; }
     for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) {
-        L(PQcmdStatus(result));
-        L(PQcmdTuples(result));
-        L(PQresStatus(PQresultStatus(result)));
-        if (!strlen(PQcmdStatus(result))) continue;
-        if (!strlen(PQcmdTuples(result))) continue;
-        if (!pg_strncasecmp(PQcmdTuples(result), "0", sizeof("0") - 1)) continue;
-        switch (PQresultStatus(result)) {
-            case PGRES_BAD_RESPONSE: break;
-            case PGRES_COMMAND_OK: break;
-            case PGRES_COPY_BOTH: break;
-            case PGRES_COPY_IN: break;
-            case PGRES_COPY_OUT: break;
-            case PGRES_EMPTY_QUERY: break;
-            case PGRES_FATAL_ERROR: tick_error(task, result); break;
-            case PGRES_NONFATAL_ERROR: break;
-            case PGRES_SINGLE_TUPLE: break;
-            case PGRES_TUPLES_OK: tick_sucess(task, result); break;
+        if (PQresultStatus(result) == PGRES_FATAL_ERROR) tick_error(task, result); else {
+            L(PQcmdStatus(result));
+            L(PQcmdTuples(result));
+            L(PQresStatus(PQresultStatus(result)));
+            if (!strlen(PQcmdStatus(result))) continue;
+            if (!strlen(PQcmdTuples(result))) continue;
+            if (!pg_strncasecmp(PQcmdTuples(result), "0", sizeof("0") - 1)) continue;
+            switch (PQresultStatus(result)) {
+                case PGRES_BAD_RESPONSE: break;
+                case PGRES_COMMAND_OK: break;
+                case PGRES_COPY_BOTH: break;
+                case PGRES_COPY_IN: break;
+                case PGRES_COPY_OUT: break;
+                case PGRES_EMPTY_QUERY: break;
+                case PGRES_FATAL_ERROR: break;
+                case PGRES_NONFATAL_ERROR: break;
+                case PGRES_SINGLE_TUPLE: break;
+                case PGRES_TUPLES_OK: tick_sucess(task, result); break;
+            }
         }
     }
     task->state = IDLE;
