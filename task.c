@@ -22,8 +22,11 @@ void task_work(Task *task, bool notify) {
         SetConfigOptionMy("pg_task.id", buf.data);
         pfree(buf.data);
     }*/
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
     if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
+    L("hi");
     task->count++;
+    L("hi");
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -36,16 +39,21 @@ void task_work(Task *task, bool notify) {
             "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout", work->schema_table);
         command = buf.data;
     }
+    L("hi");
     #undef ID
     #undef SID
     #undef PID
     #undef SPID
     SPI_connect_my(command);
+    L("hi");
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, false);
+    L("hi");
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
+    L("hi");
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
         bool timeout_isnull;
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+        L("hi");
         task->request = SPI_getvalue_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
         MemoryContextSwitchTo(oldMemoryContext);
         task->timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
@@ -53,7 +61,7 @@ void task_work(Task *task, bool notify) {
         L("request = %s, timeout = %i", task->request, task->timeout);
         if (timeout_isnull) E("timeout_isnull");
     }
-    SPI_commit_my();
+    L("hi");
     SPI_finish_my(notify);
 }
 
