@@ -138,7 +138,6 @@ static void tick_fix(Work *work) {
 }
 
 static void task_free(Task *task) {
-    if (task->response.data) pfree(task->response.data);
     pfree(task->group);
 //    pfree(task->keywords);
 //    pfree(task->values);
@@ -153,6 +152,7 @@ static void tick_finish(Task *task) {
     appendStringInfoString(&task->response, PQerrorMessage(task->conn));
     task_done(task);
     if (task->request) pfree(task->request);
+    if (task->response.data) pfree(task->response.data);
     task_free(task);
 }
 
