@@ -289,7 +289,7 @@ static bool task_loop(Task *task) {
         task_error(task);
     PG_END_TRY();
     task_done(task);
-    L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
+    L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
     if (task->repeat) task_repeat(task);
     if (task->delete && !task->response.data) task_delete(task);
     if (task->response.data) pfree(task->response.data);
