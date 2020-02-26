@@ -278,7 +278,7 @@ void tick_loop(Work *work) {
             "LEFT JOIN   pg_stat_activity AS a\n"
             "ON          datname = current_catalog\n"
             "AND         usename = current_user\n"
-            "AND         backend_type = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), \"group\")\n"
+            "AND         application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), \"group\")\n"
             "WHERE       t.state = 'PLAN'::state\n"
             "AND         dt <= current_timestamp\n"
             ") SELECT id, \"group\", max - count(pid) AS count FROM s GROUP BY id, \"group\", max\n"
