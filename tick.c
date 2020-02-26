@@ -145,9 +145,7 @@ static void tick_finish(Task *task) {
     appendStringInfoString(&task->response, PQerrorMessage(task->conn));
     task_done(task);
     if (task->request) pfree(task->request);
-    task->request = NULL;
-    if (task->response.data) pfree(task->response.data);
-    task->response.data = NULL;
+    pfree(task->response.data);
     pfree(task->group);
     pfree(task);
 }
@@ -370,9 +368,9 @@ static void tick_reload(void) {
 }
 
 static void tick_sucess(Task *task, PGresult *result) {
-    task->success = true;
-    initStringInfo(&task->response);
-    if (PQnfields(result) > 1) {
+    if (!task->response.data) initStringInfo(&task->response);
+    if (task->response.len) appendStringInfoString(&task->response, "\n");
+    if (task->response.len || PQnfields(result) > 1) {
         for (int col = 0; col < PQnfields(result); col++) {
             Oid oid = PQftype(result, col);
             const char *type = PQftypeMy(oid);
@@ -388,6 +386,7 @@ static void tick_sucess(Task *task, PGresult *result) {
             appendStringInfoString(&task->response, PQgetisnull(result, row, col) ? "(null)" : PQgetvalue(result, row, col));
         }
     }
+    task->success = true;
 }
 
 static void tick_error(Task *task, PGresult *result) {

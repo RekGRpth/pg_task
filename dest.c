@@ -24,7 +24,8 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
         initStringInfo(&task->response);
         MemoryContextSwitchTo(oldMemoryContext);
     }
-    if (!task->response.len && slot->tts_tupleDescriptor->natts > 1) {
+    if (task->response.len) appendStringInfoString(&task->response, "\n");
+    if (task->response.len || slot->tts_tupleDescriptor->natts > 1) {
         for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
             if (col > 1) appendStringInfoString(&task->response, "\t");
             appendStringInfo(&task->response, "%s::%s", SPI_fname(slot->tts_tupleDescriptor, col), SPI_gettype(slot->tts_tupleDescriptor, col));
