@@ -137,6 +137,14 @@ static void tick_fix(Work *work) {
     pfree(buf.data);
 }
 
+static void task_free(Task *task) {
+    if (task->response.data) pfree(task->response.data);
+    pfree(task->group);
+//    pfree(task->keywords);
+//    pfree(task->values);
+    pfree(task);
+}
+
 static void tick_finish(Task *task) {
     queue_remove(&task->queue);
     PQfinish(task->conn);
@@ -145,11 +153,7 @@ static void tick_finish(Task *task) {
     appendStringInfoString(&task->response, PQerrorMessage(task->conn));
     task_done(task);
     if (task->request) pfree(task->request);
-    pfree(task->response.data);
-    pfree(task->group);
-//    pfree(task->keywords);
-//    pfree(task->values);
-    pfree(task);
+    task_free(task);
 }
 
 static void task_remote(Work *work, int64 id, const char *group, int max, const char **keywords, const char **values) {
@@ -484,10 +488,7 @@ static void tick_result(Task *task) {
     if (task->live && task_live(task)) tick_query(task); else {
         queue_remove(&task->queue);
         PQfinish(task->conn);
-        pfree(task->group);
-//        pfree(task->keywords);
-//        pfree(task->values);
-        pfree(task);
+        task_free(task);
     }
 }
 
