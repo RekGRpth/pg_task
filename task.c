@@ -69,10 +69,10 @@ void task_repeat(Task *task) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "INSERT INTO %1$s (dt, queue, max, request, timeout, delete, repeat, drift, count, live)\n"
+            "INSERT INTO %1$s (dt, group, max, request, timeout, delete, repeat, drift, count, live)\n"
             "SELECT CASE WHEN drift THEN current_timestamp + repeat\n"
             "ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
-            "END AS dt, queue, max, request, timeout, delete, repeat, drift, count, live\n"
+            "END AS dt, group, max, request, timeout, delete, repeat, drift, count, live\n"
             "FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::state, 'FAIL'::state) LIMIT 1", work->schema_table);
         command = buf.data;
     }
@@ -108,8 +108,8 @@ void task_delete(Task *task) {
 }
 
 bool task_live(Task *task) {
-    #define QUEUE 1
-    #define SQUEUE S(QUEUE)
+    #define GROUP 1
+    #define SGROUP S(GROUP)
     #define MAX 2
     #define SMAX S(MAX)
     #define COUNT 3
@@ -117,8 +117,8 @@ bool task_live(Task *task) {
     #define START 4
     #define SSTART S(START)
     bool exit = false;
-    static Oid argtypes[] = {[QUEUE - 1] = TEXTOID, [MAX - 1] = INT4OID, [COUNT - 1] = INT4OID, [START - 1] = TIMESTAMPTZOID};
-    Datum values[] = {[QUEUE - 1] = CStringGetTextDatum(task->queue), [MAX - 1] = Int32GetDatum(task->max), [COUNT - 1] = Int32GetDatum(task->count), [START - 1] = TimestampTzGetDatum(task->start)};
+    static Oid argtypes[] = {[GROUP - 1] = TEXTOID, [MAX - 1] = INT4OID, [COUNT - 1] = INT4OID, [START - 1] = TIMESTAMPTZOID};
+    Datum values[] = {[GROUP - 1] = CStringGetTextDatum(task->group), [MAX - 1] = Int32GetDatum(task->max), [COUNT - 1] = Int32GetDatum(task->count), [START - 1] = TimestampTzGetDatum(task->start)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -132,7 +132,7 @@ bool task_live(Task *task) {
             "FROM    %1$s\n"
             "WHERE   state = 'PLAN'::state\n"
             "AND     dt <= current_timestamp\n"
-            "AND     queue = $" SQUEUE "\n"
+            "AND     group = $" SGROUP "\n"
             "AND     COALESCE(max, ~(1<<31)) >= $" SMAX "\n"
             "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $" SCOUNT " AND $" SSTART " + live > current_timestamp ELSE COALESCE(count, 0) > $" SCOUNT " OR $" SSTART " + COALESCE(live, '0 sec'::interval) > current_timestamp END\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
@@ -154,9 +154,9 @@ bool task_live(Task *task) {
         if (id_isnull) E("id_isnull");
     }
     SPI_finish_my(true);
-    pfree((void *)values[QUEUE - 1]);
-    #undef QUEUE
-    #undef SQUEUE
+    pfree((void *)values[GROUP - 1]);
+    #undef GROUP
+    #undef SGROUP
     return exit;
 }
 
@@ -353,16 +353,16 @@ static void task_init_task(Task *task) {
     task->id = MyBgworkerEntry->bgw_main_arg;
     task->start = GetCurrentTimestamp();
     task->count = 0;
-    task->queue = conf->p;
-    conf->p += strlen(task->queue) + 1;
+    task->group = conf->p;
+    conf->p += strlen(task->group) + 1;
     task->max = *(typeof(task->max) *)conf->p;
     conf->p += sizeof(task->max);
-    L("id = %lu, queue = %s, max = %u", task->id, task->queue, task->max);
+    L("id = %lu, group = %s, max = %u", task->id, task->group, task->max);
     pqsignal(SIGTERM, task_sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(conf->data, conf->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
-    SetConfigOptionMy("pg_task.queue", task->queue);
+    SetConfigOptionMy("pg_task.group", task->group);
 }
 
 static void task_reset(void) {

@@ -64,7 +64,7 @@ static void tick_table(Work *work) {
         "    dt timestamp NOT NULL DEFAULT current_timestamp,\n"
         "    start timestamp,\n"
         "    stop timestamp,\n"
-        "    queue text NOT NULL DEFAULT 'queue',\n"
+        "    group text NOT NULL DEFAULT 'group',\n"
         "    max int4,\n"
         "    pid int4,\n"
         "    request text NOT NULL,\n"
@@ -134,7 +134,7 @@ static void tick_fix(Work *work) {
         "    FROM    pg_stat_activity\n"
         "    WHERE   datname = current_catalog\n"
         "    AND     usename = current_user\n"
-        "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), queue, id)\n"
+        "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), group, id)\n"
         ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", work->schema_table);
     SPI_connect_my(buf.data);
     SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UPDATE, true);
@@ -152,7 +152,7 @@ static void tick_finish(Remote *remote) {
     task_done(task);
     if (task->response.data) pfree(task->response.data);
     task->response.data = NULL;
-    pfree(task->queue);
+    pfree(task->group);
     pfree(remote);
 }
 
@@ -165,10 +165,10 @@ static void task_remote(Task *task) {
     task_work(task, false);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     oldMemoryContext = MemoryContextSwitchTo(work->context);
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->queue, task->max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->group, task->max, work->oid);
     if (!(remote = palloc0(sizeof(remote)))) E("!palloc");
     remote->task = *task;
-    remote->conn = PQconnectStart(task->queue);
+    remote->conn = PQconnectStart(task->group);
     if (PQstatus(remote->conn) == CONNECTION_BAD || (!PQisnonblocking(remote->conn) && PQsetnonblocking(remote->conn, true) == -1) || (remote->fd = PQsocket(remote->conn)) < 0) {
         tick_finish(remote);
     } else {
@@ -183,9 +183,9 @@ static void task_worker(Task *task) {
     Work *work = task->work;
     Conf *conf = &work->conf;
     StringInfoData buf;
-    int user_len = strlen(conf->user), data_len = strlen(conf->data), schema_len = conf->schema ? strlen(conf->schema) : 0, table_len = strlen(conf->table), queue_len = strlen(task->queue), max_len = sizeof(task->max), oid_len = sizeof(work->oid);
+    int user_len = strlen(conf->user), data_len = strlen(conf->data), schema_len = conf->schema ? strlen(conf->schema) : 0, table_len = strlen(conf->table), group_len = strlen(task->group), max_len = sizeof(task->max), oid_len = sizeof(work->oid);
     BackgroundWorker worker;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->queue, task->max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->group, task->max, work->oid);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = task->id;
@@ -201,15 +201,15 @@ static void task_worker(Task *task) {
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_function_name, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "pg_task %s%s%s %s", conf->schema ? conf->schema : "", conf->schema ? " " : "", conf->table, task->queue);
+    appendStringInfo(&buf, "pg_task %s%s%s %s", conf->schema ? conf->schema : "", conf->schema ? " " : "", conf->table, task->group);
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s %s pg_task %s%s%s %s", conf->user, conf->data, conf->schema ? conf->schema : "", conf->schema ? " " : "", conf->table, task->queue);
+    appendStringInfo(&buf, "%s %s pg_task %s%s%s %s", conf->user, conf->data, conf->schema ? conf->schema : "", conf->schema ? " " : "", conf->table, task->group);
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
-    if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + max_len + oid_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + queue_len + 1 + max_len + oid_len);
+    if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + group_len + 1 + max_len + oid_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + group_len + 1 + max_len + oid_len);
     conf->p = worker.bgw_extra;
     memcpy(conf->p, conf->user, user_len);
     conf->p += user_len + 1;
@@ -221,20 +221,20 @@ static void task_worker(Task *task) {
     conf->p += table_len + 1;
     *(typeof(work->oid) *)conf->p = work->oid;
     conf->p += oid_len;
-    memcpy(conf->p, task->queue, queue_len);
-    conf->p += queue_len + 1;
+    memcpy(conf->p, task->group, group_len);
+    conf->p += group_len + 1;
     *(typeof(task->max) *)conf->p = task->max;
     conf->p += max_len;
     RegisterDynamicBackgroundWorker_my(&worker);
-    pfree(task->queue);
+    pfree(task->group);
 }
 
 static void tick_work(Task *task) {
     Work *work = task->work;
     Conf *conf = &work->conf;
     PQconninfoOption *opts;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, queue = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->queue, task->max, work->oid);
-    if (!(opts = PQconninfoParse(task->queue, NULL))) task_worker(task); else {
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->group, task->max, work->oid);
+    if (!(opts = PQconninfoParse(task->group, NULL))) task_worker(task); else {
         task_remote(task);
         PQconninfoFree(opts);
     }
@@ -248,19 +248,19 @@ void tick_loop(Work *work) {
         initStringInfo(&buf);
         appendStringInfo(&buf,
             "WITH s AS (WITH s AS (WITH s AS (WITH s AS (WITH s AS (\n"
-            "SELECT      id, queue, COALESCE(max, ~(1<<31)) AS max, a.pid\n"
+            "SELECT      id, group, COALESCE(max, ~(1<<31)) AS max, a.pid\n"
             "FROM        %1$s AS t\n"
             "LEFT JOIN   pg_stat_activity AS a\n"
             "ON          datname = current_catalog\n"
             "AND         usename = current_user\n"
-            "AND         backend_type = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), queue)\n"
+            "AND         backend_type = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), group)\n"
             "WHERE       t.state = 'PLAN'::state\n"
             "AND         dt <= current_timestamp\n"
-            ") SELECT id, queue, max - count(pid) AS count FROM s GROUP BY id, queue, max\n"
-            ") SELECT array_agg(id ORDER BY id) AS id, queue, count FROM s WHERE count > 0 GROUP BY queue, count\n"
-            ") SELECT unnest(id[:count]) AS id, queue, count FROM s ORDER BY count DESC\n"
+            ") SELECT id, group, max - count(pid) AS count FROM s GROUP BY id, group, max\n"
+            ") SELECT array_agg(id ORDER BY id) AS id, group, count FROM s WHERE count > 0 GROUP BY group, count\n"
+            ") SELECT unnest(id[:count]) AS id, group, count FROM s ORDER BY count DESC\n"
             ") SELECT s.* FROM s INNER JOIN %1$s USING (id) FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, u.queue, COALESCE(u.max, ~(1<<31)) AS max", work->schema_table);
+            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, u.group, COALESCE(u.max, ~(1<<31)) AS max", work->schema_table);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -273,7 +273,7 @@ void tick_loop(Work *work) {
         MemSet(&task, 0, sizeof(task));
         task.work = work;
         task.id = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull));
-        task.queue = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "queue"));
+        task.group = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "group"));
         task.max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
         if (id_isnull) E("id_isnull");
         if (max_isnull) E("max_isnull");
@@ -476,7 +476,7 @@ static void tick_result(Remote *remote) {
     task->response.data = NULL;
     pg_advisory_unlock_int4_my(work->oid, task->id);
     if (task->live && task_live(task)) tick_query(remote); else {
-        pfree(task->queue);
+        pfree(task->group);
         queue_remove(&remote->queue);
         PQfinish(remote->conn);
         pfree(remote);

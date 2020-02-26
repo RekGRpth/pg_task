@@ -78,7 +78,7 @@ typedef struct Task {
 //    bool remote;
     bool repeat;
     bool success;
-    char *queue;
+    char *group;
     char *request;
     int64 id;
     int count;
