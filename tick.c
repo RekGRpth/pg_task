@@ -144,6 +144,8 @@ static void tick_finish(Task *task) {
     initStringInfo(&task->response);
     appendStringInfoString(&task->response, PQerrorMessage(task->conn));
     task_done(task);
+    if (task->request) pfree(task->request);
+    task->request = NULL;
     if (task->response.data) pfree(task->response.data);
     task->response.data = NULL;
     pfree(task->group);
@@ -418,6 +420,8 @@ static void tick_query(Task *task) {
     if (!PQconsumeInput(task->conn)) { tick_finish(task); return; }
     if (PQisBusy(task->conn)) { W("PQisBusy"); return; }
     if (!PQsendQuery(task->conn, task->request)) { tick_finish(task); return; }
+    pfree(task->request);
+    task->request = NULL;
     task->events = WL_SOCKET_WRITEABLE;
     task->state = RESULT; // add timeout!
 }
@@ -447,7 +451,6 @@ static void tick_result(Task *task) {
         }
     }
     task->state = IDLE;
-    pfree(task->request);
     task_done(task);
     L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
     if (task->repeat) task_repeat(task);

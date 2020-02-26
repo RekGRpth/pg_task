@@ -217,6 +217,11 @@ static void task_success(Task *task) {
     MemoryContextSwitchTo(oldMemoryContext);
     SetCurrentStatementStartTimestamp();
     exec_simple_query(task);
+    pfree(task->request);
+    if (IsTransactionState()) {
+        task->request = "COMMIT";
+        exec_simple_query(task);
+    }
     if (IsTransactionState()) E("IsTransactionState");
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
@@ -283,7 +288,6 @@ static bool task_loop(Task *task) {
     PG_CATCH();
         task_error(task);
     PG_END_TRY();
-    pfree(task->request);
     task_done(task);
     L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->delete ? "true" : "false");
     if (task->repeat) task_repeat(task);
