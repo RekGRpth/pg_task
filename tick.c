@@ -166,20 +166,9 @@ static void task_remote(Work *work, int64 id, const char *group, int max, const 
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
     task->conn = PQconnectStartParams(keywords, values, false);
-    L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     if (PQstatus(task->conn) == CONNECTION_BAD || (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) || (task->fd = PQsocket(task->conn)) < 0) {
         tick_finish(task);
     } else {
-        if (task->timeout) {
-            StringInfoData buf;
-            MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-            initStringInfo(&buf);
-            MemoryContextSwitchTo(oldMemoryContext);
-            appendStringInfo(&buf, "SET statement_timeout = %d;\n%s", task->timeout, task->request);
-            pfree(task->request);
-            task->request = buf.data;
-        }
-        L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
         task->events = WL_SOCKET_WRITEABLE;
         task->state = CONNECT;
         queue_insert_tail(&work->queue, &task->queue);
@@ -468,6 +457,13 @@ static void tick_idle(Task *task) {
 static void tick_query(Task *task) {
     if (!PQconsumeInput(task->conn)) { tick_finish(task); return; }
     if (PQisBusy(task->conn)) { W("PQisBusy"); return; }
+    if (task->timeout) {
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfo(&buf, "SET statement_timeout = %d;\n%s", task->timeout, task->request);
+        pfree(task->request);
+        task->request = buf.data;
+    }
     if (!PQsendQuery(task->conn, task->request)) { tick_finish(task); return; }
     pfree(task->request);
     task->request = NULL;
