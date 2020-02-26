@@ -147,6 +147,8 @@ static void tick_finish(Task *task) {
     if (task->request) pfree(task->request);
     pfree(task->response.data);
     pfree(task->group);
+//    pfree(task->keywords);
+//    pfree(task->values);
     pfree(task);
 }
 
@@ -158,6 +160,8 @@ static void task_remote(Work *work, int64 id, const char *group, int max, const 
     task->id = id;
     task->group = MemoryContextStrdup(TopMemoryContext, group);
     task->max = max;
+//    task->keywords = keywords;
+//    task->values = values;
     task_work(task, false);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
@@ -236,7 +240,6 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
         if (!(values = MemoryContextAllocZero(TopMemoryContext, arg * sizeof(**values)))) E("!MemoryContextAllocZero");
         arg = 0;
         for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
-//            L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
             if (!opt->val) continue;
             keywords[arg] = opt->keyword;
             values[arg] = opt->val;
@@ -245,8 +248,6 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
         keywords[arg] = NULL;
         values[arg] = NULL;
         task_remote(work, id, group, max, keywords, values);
-//        pfree(keywords);
-//        pfree(values);
         PQconninfoFree(opts);
     }
 }
@@ -484,6 +485,8 @@ static void tick_result(Task *task) {
         queue_remove(&task->queue);
         PQfinish(task->conn);
         pfree(task->group);
+//        pfree(task->keywords);
+//        pfree(task->values);
         pfree(task);
     }
 }

@@ -74,6 +74,8 @@ typedef struct Task {
     bool success;
     char *group;
     char *request;
+//    const char **keywords;
+//    const char **values;
     int64 id;
     int count;
     int events;
