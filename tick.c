@@ -240,6 +240,7 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
         for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
             if (!opt->val) continue;
             L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
+            if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
             if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) { application_name = opt->val; continue; }
             arg++;
         }
@@ -252,6 +253,7 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
         arg = 1;
         for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
             if (!opt->val) continue;
+            if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
             if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) continue;
             keywords[arg] = opt->keyword;
             values[arg] = opt->val;
