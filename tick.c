@@ -151,12 +151,10 @@ static void tick_finish(Task *task) {
     pfree(task);
 }
 
-static void task_remote(Task *task) {
-    Work *work = task->work;
+static void task_remote(Work *work, int64 id, const char *group, int max) {
 //    MemoryContext oldMemoryContext;
-//    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
-    task_work(task, false);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
+/*    task_work(task, false);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
 //    oldMemoryContext = MemoryContextSwitchTo(work->context);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
@@ -167,19 +165,18 @@ static void task_remote(Task *task) {
         task->events = WL_SOCKET_WRITEABLE;
         task->state = CONNECT;
         queue_insert_tail(&work->queue, &task->queue);
-    }
+    }*/
 //    MemoryContextSwitchTo(oldMemoryContext);
 }
 
-static void task_worker(Task *task) {
-    Work *work = task->work;
+static void task_worker(Work *work, int64 id, const char *group, int max) {
     StringInfoData buf;
-    int user_len = strlen(work->user), data_len = strlen(work->data), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), group_len = strlen(task->group), max_len = sizeof(task->max), oid_len = sizeof(work->oid);
+    int user_len = strlen(work->user), data_len = strlen(work->data), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), group_len = strlen(group), max_len = sizeof(max), oid_len = sizeof(work->oid);
     BackgroundWorker worker;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    worker.bgw_main_arg = task->id;
+    worker.bgw_main_arg = id;
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -192,11 +189,11 @@ static void task_worker(Task *task) {
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_function_name, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, task->group);
+    appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, group);
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s %s pg_task %s%s%s %s", work->user, work->data, work->schema ? work->schema : "", work->schema ? " " : "", work->table, task->group);
+    appendStringInfo(&buf, "%s %s pg_task %s%s%s %s", work->user, work->data, work->schema ? work->schema : "", work->schema ? " " : "", work->table, group);
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
@@ -212,21 +209,18 @@ static void task_worker(Task *task) {
     work->p += table_len + 1;
     *(typeof(work->oid) *)work->p = work->oid;
     work->p += oid_len;
-    memcpy(work->p, task->group, group_len);
+    memcpy(work->p, group, group_len);
     work->p += group_len + 1;
-    *(typeof(task->max) *)work->p = task->max;
+    *(typeof(max) *)work->p = max;
     work->p += max_len;
     RegisterDynamicBackgroundWorker_my(&worker);
-    pfree(task->group);
-    pfree(task);
 }
 
-static void tick_work(Task *task) {
-    Work *work = task->work;
+static void tick_work(Work *work, int64 id, const char *group, int max) {
     PQconninfoOption *opts;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
-    if (!(opts = PQconninfoParse(task->group, NULL))) task_worker(task); else {
-        task_remote(task);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
+    if (!(opts = PQconninfoParse(group, NULL))) task_worker(work, id, group, max); else {
+        task_remote(work, id, group, max);
         PQconninfoFree(opts);
     }
 }
@@ -259,15 +253,13 @@ void tick_loop(Work *work) {
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool id_isnull, max_isnull;
-        Task *task;
-        if (!(task = MemoryContextAllocZeroAligned(TopMemoryContext, sizeof(task)))) E("!MemoryContextAllocZero");
-        task->work = work;
-        task->id = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull));
-        task->group = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "group"));
-        task->max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
+        int64 id = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull));
+        char *group = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "group"));
+        int max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
         if (id_isnull) E("id_isnull");
         if (max_isnull) E("max_isnull");
-        tick_work(task);
+        tick_work(work, id, group, max);
+        pfree(group);
     }
     SPI_finish_my(true);
 }
