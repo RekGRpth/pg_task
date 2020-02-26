@@ -157,6 +157,7 @@ static void tick_finish(Task *task) {
 }
 
 static void task_remote(Work *work, int64 id, const char *group, int max, const char **keywords, const char **values) {
+//    MemoryContext oldMemoryContext;
     Task *task;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
     if (!(task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task)))) E("!MemoryContextAllocZero");
@@ -178,7 +179,10 @@ static void task_remote(Work *work, int64 id, const char *group, int max, const 
         task->request = buf.data;
     }
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
+//    oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     task->conn = PQconnectStartParams(keywords, values, false);
+//    MemoryContextSwitchTo(oldMemoryContext);
+    L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     if (PQstatus(task->conn) == CONNECTION_BAD || (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) || (task->fd = PQsocket(task->conn)) < 0) {
         tick_finish(task);
     } else {
@@ -253,8 +257,10 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
             arg++;
             L("%d: %s = %s", arg, opt->keyword, opt->val ? opt->val : "(null)");
         }
-        if (!(keywords = MemoryContextAllocZero(TopMemoryContext, arg * sizeof(**keywords)))) E("!MemoryContextAllocZero");
-        if (!(values = MemoryContextAllocZero(TopMemoryContext, arg * sizeof(**values)))) E("!MemoryContextAllocZero");
+        if (!(keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(**keywords)))) E("!MemoryContextAlloc");
+        if (!(values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(**values)))) E("!MemoryContextAlloc");
+//        if (!(keywords = palloc(arg * sizeof(**keywords)))) E("!palloc");
+//        if (!(values = palloc(arg * sizeof(**values)))) E("!palloc");
         initStringInfo(&buf);
         appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, application_name);
         arg = 0;
