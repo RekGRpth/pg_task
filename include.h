@@ -63,7 +63,6 @@ typedef struct Work {
     int events;
     int period;
     long timeout;
-    MemoryContext context;
     Oid oid;
     queue_t queue;
 } Work;

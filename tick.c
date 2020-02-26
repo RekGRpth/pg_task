@@ -166,7 +166,6 @@ static void task_remote(Work *work, int64 id, const char *group, int max) {
 //    L("timeout = %i", task->timeout);
     task_work(task, false);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
-//    oldMemoryContext = MemoryContextSwitchTo(work->context);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
     task->conn = PQconnectStart(task->group);
     if (PQstatus(task->conn) == CONNECTION_BAD || (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) || (task->fd = PQsocket(task->conn)) < 0) {
@@ -360,7 +359,6 @@ bool tick_init_work(Work *work) {
     pfree(buf.data);
     if (!pg_try_advisory_lock_int8_my(work->oid)) { W("lock oid = %d", work->oid); return true; }
     tick_fix(work);
-    if (!work->context) work->context = AllocSetContextCreate(TopMemoryContext, "workMemoryContext", ALLOCSET_DEFAULT_SIZES);
     queue_init(&work->queue);
     return false;
 }
