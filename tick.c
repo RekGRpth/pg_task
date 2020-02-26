@@ -150,10 +150,10 @@ static void tick_finish(Task *task) {
     pfree(task);
 }
 
-static void task_remote(Work *work, int64 id, const char *group, int max) {
+static void task_remote(Work *work, int64 id, const char *group, int max, const char **keywords, const char **values) {
     Task *task;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
-    if (!(task = MemoryContextAllocZero(TopMemoryContext, sizeof(Task)))) E("!MemoryContextAllocZero");
+    if (!(task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task)))) E("!MemoryContextAllocZero");
     task->work = work;
     task->id = id;
     task->group = MemoryContextStrdup(TopMemoryContext, group);
@@ -161,7 +161,8 @@ static void task_remote(Work *work, int64 id, const char *group, int max) {
     task_work(task, false);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
-    task->conn = PQconnectStart(task->group);
+    task->conn = PQconnectStartParams(keywords, values, false);
+    L("hi");
     if (PQstatus(task->conn) == CONNECTION_BAD || (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) || (task->fd = PQsocket(task->conn)) < 0) {
         tick_finish(task);
     } else {
@@ -222,7 +223,29 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
     PQconninfoOption *opts;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
     if (!(opts = PQconninfoParse(group, NULL))) task_worker(work, id, group, max); else {
-        task_remote(work, id, group, max);
+        const char **keywords;
+        const char **values;
+        int arg = 1;
+        for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
+            L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
+            if (!opt->val) continue;
+            arg++;
+        }
+        if (!(keywords = palloc0(arg * sizeof(**keywords)))) E("!palloc0");
+        if (!(values = palloc0(arg * sizeof(**values)))) E("!palloc0");
+        arg = 0;
+        for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
+            L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
+            if (!opt->val) continue;
+            keywords[arg] = opt->keyword;
+            values[arg] = opt->val;
+            arg++;
+        }
+        keywords[arg] = NULL;
+        values[arg] = NULL;
+        task_remote(work, id, group, max, keywords, values);
+        pfree(keywords);
+        pfree(values);
         PQconninfoFree(opts);
     }
 }
