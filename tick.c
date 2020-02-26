@@ -4,12 +4,11 @@
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
-static void tick_schema(Conf *conf) {
+static void tick_schema(Work *work) {
     StringInfoData buf;
     List *names;
-    const char *schema_quote = quote_identifier(conf->schema);
-    L("user = %s, data = %s, schema = %s, table = %s", conf->user, conf->data, conf->schema, conf->table);
-    SetConfigOptionMy("pg_task.schema", conf->schema);
+    const char *schema_quote = quote_identifier(work->schema);
+    L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema, work->table);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE SCHEMA %s", schema_quote);
     names = stringToQualifiedNameList(schema_quote);
@@ -18,17 +17,17 @@ static void tick_schema(Conf *conf) {
     SPI_commit_my();
     SPI_finish_my(true);
     list_free_deep(names);
-    if (schema_quote != conf->schema) pfree((void *)schema_quote);
+    if (schema_quote != work->schema) pfree((void *)schema_quote);
     pfree(buf.data);
-    SetConfigOptionMy("pg_task.schema", conf->schema);
+    SetConfigOptionMy("pg_task.schema", work->schema);
 }
 
-static void tick_type(Conf *conf) {
+static void tick_type(Work *work) {
     StringInfoData buf, name;
     Oid type = InvalidOid;
     int32 typmod;
-    const char *schema_quote = conf->schema ? quote_identifier(conf->schema) : NULL;
-    L("user = %s, data = %s, schema = %s, table = %s", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table);
+    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
+    L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table);
     initStringInfo(&name);
     if (schema_quote) appendStringInfo(&name, "%s.", schema_quote);
     appendStringInfoString(&name, "state");
@@ -39,22 +38,21 @@ static void tick_type(Conf *conf) {
     if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
     SPI_finish_my(true);
-    if (conf->schema && schema_quote && conf->schema != schema_quote) pfree((void *)schema_quote);
+    if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     pfree(name.data);
     pfree(buf.data);
 }
 
 static void tick_table(Work *work) {
-    Conf *conf = &work->conf;
     StringInfoData buf, name;
     List *names;
     const RangeVar *relation;
     const char *name_quote;
-    L("user = %s, data = %s, schema = %s, table = %s", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table);
+    L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table);
     if (work->oid) pg_advisory_unlock_int8_my(work->oid);
-    SetConfigOptionMy("pg_task.table", conf->table);
+    SetConfigOptionMy("pg_task.table", work->table);
     initStringInfo(&name);
-    appendStringInfo(&name, "%s_parent_fkey", conf->table);
+    appendStringInfo(&name, "%s_parent_fkey", work->table);
     name_quote = quote_identifier(name.data);
     initStringInfo(&buf);
     appendStringInfo(&buf,
@@ -89,7 +87,7 @@ static void tick_table(Work *work) {
     list_free_deep(names);
     if (name_quote != name.data) pfree((void *)name_quote);
     pfree(name.data);
-    SetConfigOptionMy("pg_task.table", conf->table);
+    SetConfigOptionMy("pg_task.table", work->table);
     resetStringInfo(&buf);
     appendStringInfo(&buf, "%d", work->oid);
     SetConfigOptionMy("pg_task.oid", buf.data);
@@ -97,15 +95,14 @@ static void tick_table(Work *work) {
 }
 
 static void tick_index(Work *work, const char *index) {
-    Conf *conf = &work->conf;
     StringInfoData buf, name;
     List *names;
     const RangeVar *relation;
     const char *name_quote;
     const char *index_quote = quote_identifier(index);
-    L("user = %s, data = %s, schema = %s, table = %s, index = %s", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, index);
+    L("user = %s, data = %s, schema = %s, table = %s, index = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, index);
     initStringInfo(&name);
-    appendStringInfo(&name, "%s_%s_idx", conf->table, index);
+    appendStringInfo(&name, "%s_%s_idx", work->table, index);
     name_quote = quote_identifier(name.data);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE INDEX %s ON %s USING btree (%s)", name_quote, work->schema_table, index_quote);
@@ -124,9 +121,8 @@ static void tick_index(Work *work, const char *index) {
 }
 
 static void tick_fix(Work *work) {
-    Conf *conf = &work->conf;
     StringInfoData buf;
-    L("user = %s, data = %s, schema = %s, table = %s", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table);
+    L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table);
     initStringInfo(&buf);
     appendStringInfo(&buf,
         "WITH s AS (SELECT id FROM %1$s AS t WHERE state IN ('TAKE'::state, 'WORK'::state) AND pid NOT IN (\n"
@@ -157,13 +153,12 @@ static void tick_finish(Task *task) {
 
 static void task_remote(Task *task) {
     Work *work = task->work;
-    Conf *conf = &work->conf;
     MemoryContext oldMemoryContext;
     if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
     task_work(task, false);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     oldMemoryContext = MemoryContextSwitchTo(work->context);
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->group, task->max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
     task->conn = PQconnectStart(task->group);
     if (PQstatus(task->conn) == CONNECTION_BAD || (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) || (task->fd = PQsocket(task->conn)) < 0) {
         tick_finish(task);
@@ -177,11 +172,10 @@ static void task_remote(Task *task) {
 
 static void task_worker(Task *task) {
     Work *work = task->work;
-    Conf *conf = &work->conf;
     StringInfoData buf;
-    int user_len = strlen(conf->user), data_len = strlen(conf->data), schema_len = conf->schema ? strlen(conf->schema) : 0, table_len = strlen(conf->table), group_len = strlen(task->group), max_len = sizeof(task->max), oid_len = sizeof(work->oid);
+    int user_len = strlen(work->user), data_len = strlen(work->data), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), group_len = strlen(task->group), max_len = sizeof(task->max), oid_len = sizeof(work->oid);
     BackgroundWorker worker;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->group, task->max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = task->id;
@@ -197,39 +191,38 @@ static void task_worker(Task *task) {
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_function_name, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "pg_task %s%s%s %s", conf->schema ? conf->schema : "", conf->schema ? " " : "", conf->table, task->group);
+    appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, task->group);
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s %s pg_task %s%s%s %s", conf->user, conf->data, conf->schema ? conf->schema : "", conf->schema ? " " : "", conf->table, task->group);
+    appendStringInfo(&buf, "%s %s pg_task %s%s%s %s", work->user, work->data, work->schema ? work->schema : "", work->schema ? " " : "", work->table, task->group);
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
     if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + group_len + 1 + max_len + oid_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + group_len + 1 + max_len + oid_len);
-    conf->p = worker.bgw_extra;
-    memcpy(conf->p, conf->user, user_len);
-    conf->p += user_len + 1;
-    memcpy(conf->p, conf->data, data_len);
-    conf->p += data_len + 1;
-    memcpy(conf->p, conf->schema, schema_len);
-    conf->p += schema_len + 1;
-    memcpy(conf->p, conf->table, table_len);
-    conf->p += table_len + 1;
-    *(typeof(work->oid) *)conf->p = work->oid;
-    conf->p += oid_len;
-    memcpy(conf->p, task->group, group_len);
-    conf->p += group_len + 1;
-    *(typeof(task->max) *)conf->p = task->max;
-    conf->p += max_len;
+    work->p = worker.bgw_extra;
+    memcpy(work->p, work->user, user_len);
+    work->p += user_len + 1;
+    memcpy(work->p, work->data, data_len);
+    work->p += data_len + 1;
+    memcpy(work->p, work->schema, schema_len);
+    work->p += schema_len + 1;
+    memcpy(work->p, work->table, table_len);
+    work->p += table_len + 1;
+    *(typeof(work->oid) *)work->p = work->oid;
+    work->p += oid_len;
+    memcpy(work->p, task->group, group_len);
+    work->p += group_len + 1;
+    *(typeof(task->max) *)work->p = task->max;
+    work->p += max_len;
     RegisterDynamicBackgroundWorker_my(&worker);
     pfree(task->group);
 }
 
 static void tick_work(Task *task) {
     Work *work = task->work;
-    Conf *conf = &work->conf;
     PQconninfoOption *opts;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, task->id, task->group, task->max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
     if (!(opts = PQconninfoParse(task->group, NULL))) task_worker(task); else {
         task_remote(task);
         PQconninfoFree(opts);
@@ -313,55 +306,54 @@ static void tick_check(void) {
     SPI_finish_my(true);
 }
 
-static void tick_init_conf(Conf *conf) {
-    conf->p = MyBgworkerEntry->bgw_extra;
-    conf->user = conf->p;
-    conf->p += strlen(conf->user) + 1;
-    conf->data = conf->p;
-    conf->p += strlen(conf->data) + 1;
-    conf->schema = conf->p;
-    conf->p += strlen(conf->schema) + 1;
-    conf->table = conf->p;
-    conf->p += strlen(conf->table) + 1;
-    conf->period = *(typeof(conf->period) *)conf->p;
-    conf->p += sizeof(conf->period);
-    if (conf->table == conf->schema + 1) conf->schema = NULL;
+static void tick_init_conf(Work *work) {
+    work->p = MyBgworkerEntry->bgw_extra;
+    work->user = work->p;
+    work->p += strlen(work->user) + 1;
+    work->data = work->p;
+    work->p += strlen(work->data) + 1;
+    work->schema = work->p;
+    work->p += strlen(work->schema) + 1;
+    work->table = work->p;
+    work->p += strlen(work->table) + 1;
+    work->period = *(typeof(work->period) *)work->p;
+    work->p += sizeof(work->period);
+    if (work->table == work->schema + 1) work->schema = NULL;
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-    if (!MyProcPort->user_name) MyProcPort->user_name = conf->user;
-    if (!MyProcPort->database_name) MyProcPort->database_name = conf->data;
+    if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
+    if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
-    L("user = %s, data = %s, schema = %s, table = %s, period = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, conf->period);
+    L("user = %s, data = %s, schema = %s, table = %s, period = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period);
     pqsignal(SIGHUP, tick_sighup);
     pqsignal(SIGTERM, tick_sigterm);
     BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnection(conf->data, conf->user, 0);
+    BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
 }
 
-bool tick_init_work(const bool is_conf, Work *work) {
-    Conf *conf = &work->conf;
-    const char *schema_quote = conf->schema ? quote_identifier(conf->schema) : NULL;
-    const char *table_quote = quote_identifier(conf->table);
+bool tick_init_work(Work *work) {
+    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
+    const char *table_quote = quote_identifier(work->table);
     StringInfoData buf;
     initStringInfo(&buf);
-    if (conf->schema) appendStringInfo(&buf, "%s.", schema_quote);
+    if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, table_quote);
     if (work->schema_table) pfree(work->schema_table);
     work->schema_table = buf.data;
-    if (conf->schema && schema_quote && conf->schema != schema_quote) pfree((void *)schema_quote);
-    if (conf->table != table_quote) pfree((void *)table_quote);
-    L("user = %s, data = %s, schema = %s, table = %s, period = %d", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table, conf->period);
-    if (conf->schema) tick_schema(conf);
-    tick_type(conf);
+    if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
+    if (work->table != table_quote) pfree((void *)table_quote);
+    L("user = %s, data = %s, schema = %s, table = %s, period = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period);
+    if (work->schema) tick_schema(work);
+    tick_type(work);
     tick_table(work);
     tick_index(work, "dt");
     tick_index(work, "state");
-    SetConfigOptionMy("pg_task.data", conf->data);
-    SetConfigOptionMy("pg_task.user", conf->user);
+    SetConfigOptionMy("pg_task.data", work->data);
+    SetConfigOptionMy("pg_task.user", work->user);
     initStringInfo(&buf);
-    appendStringInfo(&buf, "%d", conf->period);
+    appendStringInfo(&buf, "%d", work->period);
     SetConfigOptionMy("pg_task.period", buf.data);
     pfree(buf.data);
     if (!pg_try_advisory_lock_int8_my(work->oid)) { W("lock oid = %d", work->oid); return true; }
@@ -514,11 +506,11 @@ static void tick_socket(Task *task) {
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     Work work;
     MemSet(&work, 0, sizeof(work));
-    tick_init_conf(&work.conf);
-    sigterm = tick_init_work(false, &work);
+    tick_init_conf(&work);
+    sigterm = tick_init_work(&work);
     while (!sigterm) {
         WaitEvent event = {.events = WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH};
-        int rc = WaitLatchOrSocketMy(MyLatch, &event, &work.queue, work.conf.period, PG_WAIT_EXTENSION);
+        int rc = WaitLatchOrSocketMy(MyLatch, &event, &work.queue, work.period, PG_WAIT_EXTENSION);
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
         if (rc & WL_LATCH_SET) tick_reset();
         if (sighup) tick_reload();

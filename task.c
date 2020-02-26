@@ -301,66 +301,64 @@ static void task_sigterm(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
-static void task_init_conf(Conf *conf) {
-    conf->p = MyBgworkerEntry->bgw_extra;
-    conf->user = conf->p;
-    conf->p += strlen(conf->user) + 1;
-    conf->data = conf->p;
-    conf->p += strlen(conf->data) + 1;
-    conf->schema = conf->p;
-    conf->p += strlen(conf->schema) + 1;
-    conf->table = conf->p;
-    conf->p += strlen(conf->table) + 1;
-    if (conf->table == conf->schema + 1) conf->schema = NULL;
+static void task_init_conf(Work *work) {
+    work->p = MyBgworkerEntry->bgw_extra;
+    work->user = work->p;
+    work->p += strlen(work->user) + 1;
+    work->data = work->p;
+    work->p += strlen(work->data) + 1;
+    work->schema = work->p;
+    work->p += strlen(work->schema) + 1;
+    work->table = work->p;
+    work->p += strlen(work->table) + 1;
+    if (work->table == work->schema + 1) work->schema = NULL;
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-    if (!MyProcPort->user_name) MyProcPort->user_name = conf->user;
-    if (!MyProcPort->database_name) MyProcPort->database_name = conf->data;
+    if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
+    if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
-    L("user = %s, data = %s, schema = %s, table = %s", conf->user, conf->data, conf->schema ? conf->schema : "(null)", conf->table);
-    SetConfigOptionMy("pg_task.data", conf->data);
-    SetConfigOptionMy("pg_task.user", conf->user);
-    if (conf->schema) SetConfigOptionMy("pg_task.schema", conf->schema);
-    SetConfigOptionMy("pg_task.table", conf->table);
+    L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table);
+    SetConfigOptionMy("pg_task.data", work->data);
+    SetConfigOptionMy("pg_task.user", work->user);
+    if (work->schema) SetConfigOptionMy("pg_task.schema", work->schema);
+    SetConfigOptionMy("pg_task.table", work->table);
 }
 
 static void task_init_work(Work *work) {
     StringInfoData buf;
-    Conf *conf = &work->conf;
-    const char *schema_quote = conf->schema ? quote_identifier(conf->schema) : NULL;
-    const char *table_quote = quote_identifier(conf->table);
+    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
+    const char *table_quote = quote_identifier(work->table);
     initStringInfo(&buf);
-    if (conf->schema) appendStringInfo(&buf, "%s.", schema_quote);
+    if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, table_quote);
     work->schema_table = buf.data;
-    work->oid = *(typeof(work->oid) *)conf->p;
-    conf->p += sizeof(work->oid);
+    work->oid = *(typeof(work->oid) *)work->p;
+    work->p += sizeof(work->oid);
     L("oid = %d", work->oid);
     initStringInfo(&buf);
     appendStringInfo(&buf, "%d", work->oid);
     SetConfigOptionMy("pg_task.oid", buf.data);
     pfree(buf.data);
     if (!work->context) work->context = AllocSetContextCreate(TopMemoryContext, "myMemoryContext", ALLOCSET_DEFAULT_SIZES);
-    if (conf->schema && schema_quote && conf->schema != schema_quote) pfree((void *)schema_quote);
-    if (conf->table != table_quote) pfree((void *)table_quote);
+    if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
+    if (work->table != table_quote) pfree((void *)table_quote);
 }
 
 static void task_init_task(Task *task) {
     Work *work = task->work;
-    Conf *conf = &work->conf;
     task->pid = MyProcPid;
     task->id = MyBgworkerEntry->bgw_main_arg;
     task->start = GetCurrentTimestamp();
     task->count = 0;
-    task->group = conf->p;
-    conf->p += strlen(task->group) + 1;
-    task->max = *(typeof(task->max) *)conf->p;
-    conf->p += sizeof(task->max);
+    task->group = work->p;
+    work->p += strlen(task->group) + 1;
+    task->max = *(typeof(task->max) *)work->p;
+    work->p += sizeof(task->max);
     L("id = %lu, group = %s, max = %u", task->id, task->group, task->max);
     pqsignal(SIGTERM, task_sigterm);
     BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnection(conf->data, conf->user, 0);
+    BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
     SetConfigOptionMy("pg_task.group", task->group);
 }
@@ -376,7 +374,7 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     MemSet(&task, 0, sizeof(task));
     MemSet(&work, 0, sizeof(work));
     task.work = &work;
-    task_init_conf(&work.conf);
+    task_init_conf(&work);
     task_init_work(&work);
     task_init_task(&task);
     while (!sigterm) {
