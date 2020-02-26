@@ -1,6 +1,5 @@
 #include "include.h"
 
-//Work work;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
@@ -152,7 +151,6 @@ static void tick_finish(Task *task) {
 }
 
 static void task_remote(Work *work, int64 id, const char *group, int max) {
-//    MemoryContext oldMemoryContext;
     Task *task;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
     if (!(task = MemoryContextAllocZero(TopMemoryContext, sizeof(Task)))) E("!MemoryContextAllocZero");
@@ -160,10 +158,6 @@ static void task_remote(Work *work, int64 id, const char *group, int max) {
     task->id = id;
     task->group = MemoryContextStrdup(TopMemoryContext, group);
     task->max = max;
-//    L("sizeof(task) = %lu, sizeof(t) = %lu, sizeof(Task) = %lu", sizeof(task), sizeof(t), sizeof(Task));
-//    MemSet(task, 0, sizeof(Task));
-//    L("count = %i", task->count);
-//    L("timeout = %i", task->timeout);
     task_work(task, false);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
@@ -175,7 +169,6 @@ static void task_remote(Work *work, int64 id, const char *group, int max) {
         task->state = CONNECT;
         queue_insert_tail(&work->queue, &task->queue);
     }
-//    MemoryContextSwitchTo(oldMemoryContext);
 }
 
 static void task_worker(Work *work, int64 id, const char *group, int max) {
@@ -430,7 +423,6 @@ static void tick_query(Task *task) {
 }
 
 static void tick_result(Task *task) {
-//    Work *work = task->work;
     if (!PQconsumeInput(task->conn)) { tick_finish(task); return; }
     for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) {
         L(PQcmdStatus(result));
@@ -460,7 +452,6 @@ static void tick_result(Task *task) {
     if (task->delete && !task->response.data) task_delete(task);
     if (task->response.data) pfree(task->response.data);
     task->response.data = NULL;
-//    pg_advisory_unlock_int4_my(work->oid, task->id);
     if (task->live && task_live(task)) tick_query(task); else {
         pfree(task->group);
         queue_remove(&task->queue);
