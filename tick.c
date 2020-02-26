@@ -168,8 +168,18 @@ static void task_remote(Work *work, int64 id, const char *group, int max, const 
 //    task->values = values;
     task_work(task, false);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
+    if (task->timeout) {
+        StringInfoData buf;
+//        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+        initStringInfo(&buf);
+//        MemoryContextSwitchTo(oldMemoryContext);
+        appendStringInfo(&buf, "SET statement_timeout = %d;\n%s", task->timeout, task->request);
+        pfree(task->request);
+        task->request = buf.data;
+    }
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
     task->conn = PQconnectStartParams(keywords, values, false);
+    L("hi");
     if (PQstatus(task->conn) == CONNECTION_BAD || (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) || (task->fd = PQsocket(task->conn)) < 0) {
         tick_finish(task);
     } else {
@@ -239,26 +249,28 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
         int arg = 2;
         for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
             if (!opt->val) continue;
-            L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
             if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
             if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) { application_name = opt->val; continue; }
             arg++;
+            L("%d: %s = %s", arg, opt->keyword, opt->val ? opt->val : "(null)");
         }
         if (!(keywords = MemoryContextAllocZero(TopMemoryContext, arg * sizeof(**keywords)))) E("!MemoryContextAllocZero");
         if (!(values = MemoryContextAllocZero(TopMemoryContext, arg * sizeof(**values)))) E("!MemoryContextAllocZero");
         initStringInfo(&buf);
         appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, application_name);
-        keywords[0] = "application_name";
-        values[0] = buf.data;
-        arg = 1;
+        arg = 0;
+        keywords[arg] = "application_name";
+        values[arg] = buf.data;
         for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
             if (!opt->val) continue;
             if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
             if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) continue;
+            arg++;
+            L("%d: %s = %s", arg, opt->keyword, opt->val ? opt->val : "(null)");
             keywords[arg] = opt->keyword;
             values[arg] = opt->val;
-            arg++;
         }
+        arg++;
         keywords[arg] = NULL;
         values[arg] = NULL;
         task_remote(work, id, group, max, keywords, values);
