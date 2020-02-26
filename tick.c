@@ -490,13 +490,13 @@ static void tick_result(Task *task) {
     if (task->delete && !task->response.data) task_delete(task);
     if (task->response.data) pfree(task->response.data);
     task->response.data = NULL;
-    if (task->live && !task_live(task)) {
-        task_work(task, true);
-        tick_query(task);
-    } else {
+    if (!task->live || task_live(task)) {
         queue_remove(&task->queue);
         PQfinish(task->conn);
         task_free(task);
+    } else {
+        task_work(task, true);
+        tick_query(task);
     }
 }
 
