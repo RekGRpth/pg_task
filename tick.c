@@ -283,6 +283,8 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
         values[arg] = NULL;
         task_remote(work, id, group, max, keywords, values);
         pfree(buf.data);
+        pfree(keywords);
+        pfree(values);
         PQconninfoFree(opts);
     }
 }
