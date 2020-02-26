@@ -153,8 +153,18 @@ static void tick_finish(Task *task) {
 
 static void task_remote(Work *work, int64 id, const char *group, int max) {
 //    MemoryContext oldMemoryContext;
+    Task *task;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
-/*    task_work(task, false);
+    if (!(task = MemoryContextAllocZero(TopMemoryContext, sizeof(Task)))) E("!MemoryContextAllocZero");
+    task->work = work;
+    task->id = id;
+    task->group = MemoryContextStrdup(TopMemoryContext, group);
+    task->max = max;
+//    L("sizeof(task) = %lu, sizeof(t) = %lu, sizeof(Task) = %lu", sizeof(task), sizeof(t), sizeof(Task));
+//    MemSet(task, 0, sizeof(Task));
+//    L("count = %i", task->count);
+//    L("timeout = %i", task->timeout);
+    task_work(task, false);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
 //    oldMemoryContext = MemoryContextSwitchTo(work->context);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
@@ -165,7 +175,7 @@ static void task_remote(Work *work, int64 id, const char *group, int max) {
         task->events = WL_SOCKET_WRITEABLE;
         task->state = CONNECT;
         queue_insert_tail(&work->queue, &task->queue);
-    }*/
+    }
 //    MemoryContextSwitchTo(oldMemoryContext);
 }
 
