@@ -22,6 +22,7 @@ void task_work(Task *task, bool notify) {
         SetConfigOptionMy("pg_task.id", buf.data);
         pfree(buf.data);
     }*/
+    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
     task->count++;
     if (!command) {
         StringInfoData buf;
@@ -167,6 +168,7 @@ void task_done(Task *task) {
     #define SSUCCESS S(SUCCESS)
     #define RESPONSE 3
     #define SRESPONSE S(RESPONSE)
+    Work *work = task->work;
     static Oid argtypes[] = {[ID - 1] = INT8OID, [SUCCESS - 1] = BOOLOID, [RESPONSE - 1] = TEXTOID};
     Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [SUCCESS - 1] = BoolGetDatum(task->success), [RESPONSE - 1] = task->response.data ? CStringGetTextDatum(task->response.data) : (Datum)NULL};
     char nulls[] = {[ID - 1] = ' ', [SUCCESS - 1] = ' ', [RESPONSE - 1] = task->response.data ? ' ' : 'n'};
@@ -205,6 +207,7 @@ void task_done(Task *task) {
     if (task->response.data) pfree((void *)values[RESPONSE - 1]);
     #undef RESPONSE
     #undef SRESPONSE
+    pg_advisory_unlock_int4_my(work->oid, task->id);
 }
 
 static void task_success(Task *task) {
@@ -273,8 +276,6 @@ static void task_error(Task *task) {
 }
 
 static bool task_loop(Task *task) {
-    Work *work = task->work;
-    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
     task_work(task, true);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     PG_TRY();
@@ -289,7 +290,6 @@ static bool task_loop(Task *task) {
     if (task->delete && !task->response.data) task_delete(task);
     if (task->response.data) pfree(task->response.data);
     task->response.data = NULL;
-    pg_advisory_unlock_int4_my(work->oid, task->id);
     return !task->live || task_live(task);
 }
 

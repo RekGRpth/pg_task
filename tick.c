@@ -153,11 +153,12 @@ static void tick_finish(Task *task) {
 
 static void task_remote(Task *task) {
     Work *work = task->work;
-    MemoryContext oldMemoryContext;
-    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
+//    MemoryContext oldMemoryContext;
+//    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
     task_work(task, false);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
-    oldMemoryContext = MemoryContextSwitchTo(work->context);
+//    oldMemoryContext = MemoryContextSwitchTo(work->context);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
     task->conn = PQconnectStart(task->group);
     if (PQstatus(task->conn) == CONNECTION_BAD || (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) || (task->fd = PQsocket(task->conn)) < 0) {
@@ -167,7 +168,7 @@ static void task_remote(Task *task) {
         task->state = CONNECT;
         queue_insert_tail(&work->queue, &task->queue);
     }
-    MemoryContextSwitchTo(oldMemoryContext);
+//    MemoryContextSwitchTo(oldMemoryContext);
 }
 
 static void task_worker(Task *task) {
@@ -429,7 +430,7 @@ static void tick_query(Task *task) {
 }
 
 static void tick_result(Task *task) {
-    Work *work = task->work;
+//    Work *work = task->work;
     if (!PQconsumeInput(task->conn)) { tick_finish(task); return; }
     for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) {
         L(PQcmdStatus(result));
@@ -459,7 +460,7 @@ static void tick_result(Task *task) {
     if (task->delete && !task->response.data) task_delete(task);
     if (task->response.data) pfree(task->response.data);
     task->response.data = NULL;
-    pg_advisory_unlock_int4_my(work->oid, task->id);
+//    pg_advisory_unlock_int4_my(work->oid, task->id);
     if (task->live && task_live(task)) tick_query(task); else {
         pfree(task->group);
         queue_remove(&task->queue);
