@@ -162,7 +162,6 @@ static void task_remote(Work *work, int64 id, const char *group, int max, const 
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
     task->conn = PQconnectStartParams(keywords, values, false);
-    L("hi");
     if (PQstatus(task->conn) == CONNECTION_BAD || (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) || (task->fd = PQsocket(task->conn)) < 0) {
         tick_finish(task);
     } else {
@@ -220,22 +219,24 @@ static void task_worker(Work *work, int64 id, const char *group, int max) {
 }
 
 static void tick_work(Work *work, int64 id, const char *group, int max) {
-    PQconninfoOption *opts;
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+    PQconninfoOption *opts = PQconninfoParse(group, NULL);
+    MemoryContextSwitchTo(oldMemoryContext);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
-    if (!(opts = PQconninfoParse(group, NULL))) task_worker(work, id, group, max); else {
+    if (!opts) task_worker(work, id, group, max); else {
         const char **keywords;
         const char **values;
         int arg = 1;
         for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
-            L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
             if (!opt->val) continue;
+            L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
             arg++;
         }
-        if (!(keywords = palloc0(arg * sizeof(**keywords)))) E("!palloc0");
-        if (!(values = palloc0(arg * sizeof(**values)))) E("!palloc0");
+        if (!(keywords = MemoryContextAllocZero(TopMemoryContext, arg * sizeof(**keywords)))) E("!MemoryContextAllocZero");
+        if (!(values = MemoryContextAllocZero(TopMemoryContext, arg * sizeof(**values)))) E("!MemoryContextAllocZero");
         arg = 0;
         for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
-            L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
+//            L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
             if (!opt->val) continue;
             keywords[arg] = opt->keyword;
             values[arg] = opt->val;
@@ -244,8 +245,8 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
         keywords[arg] = NULL;
         values[arg] = NULL;
         task_remote(work, id, group, max, keywords, values);
-        pfree(keywords);
-        pfree(values);
+//        pfree(keywords);
+//        pfree(values);
         PQconninfoFree(opts);
     }
 }
