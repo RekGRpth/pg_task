@@ -169,15 +169,6 @@ static void task_remote(Work *work, int64 id, const char *group, int max, const 
 //    task->values = values;
     task_work(task, false);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
-    if (task->timeout) {
-        StringInfoData buf;
-//        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-        initStringInfo(&buf);
-//        MemoryContextSwitchTo(oldMemoryContext);
-        appendStringInfo(&buf, "SET statement_timeout = %d;\n%s", task->timeout, task->request);
-        pfree(task->request);
-        task->request = buf.data;
-    }
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
 //    oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     task->conn = PQconnectStartParams(keywords, values, false);
@@ -186,6 +177,17 @@ static void task_remote(Work *work, int64 id, const char *group, int max, const 
     if (PQstatus(task->conn) == CONNECTION_BAD || (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) || (task->fd = PQsocket(task->conn)) < 0) {
         tick_finish(task);
     } else {
+        if (task->timeout) {
+            StringInfoData buf;
+    //        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+            initStringInfo(&buf);
+    //        MemoryContextSwitchTo(oldMemoryContext);
+            appendStringInfo(&buf, "SET statement_timeout = %d;\n%s", task->timeout, task->request);
+    //        appendStringInfo(&buf, "SELECT set_config('statement_timeout', %d::text, false);\n%s", task->timeout, task->request);
+            pfree(task->request);
+            task->request = buf.data;
+        }
+        L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
         task->events = WL_SOCKET_WRITEABLE;
         task->state = CONNECT;
         queue_insert_tail(&work->queue, &task->queue);
@@ -252,10 +254,11 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
         int arg = 2;
         for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
             if (!opt->val) continue;
+            L("%s = %s", opt->keyword, opt->val);
             if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
             if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) { application_name = opt->val; continue; }
             arg++;
-            L("%d: %s = %s", arg, opt->keyword, opt->val ? opt->val : "(null)");
+//            L("%d: %s = %s", arg, opt->keyword, opt->val ? opt->val : "(null)");
         }
         if (!(keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(**keywords)))) E("!MemoryContextAlloc");
         if (!(values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(**values)))) E("!MemoryContextAlloc");
@@ -271,7 +274,7 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
             if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
             if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) continue;
             arg++;
-            L("%d: %s = %s", arg, opt->keyword, opt->val ? opt->val : "(null)");
+//            L("%d: %s = %s", arg, opt->keyword, opt->val ? opt->val : "(null)");
             keywords[arg] = opt->keyword;
             values[arg] = opt->val;
         }
