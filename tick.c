@@ -234,17 +234,25 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
     if (!opts) task_worker(work, id, group, max); else {
         const char **keywords;
         const char **values;
-        int arg = 1;
+        StringInfoData buf;
+        const char *application_name = "group";
+        int arg = 2;
         for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
             if (!opt->val) continue;
             L("%s = %s", opt->keyword, opt->val ? opt->val : "(null)");
+            if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) { application_name = opt->val; continue; }
             arg++;
         }
         if (!(keywords = MemoryContextAllocZero(TopMemoryContext, arg * sizeof(**keywords)))) E("!MemoryContextAllocZero");
         if (!(values = MemoryContextAllocZero(TopMemoryContext, arg * sizeof(**values)))) E("!MemoryContextAllocZero");
-        arg = 0;
+        initStringInfo(&buf);
+        appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, application_name);
+        keywords[0] = "application_name";
+        values[0] = buf.data;
+        arg = 1;
         for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
             if (!opt->val) continue;
+            if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) continue;
             keywords[arg] = opt->keyword;
             values[arg] = opt->val;
             arg++;
@@ -252,6 +260,7 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
         keywords[arg] = NULL;
         values[arg] = NULL;
         task_remote(work, id, group, max, keywords, values);
+        pfree(buf.data);
         PQconninfoFree(opts);
     }
 }
