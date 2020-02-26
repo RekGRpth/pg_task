@@ -43,14 +43,14 @@ void task_work(Task *task, bool notify) {
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, false);
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
-        MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
         bool timeout_isnull;
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
         task->request = SPI_getvalue_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
+        MemoryContextSwitchTo(oldMemoryContext);
         task->timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
         if (0 < StatementTimeout && StatementTimeout < task->timeout) task->timeout = StatementTimeout;
         L("request = %s, timeout = %i", task->request, task->timeout);
         if (timeout_isnull) E("timeout_isnull");
-        MemoryContextSwitchTo(oldMemoryContext);
     }
     SPI_commit_my();
     SPI_finish_my(notify);
@@ -221,7 +221,7 @@ static void task_success(Task *task) {
 
 static void task_error(Task *task) {
     Work *work = task->work;
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
+//    MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
     ErrorData *edata = CopyErrorData();
     initStringInfo(&task->response);
     appendStringInfo(&task->response, "elevel::int4\t%i", edata->elevel);
@@ -252,7 +252,7 @@ static void task_error(Task *task) {
     if (edata->internalquery) appendStringInfo(&task->response, "\ninternalquery::text\t%s", edata->internalquery);
     if (edata->saved_errno) appendStringInfo(&task->response, "\nsaved_errno::int4\t%i", edata->saved_errno);
     FreeErrorData(edata);
-    MemoryContextSwitchTo(oldMemoryContext);
+//    MemoryContextSwitchTo(oldMemoryContext);
     HOLD_INTERRUPTS();
     disable_all_timeouts(false);
     QueryCancelPending = false;

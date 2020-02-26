@@ -29,7 +29,7 @@ char *SPI_getvalue_my(HeapTuple tuple, TupleDesc tupdesc, int fnumber) {
     bool isnull;
     Datum datum = SPI_getbinval(tuple, tupdesc, fnumber, &isnull);
     if (isnull) return NULL;
-    return TextDatumGetCString(datum);
+    return TextDatumGetCString(datum); // #define TextDatumGetCString(d) text_to_cstring((text *) DatumGetPointer(d))
 }
 
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
