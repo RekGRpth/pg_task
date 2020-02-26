@@ -15,13 +15,13 @@ void task_work(Task *task, bool notify) {
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-/*    if (!task->remote) {
+    if (!task->conn) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf, "%lu", task->id);
         SetConfigOptionMy("pg_task.id", buf.data);
         pfree(buf.data);
-    }*/
+    }
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
     if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
     task->count++;
