@@ -220,7 +220,6 @@ static void task_success(Task *task) {
 }
 
 static void task_error(Task *task) {
-    Work *work = task->work;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
     initStringInfo(&task->response);

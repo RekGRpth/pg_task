@@ -19,25 +19,25 @@ static char *SPI_getvalue_my2(TupleTableSlot *slot, TupleDesc tupdesc, int fnumb
 }
 
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
-    Work *work = task->work;
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    StringInfoData *buf = &task->response;
-    task->success = true;
-    if (!buf->data) initStringInfo(buf);
-    if (!buf->len && slot->tts_tupleDescriptor->natts > 1) {
+    if (!task->response.data) {
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+        initStringInfo(&task->response);
+        MemoryContextSwitchTo(oldMemoryContext);
+    }
+    if (!task->response.len && slot->tts_tupleDescriptor->natts > 1) {
         for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
-            if (col > 1) appendStringInfoString(buf, "\t");
-            appendStringInfo(buf, "%s::%s", SPI_fname(slot->tts_tupleDescriptor, col), SPI_gettype(slot->tts_tupleDescriptor, col));
+            if (col > 1) appendStringInfoString(&task->response, "\t");
+            appendStringInfo(&task->response, "%s::%s", SPI_fname(slot->tts_tupleDescriptor, col), SPI_gettype(slot->tts_tupleDescriptor, col));
         }
     }
-    if (buf->len) appendStringInfoString(buf, "\n");
+    if (task->response.len) appendStringInfoString(&task->response, "\n");
     for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
         char *value = SPI_getvalue_my2(slot, slot->tts_tupleDescriptor, col);
-        if (col > 1) appendStringInfoString(buf, "\t");
-        appendStringInfoString(buf, value ? value : "(null)");
+        if (col > 1) appendStringInfoString(&task->response, "\t");
+        appendStringInfoString(&task->response, value ? value : "(null)");
         if (value) pfree(value);
     }
-    MemoryContextSwitchTo(oldMemoryContext);
+    task->success = true;
     return true;
 }
 
