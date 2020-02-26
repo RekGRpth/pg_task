@@ -458,9 +458,9 @@ static void tick_result(Task *task) {
     if (task->response.data) pfree(task->response.data);
     task->response.data = NULL;
     if (task->live && task_live(task)) tick_query(task); else {
-        pfree(task->group);
         queue_remove(&task->queue);
         PQfinish(task->conn);
+        pfree(task->group);
         pfree(task);
     }
 }
