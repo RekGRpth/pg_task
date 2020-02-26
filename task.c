@@ -170,7 +170,7 @@ void task_done(Task *task) {
     #define SRESPONSE S(RESPONSE)
     Work *work = task->work;
     static Oid argtypes[] = {[ID - 1] = INT8OID, [SUCCESS - 1] = BOOLOID, [RESPONSE - 1] = TEXTOID};
-    Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [SUCCESS - 1] = BoolGetDatum(task->success), [RESPONSE - 1] = task->response.data ? CStringGetTextDatum(task->response.data) : (Datum)NULL};
+    Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [SUCCESS - 1] = BoolGetDatum(task->success = task->response.data ? task->success : true), [RESPONSE - 1] = task->response.data ? CStringGetTextDatum(task->response.data) : (Datum)NULL};
     char nulls[] = {[ID - 1] = ' ', [SUCCESS - 1] = ' ', [RESPONSE - 1] = task->response.data ? ' ' : 'n'};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
