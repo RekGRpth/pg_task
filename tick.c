@@ -495,7 +495,10 @@ static void tick_result(Task *task) {
         queue_remove(&task->queue);
         PQfinish(task->conn);
         task_free(task);
-    } else tick_query(task);
+    } else {
+        task->state = QUERY;
+        tick_query(task);
+    }
 }
 
 static void tick_connect(Task *task) {
@@ -508,7 +511,7 @@ static void tick_connect(Task *task) {
         case CONNECTION_GSS_STARTUP: L("PQstatus == CONNECTION_GSS_STARTUP"); break;
         case CONNECTION_MADE: L("PQstatus == CONNECTION_MADE"); break;
         case CONNECTION_NEEDED: L("PQstatus == CONNECTION_NEEDED"); break;
-        case CONNECTION_OK: L("PQstatus == CONNECTION_OK"); /*task->state = QUERY; */tick_query(task); return;
+        case CONNECTION_OK: L("PQstatus == CONNECTION_OK"); task->state = QUERY; tick_query(task); return;
         case CONNECTION_SETENV: L("PQstatus == CONNECTION_SETENV"); break;
         case CONNECTION_SSL_STARTUP: L("PQstatus == CONNECTION_SSL_STARTUP"); break;
         case CONNECTION_STARTED: L("PQstatus == CONNECTION_STARTED"); break;
@@ -516,7 +519,7 @@ static void tick_connect(Task *task) {
     switch (PQconnectPoll(task->conn)) {
         case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); break;
         case PGRES_POLLING_FAILED: L("PQconnectPoll == PGRES_POLLING_FAILED"); tick_finish(task, "PQconnectPoll == PGRES_POLLING_FAILED"); return;
-        case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); /*task->state = QUERY; */tick_query(task); return;
+        case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); task->state = QUERY; tick_query(task); return;
         case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); task->events = WL_SOCKET_READABLE; break;
         case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); task->events = WL_SOCKET_WRITEABLE; break;
     }

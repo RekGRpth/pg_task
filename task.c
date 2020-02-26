@@ -23,7 +23,7 @@ void task_work(Task *task) {
         pfree(buf.data);
     }
     task->count++;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d, count = %u", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid, task->count);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d, count = %u, pid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid, task->count, task->pid);
     if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
     if (!command) {
         StringInfoData buf;
