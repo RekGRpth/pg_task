@@ -143,7 +143,7 @@ static void task_free(Task *task) {
 }
 
 static void tick_finish(Task *task, const char *msg) {
-    W(PQerrorMessage(task->conn) && strlen(PQerrorMessage(task->conn)) ? PQerrorMessage(task->conn) : msg);
+    W("%s and %s", msg, PQerrorMessage(task->conn));
     queue_remove(&task->queue);
     PQfinish(task->conn);
     initStringInfo(&task->response);
