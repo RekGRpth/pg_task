@@ -44,7 +44,7 @@ void task_work(Task *task, bool notify) {
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, false);
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
         bool timeout_isnull;
-        MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         task->request = SPI_getvalue_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
         MemoryContextSwitchTo(oldMemoryContext);
         task->timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
@@ -221,9 +221,10 @@ static void task_success(Task *task) {
 
 static void task_error(Task *task) {
     Work *work = task->work;
-//    MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
     initStringInfo(&task->response);
+    MemoryContextSwitchTo(oldMemoryContext);
     appendStringInfo(&task->response, "elevel::int4\t%i", edata->elevel);
     if (edata->output_to_server) appendStringInfoString(&task->response, "\noutput_to_server::bool\ttrue");
     if (edata->output_to_client) appendStringInfoString(&task->response, "\noutput_to_client::bool\ttrue");
@@ -252,7 +253,6 @@ static void task_error(Task *task) {
     if (edata->internalquery) appendStringInfo(&task->response, "\ninternalquery::text\t%s", edata->internalquery);
     if (edata->saved_errno) appendStringInfo(&task->response, "\nsaved_errno::int4\t%i", edata->saved_errno);
     FreeErrorData(edata);
-//    MemoryContextSwitchTo(oldMemoryContext);
     HOLD_INTERRUPTS();
     disable_all_timeouts(false);
     QueryCancelPending = false;
