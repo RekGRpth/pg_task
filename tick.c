@@ -139,8 +139,6 @@ static void tick_fix(Work *work) {
 
 static void task_free(Task *task) {
     pfree(task->group);
-//    pfree(task->keywords);
-//    pfree(task->values);
     pfree(task);
 }
 
@@ -157,7 +155,6 @@ static void tick_finish(Task *task) {
 }
 
 static void task_remote(Work *work, int64 id, const char *group, int max, const char **keywords, const char **values) {
-//    MemoryContext oldMemoryContext;
     Task *task;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
     if (!(task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task)))) E("!MemoryContextAllocZero");
@@ -165,14 +162,10 @@ static void task_remote(Work *work, int64 id, const char *group, int max, const 
     task->id = id;
     task->group = MemoryContextStrdup(TopMemoryContext, group);
     task->max = max;
-//    task->keywords = keywords;
-//    task->values = values;
     task_work(task, false);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
-//    oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     task->conn = PQconnectStartParams(keywords, values, false);
-//    MemoryContextSwitchTo(oldMemoryContext);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     if (PQstatus(task->conn) == CONNECTION_BAD || (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) || (task->fd = PQsocket(task->conn)) < 0) {
         tick_finish(task);
@@ -183,7 +176,6 @@ static void task_remote(Work *work, int64 id, const char *group, int max, const 
             initStringInfo(&buf);
             MemoryContextSwitchTo(oldMemoryContext);
             appendStringInfo(&buf, "SET statement_timeout = %d;\n%s", task->timeout, task->request);
-    //        appendStringInfo(&buf, "SELECT set_config('statement_timeout', %d::text, false);\n%s", task->timeout, task->request);
             pfree(task->request);
             task->request = buf.data;
         }
@@ -258,12 +250,9 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
             if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
             if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) { application_name = opt->val; continue; }
             arg++;
-//            L("%d: %s = %s", arg, opt->keyword, opt->val ? opt->val : "(null)");
         }
         if (!(keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords)))) E("!MemoryContextAlloc");
         if (!(values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values)))) E("!MemoryContextAlloc");
-//        if (!(keywords = palloc(arg * sizeof(**keywords)))) E("!palloc");
-//        if (!(values = palloc(arg * sizeof(**values)))) E("!palloc");
         initStringInfo(&buf);
         appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, application_name);
         arg = 0;
@@ -274,7 +263,6 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
             if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
             if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) continue;
             arg++;
-//            L("%d: %s = %s", arg, opt->keyword, opt->val ? opt->val : "(null)");
             keywords[arg] = opt->keyword;
             values[arg] = opt->val;
         }
@@ -484,7 +472,7 @@ static void tick_query(Task *task) {
     pfree(task->request);
     task->request = NULL;
     task->events = WL_SOCKET_WRITEABLE;
-    task->state = RESULT; // add timeout!
+    task->state = RESULT;
 }
 
 static void tick_result(Task *task) {
