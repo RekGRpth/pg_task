@@ -75,29 +75,24 @@ typedef struct Work {
 typedef struct Task {
     bool delete;
     bool live;
-//    bool remote;
     bool repeat;
     bool success;
     char *group;
     char *request;
     int64 id;
     int count;
+    int events;
+    int fd;
     int max;
     int pid;
     int timeout;
+    PGconn *conn;
+    queue_t queue;
+    STATE state;
     StringInfoData response;
     TimestampTz start;
     Work *work;
 } Task;
-
-typedef struct Remote {
-    int events;
-    int fd;
-    PGconn *conn;
-    queue_t queue;
-    STATE state;
-    Task task;
-} Remote;
 
 bool pg_advisory_unlock_int4_my(int32 key1, int32 key2);
 bool pg_advisory_unlock_int8_my(int64 key);
