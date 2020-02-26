@@ -357,7 +357,7 @@ bool tick_init_work(Work *work) {
     pfree(buf.data);
     if (!pg_try_advisory_lock_int8_my(work->oid)) { W("lock oid = %d", work->oid); return true; }
     tick_fix(work);
-    if (!work->context) work->context = AllocSetContextCreate(TopMemoryContext, "myMemoryContext", ALLOCSET_DEFAULT_SIZES);
+    if (!work->context) work->context = AllocSetContextCreate(TopMemoryContext, "workMemoryContext", ALLOCSET_DEFAULT_SIZES);
     queue_init(&work->queue);
     return false;
 }

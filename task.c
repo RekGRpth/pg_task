@@ -339,7 +339,7 @@ static void task_init_work(Work *work) {
     appendStringInfo(&buf, "%d", work->oid);
     SetConfigOptionMy("pg_task.oid", buf.data);
     pfree(buf.data);
-    if (!work->context) work->context = AllocSetContextCreate(TopMemoryContext, "myMemoryContext", ALLOCSET_DEFAULT_SIZES);
+    if (!work->context) work->context = AllocSetContextCreate(TopMemoryContext, "workMemoryContext", ALLOCSET_DEFAULT_SIZES);
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     if (work->table != table_quote) pfree((void *)table_quote);
 }
