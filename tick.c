@@ -142,10 +142,10 @@ static void task_free(Task *task) {
     pfree(task);
 }
 
-static void tick_finish(Task *task) {
+static void tick_finish(Task *task, const char *msg) {
+    W(PQerrorMessage(task->conn) && strlen(PQerrorMessage(task->conn)) ? PQerrorMessage(task->conn) : msg);
     queue_remove(&task->queue);
     PQfinish(task->conn);
-    W(PQerrorMessage(task->conn));
     initStringInfo(&task->response);
     appendStringInfoString(&task->response, PQerrorMessage(task->conn));
     task_done(task);
@@ -165,14 +165,13 @@ static void task_remote(Work *work, int64 id, const char *group, int max, const 
     task_work(task, false);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
-    task->conn = PQconnectStartParams(keywords, values, false);
-    if (PQstatus(task->conn) == CONNECTION_BAD || (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) || (task->fd = PQsocket(task->conn)) < 0) {
-        tick_finish(task);
-    } else {
-        task->events = WL_SOCKET_WRITEABLE;
-        task->state = CONNECT;
-        queue_insert_tail(&work->queue, &task->queue);
-    }
+    if (!(task->conn = PQconnectStartParams(keywords, values, false))) { tick_finish(task, "!PQconnectStartParams"); return; }
+    if (PQstatus(task->conn) == CONNECTION_BAD) { tick_finish(task, "PQstatus == CONNECTION_BAD"); return; }
+    if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) { tick_finish(task, "PQsetnonblocking == -1"); return; }
+    if ((task->fd = PQsocket(task->conn)) < 0) { tick_finish(task, "PQsocket < 0"); return; }
+    task->events = WL_SOCKET_WRITEABLE;
+    task->state = CONNECT;
+    queue_insert_tail(&work->queue, &task->queue);
 }
 
 static void task_worker(Work *work, int64 id, const char *group, int max) {
@@ -455,7 +454,7 @@ static void tick_idle(Task *task) {
 }
 
 static void tick_query(Task *task) {
-    if (!PQconsumeInput(task->conn)) { tick_finish(task); return; }
+    if (!PQconsumeInput(task->conn)) { tick_finish(task, "!PQconsumeInput"); return; }
     if (PQisBusy(task->conn)) { W("PQisBusy"); return; }
     if (task->timeout) {
         StringInfoData buf;
@@ -464,7 +463,7 @@ static void tick_query(Task *task) {
         pfree(task->request);
         task->request = buf.data;
     }
-    if (!PQsendQuery(task->conn, task->request)) { tick_finish(task); return; }
+    if (!PQsendQuery(task->conn, task->request)) { tick_finish(task, "!PQsendQuery"); return; }
     pfree(task->request);
     task->request = NULL;
     task->events = WL_SOCKET_WRITEABLE;
@@ -472,7 +471,7 @@ static void tick_query(Task *task) {
 }
 
 static void tick_result(Task *task) {
-    if (!PQconsumeInput(task->conn)) { tick_finish(task); return; }
+    if (!PQconsumeInput(task->conn)) { tick_finish(task, "!PQconsumeInput"); return; }
     for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) {
         if (PQresultStatus(result) == PGRES_FATAL_ERROR) tick_error(task, result); else {
             L(PQcmdStatus(result));
@@ -502,7 +501,7 @@ static void tick_connect(Task *task) {
     switch (PQstatus(task->conn)) {
         case CONNECTION_AUTH_OK: L("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: L("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
-        case CONNECTION_BAD: E("PQstatus == CONNECTION_BAD"); tick_finish(task); return;
+        case CONNECTION_BAD: L("PQstatus == CONNECTION_BAD"); tick_finish(task, "PQstatus == CONNECTION_BAD"); return;
         case CONNECTION_CHECK_WRITABLE: L("PQstatus == CONNECTION_CHECK_WRITABLE"); break;
         case CONNECTION_CONSUME: L("PQstatus == CONNECTION_CONSUME"); break;
         case CONNECTION_GSS_STARTUP: L("PQstatus == CONNECTION_GSS_STARTUP"); break;
@@ -515,12 +514,12 @@ static void tick_connect(Task *task) {
     }
     switch (PQconnectPoll(task->conn)) {
         case PGRES_POLLING_ACTIVE: L("PQconnectPoll == PGRES_POLLING_ACTIVE"); break;
-        case PGRES_POLLING_FAILED: E("PQconnectPoll == PGRES_POLLING_FAILED"); tick_finish(task); return;
+        case PGRES_POLLING_FAILED: L("PQconnectPoll == PGRES_POLLING_FAILED"); tick_finish(task, "PQconnectPoll == PGRES_POLLING_FAILED"); return;
         case PGRES_POLLING_OK: L("PQconnectPoll == PGRES_POLLING_OK"); task->state = QUERY; task->pid = PQbackendPID(task->conn); tick_query(task); return;
         case PGRES_POLLING_READING: L("PQconnectPoll == PGRES_POLLING_READING"); task->events = WL_SOCKET_READABLE; break;
         case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); task->events = WL_SOCKET_WRITEABLE; break;
     }
-    if ((task->fd = PQsocket(task->conn)) < 0) tick_finish(task);
+    if ((task->fd = PQsocket(task->conn)) < 0) tick_finish(task, "PQsocket < 0");
 }
 
 static void tick_socket(Task *task) {
