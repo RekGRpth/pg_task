@@ -257,18 +257,15 @@ void tick_loop(Work *work) {
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_processed; row++) {
-//        MemoryContext oldMemoryContext = MemoryContextSwitchTo(work->context);
         bool id_isnull, max_isnull;
         Task *task;
-        if (!(task = MemoryContextAllocZero(work->context, sizeof(task)))) E("!MemoryContextAllocZero");
+        if (!(task = MemoryContextAllocZero(TopMemoryContext, sizeof(task)))) E("!MemoryContextAllocZero");
         task->work = work;
         task->id = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull));
         task->group = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "group"));
         task->max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
-        L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid);
         if (id_isnull) E("id_isnull");
         if (max_isnull) E("max_isnull");
-//        MemoryContextSwitchTo(oldMemoryContext);
         tick_work(task);
     }
     SPI_finish_my(true);
