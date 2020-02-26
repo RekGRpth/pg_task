@@ -179,9 +179,9 @@ static void task_remote(Work *work, int64 id, const char *group, int max, const 
     } else {
         if (task->timeout) {
             StringInfoData buf;
-    //        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+            MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
             initStringInfo(&buf);
-    //        MemoryContextSwitchTo(oldMemoryContext);
+            MemoryContextSwitchTo(oldMemoryContext);
             appendStringInfo(&buf, "SET statement_timeout = %d;\n%s", task->timeout, task->request);
     //        appendStringInfo(&buf, "SELECT set_config('statement_timeout', %d::text, false);\n%s", task->timeout, task->request);
             pfree(task->request);
