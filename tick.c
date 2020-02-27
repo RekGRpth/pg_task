@@ -206,10 +206,9 @@ static void tick_task(const Work *work, const int64 id, const char *group, const
     p = strncpy(p, work->data, data_len) + data_len + 1;
     p = strncpy(p, work->schema, schema_len) + schema_len + 1;
     p = strncpy(p, work->table, table_len) + table_len + 1;
-    *(typeof(work->oid + 0) *)p = work->oid;
-    p += oid_len;
+    p = strncpy(p, (const char *)&work->oid, oid_len) + oid_len;
     p = strncpy(p, group, group_len) + group_len + 1;
-    *(typeof(max + 0) *)p = max;
+    p = strncpy(p, (const char *)&max, max_len) + max_len;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
