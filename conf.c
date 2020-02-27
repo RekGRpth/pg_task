@@ -1,6 +1,5 @@
 #include "include.h"
 
-extern char *pg_task_task;
 static volatile sig_atomic_t sighup = false;
 static volatile sig_atomic_t sigterm = false;
 
@@ -147,11 +146,11 @@ static bool conf_check(Work *work) {
         L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %i, usename_isnull = %s, datname_isnull = %s", row, user, data, schema ? schema : "(null)", table, period, usename_isnull ? "true" : "false", datname_isnull ? "true" : "false");
         if (usename_isnull) conf_user(user);
         if (datname_isnull) conf_data(user, data);
-        if (!pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !schema && !pg_strcasecmp(table, pg_task_task)) {
+        if (!pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !schema && !pg_strncasecmp(table, "task", sizeof("task") - 1)) {
             work->user = "postgres";
             work->data = "postgres";
             work->schema = NULL;
-            work->table = pg_task_task;
+            work->table = "task";
             work->period = period;
             exit = tick_init_work(work);
         } else {

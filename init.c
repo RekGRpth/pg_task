@@ -2,7 +2,7 @@
 
 PG_MODULE_MAGIC;
 
-char *pg_task_task;
+static char *pg_task_task;
 static char *pg_task_config;
 static int pg_task_tick;
 
