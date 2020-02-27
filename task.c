@@ -304,12 +304,14 @@ static void task_sigterm(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
-static void task_init(Task *task) {
+static void task_init(Work *work, Task *task) {
     StringInfoData buf;
     const char *schema_quote;
     const char *table_quote;
-    Work *work = task->work;
     char *p = MyBgworkerEntry->bgw_extra;
+    MemSet(work, 0, sizeof(*work));
+    MemSet(task, 0, sizeof(*task));
+    task->work = work;
     work->user = p;
     p += strlen(work->user) + 1;
     work->data = p;
@@ -367,12 +369,9 @@ static void task_latch(void) {
 }
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
-    Task task;
     Work work;
-    MemSet(&task, 0, sizeof(task));
-    MemSet(&work, 0, sizeof(work));
-    task.work = &work;
-    task_init(&task);
+    Task task;
+    task_init(&work, &task);
     while (!sigterm) {
         int count = 2;
         WaitEvent *events;
