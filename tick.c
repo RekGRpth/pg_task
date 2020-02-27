@@ -174,9 +174,9 @@ static void tick_remote(Work *work, int64 id, const char *group, int max, const 
 
 static void tick_task(const Work *work, const int64 id, const char *group, const int max) {
     StringInfoData buf;
-    char *p;
     int user_len = strlen(work->user), data_len = strlen(work->data), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), group_len = strlen(group), max_len = sizeof(max), oid_len = sizeof(work->oid);
     BackgroundWorker worker;
+    char *p = worker.bgw_extra;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -202,7 +202,6 @@ static void tick_task(const Work *work, const int64 id, const char *group, const
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
     if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + group_len + 1 + max_len + oid_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + group_len + 1 + max_len + oid_len);
-    p = worker.bgw_extra;
     memcpy(p, work->user, user_len);
     p += user_len + 1;
     memcpy(p, work->data, data_len);
