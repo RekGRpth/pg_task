@@ -198,14 +198,15 @@ static bool conf_reload(Work *work) {
 }
 
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
-    Work work;
-    MemSet(&work, 0, sizeof(work));
-    conf_init(&work);
-    sigterm = conf_check(&work);
+    Work *work;
+    if (!(work = palloc0(sizeof(*work)))) E("!palloc0");
+    conf_init(work);
+    sigterm = conf_check(work);
     while (!sigterm) {
-        int rc = WaitLatch(MyLatch, work.events, work.timeout, PG_WAIT_EXTENSION);
+        int rc = WaitLatch(MyLatch, work->events, work->timeout, PG_WAIT_EXTENSION);
         if (rc & WL_LATCH_SET) conf_latch();
-        if (sighup) sigterm = conf_reload(&work);
-        if (rc & WL_TIMEOUT) tick_timeout(&work);
+        if (sighup) sigterm = conf_reload(work);
+        if (rc & WL_TIMEOUT) tick_timeout(work);
     }
+    pfree(work);
 }
