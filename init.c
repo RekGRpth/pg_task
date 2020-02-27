@@ -30,19 +30,19 @@ static void conf_worker(void) {
     initStringInfo(&buf);
     appendStringInfoString(&buf, "pg_task");
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
-    strncpy(worker.bgw_library_name, buf.data, buf.len);
+    memcpy(worker.bgw_library_name, buf.data, buf.len);
     resetStringInfo(&buf);
     appendStringInfoString(&buf, "conf_worker");
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
-    strncpy(worker.bgw_function_name, buf.data, buf.len);
+    memcpy(worker.bgw_function_name, buf.data, buf.len);
     resetStringInfo(&buf);
     appendStringInfoString(&buf, "pg_task conf");
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
-    strncpy(worker.bgw_type, buf.data, buf.len);
+    memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
     appendStringInfoString(&buf, "postgres postgres pg_task conf");
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
-    strncpy(worker.bgw_name, buf.data, buf.len);
+    memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
     RegisterBackgroundWorker(&worker);
 }
