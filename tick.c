@@ -263,7 +263,7 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
     }
 }
 
-void tick_loop(Work *work) {
+void tick_timeout(Work *work) {
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     if (!command) {
@@ -392,7 +392,7 @@ bool tick_init_work(Work *work) {
     return false;
 }
 
-static void tick_reset(void) {
+static void tick_latch(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
 }
@@ -553,11 +553,11 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, task->fd, NULL, task);
         }
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
-        if (!(count = WaitEventSetWait(set, work.period, events, count, PG_WAIT_EXTENSION))) tick_loop(&work); else for (int i = 0; i < count; i++) {
+        if (!(count = WaitEventSetWait(set, work.period, events, count, PG_WAIT_EXTENSION))) tick_timeout(&work); else for (int i = 0; i < count; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) tick_reset();
+            if (event->events & WL_LATCH_SET) tick_latch();
             if (sighup) tick_reload();
-            if (event->events & WL_TIMEOUT) tick_loop(&work);
+            if (event->events & WL_TIMEOUT) tick_timeout(&work);
             if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
         }
         FreeWaitEventSet(set);

@@ -112,7 +112,7 @@ void task_delete(Task *task);
 void task_done(Task *task);
 void task_repeat(Task *task);
 void task_work(Task *task);
-void tick_loop(Work *work);
+void tick_timeout(Work *work);
 
 #define Q(name) #name
 #define S(macro) Q(macro)

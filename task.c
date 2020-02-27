@@ -280,7 +280,7 @@ static void task_error(Task *task) {
     pgstat_report_activity(STATE_IDLE, NULL);
 }
 
-static bool task_loop(Task *task) {
+static bool task_timeout(Task *task) {
     task_work(task);
     L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     PG_TRY();
@@ -365,7 +365,7 @@ static void task_init_task(Task *task) {
     SetConfigOptionMy("pg_task.group", task->group);
 }
 
-static void task_reset(void) {
+static void task_latch(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
 }
@@ -380,9 +380,20 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     task_init_work(&work);
     task_init_task(&task);
     while (!sigterm) {
-        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, 0, PG_WAIT_EXTENSION);
+        int count = 2;
+        WaitEvent *events;
+        WaitEventSet *set;
+        if (!(events = palloc0(count * sizeof(*events)))) E("!palloc0");
+        if (!(set = CreateWaitEventSet(CurrentMemoryContext, count))) E("!CreateWaitEventSet");
+        AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
+        AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
-        if (rc & WL_LATCH_SET) task_reset();
-        if (rc & WL_TIMEOUT) sigterm = task_loop(&task);
+        if (!(count = WaitEventSetWait(set, 0L, events, count, PG_WAIT_EXTENSION))) task_timeout(&task); else for (int i = 0; i < count; i++) {
+            WaitEvent *event = &events[i];
+            if (event->events & WL_LATCH_SET) task_latch();
+            if (event->events & WL_TIMEOUT) task_timeout(&task);
+        }
+        FreeWaitEventSet(set);
+        pfree(events);
     }
 }

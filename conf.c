@@ -186,7 +186,7 @@ static void conf_init(Work *work) {
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
 }
 
-static void conf_reset(void) {
+static void conf_latch(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
 }
@@ -204,8 +204,8 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     sigterm = conf_check(&work);
     while (!sigterm) {
         int rc = WaitLatch(MyLatch, work.events, work.timeout, PG_WAIT_EXTENSION);
-        if (rc & WL_LATCH_SET) conf_reset();
+        if (rc & WL_LATCH_SET) conf_latch();
         if (sighup) sigterm = conf_reload(&work);
-        if (rc & WL_TIMEOUT) tick_loop(&work);
+        if (rc & WL_TIMEOUT) tick_timeout(&work);
     }
 }
