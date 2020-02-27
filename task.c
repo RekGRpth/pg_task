@@ -220,10 +220,7 @@ static void task_success(Task *task) {
     SetCurrentStatementStartTimestamp();
     exec_simple_query(task->request, task->timeout, &task->response);
     pfree(task->request);
-    if (IsTransactionState()) {
-        task->request = "COMMIT";
-        exec_simple_query(task->request, task->timeout, &task->response);
-    }
+    if (IsTransactionState()) exec_simple_query("COMMIT", task->timeout, &task->response);
     if (IsTransactionState()) E("IsTransactionState");
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
