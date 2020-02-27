@@ -538,31 +538,32 @@ static void tick_socket(Task *task) {
 }
 
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
-    Work work;
-    MemSet(&work, 0, sizeof(work));
-    tick_init_conf(&work);
-    sigterm = tick_init_work(&work);
+    Work *work;
+    if (!(work = palloc0(sizeof(*work)))) E("!palloc0");
+    tick_init_conf(work);
+    sigterm = tick_init_work(work);
     while (!sigterm) {
-        int count = queue_count(&work.queue) + 2;
+        int count = queue_count(&work->queue) + 2;
         WaitEvent *events;
         WaitEventSet *set;
         if (!(events = palloc0(count * sizeof(*events)))) E("!palloc0");
         if (!(set = CreateWaitEventSet(CurrentMemoryContext, count))) E("!CreateWaitEventSet");
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
-        queue_each(&work.queue, queue) {
+        queue_each(&work->queue, queue) {
             Task *task = queue_data(queue, Task, queue);
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, task->fd, NULL, task);
         }
         if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
-        if (!(count = WaitEventSetWait(set, work.period, events, count, PG_WAIT_EXTENSION))) tick_timeout(&work); else for (int i = 0; i < count; i++) {
+        if (!(count = WaitEventSetWait(set, work->period, events, count, PG_WAIT_EXTENSION))) tick_timeout(work); else for (int i = 0; i < count; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) tick_latch();
             if (sighup) sigterm = tick_reload();
-            if (event->events & WL_TIMEOUT) tick_timeout(&work);
+            if (event->events & WL_TIMEOUT) tick_timeout(work);
             if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
         }
         FreeWaitEventSet(set);
         pfree(events);
     }
+    pfree(work);
 }
