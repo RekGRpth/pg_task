@@ -304,16 +304,20 @@ static void task_sigterm(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
-static void task_init_conf(Work *work) {
-    work->p = MyBgworkerEntry->bgw_extra;
-    work->user = work->p;
-    work->p += strlen(work->user) + 1;
-    work->data = work->p;
-    work->p += strlen(work->data) + 1;
-    work->schema = work->p;
-    work->p += strlen(work->schema) + 1;
-    work->table = work->p;
-    work->p += strlen(work->table) + 1;
+static void task_init(Task *task) {
+    StringInfoData buf;
+    const char *schema_quote;
+    const char *table_quote;
+    Work *work = task->work;
+    char *p = MyBgworkerEntry->bgw_extra;
+    work->user = p;
+    p += strlen(work->user) + 1;
+    work->data = p;
+    p += strlen(work->data) + 1;
+    work->schema = p;
+    p += strlen(work->schema) + 1;
+    work->table = p;
+    p += strlen(work->table) + 1;
     if (work->table == work->schema + 1) work->schema = NULL;
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
@@ -326,18 +330,14 @@ static void task_init_conf(Work *work) {
     SetConfigOptionMy("pg_task.user", work->user);
     if (work->schema) SetConfigOptionMy("pg_task.schema", work->schema);
     SetConfigOptionMy("pg_task.table", work->table);
-}
-
-static void task_init_work(Work *work) {
-    StringInfoData buf;
-    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
-    const char *table_quote = quote_identifier(work->table);
+    schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
+    table_quote = quote_identifier(work->table);
     initStringInfo(&buf);
     if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, table_quote);
     work->schema_table = buf.data;
-    work->oid = *(typeof(work->oid) *)work->p;
-    work->p += sizeof(work->oid);
+    work->oid = *(typeof(work->oid) *)p;
+    p += sizeof(work->oid);
     L("oid = %d", work->oid);
     initStringInfo(&buf);
     appendStringInfo(&buf, "%d", work->oid);
@@ -345,18 +345,14 @@ static void task_init_work(Work *work) {
     pfree(buf.data);
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     if (work->table != table_quote) pfree((void *)table_quote);
-}
-
-static void task_init_task(Task *task) {
-    Work *work = task->work;
     task->pid = MyProcPid;
     task->id = MyBgworkerEntry->bgw_main_arg;
     task->start = GetCurrentTimestamp();
     task->count = 0;
-    task->group = work->p;
-    work->p += strlen(task->group) + 1;
-    task->max = *(typeof(task->max) *)work->p;
-    work->p += sizeof(task->max);
+    task->group = p;
+    p += strlen(task->group) + 1;
+    task->max = *(typeof(task->max) *)p;
+    p += sizeof(task->max);
     L("id = %lu, group = %s, max = %u", task->id, task->group, task->max);
     pqsignal(SIGTERM, task_sigterm);
     BackgroundWorkerUnblockSignals();
@@ -376,9 +372,7 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     MemSet(&task, 0, sizeof(task));
     MemSet(&work, 0, sizeof(work));
     task.work = &work;
-    task_init_conf(&work);
-    task_init_work(&work);
-    task_init_task(&task);
+    task_init(&task);
     while (!sigterm) {
         int count = 2;
         WaitEvent *events;
