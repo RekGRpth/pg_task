@@ -267,7 +267,6 @@ static void tick_work(Work *work, const int64 id, const char *group, const int m
 void tick_timeout(Work *work) {
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
-    L("user = %s, data = %s, schema = %s, table = %s, period = %d, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period, work->schema_table);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -371,7 +370,9 @@ bool tick_init_work(Work *work) {
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     const char *table_quote = quote_identifier(work->table);
     StringInfoData buf;
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     initStringInfo(&buf);
+    MemoryContextSwitchTo(oldMemoryContext);
     if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, table_quote);
     if (work->schema_table) pfree(work->schema_table);
@@ -393,7 +394,6 @@ bool tick_init_work(Work *work) {
     pfree(buf.data);
     tick_fix(work);
     queue_init(&work->queue);
-    L("user = %s, data = %s, schema = %s, table = %s, period = %d, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period, work->schema_table);
     return false;
 }
 
