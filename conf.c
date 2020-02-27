@@ -57,12 +57,12 @@ static void conf_data(const char *user, const char *data) {
     pfree(buf.data);
 }
 
-static void conf_tick(const char *user, const char *data, const char *schema, const char *table, const int period) {
+static void conf_tick(const char *user, const char *data, const char *schema, const char *table, const int timeout) {
     StringInfoData buf;
-    int user_len = strlen(user), data_len = strlen(data), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), period_len = sizeof(period);
+    int user_len = strlen(user), data_len = strlen(data), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), timeout_len = sizeof(timeout);
     BackgroundWorker worker;
     char *p = worker.bgw_extra;
-    L("user = %s, data = %s, schema = %s, table = %s, period = %i", user, data, schema ? schema : "(null)", table, period);
+    L("user = %s, data = %s, schema = %s, table = %s, timeout = %i", user, data, schema ? schema : "(null)", table, timeout);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = MyProcPid;
@@ -77,7 +77,7 @@ static void conf_tick(const char *user, const char *data, const char *schema, co
     if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_function_name, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "pg_task %s%s%s %i", schema ? schema : "", schema ? " " : "", table, period);
+    appendStringInfo(&buf, "pg_task %s%s%s %i", schema ? schema : "", schema ? " " : "", table, timeout);
     if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
@@ -85,12 +85,12 @@ static void conf_tick(const char *user, const char *data, const char *schema, co
     if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
-    if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + period_len > BGW_EXTRALEN) E("%i > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + period_len);
+    if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + timeout_len > BGW_EXTRALEN) E("%i > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + timeout_len);
     p = (char *)memcpy(p, user, user_len) + user_len + 1;
     p = (char *)memcpy(p, data, data_len) + data_len + 1;
     p = (char *)memcpy(p, schema, schema_len) + schema_len + 1;
     p = (char *)memcpy(p, table, table_len) + table_len + 1;
-    p = (char *)memcpy(p, &period, period_len) + period_len;
+    p = (char *)memcpy(p, &timeout, timeout_len) + timeout_len;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
@@ -104,31 +104,31 @@ static void conf_check(Work *work) {
         "            datname,\n"
         "            schema,\n"
         "            COALESCE(\"table\", current_setting('pg_task.task', false)) AS table,\n"
-        "            COALESCE(period, current_setting('pg_task.tick', false)::int4) AS period\n"
-        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.config', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, period int4)\n"
+        "            COALESCE(timeout, current_setting('pg_task.tick', false)::int4) AS timeout\n"
+        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.config', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, timeout int4)\n"
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
         ") SELECT DISTINCT s.* FROM s\n"
-        "LEFT JOIN   pg_stat_activity AS a ON a.usename = \"user\" AND a.datname = data AND application_name = concat_ws(' ', 'pg_task', schema, \"table\", period::text) AND pid != pg_backend_pid()\n"
+        "LEFT JOIN   pg_stat_activity AS a ON a.usename = \"user\" AND a.datname = data AND application_name = concat_ws(' ', 'pg_task', schema, \"table\", timeout::text) AND pid != pg_backend_pid()\n"
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
         "WHERE       a.pid IS NULL";
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
     for (uint64 row = 0; row < SPI_processed; row++) {
-        bool user_isnull, data_isnull, schema_isnull, table_isnull, period_isnull, usename_isnull, datname_isnull;
+        bool user_isnull, data_isnull, schema_isnull, table_isnull, timeout_isnull, usename_isnull, datname_isnull;
         char *user = TextDatumGetCStringMy(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"), &user_isnull));
         char *data = TextDatumGetCStringMy(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"), &data_isnull));
         char *schema = TextDatumGetCStringMy(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"), &schema_isnull));
         char *table = TextDatumGetCStringMy(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"), &table_isnull));
-        int period = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
+        int timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
         if (user_isnull) E("user_isnull");
         if (data_isnull) E("data_isnull");
         if (table_isnull) E("table_isnull");
-        if (period_isnull) E("period_isnull");
+        if (timeout_isnull) E("timeout_isnull");
         SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull);
         SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull);
-        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %i, usename_isnull = %s, datname_isnull = %s", row, user, data, schema ? schema : "(null)", table, period, usename_isnull ? "true" : "false", datname_isnull ? "true" : "false");
+        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %i, usename_isnull = %s, datname_isnull = %s", row, user, data, schema ? schema : "(null)", table, timeout, usename_isnull ? "true" : "false", datname_isnull ? "true" : "false");
         if (usename_isnull) conf_user(user);
         if (datname_isnull) conf_data(user, data);
         if (!pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !schema && !pg_strncasecmp(table, "task", sizeof("task") - 1)) {
@@ -136,11 +136,11 @@ static void conf_check(Work *work) {
             work->data = "postgres";
             work->schema = NULL;
             work->table = "task";
-            work->period = period;
+            work->timeout = timeout;
             tick_init_work(work);
         } else {
-            work->period = -1;
-            conf_tick(user, data, schema, table, period);
+            work->timeout = -1;
+            conf_tick(user, data, schema, table, timeout);
         }
         pfree(user);
         pfree(data);
@@ -161,7 +161,7 @@ static void conf_init(Work *work) {
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
-    work->period = -1;
+    work->timeout = -1;
     queue_init(&work->queue);
 }
 
@@ -192,8 +192,8 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
             Task *task = queue_data(queue, Task, queue);
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, task->fd, NULL, task);
         }
-        if (!(count = WaitEventSetWait(set, work.period, events, count, PG_WAIT_EXTENSION))) {
-            if (work.period >= 0) tick_timeout(&work);
+        if (!(count = WaitEventSetWait(set, work.timeout, events, count, PG_WAIT_EXTENSION))) {
+            if (work.timeout >= 0) tick_timeout(&work);
         } else {
             for (int i = 0; i < count; i++) {
                 WaitEvent *event = &events[i];
@@ -201,7 +201,7 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
                 if (sighup) conf_reload(&work);
                 if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
             }
-            if (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.period) && work.period >= 0) tick_timeout(&work);
+            if (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout) && work.timeout >= 0) tick_timeout(&work);
         }
         FreeWaitEventSet(set);
         pfree(events);

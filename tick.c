@@ -304,11 +304,11 @@ static bool tick_check(void) {
         "            COALESCE(datname, data)::text AS data,\n"
         "            schema,\n"
         "            COALESCE(\"table\", current_setting('pg_task.task', false)) AS table,\n"
-        "            COALESCE(period, current_setting('pg_task.tick', false)::int4) AS period\n"
-        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.config', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, period int4)\n"
+        "            COALESCE(timeout, current_setting('pg_task.tick', false)::int4) AS timeout\n"
+        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.config', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, timeout int4)\n"
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND period = current_setting('pg_task.period', false)::int4";
+        ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::int4";
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
@@ -327,14 +327,14 @@ static void tick_init_conf(Work *work) {
     p += strlen(work->schema) + 1;
     work->table = p;
     p += strlen(work->table) + 1;
-    work->period = *(typeof(work->period) *)p;
+    work->timeout = *(typeof(work->timeout) *)p;
     if (work->table == work->schema + 1) work->schema = NULL;
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
-    L("user = %s, data = %s, schema = %s, table = %s, period = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period);
+    L("user = %s, data = %s, schema = %s, table = %s, timeout = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->timeout);
     pqsignal(SIGHUP, sighup_my);
     pqsignal(SIGTERM, sigterm_my);
     BackgroundWorkerUnblockSignals();
@@ -355,7 +355,7 @@ void tick_init_work(Work *work) {
     work->schema_table = buf.data;
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     if (work->table != table_quote) pfree((void *)table_quote);
-    L("user = %s, data = %s, schema = %s, table = %s, period = %i, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period, work->schema_table);
+    L("user = %s, data = %s, schema = %s, table = %s, timeout = %i, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->timeout, work->schema_table);
     if (work->schema) tick_schema(work);
     tick_type(work);
     tick_table(work);
@@ -364,8 +364,8 @@ void tick_init_work(Work *work) {
     SetConfigOptionMy("pg_task.data", work->data);
     SetConfigOptionMy("pg_task.user", work->user);
     initStringInfo(&buf);
-    appendStringInfo(&buf, "%i", work->period);
-    SetConfigOptionMy("pg_task.period", buf.data);
+    appendStringInfo(&buf, "%i", work->timeout);
+    SetConfigOptionMy("pg_task.timeout", buf.data);
     pfree(buf.data);
     tick_fix(work);
     queue_init(&work->queue);
@@ -530,14 +530,14 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
             Task *task = queue_data(queue, Task, queue);
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, task->fd, NULL, task);
         }
-        if (!(count = WaitEventSetWait(set, work.period, events, count, PG_WAIT_EXTENSION))) tick_timeout(&work); else {
+        if (!(count = WaitEventSetWait(set, work.timeout, events, count, PG_WAIT_EXTENSION))) tick_timeout(&work); else {
             for (int i = 0; i < count; i++) {
                 WaitEvent *event = &events[i];
                 if (event->events & WL_LATCH_SET) tick_latch();
                 if (sighup) sigterm = tick_reload();
                 if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
             }
-            if (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.period)) tick_timeout(&work);
+            if (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout)) tick_timeout(&work);
         }
         FreeWaitEventSet(set);
         pfree(events);

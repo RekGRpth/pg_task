@@ -59,7 +59,7 @@ typedef struct Work {
     char *schema_table;
     char *table;
     char *user;
-    int period;
+    int timeout;
     Oid oid;
     queue_t queue;
 } Work;
