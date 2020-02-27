@@ -29,13 +29,6 @@ char *TextDatumGetCStringMy(Datum datum) {
     return datum ? TextDatumGetCString(datum) : NULL;
 }
 
-char *SPI_getvalue_my(HeapTuple tuple, TupleDesc tupdesc, int fnumber) {
-    bool isnull;
-    Datum datum = SPI_getbinval(tuple, tupdesc, fnumber, &isnull);
-    if (isnull) return NULL;
-    return TextDatumGetCString(datum);
-}
-
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     int rc;
     SPIPlanPtr plan;

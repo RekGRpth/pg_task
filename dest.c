@@ -7,7 +7,7 @@ static Oid SPI_gettypeid_my(TupleDesc tupdesc, int fnumber) {
     return (fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1) : SystemAttributeDefinition(fnumber))->atttypid;
 }
 
-static char *SPI_getvalue_my2(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
+static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
     Oid oid = SPI_gettypeid_my(tupdesc, fnumber);
     bool isnull;
     Oid foutoid;
@@ -33,7 +33,7 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     }
     if (task->response.len) appendStringInfoString(&task->response, "\n");
     for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
-        char *value = SPI_getvalue_my2(slot, slot->tts_tupleDescriptor, col);
+        char *value = SPI_getvalue_my(slot, slot->tts_tupleDescriptor, col);
         if (col > 1) appendStringInfoString(&task->response, "\t");
         appendStringInfoString(&task->response, value ? value : "(null)");
         if (value) pfree(value);
