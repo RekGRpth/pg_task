@@ -523,15 +523,14 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
             Task *task = queue_data(queue, Task, queue);
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, task->fd, NULL, task);
         }
-        if (!(count = WaitEventSetWait(set, work.timeout, events, count, PG_WAIT_EXTENSION))) tick_timeout(&work); else {
-            for (int i = 0; i < count; i++) {
-                WaitEvent *event = &events[i];
-                if (event->events & WL_LATCH_SET) tick_latch();
-                if (sighup) sigterm = tick_reload();
-                if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
-            }
-            if (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout)) tick_timeout(&work);
+        count = WaitEventSetWait(set, work.timeout, events, count, PG_WAIT_EXTENSION);
+        for (int i = 0; i < count; i++) {
+            WaitEvent *event = &events[i];
+            if (event->events & WL_LATCH_SET) tick_latch();
+            if (sighup) sigterm = tick_reload();
+            if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
         }
+        if (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout)) tick_timeout(&work);
         FreeWaitEventSet(set);
         pfree(events);
         start = stop;

@@ -192,17 +192,14 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
             Task *task = queue_data(queue, Task, queue);
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, task->fd, NULL, task);
         }
-        if (!(count = WaitEventSetWait(set, work.timeout, events, count, PG_WAIT_EXTENSION))) {
-            if (work.timeout >= 0) tick_timeout(&work);
-        } else {
-            for (int i = 0; i < count; i++) {
-                WaitEvent *event = &events[i];
-                if (event->events & WL_LATCH_SET) conf_latch();
-                if (sighup) conf_reload(&work);
-                if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
-            }
-            if (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout) && work.timeout >= 0) tick_timeout(&work);
+        count = WaitEventSetWait(set, work.timeout, events, count, PG_WAIT_EXTENSION);
+        for (int i = 0; i < count; i++) {
+            WaitEvent *event = &events[i];
+            if (event->events & WL_LATCH_SET) conf_latch();
+            if (sighup) conf_reload(&work);
+            if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
         }
+        if (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout) && work.timeout >= 0) tick_timeout(&work);
         FreeWaitEventSet(set);
         pfree(events);
         start = stop;
