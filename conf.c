@@ -154,11 +154,11 @@ static bool conf_check(Work *work) {
         if (usename_isnull) conf_user(user);
         if (datname_isnull) conf_data(user, data);
         if (!pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !schema && !pg_strcasecmp(table, pg_task_task)) {
-            work->period = period;
             work->user = "postgres";
             work->data = "postgres";
             work->schema = NULL;
             work->table = pg_task_task;
+            work->period = period;
             exit = tick_init_work(work);
         } else {
             work->period = -1;
