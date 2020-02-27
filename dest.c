@@ -40,7 +40,7 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
         appendStringInfoString(&task->response, value ? value : "(null)");
         if (value) pfree(value);
     }
-    return task->success = true;
+    return true;
 }
 
 static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) { }

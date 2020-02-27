@@ -227,6 +227,7 @@ static void task_success(Task *task) {
     if (IsTransactionState()) E("IsTransactionState");
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
+    task->success = true;
 }
 
 static void task_error(Task *task) {
