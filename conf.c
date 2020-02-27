@@ -199,7 +199,7 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
             if (sighup) conf_reload(&work);
             if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
         }
-        if (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout) && work.timeout >= 0) tick_timeout(&work);
+        if ((TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout) || !count) && work.timeout >= 0) tick_timeout(&work);
         FreeWaitEventSet(set);
         pfree(events);
         start = stop;

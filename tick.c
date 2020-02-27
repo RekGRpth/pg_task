@@ -530,7 +530,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
             if (sighup) sigterm = tick_reload();
             if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
         }
-        if (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout)) tick_timeout(&work);
+        if (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout) || !count) tick_timeout(&work);
         FreeWaitEventSet(set);
         pfree(events);
         start = stop;
