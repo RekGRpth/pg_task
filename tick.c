@@ -202,18 +202,13 @@ static void tick_task(const Work *work, const int64 id, const char *group, const
     strncpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
     if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + group_len + 1 + max_len + oid_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + group_len + 1 + max_len + oid_len);
-    strncpy(p, work->user, user_len);
-    p += user_len + 1;
-    strncpy(p, work->data, data_len);
-    p += data_len + 1;
-    strncpy(p, work->schema, schema_len);
-    p += schema_len + 1;
-    strncpy(p, work->table, table_len);
-    p += table_len + 1;
+    p = strncpy(p, work->user, user_len) + user_len + 1;
+    p = strncpy(p, work->data, data_len) + data_len + 1;
+    p = strncpy(p, work->schema, schema_len) + schema_len + 1;
+    p = strncpy(p, work->table, table_len) + table_len + 1;
     *(typeof(work->oid + 0) *)p = work->oid;
     p += oid_len;
-    strncpy(p, group, group_len);
-    p += group_len + 1;
+    p = strncpy(p, group, group_len) + group_len + 1;
     *(typeof(max + 0) *)p = max;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
