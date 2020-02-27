@@ -101,11 +101,11 @@ static void conf_tick(const char *user, const char *data, const char *schema, co
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
     if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + period_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + period_len);
-    p = strncpy(p, user, user_len) + user_len + 1;
-    p = strncpy(p, data, data_len) + data_len + 1;
-    p = strncpy(p, schema, schema_len) + schema_len + 1;
-    p = strncpy(p, table, table_len) + table_len + 1;
-    p = strncpy(p, (const char *)&period, period_len) + period_len;
+    p = (char *)memcpy(p, user, user_len) + user_len + 1;
+    p = (char *)memcpy(p, data, data_len) + data_len + 1;
+    p = (char *)memcpy(p, schema, schema_len) + schema_len + 1;
+    p = (char *)memcpy(p, table, table_len) + table_len + 1;
+    p = (char *)memcpy(p, &period, period_len) + period_len;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 

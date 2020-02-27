@@ -202,13 +202,13 @@ static void tick_task(const Work *work, const int64 id, const char *group, const
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
     if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + group_len + 1 + max_len + oid_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + group_len + 1 + max_len + oid_len);
-    p = strncpy(p, work->user, user_len) + user_len + 1;
-    p = strncpy(p, work->data, data_len) + data_len + 1;
-    p = strncpy(p, work->schema, schema_len) + schema_len + 1;
-    p = strncpy(p, work->table, table_len) + table_len + 1;
-    p = strncpy(p, (const char *)&work->oid, oid_len) + oid_len;
-    p = strncpy(p, group, group_len) + group_len + 1;
-    p = strncpy(p, (const char *)&max, max_len) + max_len;
+    p = (char *)memcpy(p, work->user, user_len) + user_len + 1;
+    p = (char *)memcpy(p, work->data, data_len) + data_len + 1;
+    p = (char *)memcpy(p, work->schema, schema_len) + schema_len + 1;
+    p = (char *)memcpy(p, work->table, table_len) + table_len + 1;
+    p = (char *)memcpy(p, &work->oid, oid_len) + oid_len;
+    p = (char *)memcpy(p, group, group_len) + group_len + 1;
+    p = (char *)memcpy(p, &max, max_len) + max_len;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
