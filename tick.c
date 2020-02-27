@@ -316,7 +316,8 @@ static void tick_sigterm(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
-static void tick_check(void) {
+static bool tick_check(void) {
+    bool exit = false;
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS ("
@@ -332,8 +333,9 @@ static void tick_check(void) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
-    if (!SPI_processed) sigterm = true;
+    if (!SPI_processed) exit = true;
     SPI_finish_my();
+    return exit;
 }
 
 static void tick_init_conf(Work *work) {
@@ -397,10 +399,10 @@ static void tick_latch(void) {
     CHECK_FOR_INTERRUPTS();
 }
 
-static void tick_reload(void) {
+static bool tick_reload(void) {
     sighup = false;
     ProcessConfigFile(PGC_SIGHUP);
-    tick_check();
+    return tick_check();
 }
 
 static void tick_success(Task *task, PGresult *result) {
@@ -556,7 +558,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
         if (!(count = WaitEventSetWait(set, work.period, events, count, PG_WAIT_EXTENSION))) tick_timeout(&work); else for (int i = 0; i < count; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) tick_latch();
-            if (sighup) tick_reload();
+            if (sighup) sigterm = tick_reload();
             if (event->events & WL_TIMEOUT) tick_timeout(&work);
             if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
         }
