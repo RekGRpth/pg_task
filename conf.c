@@ -1,21 +1,7 @@
 #include "include.h"
 
-static volatile sig_atomic_t sighup = false;
-static volatile sig_atomic_t sigterm = false;
-
-static void conf_sighup(SIGNAL_ARGS) {
-    int save_errno = errno;
-    sighup = true;
-    SetLatch(MyLatch);
-    errno = save_errno;
-}
-
-static void conf_sigterm(SIGNAL_ARGS) {
-    int save_errno = errno;
-    sigterm = true;
-    SetLatch(MyLatch);
-    errno = save_errno;
-}
+extern volatile sig_atomic_t sighup;
+extern volatile sig_atomic_t sigterm;
 
 static void conf_user(const char *user) {
     StringInfoData buf;
@@ -172,8 +158,8 @@ static void conf_init(Work *work) {
     if (!MyProcPort->database_name) MyProcPort->database_name = "postgres";
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
-    pqsignal(SIGHUP, conf_sighup);
-    pqsignal(SIGTERM, conf_sigterm);
+    pqsignal(SIGHUP, sighup_my);
+    pqsignal(SIGTERM, sigterm_my);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);

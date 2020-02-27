@@ -1,7 +1,7 @@
 #include "include.h"
 
-static volatile sig_atomic_t sighup = false;
-static volatile sig_atomic_t sigterm = false;
+extern volatile sig_atomic_t sighup;
+extern volatile sig_atomic_t sigterm;
 
 static void tick_schema(Work *work) {
     StringInfoData buf;
@@ -295,20 +295,6 @@ void tick_timeout(Work *work) {
     SPI_finish_my();
 }
 
-static void tick_sighup(SIGNAL_ARGS) {
-    int save_errno = errno;
-    sighup = true;
-    SetLatch(MyLatch);
-    errno = save_errno;
-}
-
-static void tick_sigterm(SIGNAL_ARGS) {
-    int save_errno = errno;
-    sigterm = true;
-    SetLatch(MyLatch);
-    errno = save_errno;
-}
-
 static bool tick_check(void) {
     bool exit = false;
     static SPIPlanPtr plan = NULL;
@@ -349,8 +335,8 @@ static void tick_init_conf(Work *work) {
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
     L("user = %s, data = %s, schema = %s, table = %s, period = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period);
-    pqsignal(SIGHUP, tick_sighup);
-    pqsignal(SIGTERM, tick_sigterm);
+    pqsignal(SIGHUP, sighup_my);
+    pqsignal(SIGTERM, sigterm_my);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);

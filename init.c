@@ -2,9 +2,25 @@
 
 PG_MODULE_MAGIC;
 
-static char *pg_task_task;
 static char *pg_task_config;
+static char *pg_task_task;
 static int pg_task_tick;
+volatile sig_atomic_t sighup = false;
+volatile sig_atomic_t sigterm = false;
+
+void sighup_my(SIGNAL_ARGS) {
+    int save_errno = errno;
+    sighup = true;
+    SetLatch(MyLatch);
+    errno = save_errno;
+}
+
+void sigterm_my(SIGNAL_ARGS) {
+    int save_errno = errno;
+    sigterm = true;
+    SetLatch(MyLatch);
+    errno = save_errno;
+}
 
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker) {
     BackgroundWorkerHandle *handle;

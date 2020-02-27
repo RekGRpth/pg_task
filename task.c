@@ -2,7 +2,8 @@
 
 extern bool stmt_timeout_active;
 extern bool xact_started;
-static volatile sig_atomic_t sigterm = false;
+extern volatile sig_atomic_t sighup;
+extern volatile sig_atomic_t sigterm;
 
 void task_work(Task *task) {
     #define ID 1
@@ -298,13 +299,6 @@ static bool task_timeout(Task *task) {
     return !task->live || task_live(task);
 }
 
-static void task_sigterm(SIGNAL_ARGS) {
-    int save_errno = errno;
-    sigterm = true;
-    SetLatch(MyLatch);
-    errno = save_errno;
-}
-
 static void task_init(Work *work, Task *task) {
     StringInfoData buf;
     const char *schema_quote;
@@ -354,7 +348,7 @@ static void task_init(Work *work, Task *task) {
     p += strlen(task->group) + 1;
     task->max = *(typeof(task->max) *)p;
     L("id = %li, group = %s, max = %i", task->id, task->group, task->max);
-    pqsignal(SIGTERM, task_sigterm);
+    pqsignal(SIGTERM, sigterm_my);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);

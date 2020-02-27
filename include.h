@@ -99,6 +99,8 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void exec_simple_query(Task *task);
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
 void SetConfigOptionMy(const char *name, const char *value);
+void sighup_my(SIGNAL_ARGS);
+void sigterm_my(SIGNAL_ARGS);
 void SPI_commit_my(void);
 void SPI_connect_my(const char *src);
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res, bool commit);
