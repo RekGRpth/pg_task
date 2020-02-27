@@ -18,13 +18,13 @@ void task_work(Task *task) {
     if (!task->conn) {
         StringInfoData buf;
         initStringInfo(&buf);
-        appendStringInfo(&buf, "%lu", task->id);
+        appendStringInfo(&buf, "%li", task->id);
         SetConfigOptionMy("pg_task.id", buf.data);
         pfree(buf.data);
     }
     task->count++;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %i, oid = %i, count = %i, pid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid, task->count, task->pid);
-    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %i", task->id, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid, task->count, task->pid);
+    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %li, oid = %i", task->id, work->oid);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -177,7 +177,7 @@ void task_done(Task *task) {
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    L("id = %lu, response = %s, success = %s", task->id, task->response.data ? task->response.data : "(null)", task->success ? "true" : "false");
+    L("id = %li, response = %s, success = %s", task->id, task->response.data ? task->response.data : "(null)", task->success ? "true" : "false");
     if (!command) {
         Work *work = task->work;
         StringInfoData buf;
@@ -283,7 +283,7 @@ static void task_error(Task *task) {
 
 static bool task_timeout(Task *task) {
     task_work(task);
-    L("id = %lu, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
+    L("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
     PG_TRY();
         task_success(task);
     PG_CATCH();
@@ -353,7 +353,7 @@ static void task_init(Work *work, Task *task) {
     task->group = p;
     p += strlen(task->group) + 1;
     task->max = *(typeof(task->max) *)p;
-    L("id = %lu, group = %s, max = %i", task->id, task->group, task->max);
+    L("id = %li, group = %s, max = %i", task->id, task->group, task->max);
     pqsignal(SIGTERM, task_sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);

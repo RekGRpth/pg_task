@@ -156,7 +156,7 @@ static void tick_finish(Task *task, const char *msg) {
 
 static void tick_remote(Work *work, int64 id, const char *group, int max, const char **keywords, const char **values) {
     Task *task;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
     if (!(task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task)))) E("!MemoryContextAllocZero");
     task->work = work;
     task->id = id;
@@ -177,7 +177,7 @@ static void tick_task(const Work *work, const int64 id, const char *group, const
     int user_len = strlen(work->user), data_len = strlen(work->data), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), group_len = strlen(group), max_len = sizeof(max), oid_len = sizeof(work->oid);
     BackgroundWorker worker;
     char *p = worker.bgw_extra;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = id;
@@ -216,7 +216,7 @@ static void tick_work(Work *work, const int64 id, const char *group, const int m
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     PQconninfoOption *opts = PQconninfoParse(group, NULL);
     MemoryContextSwitchTo(oldMemoryContext);
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
     if (!opts) tick_task(work, id, group, max); else {
         const char **keywords;
         const char **values;
@@ -452,7 +452,7 @@ static void tick_query(Task *task) {
     if (PQisBusy(task->conn)) { W("PQisBusy"); return; }
     if (!(task->pid = PQbackendPID(task->conn))) { tick_finish(task, "!PQbackendPID"); return; }
     task_work(task);
-    L("id = %lu, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
+    L("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
     if (task->timeout) {
         StringInfoData buf;
         initStringInfo(&buf);
