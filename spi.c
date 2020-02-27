@@ -25,6 +25,10 @@ void SPI_finish_my() {
     ProcessCompletedNotifies();
 }
 
+char *TextDatumGetCStringMy(Datum datum) {
+    return datum ? TextDatumGetCString(datum) : NULL;
+}
+
 char *SPI_getvalue_my(HeapTuple tuple, TupleDesc tupdesc, int fnumber) {
     bool isnull;
     Datum datum = SPI_getbinval(tuple, tupdesc, fnumber, &isnull);
