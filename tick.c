@@ -145,13 +145,13 @@ static void tick_remote(Work *work, int64 id, const char *group, int max, const 
     task->group = MemoryContextStrdup(TopMemoryContext, group);
     task->max = max;
     task->conn = PQconnectStartParams(keywords, values, false);
+    queue_insert_tail(&work->queue, &task->queue);
     if (PQstatus(task->conn) == CONNECTION_BAD) { tick_finish(task, "PQstatus == CONNECTION_BAD"); return; }
     if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) { tick_finish(task, "PQsetnonblocking == -1"); return; }
     if ((task->fd = PQsocket(task->conn)) < 0) { tick_finish(task, "PQsocket < 0"); return; }
     task->start = GetCurrentTimestamp();
     task->events = WL_SOCKET_WRITEABLE;
     task->state = CONNECT;
-    queue_insert_tail(&work->queue, &task->queue);
 }
 
 static void tick_task(const Work *work, const int64 id, const char *group, const int max) {
