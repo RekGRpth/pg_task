@@ -403,7 +403,7 @@ static void tick_reload(void) {
     tick_check();
 }
 
-static void tick_sucess(Task *task, PGresult *result) {
+static void tick_success(Task *task, PGresult *result) {
     if (!task->response.data) initStringInfo(&task->response);
     if (task->response.len) appendStringInfoString(&task->response, "\n");
     if (task->response.len || PQnfields(result) > 1) {
@@ -481,7 +481,7 @@ static void tick_result(Task *task) {
             if (!strlen(PQcmdStatus(result))) continue;
             if (!strlen(PQcmdTuples(result))) continue;
             if (!pg_strncasecmp(PQcmdTuples(result), "0", sizeof("0") - 1)) continue;
-            if (PQresultStatus(result) == PGRES_TUPLES_OK) tick_sucess(task, result);
+            if (PQresultStatus(result) == PGRES_TUPLES_OK) tick_success(task, result);
         }
     }
     task->state = IDLE;
