@@ -105,7 +105,7 @@ static void conf_tick(const char *user, const char *data, const char *schema, co
     p = strncpy(p, data, data_len) + data_len + 1;
     p = strncpy(p, schema, schema_len) + schema_len + 1;
     p = strncpy(p, table, table_len) + table_len + 1;
-    *(typeof(period + 0) *)p = period;
+    p = strncpy(p, (const char *)&period, period_len) + period_len;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
