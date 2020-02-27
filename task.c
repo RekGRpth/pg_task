@@ -45,14 +45,15 @@ void task_work(Task *task) {
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     if (SPI_processed != 1) E("SPI_processed != 1"); else {
-        bool timeout_isnull;
+        bool request_isnull, timeout_isnull;
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-        task->request = SPI_getvalue_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"));
+        task->request = TextDatumGetCStringMy(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"), &request_isnull));
         MemoryContextSwitchTo(oldMemoryContext);
         task->timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
+        if (request_isnull) E("request_isnull");
+        if (timeout_isnull) E("timeout_isnull");
         if (0 < StatementTimeout && StatementTimeout < task->timeout) task->timeout = StatementTimeout;
         L("request = %s, timeout = %i", task->request, task->timeout);
-        if (timeout_isnull) E("timeout_isnull");
     }
     SPI_finish_my();
 }
