@@ -16,6 +16,9 @@ void task_work(Task *task) {
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
+    task->count++;
+    L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid, task->count, task->pid);
+    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %li, oid = %i", task->id, work->oid);
     if (!task->conn) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -23,9 +26,6 @@ void task_work(Task *task) {
         SetConfigOptionMy("pg_task.id", buf.data);
         pfree(buf.data);
     }
-    task->count++;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid, task->count, task->pid);
-    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %li, oid = %i", task->id, work->oid);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
