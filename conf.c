@@ -150,7 +150,12 @@ static bool conf_check(Work *work) {
         if (period_isnull) E("period_isnull");
         if (usename_isnull) conf_user(work->user);
         if (datname_isnull) conf_data(work->user, work->data);
-        if (!pg_strncasecmp(work->user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(work->data, "postgres", sizeof("postgres") - 1) && !work->schema && !pg_strcasecmp(work->table, pg_task_task)) work->events |= WL_TIMEOUT; else conf_tick(work);
+        if (!pg_strncasecmp(work->user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(work->data, "postgres", sizeof("postgres") - 1) && !work->schema && !pg_strcasecmp(work->table, pg_task_task)) {
+            work->events |= WL_TIMEOUT;
+        } else {
+            work->period = -1;
+            conf_tick(work);
+        }
         pfree(work->user);
         pfree(work->data);
         if (work->schema) pfree(work->schema);
@@ -163,7 +168,7 @@ static bool conf_check(Work *work) {
         work->schema = NULL;
         work->table = pg_task_task;
         exit = tick_init_work(work);
-    } else work->period = -1;
+    }
     return exit;
 }
 
