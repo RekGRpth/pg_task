@@ -201,7 +201,7 @@ static void tick_task(const Work *work, const int64 id, const char *group, const
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
-    if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + group_len + 1 + max_len + oid_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + group_len + 1 + max_len + oid_len);
+    if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + oid_len + group_len + 1 + max_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + oid_len + group_len + 1 + max_len);
     p = (char *)memcpy(p, work->user, user_len) + user_len + 1;
     p = (char *)memcpy(p, work->data, data_len) + data_len + 1;
     p = (char *)memcpy(p, work->schema, schema_len) + schema_len + 1;
