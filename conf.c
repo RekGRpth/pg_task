@@ -194,36 +194,35 @@ static bool conf_reload(Work *work) {
 
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     TimestampTz stop = GetCurrentTimestamp(), start = stop;
-    Work *work;
-    if (!(work = palloc0(sizeof(*work)))) E("!palloc0");
-    conf_init(work);
-    sigterm = conf_check(work);
+    Work work;
+    MemSet(&work, 0, sizeof(work));
+    conf_init(&work);
+    sigterm = conf_check(&work);
     while (!sigterm) {
-        int count = queue_count(&work->queue) + 2;
+        int count = queue_count(&work.queue) + 2;
         WaitEvent *events;
         WaitEventSet *set;
         if (!(events = palloc0(count * sizeof(*events)))) E("!palloc0");
         if (!(set = CreateWaitEventSet(CurrentMemoryContext, count))) E("!CreateWaitEventSet");
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
-        queue_each(&work->queue, queue) {
+        queue_each(&work.queue, queue) {
             Task *task = queue_data(queue, Task, queue);
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, task->fd, NULL, task);
         }
-        if (!(count = WaitEventSetWait(set, work->period, events, count, PG_WAIT_EXTENSION))) {
-            if (work->period >= 0) tick_timeout(work);
+        if (!(count = WaitEventSetWait(set, work.period, events, count, PG_WAIT_EXTENSION))) {
+            if (work.period >= 0) tick_timeout(&work);
         } else {
             for (int i = 0; i < count; i++) {
                 WaitEvent *event = &events[i];
                 if (event->events & WL_LATCH_SET) conf_latch();
-                if (sighup) sigterm = conf_reload(work);
+                if (sighup) sigterm = conf_reload(&work);
                 if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
             }
-            if (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work->period) && work->period >= 0) tick_timeout(work);
+            if (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.period) && work.period >= 0) tick_timeout(&work);
         }
         FreeWaitEventSet(set);
         pfree(events);
         start = stop;
     }
-    pfree(work);
 }

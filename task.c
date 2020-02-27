@@ -367,11 +367,11 @@ static void task_latch(void) {
 }
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
-    Work *work;
-    Task *task;
-    if (!(work = palloc0(sizeof(*work)))) E("!palloc0");
-    if (!(task = palloc0(sizeof(*task)))) E("!palloc0");
-    task_init(work, task);
+    Work work;
+    Task task;
+    MemSet(&work, 0, sizeof(work));
+    MemSet(&task, 0, sizeof(task));
+    task_init(&work, &task);
     while (!sigterm && BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) {
         int count = 2;
         WaitEvent *events;
@@ -380,13 +380,11 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
         if (!(set = CreateWaitEventSet(CurrentMemoryContext, count))) E("!CreateWaitEventSet");
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
-        if (!(count = WaitEventSetWait(set, 0, events, count, PG_WAIT_EXTENSION))) sigterm = task_timeout(task); else for (int i = 0; i < count; i++) {
+        if (!(count = WaitEventSetWait(set, 0, events, count, PG_WAIT_EXTENSION))) sigterm = task_timeout(&task); else for (int i = 0; i < count; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) task_latch();
         }
         FreeWaitEventSet(set);
         pfree(events);
     }
-    pfree(task);
-    pfree(work);
 }
