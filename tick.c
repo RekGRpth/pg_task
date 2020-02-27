@@ -195,9 +195,11 @@ static void tick_task(const Work *work, const int64 id, const char *group, const
 }
 
 static void tick_work(Work *work, const int64 id, const char *group, const int max) {
+    char *msg;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    PQconninfoOption *opts = PQconninfoParse(group, NULL);
+    PQconninfoOption *opts = PQconninfoParse(group, &msg);
     MemoryContextSwitchTo(oldMemoryContext);
+    if (msg) { W(msg); PQfreemem(msg); }
     L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
     if (!opts) tick_task(work, id, group, max); else {
         const char **keywords;
