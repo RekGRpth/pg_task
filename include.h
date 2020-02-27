@@ -55,7 +55,6 @@ typedef enum {
 
 typedef struct Work {
     char *data;
-    char *p;
     char *schema;
     char *schema_table;
     char *table;

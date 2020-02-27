@@ -172,8 +172,9 @@ static void tick_remote(Work *work, int64 id, const char *group, int max, const 
     queue_insert_tail(&work->queue, &task->queue);
 }
 
-static void tick_task(Work *work, int64 id, const char *group, int max) {
+static void tick_task(const Work *work, const int64 id, const char *group, const int max) {
     StringInfoData buf;
+    char *p;
     int user_len = strlen(work->user), data_len = strlen(work->data), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), group_len = strlen(group), max_len = sizeof(max), oid_len = sizeof(work->oid);
     BackgroundWorker worker;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
@@ -201,25 +202,25 @@ static void tick_task(Work *work, int64 id, const char *group, int max) {
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
     if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + group_len + 1 + max_len + oid_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + group_len + 1 + max_len + oid_len);
-    work->p = worker.bgw_extra;
-    memcpy(work->p, work->user, user_len);
-    work->p += user_len + 1;
-    memcpy(work->p, work->data, data_len);
-    work->p += data_len + 1;
-    memcpy(work->p, work->schema, schema_len);
-    work->p += schema_len + 1;
-    memcpy(work->p, work->table, table_len);
-    work->p += table_len + 1;
-    *(typeof(work->oid) *)work->p = work->oid;
-    work->p += oid_len;
-    memcpy(work->p, group, group_len);
-    work->p += group_len + 1;
-    *(typeof(max) *)work->p = max;
-    work->p += max_len;
+    p = worker.bgw_extra;
+    memcpy(p, work->user, user_len);
+    p += user_len + 1;
+    memcpy(p, work->data, data_len);
+    p += data_len + 1;
+    memcpy(p, work->schema, schema_len);
+    p += schema_len + 1;
+    memcpy(p, work->table, table_len);
+    p += table_len + 1;
+    *(typeof(work->oid + 0) *)p = work->oid;
+    p += oid_len;
+    memcpy(p, group, group_len);
+    p += group_len + 1;
+    *(typeof(max + 0) *)p = max;
+    p += max_len;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
-static void tick_work(Work *work, int64 id, const char *group, int max) {
+static void tick_work(Work *work, const int64 id, const char *group, const int max) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     PQconninfoOption *opts = PQconninfoParse(group, NULL);
     MemoryContextSwitchTo(oldMemoryContext);
@@ -339,17 +340,17 @@ static bool tick_check(void) {
 }
 
 static void tick_init_conf(Work *work) {
-    work->p = MyBgworkerEntry->bgw_extra;
-    work->user = work->p;
-    work->p += strlen(work->user) + 1;
-    work->data = work->p;
-    work->p += strlen(work->data) + 1;
-    work->schema = work->p;
-    work->p += strlen(work->schema) + 1;
-    work->table = work->p;
-    work->p += strlen(work->table) + 1;
-    work->period = *(typeof(work->period) *)work->p;
-    work->p += sizeof(work->period);
+    char *p = MyBgworkerEntry->bgw_extra;
+    work->user = p;
+    p += strlen(work->user) + 1;
+    work->data = p;
+    p += strlen(work->data) + 1;
+    work->schema = p;
+    p += strlen(work->schema) + 1;
+    work->table = p;
+    p += strlen(work->table) + 1;
+    work->period = *(typeof(work->period) *)p;
+    p += sizeof(work->period);
     if (work->table == work->schema + 1) work->schema = NULL;
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
