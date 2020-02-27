@@ -47,7 +47,7 @@ static void tick_table(Work *work) {
     List *names;
     const RangeVar *relation;
     const char *name_quote;
-    L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table);
+    L("user = %s, data = %s, schema = %s, table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->schema_table);
     if (work->oid) pg_advisory_unlock_int8_my(work->oid);
     SetConfigOptionMy("pg_task.table", work->table);
     initStringInfo(&name);
@@ -99,7 +99,7 @@ static void tick_index(Work *work, const char *index) {
     const RangeVar *relation;
     const char *name_quote;
     const char *index_quote = quote_identifier(index);
-    L("user = %s, data = %s, schema = %s, table = %s, index = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, index);
+    L("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, index, work->schema_table);
     initStringInfo(&name);
     appendStringInfo(&name, "%s_%s_idx", work->table, index);
     name_quote = quote_identifier(name.data);
@@ -121,7 +121,7 @@ static void tick_index(Work *work, const char *index) {
 
 static void tick_fix(Work *work) {
     StringInfoData buf;
-    L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table);
+    L("user = %s, data = %s, schema = %s, table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->schema_table);
     initStringInfo(&buf);
     appendStringInfo(&buf,
         "WITH s AS (SELECT id FROM %1$s AS t WHERE state IN ('TAKE'::state, 'WORK'::state) AND pid NOT IN (\n"
@@ -267,6 +267,7 @@ static void tick_work(Work *work, const int64 id, const char *group, const int m
 void tick_timeout(Work *work) {
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
+    L("user = %s, data = %s, schema = %s, table = %s, period = %d, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period, work->schema_table);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -392,6 +393,7 @@ bool tick_init_work(Work *work) {
     pfree(buf.data);
     tick_fix(work);
     queue_init(&work->queue);
+    L("user = %s, data = %s, schema = %s, table = %s, period = %d, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period, work->schema_table);
     return false;
 }
 
