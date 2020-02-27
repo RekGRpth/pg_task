@@ -93,7 +93,7 @@ bool pg_try_advisory_lock_int8_my(int64 key);
 bool task_live(Task *task);
 char *TextDatumGetCStringMy(Datum datum);
 const char *PQftypeMy(Oid oid);
-DestReceiver *CreateDestReceiverMy(Task *task);
+DestReceiver *CreateDestReceiverMy(StringInfoData *response);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void exec_simple_query(Task *task);
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);

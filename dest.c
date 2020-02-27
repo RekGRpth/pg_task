@@ -2,7 +2,7 @@
 
 typedef struct DestReceiverMy {
     DestReceiver pub;
-    Task *task;
+    StringInfoData *response;
 } DestReceiverMy;
 
 static Oid SPI_gettypeid_my(TupleDesc tupdesc, int fnumber) {
@@ -20,24 +20,24 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
 }
 
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
-    Task *task = ((DestReceiverMy *)self)->task;
-    if (!task->response.data) {
+    StringInfoData *response = ((DestReceiverMy *)self)->response;
+    if (!response->data) {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-        initStringInfo(&task->response);
+        initStringInfo(response);
         MemoryContextSwitchTo(oldMemoryContext);
     }
-    if (task->response.len) appendStringInfoString(&task->response, "\n");
-    if (task->response.len || slot->tts_tupleDescriptor->natts > 1) {
+    if (response->len) appendStringInfoString(response, "\n");
+    if (response->len || slot->tts_tupleDescriptor->natts > 1) {
         for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
-            if (col > 1) appendStringInfoString(&task->response, "\t");
-            appendStringInfo(&task->response, "%s::%s", SPI_fname(slot->tts_tupleDescriptor, col), SPI_gettype(slot->tts_tupleDescriptor, col));
+            if (col > 1) appendStringInfoString(response, "\t");
+            appendStringInfo(response, "%s::%s", SPI_fname(slot->tts_tupleDescriptor, col), SPI_gettype(slot->tts_tupleDescriptor, col));
         }
     }
-    if (task->response.len) appendStringInfoString(&task->response, "\n");
+    if (response->len) appendStringInfoString(response, "\n");
     for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
         char *value = SPI_getvalue_my(slot, slot->tts_tupleDescriptor, col);
-        if (col > 1) appendStringInfoString(&task->response, "\t");
-        appendStringInfoString(&task->response, value ? value : "(null)");
+        if (col > 1) appendStringInfoString(response, "\t");
+        appendStringInfoString(response, value ? value : "(null)");
         if (value) pfree(value);
     }
     return true;
@@ -49,13 +49,13 @@ static void rShutdown(DestReceiver *self) { }
 
 static void rDestroy(DestReceiver *self) { }
 
-DestReceiver *CreateDestReceiverMy(Task *task) {
+DestReceiver *CreateDestReceiverMy(StringInfoData *response) {
     DestReceiverMy *self = (DestReceiverMy *)palloc0(sizeof(*self));
     self->pub.receiveSlot = receiveSlot;
     self->pub.rStartup = rStartup;
     self->pub.rShutdown = rShutdown;
     self->pub.rDestroy = rDestroy;
     self->pub.mydest = DestDebug;
-    self->task = task;
+    self->response = response;
     return (DestReceiver *)self;
 }
