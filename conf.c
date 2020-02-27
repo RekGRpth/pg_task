@@ -25,7 +25,7 @@ static void conf_user(const char *user) {
     L("user = %s", user);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE ROLE %s WITH LOGIN", user_quote);
-    names = stringToQualifiedNameList(user_quote);
+    if (!(names = stringToQualifiedNameList(user_quote))) E("!stringToQualifiedNameList");
     SPI_start_transaction_my(buf.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
         CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
@@ -52,7 +52,7 @@ static void conf_data(const char *user, const char *data) {
     L("user = %s, data = %s", user, data);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE DATABASE %s WITH OWNER = %s", data_quote, user_quote);
-    names = stringToQualifiedNameList(data_quote);
+    if (!(names = stringToQualifiedNameList(data_quote))) E("!stringToQualifiedNameList");
     SPI_start_transaction_my(buf.data);
     if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);

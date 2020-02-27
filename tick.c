@@ -10,7 +10,7 @@ static void tick_schema(Work *work) {
     L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema, work->table);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE SCHEMA %s", schema_quote);
-    names = stringToQualifiedNameList(schema_quote);
+    if (!(names = stringToQualifiedNameList(schema_quote))) E("!stringToQualifiedNameList");
     SPI_connect_my(buf.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
@@ -75,7 +75,7 @@ static void tick_table(Work *work) {
         "    live interval,\n"
         "    CONSTRAINT %2$s FOREIGN KEY (parent) REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
         ")", work->schema_table, name_quote);
-    names = stringToQualifiedNameList(work->schema_table);
+    if (!(names = stringToQualifiedNameList(work->schema_table))) E("!stringToQualifiedNameList");
     relation = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
@@ -105,7 +105,7 @@ static void tick_index(Work *work, const char *index) {
     name_quote = quote_identifier(name.data);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE INDEX %s ON %s USING btree (%s)", name_quote, work->schema_table, index_quote);
-    names = stringToQualifiedNameList(name_quote);
+    if (!(names = stringToQualifiedNameList(name_quote))) E("!stringToQualifiedNameList");
     relation = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
