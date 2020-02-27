@@ -72,7 +72,7 @@ static void conf_data(const char *user, const char *data) {
     pfree(buf.data);
 }
 
-static void tick_work(Work *work) {
+static void conf_tick(Work *work) {
     StringInfoData buf;
     int data_len = strlen(work->data), user_len = strlen(work->user), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), period_len = sizeof(work->period);
     BackgroundWorker worker;
@@ -153,7 +153,7 @@ static bool conf_check(Work *work) {
         if (!pg_strncasecmp(work->user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(work->data, "postgres", sizeof("postgres") - 1) && !work->schema && !pg_strcasecmp(work->table, pg_task_task)) {
             work->timeout = work->period;
             work->events |= WL_TIMEOUT;
-        } else tick_work(work);
+        } else conf_tick(work);
         pfree(work->user);
         pfree(work->data);
         if (work->schema) pfree(work->schema);
