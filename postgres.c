@@ -1,6 +1,6 @@
 #include "include.h"
 
-static int timeout;
+static int StatementTimeoutMy;
 
 /*
  * Flag to keep track of whether we have started a transaction.
@@ -28,9 +28,9 @@ static void disable_statement_timeout(void);
  * Execute a "simple Query" protocol message.
  */
 void
-exec_simple_query(Task *task)
+exec_simple_query(const char *request, const int timeout, StringInfoData *response)
 {
-	const char *query_string = task->request;
+	const char *query_string = request;
 	CommandDest dest = whereToSendOutput = DestDebug;
 	MemoryContext oldcontext;
 	List	   *parsetree_list;
@@ -40,7 +40,7 @@ exec_simple_query(Task *task)
 	bool		use_implicit_block;
 	char		msec_str[32];
 
-	timeout = task->timeout;
+	StatementTimeoutMy = timeout;
 
 	/*
 	 * Report query to various monitoring facilities.
@@ -240,7 +240,7 @@ exec_simple_query(Task *task)
 		/*
 		 * Now we can create the destination receiver object.
 		 */
-		receiver = CreateDestReceiverMy(&task->response);
+		receiver = CreateDestReceiverMy(response);
 		if (dest == DestRemote)
 			SetRemoteDestReceiverParams(receiver, portal);
 
@@ -502,11 +502,11 @@ enable_statement_timeout(void)
 	/* must be within an xact */
 	Assert(xact_started);
 
-	if (timeout > 0)
+	if (StatementTimeoutMy > 0)
 	{
 		if (!stmt_timeout_active)
 		{
-			enable_timeout_after(STATEMENT_TIMEOUT, timeout);
+			enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeoutMy);
 			stmt_timeout_active = true;
 		}
 	}

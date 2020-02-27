@@ -218,11 +218,11 @@ static void task_success(Task *task) {
     InvalidateCatalogSnapshotConditionally();
     MemoryContextSwitchTo(oldMemoryContext);
     SetCurrentStatementStartTimestamp();
-    exec_simple_query(task);
+    exec_simple_query(task->request, task->timeout, &task->response);
     pfree(task->request);
     if (IsTransactionState()) {
         task->request = "COMMIT";
-        exec_simple_query(task);
+        exec_simple_query(task->request, task->timeout, &task->response);
     }
     if (IsTransactionState()) E("IsTransactionState");
     pgstat_report_stat(false);

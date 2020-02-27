@@ -95,7 +95,7 @@ char *TextDatumGetCStringMy(Datum datum);
 const char *PQftypeMy(Oid oid);
 DestReceiver *CreateDestReceiverMy(StringInfoData *response);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
-void exec_simple_query(Task *task);
+void exec_simple_query(const char *request, const int timeout, StringInfoData *response);
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
 void SetConfigOptionMy(const char *name, const char *value);
 void sighup_my(SIGNAL_ARGS);
