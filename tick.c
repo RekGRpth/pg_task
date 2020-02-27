@@ -343,7 +343,6 @@ static void tick_init_conf(Work *work) {
     p += strlen(work->table) + 1;
     work->period = *(typeof(work->period) *)p;
     if (work->table == work->schema + 1) work->schema = NULL;
-    if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
