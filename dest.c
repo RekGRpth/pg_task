@@ -5,7 +5,6 @@ typedef struct DestReceiverMy {
     Task *task;
 } DestReceiverMy;
 
-
 static Oid SPI_gettypeid_my(TupleDesc tupdesc, int fnumber) {
     if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) E("SPI_ERROR_NOATTRIBUTE");
     return (fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1) : SystemAttributeDefinition(fnumber))->atttypid;
@@ -41,8 +40,7 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
         appendStringInfoString(&task->response, value ? value : "(null)");
         if (value) pfree(value);
     }
-    task->success = true;
-    return true;
+    return task->success = true;
 }
 
 static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) { }
