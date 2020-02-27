@@ -62,7 +62,6 @@ typedef struct Work {
     char *user;
     int events;
     int period;
-    long timeout;
     Oid oid;
     queue_t queue;
 } Work;

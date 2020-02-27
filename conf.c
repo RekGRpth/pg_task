@@ -150,10 +150,7 @@ static bool conf_check(Work *work) {
         if (period_isnull) E("period_isnull");
         if (usename_isnull) conf_user(work->user);
         if (datname_isnull) conf_data(work->user, work->data);
-        if (!pg_strncasecmp(work->user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(work->data, "postgres", sizeof("postgres") - 1) && !work->schema && !pg_strcasecmp(work->table, pg_task_task)) {
-            work->timeout = work->period;
-            work->events |= WL_TIMEOUT;
-        } else conf_tick(work);
+        if (!pg_strncasecmp(work->user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(work->data, "postgres", sizeof("postgres") - 1) && !work->schema && !pg_strcasecmp(work->table, pg_task_task)) work->events |= WL_TIMEOUT; else conf_tick(work);
         pfree(work->user);
         pfree(work->data);
         if (work->schema) pfree(work->schema);
@@ -165,15 +162,14 @@ static bool conf_check(Work *work) {
         work->data = "postgres";
         work->schema = NULL;
         work->table = pg_task_task;
-        work->period = work->timeout;
         exit = tick_init_work(work);
-    } else work->timeout = -1L;
+    } else work->period = -1;
     return exit;
 }
 
 static void conf_init(Work *work) {
     work->events = WL_LATCH_SET | WL_EXIT_ON_PM_DEATH;
-    work->timeout = -1L;
+    work->period = -1;
     if (!MyProcPort && !(MyProcPort = (Port *)calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->user_name) MyProcPort->user_name = "postgres";
     if (!MyProcPort->database_name) MyProcPort->database_name = "postgres";
@@ -203,7 +199,7 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     conf_init(work);
     sigterm = conf_check(work);
     while (!sigterm) {
-        int rc = WaitLatch(MyLatch, work->events, work->timeout, PG_WAIT_EXTENSION);
+        int rc = WaitLatch(MyLatch, work->events, work->period, PG_WAIT_EXTENSION);
         if (rc & WL_LATCH_SET) conf_latch();
         if (sighup) sigterm = conf_reload(work);
         if (rc & WL_TIMEOUT) tick_timeout(work);
