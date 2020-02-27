@@ -75,8 +75,8 @@ static void conf_data(const char *user, const char *data) {
 static void conf_tick(const char *user, const char *data, const char *schema, const char *table, const int period) {
     StringInfoData buf;
     int user_len = strlen(user), data_len = strlen(data), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), period_len = sizeof(period);
-    char *p;
     BackgroundWorker worker;
+    char *p = worker.bgw_extra;
     L("user = %s, data = %s, schema = %s, table = %s, period = %d", user, data, schema ? schema : "(null)", table, period);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -101,7 +101,6 @@ static void conf_tick(const char *user, const char *data, const char *schema, co
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
     if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + period_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + period_len);
-    p = worker.bgw_extra;
     memcpy(p, user, user_len);
     p += user_len + 1;
     memcpy(p, data, data_len);
@@ -111,7 +110,6 @@ static void conf_tick(const char *user, const char *data, const char *schema, co
     memcpy(p, table, table_len);
     p += table_len + 1;
     *(typeof(period + 0) *)p = period;
-    p += period_len;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
