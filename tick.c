@@ -10,7 +10,7 @@ static void tick_schema(Work *work) {
     L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema, work->table);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE SCHEMA %s", schema_quote);
-    if (!(names = stringToQualifiedNameList(schema_quote))) E("!stringToQualifiedNameList");
+    names = stringToQualifiedNameList(schema_quote);
     SPI_connect_my(buf.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
@@ -75,8 +75,8 @@ static void tick_table(Work *work) {
         "    live interval,\n"
         "    CONSTRAINT %2$s FOREIGN KEY (parent) REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
         ")", work->schema_table, name_quote);
-    if (!(names = stringToQualifiedNameList(work->schema_table))) E("!stringToQualifiedNameList");
-    if (!(relation = makeRangeVarFromNameList(names))) E("!makeRangeVarFromNameList");
+    names = stringToQualifiedNameList(work->schema_table);
+    relation = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     work->oid = RangeVarGetRelid(relation, NoLock, false);
@@ -106,8 +106,8 @@ static void tick_index(Work *work, const char *index) {
     name_quote = quote_identifier(name.data);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE INDEX %s ON %s USING btree (%s)", name_quote, work->schema_table, index_quote);
-    if (!(names = stringToQualifiedNameList(name_quote))) E("!stringToQualifiedNameList");
-    if (!(relation = makeRangeVarFromNameList(names))) E("!makeRangeVarFromNameList");
+    names = stringToQualifiedNameList(name_quote);
+    relation = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
@@ -156,14 +156,13 @@ static void tick_finish(Task *task, const char *msg) {
 }
 
 static void tick_remote(Work *work, int64 id, const char *group, int max, const char **keywords, const char **values) {
-    Task *task;
+    Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
     L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
-    if (!(task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task)))) E("!MemoryContextAllocZero");
     task->work = work;
     task->id = id;
     task->group = MemoryContextStrdup(TopMemoryContext, group);
     task->max = max;
-    if (!(task->conn = PQconnectStartParams(keywords, values, false))) { tick_finish(task, "!PQconnectStartParams"); return; }
+    task->conn = PQconnectStartParams(keywords, values, false);
     if (PQstatus(task->conn) == CONNECTION_BAD) { tick_finish(task, "PQstatus == CONNECTION_BAD"); return; }
     if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) { tick_finish(task, "PQsetnonblocking == -1"); return; }
     if ((task->fd = PQsocket(task->conn)) < 0) { tick_finish(task, "PQsocket < 0"); return; }
@@ -231,8 +230,8 @@ static void tick_work(Work *work, const int64 id, const char *group, const int m
             if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) { application_name = opt->val; continue; }
             arg++;
         }
-        if (!(keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords)))) E("!MemoryContextAlloc");
-        if (!(values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values)))) E("!MemoryContextAlloc");
+        keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
+        values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
         initStringInfo(&buf);
         appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, application_name);
         arg = 0;
@@ -523,10 +522,8 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     tick_init_work(&work);
     while (!sigterm && BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) {
         int count = queue_count(&work.queue) + 2;
-        WaitEvent *events;
-        WaitEventSet *set;
-        if (!(events = palloc0(count * sizeof(*events)))) E("!palloc0");
-        if (!(set = CreateWaitEventSet(CurrentMemoryContext, count))) E("!CreateWaitEventSet");
+        WaitEvent *events = palloc0(count * sizeof(*events));
+        WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, count);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
         queue_each(&work.queue, queue) {

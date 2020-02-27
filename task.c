@@ -319,7 +319,7 @@ static void task_init(Work *work, Task *task) {
     if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
-    if (!MessageContext && !(MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES))) E("!AllocSetContextCreate");
+    if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table);
     SetConfigOptionMy("pg_task.data", work->data);
     SetConfigOptionMy("pg_task.user", work->user);
@@ -368,10 +368,8 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     task_init(&work, &task);
     while (!sigterm && BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) {
         int count = 2;
-        WaitEvent *events;
-        WaitEventSet *set;
-        if (!(events = palloc0(count * sizeof(*events)))) E("!palloc0");
-        if (!(set = CreateWaitEventSet(CurrentMemoryContext, count))) E("!CreateWaitEventSet");
+        WaitEvent *events = palloc0(count * sizeof(*events));
+        WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, count);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
         if (!(count = WaitEventSetWait(set, 0, events, count, PG_WAIT_EXTENSION))) sigterm = task_timeout(&task); else for (int i = 0; i < count; i++) {

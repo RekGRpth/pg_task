@@ -10,7 +10,7 @@ static void conf_user(const char *user) {
     L("user = %s", user);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE ROLE %s WITH LOGIN", user_quote);
-    if (!(names = stringToQualifiedNameList(user_quote))) E("!stringToQualifiedNameList");
+    names = stringToQualifiedNameList(user_quote);
     SPI_start_transaction_my(buf.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
         CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
@@ -37,7 +37,7 @@ static void conf_data(const char *user, const char *data) {
     L("user = %s, data = %s", user, data);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE DATABASE %s WITH OWNER = %s", data_quote, user_quote);
-    if (!(names = stringToQualifiedNameList(data_quote))) E("!stringToQualifiedNameList");
+    names = stringToQualifiedNameList(data_quote);
     SPI_start_transaction_my(buf.data);
     if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
@@ -184,10 +184,8 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     conf_check(&work);
     while (!sigterm) {
         int count = queue_count(&work.queue) + 2;
-        WaitEvent *events;
-        WaitEventSet *set;
-        if (!(events = palloc0(count * sizeof(*events)))) E("!palloc0");
-        if (!(set = CreateWaitEventSet(CurrentMemoryContext, count))) E("!CreateWaitEventSet");
+        WaitEvent *events = palloc0(count * sizeof(*events));
+        WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, count);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
         queue_each(&work.queue, queue) {
