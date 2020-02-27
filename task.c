@@ -23,8 +23,8 @@ void task_work(Task *task) {
         pfree(buf.data);
     }
     task->count++;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d, count = %u, pid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid, task->count, task->pid);
-    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %d", task->id, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %i, count = %u, pid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid, task->count, task->pid);
+    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %i", task->id, work->oid);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -283,7 +283,7 @@ static void task_error(Task *task) {
 
 static bool task_timeout(Task *task) {
     task_work(task);
-    L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
+    L("id = %lu, timeout = %i, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     PG_TRY();
         task_success(task);
     PG_CATCH();
@@ -339,9 +339,9 @@ static void task_init(Work *work, Task *task) {
     work->schema_table = buf.data;
     work->oid = *(typeof(work->oid) *)p;
     p += sizeof(work->oid);
-    L("oid = %d", work->oid);
+    L("oid = %i", work->oid);
     initStringInfo(&buf);
-    appendStringInfo(&buf, "%d", work->oid);
+    appendStringInfo(&buf, "%i", work->oid);
     SetConfigOptionMy("pg_task.oid", buf.data);
     pfree(buf.data);
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);

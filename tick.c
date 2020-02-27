@@ -88,7 +88,7 @@ static void tick_table(Work *work) {
     pfree(name.data);
     SetConfigOptionMy("pg_task.table", work->table);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%d", work->oid);
+    appendStringInfo(&buf, "%i", work->oid);
     SetConfigOptionMy("pg_task.oid", buf.data);
     pfree(buf.data);
 }
@@ -156,7 +156,7 @@ static void tick_finish(Task *task, const char *msg) {
 
 static void tick_remote(Work *work, int64 id, const char *group, int max, const char **keywords, const char **values) {
     Task *task;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
     if (!(task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task)))) E("!MemoryContextAllocZero");
     task->work = work;
     task->id = id;
@@ -177,7 +177,7 @@ static void tick_task(const Work *work, const int64 id, const char *group, const
     int user_len = strlen(work->user), data_len = strlen(work->data), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), group_len = strlen(group), max_len = sizeof(max), oid_len = sizeof(work->oid);
     BackgroundWorker worker;
     char *p = worker.bgw_extra;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = id;
@@ -216,7 +216,7 @@ static void tick_work(Work *work, const int64 id, const char *group, const int m
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     PQconninfoOption *opts = PQconninfoParse(group, NULL);
     MemoryContextSwitchTo(oldMemoryContext);
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
     if (!opts) tick_task(work, id, group, max); else {
         const char **keywords;
         const char **values;
@@ -349,7 +349,7 @@ static void tick_init_conf(Work *work) {
     if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
-    L("user = %s, data = %s, schema = %s, table = %s, period = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period);
+    L("user = %s, data = %s, schema = %s, table = %s, period = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period);
     pqsignal(SIGHUP, tick_sighup);
     pqsignal(SIGTERM, tick_sigterm);
     BackgroundWorkerUnblockSignals();
@@ -370,17 +370,17 @@ bool tick_init_work(Work *work) {
     work->schema_table = buf.data;
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     if (work->table != table_quote) pfree((void *)table_quote);
-    L("user = %s, data = %s, schema = %s, table = %s, period = %d, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period, work->schema_table);
+    L("user = %s, data = %s, schema = %s, table = %s, period = %i, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period, work->schema_table);
     if (work->schema) tick_schema(work);
     tick_type(work);
     tick_table(work);
-    if (!pg_try_advisory_lock_int8_my(work->oid)) { W("!pg_try_advisory_lock_int8_my(%d)", work->oid); return true; }
+    if (!pg_try_advisory_lock_int8_my(work->oid)) { W("!pg_try_advisory_lock_int8_my(%i)", work->oid); return true; }
     tick_index(work, "dt");
     tick_index(work, "state");
     SetConfigOptionMy("pg_task.data", work->data);
     SetConfigOptionMy("pg_task.user", work->user);
     initStringInfo(&buf);
-    appendStringInfo(&buf, "%d", work->period);
+    appendStringInfo(&buf, "%i", work->period);
     SetConfigOptionMy("pg_task.period", buf.data);
     pfree(buf.data);
     tick_fix(work);
@@ -408,7 +408,7 @@ static void tick_success(Task *task, PGresult *result) {
             const char *type = PQftypeMy(oid);
             if (col > 0) appendStringInfoString(&task->response, "\t");
             if (type) appendStringInfo(&task->response, "%s::%s", PQfname(result, col), type);
-            else appendStringInfo(&task->response, "%s::%d", PQfname(result, col), oid);
+            else appendStringInfo(&task->response, "%s::%i", PQfname(result, col), oid);
         }
     }
     if (task->response.len) appendStringInfoString(&task->response, "\n");
@@ -452,11 +452,11 @@ static void tick_query(Task *task) {
     if (PQisBusy(task->conn)) { W("PQisBusy"); return; }
     if (!(task->pid = PQbackendPID(task->conn))) { tick_finish(task, "!PQbackendPID"); return; }
     task_work(task);
-    L("id = %lu, timeout = %d, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
+    L("id = %lu, timeout = %i, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
     if (task->timeout) {
         StringInfoData buf;
         initStringInfo(&buf);
-        appendStringInfo(&buf, "SET statement_timeout = %d;\n%s", task->timeout, task->request);
+        appendStringInfo(&buf, "SET statement_timeout = %i;\n%s", task->timeout, task->request);
         pfree(task->request);
         task->request = buf.data;
     }
