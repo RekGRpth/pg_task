@@ -380,6 +380,7 @@ bool tick_init_work(Work *work) {
     if (work->schema) tick_schema(work);
     tick_type(work);
     tick_table(work);
+    if (!pg_try_advisory_lock_int8_my(work->oid)) { W("!pg_try_advisory_lock_int8_my(%d)", work->oid); return true; }
     tick_index(work, "dt");
     tick_index(work, "state");
     SetConfigOptionMy("pg_task.data", work->data);
@@ -388,7 +389,6 @@ bool tick_init_work(Work *work) {
     appendStringInfo(&buf, "%d", work->period);
     SetConfigOptionMy("pg_task.period", buf.data);
     pfree(buf.data);
-    if (!pg_try_advisory_lock_int8_my(work->oid)) { W("lock oid = %d", work->oid); return true; }
     tick_fix(work);
     queue_init(&work->queue);
     return false;
