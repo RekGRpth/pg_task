@@ -282,6 +282,7 @@ void tick_timeout(Work *work) {
         int max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
         if (id_isnull) E("id_isnull");
         if (max_isnull) E("max_isnull");
+        L("row = %lu, id = %li, group = %s, max = %i", row, id, group, max);
         tick_work(work, id, group, max);
         pfree(group);
     }
