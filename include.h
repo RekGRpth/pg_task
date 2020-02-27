@@ -60,7 +60,6 @@ typedef struct Work {
     char *schema_table;
     char *table;
     char *user;
-    int events;
     int period;
     Oid oid;
     queue_t queue;
@@ -111,6 +110,7 @@ void task_delete(Task *task);
 void task_done(Task *task);
 void task_repeat(Task *task);
 void task_work(Task *task);
+void tick_socket(Task *task);
 void tick_timeout(Work *work);
 
 #define Q(name) #name

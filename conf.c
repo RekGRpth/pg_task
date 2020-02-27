@@ -134,7 +134,6 @@ static bool conf_check(Work *work) {
         "LEFT JOIN   pg_stat_activity AS a ON a.usename = \"user\" AND a.datname = data AND application_name = concat_ws(' ', 'pg_task', schema, \"table\", period::text) AND pid != pg_backend_pid()\n"
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
         "WHERE       a.pid IS NULL";
-    work->events &= ~WL_TIMEOUT;
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
@@ -156,7 +155,6 @@ static bool conf_check(Work *work) {
         if (datname_isnull) conf_data(user, data);
         if (!pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !schema && !pg_strcasecmp(table, pg_task_task)) {
             work->period = period;
-            work->events |= WL_TIMEOUT;
             work->user = "postgres";
             work->data = "postgres";
             work->schema = NULL;
@@ -176,8 +174,6 @@ static bool conf_check(Work *work) {
 }
 
 static void conf_init(Work *work) {
-    work->events = WL_LATCH_SET | WL_EXIT_ON_PM_DEATH;
-    work->period = -1;
     if (!MyProcPort && !(MyProcPort = (Port *)calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->user_name) MyProcPort->user_name = "postgres";
     if (!MyProcPort->database_name) MyProcPort->database_name = "postgres";
@@ -188,6 +184,8 @@ static void conf_init(Work *work) {
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
+    work->period = -1;
+    queue_init(&work->queue);
 }
 
 static void conf_latch(void) {
@@ -207,10 +205,26 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     conf_init(work);
     sigterm = conf_check(work);
     while (!sigterm) {
-        int rc = WaitLatch(MyLatch, work->events, work->period, PG_WAIT_EXTENSION);
-        if (rc & WL_LATCH_SET) conf_latch();
-        if (sighup) sigterm = conf_reload(work);
-        if (rc & WL_TIMEOUT) tick_timeout(work);
+        int count = queue_count(&work->queue) + 2;
+        WaitEvent *events;
+        WaitEventSet *set;
+        if (!(events = palloc0(count * sizeof(*events)))) E("!palloc0");
+        if (!(set = CreateWaitEventSet(CurrentMemoryContext, count))) E("!CreateWaitEventSet");
+        AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
+        AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
+        queue_each(&work->queue, queue) {
+            Task *task = queue_data(queue, Task, queue);
+            AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, task->fd, NULL, task);
+        }
+        if (!BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) break;
+        if (!(count = WaitEventSetWait(set, work->period, events, count, PG_WAIT_EXTENSION))) tick_timeout(work); else for (int i = 0; i < count; i++) {
+            WaitEvent *event = &events[i];
+            if (event->events & WL_LATCH_SET) conf_latch();
+            if (sighup) sigterm = conf_reload(work);
+            if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
+        }
+        FreeWaitEventSet(set);
+        pfree(events);
     }
     pfree(work);
 }

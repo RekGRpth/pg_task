@@ -528,7 +528,7 @@ static void tick_connect(Task *task) {
     if ((task->fd = PQsocket(task->conn)) < 0) tick_finish(task, "PQsocket < 0");
 }
 
-static void tick_socket(Task *task) {
+void tick_socket(Task *task) {
     switch (task->state) {
         case CONNECT: tick_connect(task); break;
         case QUERY: tick_query(task); break;
