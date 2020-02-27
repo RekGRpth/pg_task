@@ -353,7 +353,6 @@ static void task_init(Work *work, Task *task) {
     task->group = p;
     p += strlen(task->group) + 1;
     task->max = *(typeof(task->max) *)p;
-    p += sizeof(task->max);
     L("id = %lu, group = %s, max = %u", task->id, task->group, task->max);
     pqsignal(SIGTERM, task_sigterm);
     BackgroundWorkerUnblockSignals();

@@ -215,7 +215,6 @@ static void tick_task(const Work *work, const int64 id, const char *group, const
     memcpy(p, group, group_len);
     p += group_len + 1;
     *(typeof(max + 0) *)p = max;
-    p += max_len;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
@@ -349,7 +348,6 @@ static void tick_init_conf(Work *work) {
     work->table = p;
     p += strlen(work->table) + 1;
     work->period = *(typeof(work->period) *)p;
-    p += sizeof(work->period);
     if (work->table == work->schema + 1) work->schema = NULL;
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
