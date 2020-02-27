@@ -23,7 +23,7 @@ void task_work(Task *task) {
         pfree(buf.data);
     }
     task->count++;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %i, count = %u, pid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid, task->count, task->pid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %i, oid = %i, count = %i, pid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid, task->count, task->pid);
     if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %lu, oid = %i", task->id, work->oid);
     if (!command) {
         StringInfoData buf;
@@ -283,7 +283,7 @@ static void task_error(Task *task) {
 
 static bool task_timeout(Task *task) {
     task_work(task);
-    L("id = %lu, timeout = %i, request = %s, count = %u", task->id, task->timeout, task->request, task->count);
+    L("id = %lu, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
     PG_TRY();
         task_success(task);
     PG_CATCH();
@@ -353,7 +353,7 @@ static void task_init(Work *work, Task *task) {
     task->group = p;
     p += strlen(task->group) + 1;
     task->max = *(typeof(task->max) *)p;
-    L("id = %lu, group = %s, max = %u", task->id, task->group, task->max);
+    L("id = %lu, group = %s, max = %i", task->id, task->group, task->max);
     pqsignal(SIGTERM, task_sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
