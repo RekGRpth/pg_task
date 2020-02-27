@@ -18,7 +18,7 @@ void task_work(Task *task) {
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     task->count++;
     L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid, task->count, task->pid);
-    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("lock id = %li, oid = %i", task->id, work->oid);
+    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("!pg_try_advisory_lock_int4_my(%i, %li)", work->oid, task->id);
     if (!task->conn) {
         StringInfoData buf;
         initStringInfo(&buf);
