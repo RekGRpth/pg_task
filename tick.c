@@ -154,7 +154,7 @@ static void tick_finish(Task *task, const char *msg) {
     task_free(task);
 }
 
-static void task_remote(Work *work, int64 id, const char *group, int max, const char **keywords, const char **values) {
+static void tick_remote(Work *work, int64 id, const char *group, int max, const char **keywords, const char **values) {
     Task *task;
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
     if (!(task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task)))) E("!MemoryContextAllocZero");
@@ -172,7 +172,7 @@ static void task_remote(Work *work, int64 id, const char *group, int max, const 
     queue_insert_tail(&work->queue, &task->queue);
 }
 
-static void task_worker(Work *work, int64 id, const char *group, int max) {
+static void tick_task(Work *work, int64 id, const char *group, int max) {
     StringInfoData buf;
     int user_len = strlen(work->user), data_len = strlen(work->data), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), group_len = strlen(group), max_len = sizeof(max), oid_len = sizeof(work->oid);
     BackgroundWorker worker;
@@ -224,7 +224,7 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
     PQconninfoOption *opts = PQconninfoParse(group, NULL);
     MemoryContextSwitchTo(oldMemoryContext);
     L("user = %s, data = %s, schema = %s, table = %s, id = %lu, group = %s, max = %u, oid = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
-    if (!opts) task_worker(work, id, group, max); else {
+    if (!opts) tick_task(work, id, group, max); else {
         const char **keywords;
         const char **values;
         StringInfoData buf;
@@ -255,7 +255,7 @@ static void tick_work(Work *work, int64 id, const char *group, int max) {
         arg++;
         keywords[arg] = NULL;
         values[arg] = NULL;
-        task_remote(work, id, group, max, keywords, values);
+        tick_remote(work, id, group, max, keywords, values);
         pfree(buf.data);
         pfree(keywords);
         pfree(values);
