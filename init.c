@@ -22,20 +22,6 @@ void sigterm_my(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
-void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker) {
-    BackgroundWorkerHandle *handle;
-    if (!RegisterDynamicBackgroundWorker(worker, &handle)) E("!RegisterDynamicBackgroundWorker"); else {
-        pid_t pid;
-        switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
-            case BGWH_NOT_YET_STARTED: E("WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED");
-            case BGWH_POSTMASTER_DIED: E("WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED");
-            case BGWH_STARTED: break;
-            case BGWH_STOPPED: E("WaitForBackgroundWorkerStartup == BGWH_STOPPED");
-        }
-    }
-    pfree(handle);
-}
-
 static void conf_work(void) {
     StringInfoData buf;
     BackgroundWorker worker;
