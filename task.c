@@ -320,12 +320,12 @@ static void task_init(Work *work, Task *task) {
     work->table = p;
     p += strlen(work->table) + 1;
     if (work->table == work->schema + 1) work->schema = NULL;
-    if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
+    if (!MessageContext && !(MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES))) E("!AllocSetContextCreate");
     L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table);
     SetConfigOptionMy("pg_task.data", work->data);
     SetConfigOptionMy("pg_task.user", work->user);
