@@ -303,9 +303,9 @@ static bool tick_check(void) {
         "SELECT      COALESCE(COALESCE(usename, \"user\"), data)::text AS user,\n"
         "            COALESCE(datname, data)::text AS data,\n"
         "            schema,\n"
-        "            COALESCE(\"table\", current_setting('pg_task.task', false)) AS table,\n"
-        "            COALESCE(timeout, current_setting('pg_task.tick', false)::int4) AS timeout\n"
-        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.config', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, timeout int4)\n"
+        "            COALESCE(\"table\", current_setting('pg_task.default_table', false)) AS table,\n"
+        "            COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout\n"
+        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, timeout int4)\n"
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
         ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::int4";

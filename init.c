@@ -2,9 +2,9 @@
 
 PG_MODULE_MAGIC;
 
-static char *pg_task_config;
-static char *pg_task_task;
-static int pg_task_tick;
+static char *json;
+static char *default_table;
+static int default_timeout;
 volatile sig_atomic_t sighup = false;
 volatile sig_atomic_t sigterm = false;
 
@@ -52,9 +52,9 @@ static void conf_work(void) {
 void _PG_init(void); void _PG_init(void) {
     if (IsBinaryUpgrade) return;
     if (!process_shared_preload_libraries_in_progress) F("!process_shared_preload_libraries_in_progress");
-    DefineCustomStringVariable("pg_task.config", "pg_task config", NULL, &pg_task_config, "[{\"data\":\"postgres\"}]", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.task", "pg_task task", NULL, &pg_task_task, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.tick", "pg_task tick", NULL, &pg_task_tick, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    L("pg_task_config = %s, pg_task_task = %s, pg_task_tick = %i", pg_task_config, pg_task_task, pg_task_tick);
+    DefineCustomStringVariable("pg_task.json", "pg_task config", NULL, &json, "[{\"data\":\"postgres\"}]", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.default_table", "pg_task task", NULL, &default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.default_timeout", "pg_task tick", NULL, &default_timeout, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    L("json = %s, default_table = %s, default_timeout = %i", json, default_table, default_timeout);
     conf_work();
 }
