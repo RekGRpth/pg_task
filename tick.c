@@ -559,7 +559,6 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) tick_latch();
             if (sighup) sigterm = tick_reload();
-            if (event->events & WL_TIMEOUT) tick_timeout(work);
             if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
         }
         FreeWaitEventSet(set);

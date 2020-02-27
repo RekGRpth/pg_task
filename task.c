@@ -385,7 +385,6 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
         if (!(count = WaitEventSetWait(set, 0, events, count, PG_WAIT_EXTENSION))) task_timeout(task); else for (int i = 0; i < count; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) task_latch();
-            if (event->events & WL_TIMEOUT) task_timeout(task);
         }
         FreeWaitEventSet(set);
         pfree(events);
