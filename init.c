@@ -36,7 +36,7 @@ void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker) {
     pfree(handle);
 }
 
-static void conf_worker(void) {
+static void conf_work(void) {
     StringInfoData buf;
     BackgroundWorker worker;
     MemSet(&worker, 0, sizeof(worker));
@@ -70,5 +70,5 @@ void _PG_init(void); void _PG_init(void) {
     DefineCustomStringVariable("pg_task.task", "pg_task task", NULL, &pg_task_task, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.tick", "pg_task tick", NULL, &pg_task_tick, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     L("pg_task_config = %s, pg_task_task = %s, pg_task_tick = %i", pg_task_config, pg_task_task, pg_task_tick);
-    conf_worker();
+    conf_work();
 }
