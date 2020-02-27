@@ -8,10 +8,8 @@ static Oid SPI_gettypeid_my(TupleDesc tupdesc, int fnumber) {
 }
 
 static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
-    Oid oid = SPI_gettypeid_my(tupdesc, fnumber);
-    bool isnull;
-    Oid foutoid;
-    bool typisvarlena;
+    Oid foutoid, oid = SPI_gettypeid_my(tupdesc, fnumber);
+    bool isnull, typisvarlena;
     Datum val = slot_getattr(slot, fnumber, &isnull);
     if (isnull) return NULL;
     getTypeOutputInfo(oid, &foutoid, &typisvarlena);
