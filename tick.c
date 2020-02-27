@@ -377,7 +377,7 @@ bool tick_init_work(Work *work) {
     work->schema_table = buf.data;
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     if (work->table != table_quote) pfree((void *)table_quote);
-    L("user = %s, data = %s, schema = %s, table = %s, period = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period);
+    L("user = %s, data = %s, schema = %s, table = %s, period = %d, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period, work->schema_table);
     if (work->schema) tick_schema(work);
     tick_type(work);
     tick_table(work);
