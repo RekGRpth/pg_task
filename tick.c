@@ -197,7 +197,7 @@ static void tick_task(const Work *work, const int64 id, const char *group, const
     if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s %s pg_task %s%s%s %s", work->user, work->data, work->schema ? work->schema : "", work->schema ? " " : "", work->table, group);
+    appendStringInfo(&buf, "%s %s %s", work->user, work->data, worker.bgw_type);
     if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
