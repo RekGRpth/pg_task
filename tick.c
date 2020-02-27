@@ -126,11 +126,13 @@ static void tick_free(Task *task) {
 }
 
 static void tick_finish(Task *task, const char *msg) {
-    W("%s and %s", msg, PQerrorMessage(task->conn));
+    char *err = PQerrorMessage(task->conn);
+    err[strlen(err) - 1] = '\0';
+    W("%s and %s", msg, err);
     queue_remove(&task->queue);
-    PQfinish(task->conn);
     initStringInfo(&task->response);
-    appendStringInfoString(&task->response, PQerrorMessage(task->conn));
+    appendStringInfoString(&task->response, err);
+    PQfinish(task->conn);
     task_done(task);
     if (task->request) pfree(task->request);
     if (task->response.data) pfree(task->response.data);

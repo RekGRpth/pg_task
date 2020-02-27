@@ -22,7 +22,7 @@ void SPI_commit_my(void) {
 void SPI_finish_my() {
     int rc;
     if ((rc = SPI_finish()) != SPI_OK_FINISH) E("SPI_finish = %s", SPI_result_code_string(rc));
-    ProcessCompletedNotifies();
+//    ProcessCompletedNotifies();
 }
 
 char *TextDatumGetCStringMy(Datum datum) {
