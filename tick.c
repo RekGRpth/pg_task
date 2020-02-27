@@ -91,6 +91,7 @@ static void tick_table(Work *work) {
     appendStringInfo(&buf, "%i", work->oid);
     SetConfigOptionMy("pg_task.oid", buf.data);
     pfree(buf.data);
+    if (!pg_try_advisory_lock_int8_my(work->oid)) E("!pg_try_advisory_lock_int8_my(%i)", work->oid);
 }
 
 static void tick_index(Work *work, const char *index) {
@@ -342,7 +343,7 @@ static void tick_init_conf(Work *work) {
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
 }
 
-bool tick_init_work(Work *work) {
+void tick_init_work(Work *work) {
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     const char *table_quote = quote_identifier(work->table);
     StringInfoData buf;
@@ -359,7 +360,6 @@ bool tick_init_work(Work *work) {
     if (work->schema) tick_schema(work);
     tick_type(work);
     tick_table(work);
-    if (!pg_try_advisory_lock_int8_my(work->oid)) { W("!pg_try_advisory_lock_int8_my(%i)", work->oid); return true; }
     tick_index(work, "dt");
     tick_index(work, "state");
     SetConfigOptionMy("pg_task.data", work->data);
@@ -370,7 +370,6 @@ bool tick_init_work(Work *work) {
     pfree(buf.data);
     tick_fix(work);
     queue_init(&work->queue);
-    return false;
 }
 
 static void tick_latch(void) {
@@ -521,7 +520,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     Work work;
     MemSet(&work, 0, sizeof(work));
     tick_init_conf(&work);
-    sigterm = tick_init_work(&work);
+    tick_init_work(&work);
     while (!sigterm && BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) {
         int count = queue_count(&work.queue) + 2;
         WaitEvent *events;

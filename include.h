@@ -91,7 +91,6 @@ bool pg_advisory_unlock_int8_my(int64 key);
 bool pg_try_advisory_lock_int4_my(int32 key1, int32 key2);
 bool pg_try_advisory_lock_int8_my(int64 key);
 bool task_live(Task *task);
-bool tick_init_work(Work *work);
 char *TextDatumGetCStringMy(Datum datum);
 const char *PQftypeMy(Oid oid);
 DestReceiver *CreateDestReceiverMy(CommandDest dest, Task *task);
@@ -111,6 +110,7 @@ void task_delete(Task *task);
 void task_done(Task *task);
 void task_repeat(Task *task);
 void task_work(Task *task);
+void tick_init_work(Work *work);
 void tick_socket(Task *task);
 void tick_timeout(Work *work);
 

@@ -94,8 +94,7 @@ static void conf_tick(const char *user, const char *data, const char *schema, co
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
-static bool conf_check(Work *work) {
-    bool exit = false;
+static void conf_check(Work *work) {
     static SPIPlanPtr plan = NULL;
     static const char *command =
         "WITH s AS (\n"
@@ -138,7 +137,7 @@ static bool conf_check(Work *work) {
             work->schema = NULL;
             work->table = "task";
             work->period = period;
-            exit = tick_init_work(work);
+            tick_init_work(work);
         } else {
             work->period = -1;
             conf_tick(user, data, schema, table, period);
@@ -149,7 +148,6 @@ static bool conf_check(Work *work) {
         pfree(table);
     }
     SPI_finish_my();
-    return exit;
 }
 
 static void conf_init(Work *work) {
@@ -172,10 +170,10 @@ static void conf_latch(void) {
     CHECK_FOR_INTERRUPTS();
 }
 
-static bool conf_reload(Work *work) {
+static void conf_reload(Work *work) {
     sighup = false;
     ProcessConfigFile(PGC_SIGHUP);
-    return conf_check(work);
+    conf_check(work);
 }
 
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
@@ -183,7 +181,7 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     Work work;
     MemSet(&work, 0, sizeof(work));
     conf_init(&work);
-    sigterm = conf_check(&work);
+    conf_check(&work);
     while (!sigterm) {
         int count = queue_count(&work.queue) + 2;
         WaitEvent *events;
@@ -202,7 +200,7 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
             for (int i = 0; i < count; i++) {
                 WaitEvent *event = &events[i];
                 if (event->events & WL_LATCH_SET) conf_latch();
-                if (sighup) sigterm = conf_reload(&work);
+                if (sighup) conf_reload(&work);
                 if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
             }
             if (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.period) && work.period >= 0) tick_timeout(&work);
