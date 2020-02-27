@@ -72,11 +72,12 @@ static void conf_data(const char *user, const char *data) {
     pfree(buf.data);
 }
 
-static void conf_tick(Work *work) {
+static void conf_tick(const char *user, const char *data, const char *schema, const char *table, const int period) {
     StringInfoData buf;
-    int data_len = strlen(work->data), user_len = strlen(work->user), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), period_len = sizeof(work->period);
+    int user_len = strlen(user), data_len = strlen(data), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), period_len = sizeof(period);
+    char *p;
     BackgroundWorker worker;
-    L("user = %s, data = %s, schema = %s, table = %s, period = %d", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period);
+    L("user = %s, data = %s, schema = %s, table = %s, period = %d", user, data, schema ? schema : "(null)", table, period);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = MyProcPid;
@@ -91,26 +92,26 @@ static void conf_tick(Work *work) {
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_function_name, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "pg_task %s%s%s", work->schema ? work->schema : "", work->schema ? " " : "", work->table);
+    appendStringInfo(&buf, "pg_task %s%s%s", schema ? schema : "", schema ? " " : "", table);
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s %s %s", work->user, work->data, worker.bgw_type);
+    appendStringInfo(&buf, "%s %s %s", user, data, worker.bgw_type);
     if (buf.len + 1 > BGW_MAXLEN) E("%u > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
     if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + period_len > BGW_EXTRALEN) E("%u > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + period_len);
-    work->p = worker.bgw_extra;
-    memcpy(work->p, work->user, user_len);
-    work->p += user_len + 1;
-    memcpy(work->p, work->data, data_len);
-    work->p += data_len + 1;
-    memcpy(work->p, work->schema, schema_len);
-    work->p += schema_len + 1;
-    memcpy(work->p, work->table, table_len);
-    work->p += table_len + 1;
-    *(typeof(work->period) *)work->p = work->period;
-    work->p += period_len;
+    p = worker.bgw_extra;
+    memcpy(p, user, user_len);
+    p += user_len + 1;
+    memcpy(p, data, data_len);
+    p += data_len + 1;
+    memcpy(p, schema, schema_len);
+    p += schema_len + 1;
+    memcpy(p, table, table_len);
+    p += table_len + 1;
+    *(typeof(period + 0) *)p = period;
+    p += period_len;
     RegisterDynamicBackgroundWorker_my(&worker);
 }
 
@@ -139,36 +140,35 @@ static bool conf_check(Work *work) {
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
     for (uint64 row = 0; row < SPI_processed; row++) {
         bool period_isnull, usename_isnull, datname_isnull;
-        work->user = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
-        work->data = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
-        work->schema = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
-        work->table = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
-        work->period = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
+        char *user = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "user"));
+        char *data = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "data"));
+        char *schema = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "schema"));
+        char *table = SPI_getvalue_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "table"));
+        int period = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "period"), &period_isnull));
         SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull);
         SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull);
-        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->period, usename_isnull ? "true" : "false", datname_isnull ? "true" : "false");
+        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, period = %d, usename_isnull = %s, datname_isnull = %s", row, user, data, schema ? schema : "(null)", table, period, usename_isnull ? "true" : "false", datname_isnull ? "true" : "false");
         if (period_isnull) E("period_isnull");
-        if (usename_isnull) conf_user(work->user);
-        if (datname_isnull) conf_data(work->user, work->data);
-        if (!pg_strncasecmp(work->user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(work->data, "postgres", sizeof("postgres") - 1) && !work->schema && !pg_strcasecmp(work->table, pg_task_task)) {
+        if (usename_isnull) conf_user(user);
+        if (datname_isnull) conf_data(user, data);
+        if (!pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !schema && !pg_strcasecmp(table, pg_task_task)) {
+            work->period = period;
             work->events |= WL_TIMEOUT;
+            work->user = "postgres";
+            work->data = "postgres";
+            work->schema = NULL;
+            work->table = pg_task_task;
+            exit = tick_init_work(work);
         } else {
             work->period = -1;
-            conf_tick(work);
+            conf_tick(user, data, schema, table, period);
         }
-        pfree(work->user);
-        pfree(work->data);
-        if (work->schema) pfree(work->schema);
-        pfree(work->table);
+        pfree(user);
+        pfree(data);
+        if (schema) pfree(schema);
+        pfree(table);
     }
     SPI_finish_my();
-    if (work->events & WL_TIMEOUT) {
-        work->user = "postgres";
-        work->data = "postgres";
-        work->schema = NULL;
-        work->table = pg_task_task;
-        exit = tick_init_work(work);
-    }
     return exit;
 }
 
