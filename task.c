@@ -309,8 +309,6 @@ static void task_init(Work *work, Task *task) {
     const char *schema_quote;
     const char *table_quote;
     char *p = MyBgworkerEntry->bgw_extra;
-    MemSet(work, 0, sizeof(*work));
-    MemSet(task, 0, sizeof(*task));
     task->work = work;
     work->user = p;
     p += strlen(work->user) + 1;
@@ -371,6 +369,8 @@ static void task_latch(void) {
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     Work work;
     Task task;
+    MemSet(&work, 0, sizeof(work));
+    MemSet(&task, 0, sizeof(task));
     task_init(&work, &task);
     while (!sigterm) {
         int count = 2;
