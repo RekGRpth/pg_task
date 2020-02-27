@@ -1,6 +1,10 @@
 #include "include.h"
 
-static Task *task;
+typedef struct DestReceiverMy {
+    DestReceiver pub;
+    Task *task;
+} DestReceiverMy;
+
 
 static Oid SPI_gettypeid_my(TupleDesc tupdesc, int fnumber) {
     if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) E("SPI_ERROR_NOATTRIBUTE");
@@ -17,6 +21,7 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
 }
 
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
+    Task *task = ((DestReceiverMy *)self)->task;
     if (!task->response.data) {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         initStringInfo(&task->response);
@@ -46,9 +51,13 @@ static void rShutdown(DestReceiver *self) { }
 
 static void rDestroy(DestReceiver *self) { }
 
-static const DestReceiver DestReceiverMy = {.receiveSlot = receiveSlot, .rStartup = rStartup, .rShutdown = rShutdown, .rDestroy = rDestroy, .mydest = DestDebug};
-
-DestReceiver *CreateDestReceiverMy(CommandDest dest, Task *_task) {
-    task = _task;
-    return dest == DestDebug ? unconstify(DestReceiver *, &DestReceiverMy) : CreateDestReceiver(dest);
+DestReceiver *CreateDestReceiverMy(Task *task) {
+    DestReceiverMy *self = (DestReceiverMy *)palloc0(sizeof(*self));
+    self->pub.receiveSlot = receiveSlot;
+    self->pub.rStartup = rStartup;
+    self->pub.rShutdown = rShutdown;
+    self->pub.rDestroy = rDestroy;
+    self->pub.mydest = DestDebug;
+    self->task = task;
+    return (DestReceiver *)self;
 }

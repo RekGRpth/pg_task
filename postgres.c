@@ -240,7 +240,7 @@ exec_simple_query(Task *task)
 		/*
 		 * Now we can create the destination receiver object.
 		 */
-		receiver = CreateDestReceiverMy(dest, task);
+		receiver = CreateDestReceiverMy(task);
 		if (dest == DestRemote)
 			SetRemoteDestReceiverParams(receiver, portal);
 
