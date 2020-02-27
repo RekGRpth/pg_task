@@ -120,25 +120,7 @@ static void tick_index(Work *work, const char *index) {
     if (index_quote != index) pfree((void *)index_quote);
 }
 
-static void tick_fix(Work *work) {
-    StringInfoData buf;
-    L("user = %s, data = %s, schema = %s, table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->schema_table);
-    initStringInfo(&buf);
-    appendStringInfo(&buf,
-        "WITH s AS (SELECT id FROM %1$s AS t WHERE state IN ('TAKE'::state, 'WORK'::state) AND pid NOT IN (\n"
-        "    SELECT  pid\n"
-        "    FROM    pg_stat_activity\n"
-        "    WHERE   datname = current_catalog\n"
-        "    AND     usename = current_user\n"
-        "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), \"group\", id)\n"
-        ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", work->schema_table);
-    SPI_connect_my(buf.data);
-    SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UPDATE, true);
-    SPI_finish_my();
-    pfree(buf.data);
-}
-
-static void task_free(Task *task) {
+static void tick_free(Task *task) {
     pfree(task->group);
     pfree(task);
 }
@@ -152,7 +134,7 @@ static void tick_finish(Task *task, const char *msg) {
     task_done(task);
     if (task->request) pfree(task->request);
     if (task->response.data) pfree(task->response.data);
-    task_free(task);
+    tick_free(task);
 }
 
 static void tick_remote(Work *work, int64 id, const char *group, int max, const char **keywords, const char **values) {
@@ -263,6 +245,13 @@ void tick_timeout(Work *work) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
+            "WITH s AS (SELECT id FROM %1$s AS t WHERE state IN ('TAKE'::state, 'WORK'::state) AND pid NOT IN (\n"
+            "    SELECT  pid\n"
+            "    FROM    pg_stat_activity\n"
+            "    WHERE   datname = current_catalog\n"
+            "    AND     usename = current_user\n"
+            "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), \"group\", id)\n"
+            ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id;"
             "WITH s AS (WITH s AS (WITH s AS (WITH s AS (WITH s AS (\n"
             "SELECT      id, \"group\", COALESCE(max, ~(1<<31)) AS max, a.pid\n"
             "FROM        %1$s AS t\n"
@@ -367,7 +356,6 @@ void tick_init_work(Work *work) {
     appendStringInfo(&buf, "%i", work->timeout);
     SetConfigOptionMy("pg_task.timeout", buf.data);
     pfree(buf.data);
-    tick_fix(work);
     queue_init(&work->queue);
 }
 
@@ -473,7 +461,7 @@ static void tick_result(Task *task) {
     if (!task->live || task_live(task)) {
         queue_remove(&task->queue);
         PQfinish(task->conn);
-        task_free(task);
+        tick_free(task);
     } else {
         task->state = QUERY;
         tick_query(task);
