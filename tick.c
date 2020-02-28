@@ -544,7 +544,8 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
             if (event->events & WL_LATCH_SET) sigterm = sigterm || tick_latch();
             if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
         }
-        if (work.timeout > 0 && (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout) || !nevents)) {
+        stop = GetCurrentTimestamp();
+        if (work.timeout > 0 && (TimestampDifferenceExceeds(start, stop, work.timeout) || !nevents)) {
             tick_timeout(&work);
             start = stop;
         }
