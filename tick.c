@@ -437,10 +437,7 @@ static void tick_error(Task *task, PGresult *result) {
 }
 
 static void tick_query(Task *task) {
-    if (!PQconsumeInput(task->conn)) tick_finish(task, "!PQconsumeInput");
-    else if (PQisBusy(task->conn)) W("PQisBusy");
-    else if (!(task->pid = PQbackendPID(task->conn))) tick_finish(task, "!PQbackendPID");
-    else if (task_work(task)) {
+    if (task_work(task)) {
         queue_remove(&task->queue);
         PQfinish(task->conn);
         tick_free(task);
@@ -477,6 +474,7 @@ static void tick_repeat(Task *task) {
 
 static void tick_result(Task *task) {
     if (!PQconsumeInput(task->conn)) tick_finish(task, "!PQconsumeInput"); else {
+//    else if (PQisBusy(task->conn)) W("PQisBusy"); else {
         for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) {
             if (PQresultStatus(result) == PGRES_FATAL_ERROR) tick_error(task, result); else {
                 L(PQcmdStatus(result));
@@ -515,7 +513,9 @@ static void tick_connect(Task *task) {
         case PGRES_POLLING_WRITING: L("PQconnectPoll == PGRES_POLLING_WRITING"); task->events = WL_SOCKET_WRITEABLE; break;
     }
     if ((task->fd = PQsocket(task->conn)) < 0) tick_finish(task, "PQsocket < 0");
-    if (task->connected) tick_query(task);
+    if (task->connected) {
+        if (!(task->pid = PQbackendPID(task->conn))) tick_finish(task, "!PQbackendPID"); else tick_query(task);
+    }
 }
 
 void tick_socket(Task *task) {
