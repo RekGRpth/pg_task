@@ -46,13 +46,6 @@
 
 #include "queue.h"
 
-typedef enum {
-    CONNECT,
-    QUERY,
-    RESULT,
-    IDLE
-} STATE;
-
 typedef struct Work {
     char *data;
     char *schema;
@@ -65,6 +58,7 @@ typedef struct Work {
 } Work;
 
 typedef struct Task {
+    bool connected;
     bool delete;
     bool live;
     bool repeat;
@@ -81,7 +75,6 @@ typedef struct Task {
     int timeout;
     PGconn *conn;
     queue_t queue;
-    STATE state;
     StringInfoData response;
     TimestampTz start;
     Work *work;
