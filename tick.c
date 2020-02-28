@@ -155,7 +155,7 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
     task->max = max;
     task->remote = remote;
     task->work = work;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, remote = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->remote ? task->remote : "(null)", task->max, work->oid);
+    L("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : "(null)", task->max, work->oid);
     if (!opts) {
         initStringInfo(&task->response);
         appendStringInfoString(&task->response, "!PQconninfoParse");
