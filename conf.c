@@ -199,9 +199,11 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
             if (event->events & WL_LATCH_SET) conf_latch(&work);
             if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
         }
-        if ((TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout) || !nevents) && work.timeout >= 0) tick_timeout(&work);
+        if (work.timeout > 0 && (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout) || !nevents)) {
+            tick_timeout(&work);
+            start = stop;
+        }
         FreeWaitEventSet(set);
         pfree(events);
-        start = stop;
     }
 }

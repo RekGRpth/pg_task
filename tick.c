@@ -540,9 +540,11 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
             if (event->events & WL_LATCH_SET) sigterm = tick_latch();
             if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
         }
-        if (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout) || !nevents) tick_timeout(&work);
+        if (work.timeout > 0 && (TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout) || !nevents)) {
+            tick_timeout(&work);
+            start = stop;
+        }
         FreeWaitEventSet(set);
         pfree(events);
-        start = stop;
     }
 }
