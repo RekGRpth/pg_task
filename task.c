@@ -4,11 +4,12 @@ extern bool stmt_timeout_active;
 extern bool xact_started;
 extern volatile sig_atomic_t sigterm;
 
-void task_work(Task *task) {
+bool task_work(Task *task) {
     #define ID 1
     #define SID S(ID)
     #define PID 2
     #define SPID S(PID)
+    bool exit = false;
     Work *work = task->work;
     static Oid argtypes[] = {[ID - 1] = INT8OID, [PID - 1] = INT4OID};
     Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [PID - 1] = Int32GetDatum(task->pid)};
@@ -17,7 +18,10 @@ void task_work(Task *task) {
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     task->count++;
     L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid, task->count, task->pid);
-    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) E("!pg_try_advisory_lock_int4_my(%i, %li)", work->oid, task->id);
+    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) {
+        W("!pg_try_advisory_lock_int4_my(%i, %li)", work->oid, task->id);
+        return true;
+    }
     if (!task->conn) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -44,7 +48,10 @@ void task_work(Task *task) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
-    if (SPI_processed != 1) E("SPI_processed != 1"); else {
+    if (SPI_processed != 1) {
+        W("SPI_processed != 1");
+        exit = true;
+    } else {
         bool request_isnull, timeout_isnull;
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         task->request = TextDatumGetCStringMy(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"), &request_isnull));
@@ -56,6 +63,7 @@ void task_work(Task *task) {
         L("request = %s, timeout = %i", task->request, task->timeout);
     }
     SPI_finish_my();
+    return exit;
 }
 
 void task_repeat(Task *task) {
@@ -288,7 +296,7 @@ static void task_error(Task *task) {
 }
 
 static bool task_timeout(Task *task) {
-    task_work(task);
+    if (task_work(task)) return true;
     L("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
     PG_TRY();
         task_success(task);

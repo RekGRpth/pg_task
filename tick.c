@@ -132,9 +132,9 @@ static void tick_free(Task *task) {
 static void tick_finish(Task *task, const char *msg) {
     char *err = PQerrorMessage(task->conn);
     err[strlen(err) - 1] = '\0';
-    queue_remove(&task->queue);
     initStringInfo(&task->response);
     appendStringInfo(&task->response, "%s and %s", msg, err);
+    queue_remove(&task->queue);
     W(task->response.data);
     PQfinish(task->conn);
     task_done(task);
@@ -435,38 +435,32 @@ static void tick_idle(Task *task) {
 }
 
 static void tick_query(Task *task) {
-    if (!PQconsumeInput(task->conn)) { tick_finish(task, "!PQconsumeInput"); return; }
-    if (PQisBusy(task->conn)) { W("PQisBusy"); return; }
-    if (!(task->pid = PQbackendPID(task->conn))) { tick_finish(task, "!PQbackendPID"); return; }
-    task_work(task);
-    L("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
-    if (task->timeout) {
-        StringInfoData buf;
-        initStringInfo(&buf);
-        appendStringInfo(&buf, "SET statement_timeout = %i;\n%s", task->timeout, task->request);
-        pfree(task->request);
-        task->request = buf.data;
-    }
-    if (!PQsendQuery(task->conn, task->request)) { tick_finish(task, "!PQsendQuery"); return; }
-    pfree(task->request);
-    task->request = NULL;
-    task->events = WL_SOCKET_WRITEABLE;
-    task->state = RESULT;
-}
-
-static void tick_result(Task *task) {
-    if (!PQconsumeInput(task->conn)) { tick_finish(task, "!PQconsumeInput"); return; }
-    for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) {
-        if (PQresultStatus(result) == PGRES_FATAL_ERROR) tick_error(task, result); else {
-            L(PQcmdStatus(result));
-            L(PQcmdTuples(result));
-            L(PQresStatus(PQresultStatus(result)));
-            if (!strlen(PQcmdStatus(result))) continue;
-            if (!strlen(PQcmdTuples(result))) continue;
-            if (!pg_strncasecmp(PQcmdTuples(result), "0", sizeof("0") - 1)) continue;
-            if (PQresultStatus(result) == PGRES_TUPLES_OK) tick_success(task, result);
+    if (!PQconsumeInput(task->conn)) tick_finish(task, "!PQconsumeInput");
+    else if (PQisBusy(task->conn)) W("PQisBusy");
+    else if (!(task->pid = PQbackendPID(task->conn))) tick_finish(task, "!PQbackendPID");
+    else if (task_work(task)) {
+        queue_remove(&task->queue);
+        PQfinish(task->conn);
+        tick_free(task);
+    } else {
+        L("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
+        if (task->timeout) {
+            StringInfoData buf;
+            initStringInfo(&buf);
+            appendStringInfo(&buf, "SET statement_timeout = %i;\n%s", task->timeout, task->request);
+            pfree(task->request);
+            task->request = buf.data;
+        }
+        if (!PQsendQuery(task->conn, task->request)) tick_finish(task, "!PQsendQuery"); else {
+            pfree(task->request);
+            task->request = NULL;
+            task->events = WL_SOCKET_WRITEABLE;
+            task->state = RESULT;
         }
     }
+}
+
+static void tick_repeat(Task *task) {
     task->state = IDLE;
     task_done(task);
     L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
@@ -481,6 +475,23 @@ static void tick_result(Task *task) {
     } else {
         task->state = QUERY;
         tick_query(task);
+    }
+}
+
+static void tick_result(Task *task) {
+    if (!PQconsumeInput(task->conn)) tick_finish(task, "!PQconsumeInput"); else {
+        for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) {
+            if (PQresultStatus(result) == PGRES_FATAL_ERROR) tick_error(task, result); else {
+                L(PQcmdStatus(result));
+                L(PQcmdTuples(result));
+                L(PQresStatus(PQresultStatus(result)));
+                if (!strlen(PQcmdStatus(result))) continue;
+                if (!strlen(PQcmdTuples(result))) continue;
+                if (!pg_strncasecmp(PQcmdTuples(result), "0", sizeof("0") - 1)) continue;
+                if (PQresultStatus(result) == PGRES_TUPLES_OK) tick_success(task, result);
+            }
+        }
+        tick_repeat(task);
     }
 }
 
@@ -511,10 +522,10 @@ static void tick_connect(Task *task) {
 
 void tick_socket(Task *task) {
     switch (task->state) {
-        case CONNECT: tick_connect(task); break;
-        case QUERY: tick_query(task); break;
-        case RESULT: tick_result(task); break;
-        case IDLE: tick_idle(task); break;
+        case CONNECT: L("CONNECT"); tick_connect(task); break;
+        case QUERY: L("QUERY"); tick_query(task); break;
+        case RESULT: L("RESULT"); tick_result(task); break;
+        case IDLE: L("IDLE"); tick_idle(task); break;
     }
 }
 
