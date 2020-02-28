@@ -387,7 +387,7 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
             if (event->events & WL_EXIT_ON_PM_DEATH) L("WL_EXIT_ON_PM_DEATH");
             if (event->events & WL_LATCH_SET) task_latch();
         }
-        if (!nevents) sigterm |= task_timeout(&task);
+        if (!nevents) sigterm = sigterm || task_timeout(&task);
         FreeWaitEventSet(set);
         pfree(events);
     }
