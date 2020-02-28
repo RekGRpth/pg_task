@@ -74,7 +74,7 @@ void task_repeat(Task *task) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "INSERT INTO %1$s (dt, parent, \"group\", max, request, timeout, delete, repeat, drift, count, live)\n"
+            "INSERT INTO %1$s (parent, dt, \"group\", max, request, timeout, delete, repeat, drift, count, live)\n"
             "SELECT $" SPID ", CASE WHEN drift THEN current_timestamp + repeat\n"
             "ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
             "END AS dt, \"group\", max, request, timeout, delete, repeat, drift, count, live\n"
