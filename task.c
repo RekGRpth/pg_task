@@ -30,7 +30,7 @@ void task_work(Task *task) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " FOR UPDATE)\n"
+            "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " AND state = 'TAKE'::state FOR UPDATE)\n"
             "UPDATE  %1$s AS u\n"
             "SET     state = 'WORK'::state,\n"
             "        start = current_timestamp,\n"
@@ -99,7 +99,7 @@ void task_delete(Task *task) {
         Work *work = task->work;
         StringInfoData buf;
         initStringInfo(&buf);
-        appendStringInfo(&buf, "DELETE FROM %s WHERE id = $" SID, work->schema_table);
+        appendStringInfo(&buf, "DELETE FROM %s WHERE id = $" SID " AND state IN ('DONE'::state, 'FAIL'::state)", work->schema_table);
         command = buf.data;
     }
     #undef ID
@@ -192,7 +192,7 @@ void task_done(Task *task) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " FOR UPDATE\n)\n"
+            "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " AND state IN ('WORK'::state, 'TAKE'::state) FOR UPDATE\n)\n"
             "UPDATE %1$s AS u SET state = CASE WHEN $" SSUCCESS " THEN 'DONE'::state ELSE 'FAIL'::state END, stop = current_timestamp, response = $" SRESPONSE " FROM s WHERE u.id = s.id\n"
             "RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live", work->schema_table);
         command = buf.data;
