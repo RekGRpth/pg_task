@@ -361,9 +361,10 @@ static void task_init(Work *work, Task *task) {
     SetConfigOptionMy("pg_task.group", task->group);
 }
 
-static void task_latch(void) {
+static bool task_latch(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
+    return !BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid);
 }
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
@@ -372,7 +373,7 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     MemSet(&work, 0, sizeof(work));
     MemSet(&task, 0, sizeof(task));
     task_init(&work, &task);
-    while (!sigterm && BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) {
+    while (!sigterm) {
         int nevents = 2;
         WaitEvent *events = palloc0(nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
@@ -381,7 +382,7 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
         nevents = WaitEventSetWait(set, 0, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) task_latch();
+            if (event->events & WL_LATCH_SET) sigterm = task_latch();
         }
         if (!nevents) sigterm = task_timeout(&task);
         FreeWaitEventSet(set);

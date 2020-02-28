@@ -373,9 +373,10 @@ void tick_init_work(Work *work) {
     queue_init(&work->queue);
 }
 
-static void tick_latch(void) {
+static bool tick_latch(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
+    return !BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid);
 }
 
 static bool tick_reload(void) {
@@ -522,7 +523,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     MemSet(&work, 0, sizeof(work));
     tick_init_conf(&work);
     tick_init_work(&work);
-    while (!sigterm && BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) {
+    while (!sigterm) {
         int nevents = queue_count(&work.queue) + 2;
         WaitEvent *events = palloc0(nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
@@ -535,7 +536,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
         nevents = WaitEventSetWait(set, work.timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) tick_latch();
+            if (event->events & WL_LATCH_SET) sigterm = tick_latch();
             if (sighup) sigterm = tick_reload();
             if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
         }
