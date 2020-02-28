@@ -378,10 +378,12 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
         WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, count);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
-        if (!(count = WaitEventSetWait(set, 0, events, count, PG_WAIT_EXTENSION))) sigterm = task_timeout(&task); else for (int i = 0; i < count; i++) {
+        count = WaitEventSetWait(set, 0, events, count, PG_WAIT_EXTENSION);
+        for (int i = 0; i < count; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) task_latch();
         }
+        if (!count) sigterm = task_timeout(&task);
         FreeWaitEventSet(set);
         pfree(events);
     }
