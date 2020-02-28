@@ -2,7 +2,6 @@
 
 extern bool stmt_timeout_active;
 extern bool xact_started;
-extern volatile sig_atomic_t sighup;
 extern volatile sig_atomic_t sigterm;
 
 void task_work(Task *task) {
