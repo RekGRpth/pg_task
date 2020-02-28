@@ -17,7 +17,7 @@ bool task_work(Task *task) {
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     task->count++;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->max, work->oid, task->count, task->pid);
+    L("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work->oid, task->count, task->pid);
     if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) {
         W("!pg_try_advisory_lock_int4_my(%i, %li)", work->oid, task->id);
         return true;
