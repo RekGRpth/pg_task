@@ -70,6 +70,7 @@ typedef struct Task {
     bool repeat;
     bool success;
     char *group;
+    char *remote;
     char *request;
     int64 id;
     int count;

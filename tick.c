@@ -73,6 +73,7 @@ static void tick_table(Work *work) {
         "    drift boolean NOT NULL DEFAULT true,\n"
         "    count int4,\n"
         "    live interval,\n"
+        "    remote text,\n"
         "    CONSTRAINT %2$s FOREIGN KEY (parent) REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
         ")", work->schema_table, name_quote);
     names = stringToQualifiedNameList(work->schema_table);
@@ -121,42 +122,93 @@ static void tick_index(Work *work, const char *index) {
 }
 
 static void tick_free(Task *task) {
-    pfree(task->group);
+    if (task->group) pfree(task->group);
+    if (task->remote) pfree(task->remote);
+    if (task->request) pfree(task->request);
+    if (task->response.data) pfree(task->response.data);
     pfree(task);
 }
 
 static void tick_finish(Task *task, const char *msg) {
     char *err = PQerrorMessage(task->conn);
     err[strlen(err) - 1] = '\0';
-    W("%s and %s", msg, err);
     queue_remove(&task->queue);
     initStringInfo(&task->response);
-    appendStringInfoString(&task->response, err);
+    appendStringInfo(&task->response, "%s and %s", msg, err);
+    W(task->response.data);
     PQfinish(task->conn);
     task_done(task);
-    if (task->request) pfree(task->request);
-    if (task->response.data) pfree(task->response.data);
     tick_free(task);
 }
 
-static void tick_remote(Work *work, int64 id, const char *group, int max, const char **keywords, const char **values) {
+static void tick_remote(Work *work, const int64 id, char *group, char *remote, const int max) {
+    const char **keywords;
+    const char **values;
+    StringInfoData buf;
+    const char *application_name = "group";
+    int arg = 2;
+    char *err;
     Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
-    L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
-    task->work = work;
+    PQconninfoOption *opts = PQconninfoParse(remote, &err);
+    task->group = group;
     task->id = id;
-    task->group = MemoryContextStrdup(TopMemoryContext, group);
     task->max = max;
-    task->conn = PQconnectStartParams(keywords, values, false);
-    queue_insert_tail(&work->queue, &task->queue);
-    if (PQstatus(task->conn) == CONNECTION_BAD) { tick_finish(task, "PQstatus == CONNECTION_BAD"); return; }
-    if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) { tick_finish(task, "PQsetnonblocking == -1"); return; }
-    if ((task->fd = PQsocket(task->conn)) < 0) { tick_finish(task, "PQsocket < 0"); return; }
-    task->start = GetCurrentTimestamp();
+    task->remote = remote;
+    task->work = work;
+    L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, remote = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, task->id, task->group, task->remote ? task->remote : "(null)", task->max, work->oid);
+    if (!opts) {
+        initStringInfo(&task->response);
+        appendStringInfoString(&task->response, "!PQconninfoParse");
+        if (err) {
+            err[strlen(err) - 1] = '\0';
+            appendStringInfo(&task->response, " and %s", err);
+            PQfreemem(err);
+        }
+        W(task->response.data);
+        task_done(task);
+        tick_free(task);
+        return;
+    }
+    for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
+        if (!opt->val) continue;
+        L("%s = %s", opt->keyword, opt->val);
+        if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
+        if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) { application_name = opt->val; continue; }
+        arg++;
+    }
+    keywords = palloc(arg * sizeof(*keywords));
+    values = palloc(arg * sizeof(*values));
+    initStringInfo(&buf);
+    appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, application_name);
+    arg = 0;
+    keywords[arg] = "application_name";
+    values[arg] = buf.data;
+    for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
+        if (!opt->val) continue;
+        if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
+        if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) continue;
+        arg++;
+        keywords[arg] = opt->keyword;
+        values[arg] = opt->val;
+    }
+    arg++;
+    keywords[arg] = NULL;
+    values[arg] = NULL;
     task->events = WL_SOCKET_WRITEABLE;
+    task->start = GetCurrentTimestamp();
     task->state = CONNECT;
+    queue_insert_tail(&work->queue, &task->queue);
+    if (!(task->conn = PQconnectStartParams(keywords, values, false))) tick_finish(task, "!PQconnectStartParams");
+    else if (PQstatus(task->conn) == CONNECTION_BAD) tick_finish(task, "PQstatus == CONNECTION_BAD");
+    else if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) tick_finish(task, "PQsetnonblocking == -1");
+    else if ((task->fd = PQsocket(task->conn)) < 0) tick_finish(task, "PQsocket < 0");
+    pfree(buf.data);
+    pfree(keywords);
+    pfree(values);
+    PQconninfoFree(opts);
 }
 
-static void tick_task(const Work *work, const int64 id, const char *group, const int max) {
+static void tick_task(const Work *work, const int64 id, char *group, const int max) {
     StringInfoData buf;
     int user_len = strlen(work->user), data_len = strlen(work->data), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), group_len = strlen(group), max_len = sizeof(max), oid_len = sizeof(work->oid);
     BackgroundWorker worker;
@@ -194,52 +246,7 @@ static void tick_task(const Work *work, const int64 id, const char *group, const
     p = (char *)memcpy(p, group, group_len) + group_len + 1;
     p = (char *)memcpy(p, &max, max_len) + max_len;
     RegisterDynamicBackgroundWorker_my(&worker);
-}
-
-static void tick_work(Work *work, const int64 id, const char *group, const int max) {
-    char *msg;
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    PQconninfoOption *opts = PQconninfoParse(group, &msg);
-    MemoryContextSwitchTo(oldMemoryContext);
-    if (msg) { W(msg); PQfreemem(msg); }
-    L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
-    if (!opts) tick_task(work, id, group, max); else {
-        const char **keywords;
-        const char **values;
-        StringInfoData buf;
-        const char *application_name = "group";
-        int arg = 2;
-        for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
-            if (!opt->val) continue;
-            L("%s = %s", opt->keyword, opt->val);
-            if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
-            if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) { application_name = opt->val; continue; }
-            arg++;
-        }
-        keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
-        values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
-        initStringInfo(&buf);
-        appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, application_name);
-        arg = 0;
-        keywords[arg] = "application_name";
-        values[arg] = buf.data;
-        for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
-            if (!opt->val) continue;
-            if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
-            if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) continue;
-            arg++;
-            keywords[arg] = opt->keyword;
-            values[arg] = opt->val;
-        }
-        arg++;
-        keywords[arg] = NULL;
-        values[arg] = NULL;
-        tick_remote(work, id, group, max, keywords, values);
-        pfree(buf.data);
-        pfree(keywords);
-        pfree(values);
-        PQconninfoFree(opts);
-    }
+    pfree(group);
 }
 
 void tick_timeout(Work *work) {
@@ -269,22 +276,24 @@ void tick_timeout(Work *work) {
             ") SELECT array_agg(id ORDER BY id) AS id, \"group\", count FROM s WHERE count > 0 GROUP BY \"group\", count\n"
             ") SELECT unnest(id[:count]) AS id, \"group\", count FROM s ORDER BY count DESC\n"
             ") SELECT s.* FROM s INNER JOIN %1$s USING (id) FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, u.group, COALESCE(u.max, ~(1<<31)) AS max", work->schema_table);
+            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, u.group, u.remote, COALESCE(u.max, ~(1<<31)) AS max", work->schema_table);
         command = buf.data;
     }
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_processed; row++) {
-        bool id_isnull, group_isnull, max_isnull;
+        bool id_isnull, group_isnull, remote_isnull, max_isnull;
         int64 id = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull));
-        char *group = TextDatumGetCStringMy(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "group"), &group_isnull));
         int max = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "max"), &max_isnull));
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+        char *group = TextDatumGetCStringMy(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "group"), &group_isnull));
+        char *remote = TextDatumGetCStringMy(SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "remote"), &remote_isnull));
+        MemoryContextSwitchTo(oldMemoryContext);
         if (id_isnull) E("id_isnull");
         if (max_isnull) E("max_isnull");
-        L("row = %lu, id = %li, group = %s, max = %i", row, id, group, max);
-        tick_work(work, id, group, max);
-        pfree(group);
+        L("row = %lu, id = %li, group = %s, remote = %s, max = %i", row, id, group, remote ? remote : "(null)", max);
+        if (remote) tick_remote(work, id, group, remote, max); else tick_task(work, id, group, max);
     }
     SPI_finish_my();
 }
