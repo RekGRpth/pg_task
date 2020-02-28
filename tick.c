@@ -255,7 +255,7 @@ void tick_timeout(Work *work) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %1$s AS t WHERE dt < current_timestamp - concat_ws(' ', current_setting('pg_task.timeout', false), 'msec')::interval AND state IN ('TAKE'::state, 'WORK'::state) AND pid NOT IN (\n"
+            "WITH s AS (SELECT id FROM %1$s AS t WHERE dt < current_timestamp - concat_ws(' ', (current_setting('pg_task.reset', false)::int4 * current_setting('pg_task.timeout', false)::int4)::text, 'msec')::interval AND state IN ('TAKE'::state, 'WORK'::state) AND pid NOT IN (\n"
             "    SELECT  pid\n"
             "    FROM    pg_stat_activity\n"
             "    WHERE   datname = current_catalog\n"
@@ -306,11 +306,12 @@ static bool tick_check(void) {
         "            COALESCE(datname, data)::text AS data,\n"
         "            schema,\n"
         "            COALESCE(\"table\", current_setting('pg_task.default_table', false)) AS table,\n"
+        "            COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,\n"
         "            COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout\n"
-        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, timeout int4)\n"
+        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, reset int4, timeout int4)\n"
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::int4";
+        ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND reset = current_setting('pg_task.reset', false)::int4 AND timeout = current_setting('pg_task.timeout', false)::int4";
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
@@ -329,6 +330,8 @@ static void tick_init_conf(Work *work) {
     p += strlen(work->schema) + 1;
     work->table = p;
     p += strlen(work->table) + 1;
+    work->reset = *(typeof(work->reset) *)p;
+    p += sizeof(work->reset);
     work->timeout = *(typeof(work->timeout) *)p;
     if (work->table == work->schema + 1) work->schema = NULL;
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
@@ -336,7 +339,7 @@ static void tick_init_conf(Work *work) {
     if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
-    L("user = %s, data = %s, schema = %s, table = %s, timeout = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->timeout);
+    L("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->reset, work->timeout);
     pqsignal(SIGHUP, sighup_my);
     pqsignal(SIGTERM, sigterm_my);
     BackgroundWorkerUnblockSignals();
@@ -357,7 +360,7 @@ void tick_init_work(Work *work) {
     work->schema_table = buf.data;
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     if (work->table != table_quote) pfree((void *)table_quote);
-    L("user = %s, data = %s, schema = %s, table = %s, timeout = %i, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->timeout, work->schema_table);
+    L("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->reset, work->timeout, work->schema_table);
     if (work->schema) tick_schema(work);
     tick_type(work);
     tick_table(work);
@@ -366,6 +369,9 @@ void tick_init_work(Work *work) {
     SetConfigOptionMy("pg_task.data", work->data);
     SetConfigOptionMy("pg_task.user", work->user);
     initStringInfo(&buf);
+    appendStringInfo(&buf, "%i", work->reset);
+    SetConfigOptionMy("pg_task.reset", buf.data);
+    resetStringInfo(&buf);
     appendStringInfo(&buf, "%i", work->timeout);
     SetConfigOptionMy("pg_task.timeout", buf.data);
     pfree(buf.data);
