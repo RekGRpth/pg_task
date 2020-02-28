@@ -183,23 +183,23 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     conf_init(&work);
     conf_check(&work);
     while (!sigterm) {
-        int count = queue_count(&work.queue) + 2;
-        WaitEvent *events = palloc0(count * sizeof(*events));
-        WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, count);
+        int nevents = queue_count(&work.queue) + 2;
+        WaitEvent *events = palloc0(nevents * sizeof(*events));
+        WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
         queue_each(&work.queue, queue) {
             Task *task = queue_data(queue, Task, queue);
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, task->fd, NULL, task);
         }
-        count = WaitEventSetWait(set, work.timeout, events, count, PG_WAIT_EXTENSION);
-        for (int i = 0; i < count; i++) {
+        nevents = WaitEventSetWait(set, work.timeout, events, nevents, PG_WAIT_EXTENSION);
+        for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) conf_latch();
             if (sighup) conf_reload(&work);
             if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
         }
-        if ((TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout) || !count) && work.timeout >= 0) tick_timeout(&work);
+        if ((TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout) || !nevents) && work.timeout >= 0) tick_timeout(&work);
         FreeWaitEventSet(set);
         pfree(events);
         start = stop;

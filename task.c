@@ -373,17 +373,17 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     MemSet(&task, 0, sizeof(task));
     task_init(&work, &task);
     while (!sigterm && BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) {
-        int count = 2;
-        WaitEvent *events = palloc0(count * sizeof(*events));
-        WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, count);
+        int nevents = 2;
+        WaitEvent *events = palloc0(nevents * sizeof(*events));
+        WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
-        count = WaitEventSetWait(set, 0, events, count, PG_WAIT_EXTENSION);
-        for (int i = 0; i < count; i++) {
+        nevents = WaitEventSetWait(set, 0, events, nevents, PG_WAIT_EXTENSION);
+        for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) task_latch();
         }
-        if (!count) sigterm = task_timeout(&task);
+        if (!nevents) sigterm = task_timeout(&task);
         FreeWaitEventSet(set);
         pfree(events);
     }
