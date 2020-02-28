@@ -62,8 +62,10 @@ void task_work(Task *task) {
 void task_repeat(Task *task) {
     #define ID 1
     #define SID S(ID)
-    static Oid argtypes[] = {[ID - 1] = INT8OID};
-    Datum values[] = {[ID - 1] = Int64GetDatum(task->id)};
+    #define PID 2
+    #define SPID S(PID)
+    static Oid argtypes[] = {[ID - 1] = INT8OID, [PID - 1] = INT4OID};
+    Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [PID - 1] = Int32GetDatum(task->pid)};
     static SPIPlanPtr plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -72,8 +74,8 @@ void task_repeat(Task *task) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "INSERT INTO %1$s (dt, \"group\", max, request, timeout, delete, repeat, drift, count, live)\n"
-            "SELECT CASE WHEN drift THEN current_timestamp + repeat\n"
+            "INSERT INTO %1$s (dt, parent, \"group\", max, request, timeout, delete, repeat, drift, count, live)\n"
+            "SELECT $" SPID ", CASE WHEN drift THEN current_timestamp + repeat\n"
             "ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
             "END AS dt, \"group\", max, request, timeout, delete, repeat, drift, count, live\n"
             "FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::state, 'FAIL'::state) LIMIT 1", work->schema_table);
@@ -81,6 +83,8 @@ void task_repeat(Task *task) {
     }
     #undef ID
     #undef SID
+    #undef PID
+    #undef SPID
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT, true);
