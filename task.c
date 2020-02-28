@@ -375,7 +375,7 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     while (!sigterm && BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid)) {
         int nevents = 2;
         WaitEvent *events = palloc0(nevents * sizeof(*events));
-        WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, nevents);
+        WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
         nevents = WaitEventSetWait(set, 0, events, nevents, PG_WAIT_EXTENSION);
