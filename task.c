@@ -237,8 +237,6 @@ static void task_success(Task *task) {
     pfree(task->request);
     if (IsTransactionState()) exec_simple_query("COMMIT", task->timeout, &task->response);
     if (IsTransactionState()) E("IsTransactionState");
-    pgstat_report_stat(false);
-    pgstat_report_activity(STATE_IDLE, NULL);
     task->success = true;
 }
 
@@ -291,8 +289,6 @@ static void task_error(Task *task) {
     FlushErrorState();
     xact_started = false;
     RESUME_INTERRUPTS();
-    pgstat_report_stat(false);
-    pgstat_report_activity(STATE_IDLE, NULL);
 }
 
 static bool task_timeout(Task *task) {
@@ -303,6 +299,8 @@ static bool task_timeout(Task *task) {
     PG_CATCH();
         task_error(task);
     PG_END_TRY();
+    pgstat_report_stat(false);
+    pgstat_report_activity(STATE_IDLE, NULL);
     task_done(task);
     L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
     if (task->repeat) task_repeat(task);
