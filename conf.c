@@ -165,15 +165,16 @@ static void conf_init(Work *work) {
     queue_init(&work->queue);
 }
 
-static void conf_latch(void) {
-    ResetLatch(MyLatch);
-    CHECK_FOR_INTERRUPTS();
-}
-
 static void conf_reload(Work *work) {
     sighup = false;
     ProcessConfigFile(PGC_SIGHUP);
     conf_check(work);
+}
+
+static void conf_latch(Work *work) {
+    ResetLatch(MyLatch);
+    CHECK_FOR_INTERRUPTS();
+    if (sighup) conf_reload(work);
 }
 
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
@@ -195,8 +196,7 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
         nevents = WaitEventSetWait(set, work.timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) conf_latch();
-            if (sighup) conf_reload(&work);
+            if (event->events & WL_LATCH_SET) conf_latch(&work);
             if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
         }
         if ((TimestampDifferenceExceeds(start, stop = GetCurrentTimestamp(), work.timeout) || !nevents) && work.timeout >= 0) tick_timeout(&work);
