@@ -178,13 +178,14 @@ bool task_live(Task *task) {
     return exit;
 }
 
-void task_done(Task *task) {
+bool task_done(Task *task) {
     #define ID 1
     #define SID S(ID)
     #define SUCCESS 2
     #define SSUCCESS S(SUCCESS)
     #define RESPONSE 3
     #define SRESPONSE S(RESPONSE)
+    bool exit = false;
     Work *work = task->work;
     static Oid argtypes[] = {[ID - 1] = INT8OID, [SUCCESS - 1] = BOOLOID, [RESPONSE - 1] = TEXTOID};
     Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [SUCCESS - 1] = BoolGetDatum(task->success = task->response.data ? task->success : true), [RESPONSE - 1] = task->response.data ? CStringGetTextDatum(task->response.data) : (Datum)NULL};
@@ -211,7 +212,10 @@ void task_done(Task *task) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
-    if (SPI_processed != 1) E("SPI_processed != 1"); else {
+    if (SPI_processed != 1) {
+        W("SPI_processed != 1");
+        exit = true;
+    } else {
         bool delete_isnull, repeat_isnull, live_isnull;
         task->delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &delete_isnull));
         task->repeat = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &repeat_isnull));
@@ -225,6 +229,7 @@ void task_done(Task *task) {
     #undef RESPONSE
     #undef SRESPONSE
     pg_advisory_unlock_int4_my(work->oid, task->id);
+    return exit;
 }
 
 static void task_success(Task *task) {
@@ -301,7 +306,7 @@ static bool task_timeout(Task *task) {
     PG_END_TRY();
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
-    task_done(task);
+    if (task_done(task)) return true;
     L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
     if (task->repeat) task_repeat(task);
     if (task->delete && !task->response.data) task_delete(task);

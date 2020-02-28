@@ -85,6 +85,7 @@ bool pg_advisory_unlock_int4_my(int32 key1, int32 key2);
 bool pg_advisory_unlock_int8_my(int64 key);
 bool pg_try_advisory_lock_int4_my(int32 key1, int32 key2);
 bool pg_try_advisory_lock_int8_my(int64 key);
+bool task_done(Task *task);
 bool task_live(Task *task);
 bool task_work(Task *task);
 char *TextDatumGetCStringMy(Datum datum);
@@ -103,7 +104,6 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_finish_my(void);
 void SPI_start_transaction_my(const char *src);
 void task_delete(Task *task);
-void task_done(Task *task);
 void task_repeat(Task *task);
 void tick_init_work(Work *work);
 void tick_socket(Task *task);

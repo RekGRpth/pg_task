@@ -442,20 +442,20 @@ static void tick_query(Task *task) {
         queue_remove(&task->queue);
         PQfinish(task->conn);
         tick_free(task);
-    } else {
-        L("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
-        if (task->timeout) {
-            StringInfoData buf;
-            initStringInfo(&buf);
-            appendStringInfo(&buf, "SET statement_timeout = %i;\n%s", task->timeout, task->request);
-            pfree(task->request);
-            task->request = buf.data;
-        }
-        if (!PQsendQuery(task->conn, task->request)) tick_finish(task, "!PQsendQuery"); else {
-            pfree(task->request);
-            task->request = NULL;
-            task->events = WL_SOCKET_WRITEABLE;
-        }
+        return;
+    }
+    L("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
+    if (task->timeout) {
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfo(&buf, "SET statement_timeout = %i;\n%s", task->timeout, task->request);
+        pfree(task->request);
+        task->request = buf.data;
+    }
+    if (!PQsendQuery(task->conn, task->request)) tick_finish(task, "!PQsendQuery"); else {
+        pfree(task->request);
+        task->request = NULL;
+        task->events = WL_SOCKET_WRITEABLE;
     }
 }
 
@@ -471,7 +471,12 @@ static void tick_repeat(Task *task) {
         if (!PQsendQuery(task->conn, "COMMIT")) tick_finish(task, "!PQsendQuery"); else task->events = WL_SOCKET_WRITEABLE;
         return;
     }
-    task_done(task);
+    if (task_done(task)) {
+        queue_remove(&task->queue);
+        PQfinish(task->conn);
+        tick_free(task);
+        return;
+    }
     L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
     if (task->repeat) task_repeat(task);
     if (task->delete && !task->response.data) task_delete(task);
