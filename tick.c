@@ -450,7 +450,7 @@ static void tick_query(Task *task) {
         if (!PQsendQuery(task->conn, task->request)) tick_finish(task, "!PQsendQuery"); else {
             pfree(task->request);
             task->request = NULL;
-            task->events = WL_SOCKET_READABLE;
+            task->events = WL_SOCKET_WRITEABLE;
         }
     }
 }
