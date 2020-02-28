@@ -363,6 +363,7 @@ static void task_init(Work *work, Task *task) {
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
+    process_session_preload_libraries();
     SetConfigOptionMy("pg_task.group", task->group);
 }
 

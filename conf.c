@@ -166,6 +166,7 @@ static void conf_init(Work *work) {
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
+    process_session_preload_libraries();
     work->timeout = -1;
     queue_init(&work->queue);
 }

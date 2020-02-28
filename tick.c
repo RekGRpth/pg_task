@@ -345,6 +345,7 @@ static void tick_init_conf(Work *work) {
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
+    process_session_preload_libraries();
 }
 
 void tick_init_work(Work *work) {
