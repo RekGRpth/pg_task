@@ -360,10 +360,9 @@ static void task_init(Work *work, Task *task) {
     SetConfigOptionMy("pg_task.group", task->group);
 }
 
-static bool task_latch(void) {
+static void task_latch(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
-    return !BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid);
 }
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
@@ -381,9 +380,14 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
         nevents = WaitEventSetWait(set, 0, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) sigterm = task_latch();
+            if (event->events & WL_LATCH_SET) L("WL_LATCH_SET");
+            if (event->events & WL_SOCKET_READABLE) L("WL_SOCKET_READABLE");
+            if (event->events & WL_SOCKET_WRITEABLE) L("WL_SOCKET_WRITEABLE");
+            if (event->events & WL_POSTMASTER_DEATH) L("WL_POSTMASTER_DEATH");
+            if (event->events & WL_EXIT_ON_PM_DEATH) L("WL_EXIT_ON_PM_DEATH");
+            if (event->events & WL_LATCH_SET) task_latch();
         }
-        if (!nevents) sigterm = task_timeout(&task);
+        if (!nevents) sigterm |= task_timeout(&task);
         FreeWaitEventSet(set);
         pfree(events);
     }
