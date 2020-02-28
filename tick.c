@@ -473,8 +473,8 @@ static void tick_repeat(Task *task) {
 }
 
 static void tick_result(Task *task) {
-    if (!PQconsumeInput(task->conn)) tick_finish(task, "!PQconsumeInput"); else {
-//    else if (PQisBusy(task->conn)) W("PQisBusy"); else {
+    if (!PQconsumeInput(task->conn)) tick_finish(task, "!PQconsumeInput");
+    else if (PQisBusy(task->conn)) task->events = WL_SOCKET_READABLE; else {
         for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) {
             if (PQresultStatus(result) == PGRES_FATAL_ERROR) tick_error(task, result); else {
                 L(PQcmdStatus(result));
