@@ -460,6 +460,17 @@ static void tick_query(Task *task) {
 }
 
 static void tick_repeat(Task *task) {
+    switch (PQtransactionStatus(task->conn)) {
+        case PQTRANS_ACTIVE: L("PQTRANS_ACTIVE"); break;
+        case PQTRANS_IDLE: L("PQTRANS_IDLE"); break;
+        case PQTRANS_INERROR: L("PQTRANS_INERROR"); break;
+        case PQTRANS_INTRANS: L("PQTRANS_INTRANS"); break;
+        case PQTRANS_UNKNOWN: L("PQTRANS_UNKNOWN"); break;
+    }
+    if (PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
+        if (!PQsendQuery(task->conn, "COMMIT")) tick_finish(task, "!PQsendQuery"); else task->events = WL_SOCKET_WRITEABLE;
+        return;
+    }
     task_done(task);
     L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
     if (task->repeat) task_repeat(task);
