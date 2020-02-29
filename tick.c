@@ -145,7 +145,6 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
     const char **keywords;
     const char **values;
     StringInfoData buf;
-    const char *application_name = "group";
     int arg = 2;
     char *err;
     Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
@@ -173,13 +172,13 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
         if (!opt->val) continue;
         L("%s = %s", opt->keyword, opt->val);
         if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
-        if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) { application_name = opt->val; continue; }
+        if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) continue;
         arg++;
     }
     keywords = palloc(arg * sizeof(*keywords));
     values = palloc(arg * sizeof(*values));
     initStringInfo(&buf);
-    appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, application_name);
+    appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, group);
     arg = 0;
     keywords[arg] = "application_name";
     values[arg] = buf.data;
