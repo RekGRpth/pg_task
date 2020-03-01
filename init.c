@@ -9,14 +9,14 @@ static int default_timeout;
 volatile sig_atomic_t sighup = false;
 volatile sig_atomic_t sigterm = false;
 
-void sighup_my(SIGNAL_ARGS) {
+void init_sighup(SIGNAL_ARGS) {
     int save_errno = errno;
     sighup = true;
     SetLatch(MyLatch);
     errno = save_errno;
 }
 
-void sigterm_my(SIGNAL_ARGS) {
+void init_sigterm(SIGNAL_ARGS) {
     int save_errno = errno;
     sigterm = true;
     SetLatch(MyLatch);

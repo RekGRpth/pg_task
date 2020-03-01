@@ -339,8 +339,8 @@ static void tick_init_conf(Work *work) {
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
     L("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->reset, work->timeout);
-    pqsignal(SIGHUP, sighup_my);
-    pqsignal(SIGTERM, sigterm_my);
+    pqsignal(SIGHUP, init_sighup);
+    pqsignal(SIGTERM, init_sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);

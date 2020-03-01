@@ -364,7 +364,7 @@ static void task_init(Work *work, Task *task) {
     p += strlen(task->group) + 1;
     task->max = *(typeof(task->max) *)p;
     L("id = %li, group = %s, max = %i", task->id, task->group, task->max);
-    pqsignal(SIGTERM, sigterm_my);
+    pqsignal(SIGTERM, init_sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
