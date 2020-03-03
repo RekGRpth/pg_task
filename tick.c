@@ -131,8 +131,10 @@ static void tick_free(Task *task) {
 
 static void tick_finish(Task *task, const char *msg) {
     char *err = PQerrorMessage(task->conn);
+    int len = strlen(err);
     initStringInfo(&task->response);
-    appendStringInfo(&task->response, "%s and %.*s", msg, (int)strlen(err) - 1, err);
+    appendStringInfoString(&task->response, msg);
+    if (len) appendStringInfo(&task->response, " and %.*s", len - 1, err);
     queue_remove(&task->queue);
     W(task->response.data);
     PQfinish(task->conn);
@@ -158,7 +160,8 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
         initStringInfo(&task->response);
         appendStringInfoString(&task->response, "!PQconninfoParse");
         if (err) {
-            appendStringInfo(&task->response, " and %.*s", (int)strlen(err) - 1, err);
+            int len = strlen(err);
+            if (len) appendStringInfo(&task->response, " and %.*s", len - 1, err);
             PQfreemem(err);
         }
         W(task->response.data);
