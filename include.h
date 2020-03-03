@@ -90,6 +90,7 @@ bool task_live(Task *task);
 bool task_work(Task *task);
 char *TextDatumGetCStringMy(Datum datum);
 const char *PQftypeMy(Oid oid);
+Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, int fnumber, bool allow_null);
 DestReceiver *CreateDestReceiverMy(StringInfoData *response);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void exec_simple_query(const char *request, const int timeout, StringInfoData *response);
