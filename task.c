@@ -52,13 +52,10 @@ bool task_work(Task *task) {
         W("SPI_processed != 1");
         exit = true;
     } else {
-        bool request_isnull, timeout_isnull;
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-        task->request = TextDatumGetCStringMy(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"), &request_isnull));
+        task->request = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "request"), false));
         MemoryContextSwitchTo(oldMemoryContext);
-        task->timeout = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), &timeout_isnull));
-        if (request_isnull) E("request_isnull");
-        if (timeout_isnull) E("timeout_isnull");
+        task->timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "timeout"), false));
         if (0 < StatementTimeout && StatementTimeout < task->timeout) task->timeout = StatementTimeout;
         L("request = %s, timeout = %i", task->request, task->timeout);
     }
@@ -163,11 +160,7 @@ bool task_live(Task *task) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
-    if (!SPI_processed) exit = true; else {
-        bool id_isnull;
-        task->id = DatumGetInt64(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), &id_isnull));
-        if (id_isnull) E("id_isnull");
-    }
+    if (!SPI_processed) exit = true; else task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "id"), false));
     SPI_finish_my();
     pfree((void *)values[GROUP - 1]);
     #undef GROUP
@@ -216,13 +209,9 @@ bool task_done(Task *task) {
         W("SPI_processed != 1");
         exit = true;
     } else {
-        bool delete_isnull, repeat_isnull, live_isnull;
-        task->delete = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), &delete_isnull));
-        task->repeat = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), &repeat_isnull));
-        task->live = DatumGetBool(SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "live"), &live_isnull));
-        if (delete_isnull) E("delete_isnull");
-        if (repeat_isnull) E("repeat_isnull");
-        if (live_isnull) E("live_isnull");
+        task->delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "delete"), false));
+        task->repeat = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "repeat"), false));
+        task->live = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "live"), false));
     }
     SPI_finish_my();
     if (task->response.data) pfree((void *)values[RESPONSE - 1]);
