@@ -100,9 +100,7 @@ static void conf_check(Work *work) {
     static const char *command =
         "WITH s AS (\n"
         "SELECT      COALESCE(COALESCE(usename, \"user\"), data)::TEXT AS user,\n"
-        "            usename,\n"
         "            COALESCE(datname, data)::text AS data,\n"
-        "            datname,\n"
         "            schema,\n"
         "            COALESCE(\"table\", current_setting('pg_task.default_table', false)) AS table,\n"
         "            COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,\n"
@@ -132,9 +130,9 @@ static void conf_check(Work *work) {
         if (timeout_isnull) E("timeout_isnull");
         SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "usename"), &usename_isnull);
         SPI_getbinval(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "datname"), &datname_isnull);
-        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, usename_isnull = %s, datname_isnull = %s", row, user, data, schema ? schema : "(null)", table, reset, timeout, usename_isnull ? "true" : "false", datname_isnull ? "true" : "false");
-        if (usename_isnull) conf_user(user);
-        if (datname_isnull) conf_data(user, data);
+        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", row, user, data, schema ? schema : "(null)", table, reset, timeout);
+        conf_user(user);
+        conf_data(user, data);
         if (!pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !schema && !pg_strncasecmp(table, "task", sizeof("task") - 1)) {
             work->user = "postgres";
             work->data = "postgres";
