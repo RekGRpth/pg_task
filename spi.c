@@ -49,10 +49,10 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
     if (commit) SPI_commit_my();
 }
 
-Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, int fnumber, bool allow_null) {
+Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null) {
     bool isnull;
-    Datum datum = SPI_getbinval(tuple, tupdesc, fnumber, &isnull);
+    Datum datum = SPI_getbinval(tuple, tupdesc, SPI_fnumber(tupdesc, fname), &isnull);
     if (allow_null) return datum;
-    if (isnull) E("isnull");
+    if (isnull) E("%s isnull", fname);
     return datum;
 }
