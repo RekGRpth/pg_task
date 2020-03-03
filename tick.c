@@ -211,7 +211,7 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
     else if (PQstatus(task->conn) == CONNECTION_BAD) tick_finish(task, "PQstatus == CONNECTION_BAD");
     else if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) tick_finish(task, "PQsetnonblocking == -1");
     else if ((task->fd = PQsocket(task->conn)) < 0) tick_finish(task, "PQsocket < 0");
-    else if (!superuser() && !PQconnectionUsedPassword(task->conn)) tick_finish(task, "!superuser && !PQconnectionUsedPassword");
+    else if (!superuser() && PQconnectionNeedsPassword(task->conn) && !PQconnectionUsedPassword(task->conn)) tick_finish(task, "!superuser && PQconnectionNeedsPassword && !PQconnectionUsedPassword");
     else if (PQclientEncoding(task->conn) != GetDatabaseEncoding()) PQsetClientEncoding(task->conn, GetDatabaseEncodingName());
     pfree(buf.data);
     pfree(keywords);
