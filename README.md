@@ -56,13 +56,13 @@ if exception occures it catched and writed in result as text
 INSERT INTO task (request) VALUES ('SELECT 1/0')
 ```
 
-if some queue needs concurently run only 2 tasks then use command
+if some group needs concurently run only 2 tasks then use command
 ```sql
-INSERT INTO task (queue, max, request) VALUES ('queue', 2, 'SELECT now()')
+INSERT INTO task (group, max, request) VALUES ('group', 2, 'SELECT now()')
 ```
 
-if in this queue there are more tasks and they are executing concurently by 2 then command
+if in this group there are more tasks and they are executing concurently by 2 then command
 ```sql
-INSERT INTO task (queue, max, request) VALUES ('queue', 3, 'SELECT now()')
+INSERT INTO task (group, max, request) VALUES ('group', 3, 'SELECT now()')
 ```
-will execute task as more early in this queue
+will execute task as more early in this group
