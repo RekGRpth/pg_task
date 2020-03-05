@@ -30,6 +30,29 @@ if database and/or user and/or schema and/or table does not exist then pg_task c
 
 # pg_task using
 
+by default pg_task create table with folowing columns
+
+id bigserial - primary key
+parent bigint - foreign key to parent task (if need)
+dt timestamp - planned time of start
+start timestamp - actial time of start
+stop timestamp - actial time of stop
+group text - groupping task
+max int - maximum concurently tasks in group
+pid int - id of process executing task
+request text - sql to execute
+response text - result received
+state state - PLAN, TAKE, WORK, DONE, FAIL or STOP
+timeout interval - allowed time to run
+delete boolean - autodelete (if response is null)
+repeat interval - autorepeat interval
+drift boolean - see below
+count integer - maximum task executed by current worker
+live interval - maximum time of live of current worker
+remote text - connect to remote database (if need)
+
+but you may add any needed colums and/or make partitions
+
 to run task more quickly execute sql command
 ```sql
 INSERT INTO task (request) VALUES ('SELECT now()')
