@@ -4,21 +4,26 @@ to run pg_task add it to line
 shared_preload_libraries = 'pg_task'
 ```
 
-bt default pg_task use table
+by default pg_task use table
 ```conf
-pg_task.task = 'task'
+pg_task.default_table = 'task'
 ```
-and period
+and sleep timeout
 ```conf
-pg_task.tick = 1000
+pg_task.default_timeout = 1000
 ```
 milliseconds
-
-by default pg_task run on local database `postgres` with user `postgres` with default schema (in search path) with default table (as abow) and default period (as abow)
-
-to run specific database and/or user and/or schema and/or table and/or period set line (in json format)
+and reset count
 ```conf
-pg_task.config = '[{"data":"database1"},{"data":"database2","user":"username2"},{"data":"database3","schema":"schema3"},{"data":"database4","table":"table4"},{"data":"database5","period":100}]'
+pg_task.default_reset = 60
+```
+of timeout
+
+by default pg_task run on local database `postgres` with user `postgres` with default schema (in search path) with default table (as abow) and default timeout (as abow)
+
+to run specific database and/or user and/or schema and/or table and/or timeout set line (in json format)
+```conf
+pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"data":"database3","schema":"schema3"},{"data":"database4","table":"table4"},{"data":"database5","timeout":100}]'
 ```
 
 if database and/or user and/or schema and/or table does not exist then pg_task create it
@@ -65,4 +70,9 @@ if in this group there are more tasks and they are executing concurently by 2 th
 ```sql
 INSERT INTO task (group, max, request) VALUES ('group', 3, 'SELECT now()')
 ```
-will execute task as more early in this group
+will execute task as more early in this group (as like priority)
+
+to run task on remote database use sql command
+```sql
+INSERT INTO task (request, remote) VALUES ('SELECT now()', 'user=user host=host')
+```
