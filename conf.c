@@ -96,7 +96,7 @@ static void conf_tick(const char *user, const char *data, const char *schema, co
 }
 
 static void conf_check(Work *work) {
-    static SPIPlanPtr plan = NULL;
+    static SPI_plan *plan = NULL;
     static const char *command =
         "WITH s AS (\n"
         "SELECT      COALESCE(COALESCE(usename, \"user\"), data)::TEXT AS user,\n"

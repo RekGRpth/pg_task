@@ -13,7 +13,7 @@ bool task_work(Task *task) {
     Work *work = task->work;
     static Oid argtypes[] = {[ID - 1] = INT8OID, [PID - 1] = INT4OID};
     Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [PID - 1] = Int32GetDatum(task->pid)};
-    static SPIPlanPtr plan = NULL;
+    static SPI_plan *plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     task->count++;
@@ -68,7 +68,7 @@ void task_repeat(Task *task) {
     #define SID S(ID)
     static Oid argtypes[] = {[ID - 1] = INT8OID};
     Datum values[] = {[ID - 1] = Int64GetDatum(task->id)};
-    static SPIPlanPtr plan = NULL;
+    static SPI_plan *plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     if (!command) {
@@ -96,7 +96,7 @@ void task_delete(Task *task) {
     #define SID S(ID)
     static Oid argtypes[] = {[ID - 1] = INT8OID};
     Datum values[] = {[ID - 1] = Int64GetDatum(task->id)};
-    static SPIPlanPtr plan = NULL;
+    static SPI_plan *plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     if (!command) {
@@ -129,7 +129,7 @@ bool task_live(Task *task) {
     static Oid argtypes[] = {[GROUP - 1] = TEXTOID, [REMOTE - 1] = TEXTOID, [MAX - 1] = INT4OID, [COUNT - 1] = INT4OID, [START - 1] = TIMESTAMPTZOID};
     Datum values[] = {[GROUP - 1] = CStringGetTextDatum(task->group), [REMOTE - 1] = task->remote ? CStringGetTextDatum(task->remote) : (Datum)NULL, [MAX - 1] = Int32GetDatum(task->max), [COUNT - 1] = Int32GetDatum(task->count), [START - 1] = TimestampTzGetDatum(task->start)};
     char nulls[] = {[GROUP - 1] = ' ', [REMOTE - 1] = task->remote ? ' ' : 'n', [MAX - 1] = ' ', [COUNT - 1] = ' ', [START - 1] = ' '};
-    static SPIPlanPtr plan = NULL;
+    static SPI_plan *plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -183,7 +183,7 @@ bool task_done(Task *task) {
     static Oid argtypes[] = {[ID - 1] = INT8OID, [SUCCESS - 1] = BOOLOID, [RESPONSE - 1] = TEXTOID};
     Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [SUCCESS - 1] = BoolGetDatum(task->success = task->response.data ? task->success : true), [RESPONSE - 1] = task->response.data ? CStringGetTextDatum(task->response.data) : (Datum)NULL};
     char nulls[] = {[ID - 1] = ' ', [SUCCESS - 1] = ' ', [RESPONSE - 1] = task->response.data ? ' ' : 'n'};
-    static SPIPlanPtr plan = NULL;
+    static SPI_plan *plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");

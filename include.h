@@ -34,6 +34,8 @@
 
 #include "queue.h"
 
+typedef struct _SPI_plan SPI_plan;
+
 typedef struct Work {
     char *data;
     char *schema;
@@ -80,7 +82,7 @@ char *TextDatumGetCStringMy(Datum datum);
 const char *PQftypeMy(Oid oid);
 Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
 DestReceiver *CreateDestReceiverMy(StringInfoData *response);
-SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
+SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void exec_simple_query(const char *request, const int timeout, StringInfoData *response);
 void init_sighup(SIGNAL_ARGS);
 void init_sigterm(SIGNAL_ARGS);
@@ -88,7 +90,7 @@ void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
 void SetConfigOptionMy(const char *name, const char *value);
 void SPI_commit_my(void);
 void SPI_connect_my(const char *src);
-void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res, bool commit);
+void SPI_execute_plan_my(SPI_plan *plan, Datum *values, const char *nulls, int res, bool commit);
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res, bool commit);
 void SPI_finish_my(void);
 void SPI_start_transaction_my(const char *src);

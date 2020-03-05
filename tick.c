@@ -261,7 +261,7 @@ static void tick_task(const Work *work, const int64 id, char *group, const int m
 }
 
 void tick_timeout(Work *work) {
-    static SPIPlanPtr plan = NULL;
+    static SPI_plan *plan = NULL;
     static char *command = NULL;
     if (!command) {
         StringInfoData buf;
@@ -308,7 +308,7 @@ void tick_timeout(Work *work) {
 
 static bool tick_check(void) {
     bool exit = false;
-    static SPIPlanPtr plan = NULL;
+    static SPI_plan *plan = NULL;
     static const char *command =
         "WITH s AS ("
         "SELECT      COALESCE(COALESCE(usename, \"user\"), data)::text AS user,\n"
