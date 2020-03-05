@@ -96,7 +96,7 @@ void SPI_finish_my(void);
 void SPI_start_transaction_my(const char *src);
 void task_delete(Task *task);
 void task_repeat(Task *task);
-void tick_init_work(Work *work);
+void tick_init(Work *work);
 void tick_socket(Task *task);
 void tick_timeout(Work *work);
 

@@ -357,7 +357,7 @@ static void tick_init_conf(Work *work) {
     process_session_preload_libraries();
 }
 
-void tick_init_work(Work *work) {
+void tick_init(Work *work) {
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     const char *table_quote = quote_identifier(work->table);
     StringInfoData buf;
@@ -554,7 +554,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     Work work;
     MemSet(&work, 0, sizeof(work));
     tick_init_conf(&work);
-    tick_init_work(&work);
+    tick_init(&work);
     while (!sigterm) {
         int nevents = queue_count(&work.queue) + 2;
         WaitEvent *events = palloc0(nevents * sizeof(*events));
