@@ -235,12 +235,12 @@ static void task_success(Task *task) {
 }
 
 static void task_error(Task *task) {
-    const char *append_ = GetConfigOption("pg_task.append_type_to_column_name", false, true);
-    bool append = append_ && !pg_strncasecmp(append_, "true", sizeof("true") - 1);
+    bool append = !pg_strncasecmp(GetConfigOption("pg_task.append_type_to_column_name", false, true), "true", sizeof("true") - 1);
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
-    initStringInfo(&task->response);
+    if (!task->response.data) initStringInfo(&task->response);
     MemoryContextSwitchTo(oldMemoryContext);
+    if (task->response.len) appendStringInfoString(&task->response, "\n");
     appendStringInfo(&task->response, "elevel%s\t%i", append ? "::int4" : "", edata->elevel);
     if (edata->output_to_server) appendStringInfo(&task->response, "\noutput_to_server%s\ttrue", append ? "::bool" : "");
     if (edata->output_to_client) appendStringInfo(&task->response, "\noutput_to_client%s\ttrue", append ? "::bool" : "");

@@ -54,7 +54,6 @@ static void rShutdown(DestReceiver *self) { }
 static void rDestroy(DestReceiver *self) { }
 
 DestReceiver *CreateDestReceiverMy(StringInfoData *response) {
-    const char *append = GetConfigOption("pg_task.append_type_to_column_name", false, true);
     DestReceiverMy *self = (DestReceiverMy *)palloc0(sizeof(*self));
     self->pub.receiveSlot = receiveSlot;
     self->pub.rStartup = rStartup;
@@ -62,6 +61,6 @@ DestReceiver *CreateDestReceiverMy(StringInfoData *response) {
     self->pub.rDestroy = rDestroy;
     self->pub.mydest = DestDebug;
     self->response = response;
-    self->append = append && !pg_strncasecmp(append, "true", sizeof("true") - 1);
+    self->append = !pg_strncasecmp(GetConfigOption("pg_task.append_type_to_column_name", false, true), "true", sizeof("true") - 1);
     return (DestReceiver *)self;
 }
