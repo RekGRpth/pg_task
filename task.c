@@ -226,6 +226,7 @@ static void task_success(Task *task) {
     MemoryContextResetAndDeleteChildren(MessageContext);
     InvalidateCatalogSnapshotConditionally();
     MemoryContextSwitchTo(oldMemoryContext);
+    ReadyForQueryMy(&task->response);
     SetCurrentStatementStartTimestamp();
     exec_simple_query(task->request, task->timeout, &task->response);
     pfree(task->request);
@@ -267,6 +268,7 @@ static void task_error(Task *task) {
     if (edata->internalpos) appendStringInfo(&task->response, "\ninternalpos::int4\t%i", edata->internalpos);
     if (edata->internalquery) appendStringInfo(&task->response, "\ninternalquery::text\t%s", edata->internalquery);
     if (edata->saved_errno) appendStringInfo(&task->response, "\nsaved_errno::int4\t%i", edata->saved_errno);
+    appendStringInfoString(&task->response, "\nROLLBACK");
     FreeErrorData(edata);
     HOLD_INTERRUPTS();
     disable_all_timeouts(false);

@@ -22,19 +22,7 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
 
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     DestReceiverMy *my = (DestReceiverMy *)self;
-    bool append = my->append;
     StringInfoData *response = my->response;
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    if (!response->data) initStringInfo(response);
-    MemoryContextSwitchTo(oldMemoryContext);
-    if (response->len) appendStringInfoString(response, "\n");
-    if (response->len || slot->tts_tupleDescriptor->natts > 1) {
-        for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
-            if (col > 1) appendStringInfoString(response, "\t");
-            appendStringInfoString(response, SPI_fname(slot->tts_tupleDescriptor, col));
-            if (append) appendStringInfo(response, "::%s", SPI_gettype(slot->tts_tupleDescriptor, col));
-        }
-    }
     if (response->len) appendStringInfoString(response, "\n");
     for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
         char *value = SPI_getvalue_my(slot, slot->tts_tupleDescriptor, col);
@@ -45,7 +33,22 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     return true;
 }
 
-static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) { }
+static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
+    DestReceiverMy *my = (DestReceiverMy *)self;
+    bool append = my->append;
+    StringInfoData *response = my->response;
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+    if (!response->data) initStringInfo(response);
+    MemoryContextSwitchTo(oldMemoryContext);
+    if (response->len) appendStringInfoString(response, "\n");
+    if (response->len || typeinfo->natts > 1) {
+        for (int col = 1; col <= typeinfo->natts; col++) {
+            if (col > 1) appendStringInfoString(response, "\t");
+            appendStringInfoString(response, SPI_fname(typeinfo, col));
+            if (append) appendStringInfo(response, "::%s", SPI_gettype(typeinfo, col));
+        }
+    }
+}
 
 static void rShutdown(DestReceiver *self) { }
 
@@ -62,4 +65,22 @@ DestReceiver *CreateDestReceiverMy(StringInfoData *response) {
     self->response = response;
     self->append = append_ && !pg_strncasecmp(append_, "true", sizeof("true") - 1);
     return (DestReceiver *)self;
+}
+
+void ReadyForQueryMy(StringInfoData *response) { }
+
+void BeginCommandMy(const char *commandTag, StringInfoData *response) {
+    L(commandTag);
+}
+
+void NullCommandMy(StringInfoData *response) { }
+
+void EndCommandMy(const char *commandTag, StringInfoData *response) {
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+    if (!response->data) initStringInfo(response);
+    MemoryContextSwitchTo(oldMemoryContext);
+    L(commandTag);
+    if (!pg_strncasecmp(commandTag, "SELECT", sizeof("SELECT") - 1)) return;
+    if (response->len) appendStringInfoString(response, "\n");
+    appendStringInfoString(response, commandTag);
 }

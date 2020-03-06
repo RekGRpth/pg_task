@@ -127,7 +127,7 @@ exec_simple_query(const char *request, const int timeout, StringInfoData *respon
 
 		set_ps_display(commandTag, false);
 
-		BeginCommand(commandTag, dest);
+		BeginCommandMy(commandTag, response);
 
 		/*
 		 * If we are in an aborted transaction, reject all commands except
@@ -303,7 +303,7 @@ exec_simple_query(const char *request, const int timeout, StringInfoData *respon
 		 * command the client sent, regardless of rewriting. (But a command
 		 * aborted by error will not send an EndCommand report at all.)
 		 */
-		EndCommand(completionTag, dest);
+		EndCommandMy(completionTag, response);
 	}							/* end loop over parsetrees */
 
 	/*
@@ -317,7 +317,7 @@ exec_simple_query(const char *request, const int timeout, StringInfoData *respon
 	 * If there were no parsetrees, return EmptyQueryResponse message.
 	 */
 	if (!parsetree_list)
-		NullCommand(dest);
+		NullCommandMy(response);
 
 	/*
 	 * Emit duration logging if appropriate.
