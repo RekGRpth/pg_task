@@ -421,8 +421,8 @@ static void tick_success(Task *task, PGresult *result) {
 }
 
 static void tick_error(Task *task, PGresult *result) {
-    const char *append_;
-    bool append = (append_ = GetConfigOption("config.append_type_to_column_name", true, true)) && !pg_strncasecmp(append_, "true", sizeof("true") - 1);
+    const char *append_ = GetConfigOption("config.append_type_to_column_name", true, true);
+    bool append = append_ && !pg_strncasecmp(append_, "true", sizeof("true") - 1);
     char *value;
     initStringInfo(&task->response);
     if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->response, "severity%s\t%s", append ? "::text" : "", value);

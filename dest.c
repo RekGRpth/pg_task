@@ -54,7 +54,7 @@ static void rShutdown(DestReceiver *self) { }
 static void rDestroy(DestReceiver *self) { }
 
 DestReceiver *CreateDestReceiverMy(StringInfoData *response) {
-    const char *append_;
+    const char *append_ = GetConfigOption("config.append_type_to_column_name", true, true);
     DestReceiverMy *self = (DestReceiverMy *)palloc0(sizeof(*self));
     self->pub.receiveSlot = receiveSlot;
     self->pub.rStartup = rStartup;
@@ -62,6 +62,6 @@ DestReceiver *CreateDestReceiverMy(StringInfoData *response) {
     self->pub.rDestroy = rDestroy;
     self->pub.mydest = DestDebug;
     self->response = response;
-    self->append = (append_ = GetConfigOption("config.append_type_to_column_name", true, true)) && !pg_strncasecmp(append_, "true", sizeof("true") - 1);
+    self->append = append_ && !pg_strncasecmp(append_, "true", sizeof("true") - 1);
     return (DestReceiver *)self;
 }
