@@ -1,7 +1,8 @@
 #include "include.h"
 
 typedef struct DestReceiverMy {
-    DestReceiver pub;
+    DestReceiver pub; // !!! always first !!!
+    bool append;
     StringInfoData *response;
 } DestReceiverMy;
 
@@ -20,7 +21,9 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
 }
 
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
-    StringInfoData *response = ((DestReceiverMy *)self)->response;
+    DestReceiverMy *my = (DestReceiverMy *)self;
+    bool append = my->append;
+    StringInfoData *response = my->response;
     if (!response->data) {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         initStringInfo(response);
@@ -30,7 +33,8 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     if (response->len || slot->tts_tupleDescriptor->natts > 1) {
         for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
             if (col > 1) appendStringInfoString(response, "\t");
-            appendStringInfo(response, "%s::%s", SPI_fname(slot->tts_tupleDescriptor, col), SPI_gettype(slot->tts_tupleDescriptor, col));
+            appendStringInfoString(response, SPI_fname(slot->tts_tupleDescriptor, col));
+            if (append) appendStringInfo(response, "::%s", SPI_gettype(slot->tts_tupleDescriptor, col));
         }
     }
     if (response->len) appendStringInfoString(response, "\n");
@@ -50,6 +54,7 @@ static void rShutdown(DestReceiver *self) { }
 static void rDestroy(DestReceiver *self) { }
 
 DestReceiver *CreateDestReceiverMy(StringInfoData *response) {
+    const char *append = GetConfigOption("pg_task.append_type_to_column_name", false, true);
     DestReceiverMy *self = (DestReceiverMy *)palloc0(sizeof(*self));
     self->pub.receiveSlot = receiveSlot;
     self->pub.rStartup = rStartup;
@@ -57,5 +62,6 @@ DestReceiver *CreateDestReceiverMy(StringInfoData *response) {
     self->pub.rDestroy = rDestroy;
     self->pub.mydest = DestDebug;
     self->response = response;
+    self->append = append && !pg_strncasecmp(append, "true", sizeof("true") - 1);
     return (DestReceiver *)self;
 }
