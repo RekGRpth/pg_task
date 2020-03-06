@@ -401,6 +401,12 @@ static bool tick_latch(void) {
     return false;
 }
 
+static void tick_command(Task *task, PGresult *result) {
+    if (!task->response.data) initStringInfo(&task->response);
+    if (task->response.len) appendStringInfoString(&task->response, "\n");
+    appendStringInfoString(&task->response, PQcmdStatus(result));
+}
+
 static void tick_success(Task *task, PGresult *result) {
     if (!task->response.data) initStringInfo(&task->response);
     if (task->response.len) appendStringInfoString(&task->response, "\n");
@@ -505,6 +511,7 @@ static void tick_result(Task *task) {
                 L(PQcmdTuples(result));
                 L(PQresStatus(PQresultStatus(result)));
                 if (!strlen(PQcmdStatus(result))) continue;
+                if (PQresultStatus(result) == PGRES_COMMAND_OK) tick_command(task, result);
                 if (!strlen(PQcmdTuples(result))) continue;
                 if (!pg_strncasecmp(PQcmdTuples(result), "0", sizeof("0") - 1)) continue;
                 if (PQresultStatus(result) == PGRES_TUPLES_OK) tick_success(task, result);
