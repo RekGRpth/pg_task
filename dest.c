@@ -24,11 +24,9 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     DestReceiverMy *my = (DestReceiverMy *)self;
     bool append = my->append;
     StringInfoData *response = my->response;
-    if (!response->data) {
-        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-        initStringInfo(response);
-        MemoryContextSwitchTo(oldMemoryContext);
-    }
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+    if (!response->data) initStringInfo(response);
+    MemoryContextSwitchTo(oldMemoryContext);
     if (response->len) appendStringInfoString(response, "\n");
     if (response->len || slot->tts_tupleDescriptor->natts > 1) {
         for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
