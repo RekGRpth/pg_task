@@ -235,7 +235,7 @@ static void task_success(Task *task) {
 }
 
 static void task_error(Task *task) {
-    bool append = !pg_strncasecmp(GetConfigOption("pg_task.append_type_to_column_name", false, true), "true", sizeof("true") - 1);
+    bool append = !pg_strncasecmp(GetConfigOption("config.append_type_to_column_name", false, true), "true", sizeof("true") - 1);
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
     if (!task->response.data) initStringInfo(&task->response);

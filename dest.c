@@ -61,6 +61,6 @@ DestReceiver *CreateDestReceiverMy(StringInfoData *response) {
     self->pub.rDestroy = rDestroy;
     self->pub.mydest = DestDebug;
     self->response = response;
-    self->append = !pg_strncasecmp(GetConfigOption("pg_task.append_type_to_column_name", false, true), "true", sizeof("true") - 1);
+    self->append = !pg_strncasecmp(GetConfigOption("config.append_type_to_column_name", false, true), "true", sizeof("true") - 1);
     return (DestReceiver *)self;
 }

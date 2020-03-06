@@ -41,7 +41,7 @@ exec_simple_query(const char *request, const int timeout, StringInfoData *respon
 	char		msec_str[32];
 
 	StatementTimeoutMy = timeout;
-	SetConfigOption("pg_task.append_type_to_column_name", "false", PGC_USERSET, PGC_S_OVERRIDE);
+	SetConfigOption("config.append_type_to_column_name", "false", PGC_USERSET, PGC_S_OVERRIDE);
 
 	/*
 	 * Report query to various monitoring facilities.
