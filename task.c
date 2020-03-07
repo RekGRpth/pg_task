@@ -38,7 +38,7 @@ bool task_work(Task *task) {
             "SET     state = 'WORK'::state,\n"
             "        start = current_timestamp,\n"
             "        pid = $" SPID "\n"
-            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout", work->schema_table);
+            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout, append", work->schema_table);
         command = buf.data;
     }
     #undef ID
@@ -56,6 +56,7 @@ bool task_work(Task *task) {
         task->request = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "request", false));
         MemoryContextSwitchTo(oldMemoryContext);
         task->timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "timeout", false));
+        task->append = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "append", false));
         if (0 < StatementTimeout && StatementTimeout < task->timeout) task->timeout = StatementTimeout;
         L("request = %s, timeout = %i", task->request, task->timeout);
     }
@@ -240,33 +241,33 @@ static void task_error(Task *task) {
     if (!task->response.data) initStringInfo(&task->response);
     MemoryContextSwitchTo(oldMemoryContext);
     if (task->response.len) appendStringInfoString(&task->response, "\n");
-    appendStringInfo(&task->response, "elevel::int4\t%i", edata->elevel);
-    if (edata->output_to_server) appendStringInfoString(&task->response, "\noutput_to_server::bool\ttrue");
-    if (edata->output_to_client) appendStringInfoString(&task->response, "\noutput_to_client::bool\ttrue");
-    if (edata->show_funcname) appendStringInfoString(&task->response, "\nshow_funcname::bool\ttrue");
-    if (edata->hide_stmt) appendStringInfoString(&task->response, "\nhide_stmt::bool\ttrue");
-    if (edata->hide_ctx) appendStringInfoString(&task->response, "\nhide_ctx::bool\ttrue");
-    if (edata->filename) appendStringInfo(&task->response, "\nfilename::text\t%s", edata->filename);
-    if (edata->lineno) appendStringInfo(&task->response, "\nlineno::int4\t%i", edata->lineno);
-    if (edata->funcname) appendStringInfo(&task->response, "\nfuncname::text\t%s", edata->funcname);
-    if (edata->domain) appendStringInfo(&task->response, "\ndomain::text\t%s", edata->domain);
-    if (edata->context_domain) appendStringInfo(&task->response, "\ncontext_domain::text\t%s", edata->context_domain);
-    if (edata->sqlerrcode) appendStringInfo(&task->response, "\nsqlerrcode::int4\t%i", edata->sqlerrcode);
-    if (edata->message) appendStringInfo(&task->response, "\nmessage::text\t%s", edata->message);
-    if (edata->detail) appendStringInfo(&task->response, "\ndetail::text\t%s", edata->detail);
-    if (edata->detail_log) appendStringInfo(&task->response, "\ndetail_log::text\t%s", edata->detail_log);
-    if (edata->hint) appendStringInfo(&task->response, "\nhint::text\t%s", edata->hint);
-    if (edata->context) appendStringInfo(&task->response, "\ncontext::text\t%s", edata->context);
-    if (edata->message_id) appendStringInfo(&task->response, "\nmessage_id::text\t%s", edata->message_id);
-    if (edata->schema_name) appendStringInfo(&task->response, "\nschema_name::text\t%s", edata->schema_name);
-    if (edata->table_name) appendStringInfo(&task->response, "\ntable_name::text\t%s", edata->table_name);
-    if (edata->column_name) appendStringInfo(&task->response, "\ncolumn_name::text\t%s", edata->column_name);
-    if (edata->datatype_name) appendStringInfo(&task->response, "\ndatatype_name::text\t%s", edata->datatype_name);
-    if (edata->constraint_name) appendStringInfo(&task->response, "\nconstraint_name::text\t%s", edata->constraint_name);
-    if (edata->cursorpos) appendStringInfo(&task->response, "\ncursorpos::int4\t%i", edata->cursorpos);
-    if (edata->internalpos) appendStringInfo(&task->response, "\ninternalpos::int4\t%i", edata->internalpos);
-    if (edata->internalquery) appendStringInfo(&task->response, "\ninternalquery::text\t%s", edata->internalquery);
-    if (edata->saved_errno) appendStringInfo(&task->response, "\nsaved_errno::int4\t%i", edata->saved_errno);
+    appendStringInfo(&task->response, "elevel%s\t%i", task->append ? "::int4" : "", edata->elevel);
+    if (edata->output_to_server) appendStringInfo(&task->response, "\noutput_to_server%s\ttrue", task->append ? "::bool" : "");
+    if (edata->output_to_client) appendStringInfo(&task->response, "\noutput_to_client%s\ttrue", task->append ? "::bool" : "");
+    if (edata->show_funcname) appendStringInfo(&task->response, "\nshow_funcname%s\ttrue", task->append ? "::bool" : "");
+    if (edata->hide_stmt) appendStringInfo(&task->response, "\nhide_stmt%s\ttrue", task->append ? "::bool" : "");
+    if (edata->hide_ctx) appendStringInfo(&task->response, "\nhide_ctx%s\ttrue", task->append ? "::bool" : "");
+    if (edata->filename) appendStringInfo(&task->response, "\nfilename%s\t%s", task->append ? "::text" : "", edata->filename);
+    if (edata->lineno) appendStringInfo(&task->response, "\nlineno%s\t%i", task->append ? "::int4" : "", edata->lineno);
+    if (edata->funcname) appendStringInfo(&task->response, "\nfuncname%s\t%s", task->append ? "::text" : "", edata->funcname);
+    if (edata->domain) appendStringInfo(&task->response, "\ndomain%s\t%s", task->append ? "::text" : "", edata->domain);
+    if (edata->context_domain) appendStringInfo(&task->response, "\ncontext_domain%s\t%s", task->append ? "::text" : "", edata->context_domain);
+    if (edata->sqlerrcode) appendStringInfo(&task->response, "\nsqlerrcode%s\t%i", task->append ? "::int4" : "", edata->sqlerrcode);
+    if (edata->message) appendStringInfo(&task->response, "\nmessage%s\t%s", task->append ? "::text" : "", edata->message);
+    if (edata->detail) appendStringInfo(&task->response, "\ndetail%s\t%s", task->append ? "::text" : "", edata->detail);
+    if (edata->detail_log) appendStringInfo(&task->response, "\ndetail_log%s\t%s", task->append ? "::text" : "", edata->detail_log);
+    if (edata->hint) appendStringInfo(&task->response, "\nhint%s\t%s", task->append ? "::text" : "", edata->hint);
+    if (edata->context) appendStringInfo(&task->response, "\ncontext%s\t%s", task->append ? "::text" : "", edata->context);
+    if (edata->message_id) appendStringInfo(&task->response, "\nmessage_id%s\t%s", task->append ? "::text" : "", edata->message_id);
+    if (edata->schema_name) appendStringInfo(&task->response, "\nschema_name%s\t%s", task->append ? "::text" : "", edata->schema_name);
+    if (edata->table_name) appendStringInfo(&task->response, "\ntable_name%s\t%s", task->append ? "::text" : "", edata->table_name);
+    if (edata->column_name) appendStringInfo(&task->response, "\ncolumn_name%s\t%s", task->append ? "::text" : "", edata->column_name);
+    if (edata->datatype_name) appendStringInfo(&task->response, "\ndatatype_name%s\t%s", task->append ? "::text" : "", edata->datatype_name);
+    if (edata->constraint_name) appendStringInfo(&task->response, "\nconstraint_name%s\t%s", task->append ? "::text" : "", edata->constraint_name);
+    if (edata->cursorpos) appendStringInfo(&task->response, "\ncursorpos%s\t%i", task->append ? "::int4" : "", edata->cursorpos);
+    if (edata->internalpos) appendStringInfo(&task->response, "\ninternalpos%s\t%i", task->append ? "::int4" : "", edata->internalpos);
+    if (edata->internalquery) appendStringInfo(&task->response, "\ninternalquery%s\t%s", task->append ? "::text" : "", edata->internalquery);
+    if (edata->saved_errno) appendStringInfo(&task->response, "\nsaved_errno%s\t%i", task->append ? "::int4" : "", edata->saved_errno);
     appendStringInfoString(&task->response, "\nROLLBACK");
     FreeErrorData(edata);
     HOLD_INTERRUPTS();
