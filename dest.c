@@ -40,8 +40,8 @@ static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     if (!response->data) initStringInfo(response);
     MemoryContextSwitchTo(oldMemoryContext);
-    if (response->len) appendStringInfoString(response, "\n");
-    if (response->len || typeinfo->natts > 1) {
+    if (typeinfo->natts > 1) {
+        if (response->len) appendStringInfoString(response, "\n");
         for (int col = 1; col <= typeinfo->natts; col++) {
             if (col > 1) appendStringInfoString(response, "\t");
             appendStringInfoString(response, SPI_fname(typeinfo, col));
