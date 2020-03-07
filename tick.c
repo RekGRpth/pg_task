@@ -452,6 +452,8 @@ static void tick_error(Task *task, PGresult *result) {
 }
 
 static void tick_query(Task *task) {
+    Work *work = task->work;
+    StringInfoData buf;
     if (task_work(task)) {
         queue_remove(&task->queue);
         PQfinish(task->conn);
@@ -459,13 +461,35 @@ static void tick_query(Task *task) {
         return;
     }
     L("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
-    if (task->timeout) {
-        StringInfoData buf;
-        initStringInfo(&buf);
-        appendStringInfo(&buf, "SET statement_timeout = %i;\n%s", task->timeout, task->request);
-        pfree(task->request);
-        task->request = buf.data;
+    initStringInfo(&buf);
+    task->skip = 0;
+    appendStringInfo(&buf, "SET pg_task.data = %s", work->data);
+    task->skip++;
+    appendStringInfo(&buf, "SET pg_task.user = %s", work->user);
+    task->skip++;
+    if (work->schema) {
+        appendStringInfo(&buf, "SET pg_task.schema = %s", work->schema);
+        task->skip++;
     }
+    appendStringInfo(&buf, "SET pg_task.table = %s", work->table);
+    task->skip++;
+    appendStringInfo(&buf, "pg_task.oid = %i", work->oid);
+    task->skip++;
+    appendStringInfo(&buf, "pg_task.group = %s", task->group);
+    task->skip++;
+    appendStringInfo(&buf, "SET pg_task.id = %li;\n", task->id);
+    task->skip++;
+    if (task->timeout) {
+        appendStringInfo(&buf, "SET statement_timeout = %i;\n", task->timeout);
+        task->skip++;
+    }
+    if (task->append) {
+        appendStringInfoString(&buf, "SET append_type_to_column_name = true;\n");
+        task->skip++;
+    }
+    appendStringInfoString(&buf, task->request);
+    pfree(task->request);
+    task->request = buf.data;
     if (!PQsendQuery(task->conn, task->request)) tick_finish(task, "!PQsendQuery"); else {
         pfree(task->request);
         task->request = NULL;

@@ -64,6 +64,7 @@ typedef struct Task {
     int fd;
     int max;
     int pid;
+    int skip;
     int timeout;
     PGconn *conn;
     queue_t queue;
