@@ -458,6 +458,7 @@ static void tick_error(Task *task, PGresult *result) {
 static void tick_query(Task *task) {
     Work *work = task->work;
     StringInfoData buf;
+    const char *value;
     if (task_work(task)) {
         queue_remove(&task->queue);
         PQfinish(task->conn);
@@ -467,28 +468,38 @@ static void tick_query(Task *task) {
     L("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
     initStringInfo(&buf);
     task->skip = 0;
-    appendStringInfo(&buf, "SET pg_task.data = %s", work->data);
+    value = quote_identifier(work->data);
+    appendStringInfo(&buf, "SET \"pg_task.data\" = %s;\n", value);
+    if (value != work->data) pfree((void *)value);
     task->skip++;
-    appendStringInfo(&buf, "SET pg_task.user = %s", work->user);
+    value = quote_identifier(work->user);
+    appendStringInfo(&buf, "SET \"pg_task.user\" = %s;\n", value);
+    if (value != work->user) pfree((void *)value);
     task->skip++;
     if (work->schema) {
-        appendStringInfo(&buf, "SET pg_task.schema = %s", work->schema);
+        value = quote_identifier(work->schema);
+        appendStringInfo(&buf, "SET \"pg_task.schema\" = %s;\n", value);
+        if (value != work->schema) pfree((void *)value);
         task->skip++;
     }
-    appendStringInfo(&buf, "SET pg_task.table = %s", work->table);
+    value = quote_identifier(work->table);
+    appendStringInfo(&buf, "SET \"pg_task.table\" = %s;\n", value);
+    if (value != work->table) pfree((void *)value);
     task->skip++;
-    appendStringInfo(&buf, "pg_task.oid = %i", work->oid);
+    appendStringInfo(&buf, "SET \"pg_task.oid\" = %i;\n", work->oid);
     task->skip++;
-    appendStringInfo(&buf, "pg_task.group = %s", task->group);
+    value = quote_identifier(task->group);
+    appendStringInfo(&buf, "SET \"pg_task.group\" = %s;\n", value);
+    if (value != task->group) pfree((void *)value);
     task->skip++;
-    appendStringInfo(&buf, "SET pg_task.id = %li;\n", task->id);
+    appendStringInfo(&buf, "SET \"pg_task.id\" = %li;\n", task->id);
     task->skip++;
     if (task->timeout) {
-        appendStringInfo(&buf, "SET statement_timeout = %i;\n", task->timeout);
+        appendStringInfo(&buf, "SET \"statement_timeout\" = %i;\n", task->timeout);
         task->skip++;
     }
     if (task->append) {
-        appendStringInfoString(&buf, "SET append_type_to_column_name = true;\n");
+        appendStringInfoString(&buf, "SET \"config.append_type_to_column_name\" = true;\n");
         task->skip++;
     }
     appendStringInfoString(&buf, task->request);
