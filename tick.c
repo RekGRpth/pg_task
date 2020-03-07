@@ -423,7 +423,6 @@ static void tick_success(Task *task, PGresult *result) {
             appendStringInfoString(&task->response, PQgetisnull(result, row, col) ? "(null)" : PQgetvalue(result, row, col));
         }
     }
-    task->success = true;
 }
 
 static void tick_error(Task *task, PGresult *result) {
@@ -448,6 +447,7 @@ static void tick_error(Task *task, PGresult *result) {
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FILE))) appendStringInfo(&task->response, "\nsource_file::text\t%s", value);
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_LINE))) appendStringInfo(&task->response, "\nsource_line::int4\t%s", value);
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->response, "\nsource_function::text\t%s", value);
+    task->fail = true;
 }
 
 static void tick_query(Task *task) {
