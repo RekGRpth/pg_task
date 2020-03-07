@@ -227,11 +227,12 @@ static void task_success(Task *task) {
     MemoryContextResetAndDeleteChildren(MessageContext);
     InvalidateCatalogSnapshotConditionally();
     MemoryContextSwitchTo(oldMemoryContext);
-    ReadyForQueryMy(&task->response);
+    ReadyForQueryMy(task);
     SetCurrentStatementStartTimestamp();
-    exec_simple_query(task->request, task->timeout, &task->response);
+    exec_simple_query_my(task);
     pfree(task->request);
-    if (IsTransactionState()) exec_simple_query("COMMIT", task->timeout, &task->response);
+    task->request = "COMMIT";
+    if (IsTransactionState()) exec_simple_query_my(task);
     if (IsTransactionState()) E("IsTransactionState");
 }
 

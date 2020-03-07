@@ -28,9 +28,9 @@ static void disable_statement_timeout(void);
  * Execute a "simple Query" protocol message.
  */
 void
-exec_simple_query(const char *request, const int timeout, StringInfoData *response)
+exec_simple_query_my(Task *task)
 {
-	const char *query_string = request;
+	const char *query_string = task->request;
 	CommandDest dest = whereToSendOutput = DestDebug;
 	MemoryContext oldcontext;
 	List	   *parsetree_list;
@@ -40,7 +40,7 @@ exec_simple_query(const char *request, const int timeout, StringInfoData *respon
 	bool		use_implicit_block;
 	char		msec_str[32];
 
-	StatementTimeoutMy = timeout;
+	StatementTimeoutMy = task->timeout;
 	SetConfigOption("config.append_type_to_column_name", "false", PGC_USERSET, PGC_S_OVERRIDE);
 
 	/*
@@ -127,7 +127,7 @@ exec_simple_query(const char *request, const int timeout, StringInfoData *respon
 
 		set_ps_display(commandTag, false);
 
-		BeginCommandMy(commandTag, response);
+		BeginCommandMy(commandTag, task);
 
 		/*
 		 * If we are in an aborted transaction, reject all commands except
@@ -241,7 +241,7 @@ exec_simple_query(const char *request, const int timeout, StringInfoData *respon
 		/*
 		 * Now we can create the destination receiver object.
 		 */
-		receiver = CreateDestReceiverMy(response);
+		receiver = CreateDestReceiverMy(task);
 		if (dest == DestRemote)
 			SetRemoteDestReceiverParams(receiver, portal);
 
@@ -303,7 +303,7 @@ exec_simple_query(const char *request, const int timeout, StringInfoData *respon
 		 * command the client sent, regardless of rewriting. (But a command
 		 * aborted by error will not send an EndCommand report at all.)
 		 */
-		EndCommandMy(completionTag, response);
+		EndCommandMy(completionTag, task);
 	}							/* end loop over parsetrees */
 
 	/*
@@ -317,7 +317,7 @@ exec_simple_query(const char *request, const int timeout, StringInfoData *respon
 	 * If there were no parsetrees, return EmptyQueryResponse message.
 	 */
 	if (!parsetree_list)
-		NullCommandMy(response);
+		NullCommandMy(task);
 
 	/*
 	 * Emit duration logging if appropriate.
