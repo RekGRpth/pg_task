@@ -403,6 +403,10 @@ static bool tick_latch(void) {
 }
 
 static void tick_command(Task *task, PGresult *result) {
+    if (task->skip) {
+        task->skip--;
+        return;
+    }
     if (!task->response.data) initStringInfo(&task->response);
     appendStringInfo(&task->response, "%s%s", task->response.len ? "\n" : "", PQcmdStatus(result));
 }
