@@ -404,24 +404,25 @@ static bool tick_latch(void) {
 
 static void tick_command(Task *task, PGresult *result) {
     if (!task->response.data) initStringInfo(&task->response);
-    if (task->response.len) appendStringInfoString(&task->response, "\n");
-    appendStringInfoString(&task->response, PQcmdStatus(result));
+    appendStringInfo(&task->response, "%s%s", task->response.len ? "\n" : "", PQcmdStatus(result));
 }
 
 static void tick_success(Task *task, PGresult *result) {
     if (!task->response.data) initStringInfo(&task->response);
-    if (task->response.len) appendStringInfoString(&task->response, "\n");
-    if (task->response.len || PQnfields(result) > 1) {
+    if (PQnfields(result) > 1) {
+        if (task->response.len) appendStringInfoString(&task->response, "\n");
         for (int col = 0; col < PQnfields(result); col++) {
             if (col > 0) appendStringInfoString(&task->response, "\t");
             appendStringInfoString(&task->response, PQfname(result, col));
         }
     }
-    if (task->response.len) appendStringInfoString(&task->response, "\n");
-    for (int row = 0; row < PQntuples(result); row++) {
-        for (int col = 0; col < PQnfields(result); col++) {
-            if (col > 1) appendStringInfoString(&task->response, "\t");
-            appendStringInfoString(&task->response, PQgetisnull(result, row, col) ? "(null)" : PQgetvalue(result, row, col));
+    if (PQntuples(result) > 0) {
+        for (int row = 0; row < PQntuples(result); row++) {
+            if (task->response.len) appendStringInfoString(&task->response, "\n");
+            for (int col = 0; col < PQnfields(result); col++) {
+                if (col > 1) appendStringInfoString(&task->response, "\t");
+                appendStringInfoString(&task->response, PQgetisnull(result, row, col) ? "(null)" : PQgetvalue(result, row, col));
+            }
         }
     }
 }
@@ -429,25 +430,24 @@ static void tick_success(Task *task, PGresult *result) {
 static void tick_error(Task *task, PGresult *result) {
     char *value;
     if (!task->response.data) initStringInfo(&task->response);
-    if (task->response.len) appendStringInfoString(&task->response, "\n");
-    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->response, "severity%s\t%s", task->append ? "::text" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY_NONLOCALIZED))) appendStringInfo(&task->response, "\nseverity_nonlocalized%s\t%s", task->append ? "::text" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&task->response, "\nsqlstate%s\t%s", task->append ? "::text" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY))) appendStringInfo(&task->response, "\nmessage_primary%s\t%s", task->append ? "::text" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL))) appendStringInfo(&task->response, "\nmessage_detail%s\t%s", task->append ? "::text" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))) appendStringInfo(&task->response, "\nmessage_hint%s\t%s", task->append ? "::text" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_STATEMENT_POSITION))) appendStringInfo(&task->response, "\nstatement_position%s\t%s", task->append ? "::int4" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_POSITION))) appendStringInfo(&task->response, "\ninternal_position%s\t%s", task->append ? "::int4" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_QUERY))) appendStringInfo(&task->response, "\ninternal_query%s\t%s", task->append ? "::text" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_CONTEXT))) appendStringInfo(&task->response, "\ncontext%s\t%s", task->append ? "::text" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SCHEMA_NAME))) appendStringInfo(&task->response, "\nschema_name%s\t%s", task->append ? "::text" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_TABLE_NAME))) appendStringInfo(&task->response, "\ntable_name%s\t%s", task->append ? "::text" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_COLUMN_NAME))) appendStringInfo(&task->response, "\ncolumn_name%s\t%s", task->append ? "::text" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_DATATYPE_NAME))) appendStringInfo(&task->response, "\ndatatype_name%s\t%s", task->append ? "::text" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_CONSTRAINT_NAME))) appendStringInfo(&task->response, "\nconstraint_name%s\t%s", task->append ? "::text" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FILE))) appendStringInfo(&task->response, "\nsource_file%s\t%s", task->append ? "::text" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_LINE))) appendStringInfo(&task->response, "\nsource_line%s\t%s", task->append ? "::int4" : "", value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->response, "\nsource_function%s\t%s", task->append ? "::text" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->response, "%sseverity%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY_NONLOCALIZED))) appendStringInfo(&task->response, "%sseverity_nonlocalized%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&task->response, "%ssqlstate%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY))) appendStringInfo(&task->response, "%smessage_primary%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL))) appendStringInfo(&task->response, "%smessage_detail%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))) appendStringInfo(&task->response, "%smessage_hint%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_STATEMENT_POSITION))) appendStringInfo(&task->response, "%sstatement_position%s\t%s", task->response.len ? "\n" : "", task->append ? "::int4" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_POSITION))) appendStringInfo(&task->response, "%sinternal_position%s\t%s", task->response.len ? "\n" : "", task->append ? "::int4" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_QUERY))) appendStringInfo(&task->response, "%sinternal_query%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_CONTEXT))) appendStringInfo(&task->response, "%scontext%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SCHEMA_NAME))) appendStringInfo(&task->response, "%sschema_name%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_TABLE_NAME))) appendStringInfo(&task->response, "%stable_name%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_COLUMN_NAME))) appendStringInfo(&task->response, "%scolumn_name%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_DATATYPE_NAME))) appendStringInfo(&task->response, "%sdatatype_name%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_CONSTRAINT_NAME))) appendStringInfo(&task->response, "%sconstraint_name%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FILE))) appendStringInfo(&task->response, "%ssource_file%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_LINE))) appendStringInfo(&task->response, "%ssource_line%s\t%s", task->response.len ? "\n" : "", task->append ? "::int4" : "", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->response, "%ssource_function%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
     task->fail = true;
 }
 
