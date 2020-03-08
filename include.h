@@ -62,6 +62,7 @@ typedef struct Task {
     int count;
     int events;
     int fd;
+    int length;
     int max;
     int pid;
     int skip;
