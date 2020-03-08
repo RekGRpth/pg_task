@@ -75,11 +75,12 @@ void BeginCommandMy(const char *commandTag, Task *task) {
 void NullCommandMy(Task *task) { }
 
 void EndCommandMy(const char *commandTag, Task *task) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    if (!task->response.data) initStringInfo(&task->response);
-    MemoryContextSwitchTo(oldMemoryContext);
     L(commandTag);
-    if (!pg_strncasecmp(commandTag, "SELECT", sizeof("SELECT") - 1)) return;
-    if (task->response.len) appendStringInfoString(&task->response, "\n");
-    appendStringInfoString(&task->response, commandTag);
+    if (pg_strncasecmp(commandTag, "SELECT", sizeof("SELECT") - 1)) {
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+        if (!task->response.data) initStringInfo(&task->response);
+        MemoryContextSwitchTo(oldMemoryContext);
+        if (task->response.len) appendStringInfoString(&task->response, "\n");
+        appendStringInfoString(&task->response, commandTag);
+    }
 }
