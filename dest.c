@@ -3,6 +3,7 @@
 typedef struct DestReceiverMy {
     DestReceiver pub; // !!! always first !!!
     Task *task;
+    uint64 row;
 } DestReceiverMy;
 
 static Oid SPI_gettypeid_my(TupleDesc tupdesc, int fnumber) {
@@ -20,25 +21,13 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
 }
 
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
-    DestReceiverMy *my = (DestReceiverMy *)self;
-    Task *task = my->task;
-    if (task->response.len) appendStringInfoString(&task->response, "\n");
-    for (int col = 1; col <= slot->tts_tupleDescriptor->natts; col++) {
-        char *value = SPI_getvalue_my(slot, slot->tts_tupleDescriptor, col);
-        if (col > 1) appendStringInfoString(&task->response, "\t");
-        appendStringInfoString(&task->response, value ? value : "(null)");
-        if (value) pfree(value);
-    }
-    return true;
-}
-
-static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
+    TupleDesc typeinfo = slot->tts_tupleDescriptor;
     DestReceiverMy *my = (DestReceiverMy *)self;
     Task *task = my->task;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     if (!task->response.data) initStringInfo(&task->response);
     MemoryContextSwitchTo(oldMemoryContext);
-    if (typeinfo->natts > 1) {
+    if (!my->row && typeinfo->natts > 1) {
         if (task->response.len) appendStringInfoString(&task->response, "\n");
         for (int col = 1; col <= typeinfo->natts; col++) {
             if (col > 1) appendStringInfoString(&task->response, "\t");
@@ -46,6 +35,20 @@ static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
             if (task->append) appendStringInfo(&task->response, "::%s", SPI_gettype(typeinfo, col));
         }
     }
+    if (task->response.len) appendStringInfoString(&task->response, "\n");
+    for (int col = 1; col <= typeinfo->natts; col++) {
+        char *value = SPI_getvalue_my(slot, typeinfo, col);
+        if (col > 1) appendStringInfoString(&task->response, "\t");
+        appendStringInfoString(&task->response, value ? value : "(null)");
+        if (value) pfree(value);
+    }
+    my->row++;
+    return true;
+}
+
+static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
+    DestReceiverMy *my = (DestReceiverMy *)self;
+    my->row = 0;
 }
 
 static void rShutdown(DestReceiver *self) { }
