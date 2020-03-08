@@ -459,6 +459,7 @@ static void tick_query(Task *task) {
     Work *work = task->work;
     StringInfoData buf;
     const char *value;
+    List *list;
     if (task_work(task)) {
         queue_remove(&task->queue);
         PQfinish(task->conn);
@@ -466,6 +467,9 @@ static void tick_query(Task *task) {
         return;
     }
     L("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
+    list = pg_parse_query(task->request);
+    task->length = list_length(list);
+    list_free_deep(list);
     initStringInfo(&buf);
     task->skip = 0;
     value = quote_identifier(work->data);
@@ -553,7 +557,7 @@ static void tick_result(Task *task) {
                 if (!strlen(PQcmdStatus(result))) continue;
                 if (PQresultStatus(result) == PGRES_COMMAND_OK) tick_command(task, result);
                 if (!strlen(PQcmdTuples(result))) continue;
-                if (!pg_strncasecmp(PQcmdTuples(result), "0", sizeof("0") - 1)) continue;
+                if (task->length == 1 && !pg_strncasecmp(PQcmdTuples(result), "0", sizeof("0") - 1)) continue;
                 if (PQresultStatus(result) == PGRES_TUPLES_OK) tick_success(task, result);
             }
         }
