@@ -43,6 +43,7 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
         if (value) pfree(value);
     }
     my->row++;
+    task->skip = 1;
     return true;
 }
 
@@ -90,7 +91,7 @@ void NullCommandMy(Task *task) { }
 
 void EndCommandMy(const char *commandTag, Task *task) {
     L(commandTag);
-    if (pg_strncasecmp(commandTag, "SELECT", sizeof("SELECT") - 1)) {
+    if (task->skip) task->skip = 0; else if (pg_strncasecmp(commandTag, "SELECT", sizeof("SELECT") - 1)) {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         if (!task->response.data) initStringInfo(&task->response);
         MemoryContextSwitchTo(oldMemoryContext);
