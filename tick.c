@@ -453,6 +453,7 @@ static void tick_error(Task *task, PGresult *result) {
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_LINE))) appendStringInfo(&task->response, "%ssource_line%s\t%s", task->response.len ? "\n" : "", task->append ? "::int4" : "", value);
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->response, "%ssource_function%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
     appendStringInfo(&task->response, "%sROLLBACK", task->response.len ? "\n" : "");
+    task->skip++;
     task->fail = true;
 }
 
@@ -527,7 +528,6 @@ static void tick_repeat(Task *task) {
     }
     if (PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
         if (!PQsendQuery(task->conn, "COMMIT")) tick_finish(task, "!PQsendQuery"); else task->events = WL_SOCKET_WRITEABLE;
-        task->skip++;
         return;
     }
     if (task_done(task)) {
