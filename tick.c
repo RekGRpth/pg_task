@@ -414,7 +414,7 @@ static void tick_command(Task *task, PGresult *result) {
 static void tick_success(Task *task, PGresult *result) {
     if (task->length > 1 || PQntuples(result) > 0) {
         if (!task->response.data) initStringInfo(&task->response);
-        if (PQnfields(result) > 1) {
+        if (task->length > 1 || PQnfields(result) > 1) {
             if (task->response.len) appendStringInfoString(&task->response, "\n");
             for (int col = 0; col < PQnfields(result); col++) {
                 if (col > 0) appendStringInfoString(&task->response, "\t");
