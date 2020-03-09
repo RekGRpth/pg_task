@@ -211,12 +211,12 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
     task->events = WL_SOCKET_WRITEABLE;
     task->start = GetCurrentTimestamp();
     queue_insert_tail(&work->queue, &task->queue);
-    if (!(task->conn = PQconnectStartParams(keywords, values, false))) tick_finish(task, "!PQconnectStartParams");
-    else if (PQstatus(task->conn) == CONNECTION_BAD) tick_finish(task, "PQstatus == CONNECTION_BAD");
-    else if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) tick_finish(task, "PQsetnonblocking == -1");
-    else if ((task->fd = PQsocket(task->conn)) < 0) tick_finish(task, "PQsocket < 0");
-//    else if (!superuser() && PQconnectionNeedsPassword(task->conn) && !PQconnectionUsedPassword(task->conn)) tick_finish(task, "!superuser && PQconnectionNeedsPassword && !PQconnectionUsedPassword");
-    else if (PQclientEncoding(task->conn) != GetDatabaseEncoding()) PQsetClientEncoding(task->conn, GetDatabaseEncodingName());
+    if (!(task->conn = PQconnectStartParams(keywords, values, false))) tick_finish(task, "!PQconnectStartParams"); else
+    if (PQstatus(task->conn) == CONNECTION_BAD) tick_finish(task, "PQstatus == CONNECTION_BAD"); else
+    if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) tick_finish(task, "PQsetnonblocking == -1"); else
+    if ((task->fd = PQsocket(task->conn)) < 0) tick_finish(task, "PQsocket < 0"); else
+//    if (!superuser() && PQconnectionNeedsPassword(task->conn) && !PQconnectionUsedPassword(task->conn)) tick_finish(task, "!superuser && PQconnectionNeedsPassword && !PQconnectionUsedPassword"); else
+    if (PQclientEncoding(task->conn) != GetDatabaseEncoding()) PQsetClientEncoding(task->conn, GetDatabaseEncodingName());
     pfree(buf.data);
     pfree(keywords);
     pfree(values);
@@ -552,8 +552,8 @@ static void tick_repeat(Task *task) {
 }
 
 static void tick_result(Task *task) {
-    if (!PQconsumeInput(task->conn)) tick_finish(task, "!PQconsumeInput");
-    else if (PQisBusy(task->conn)) task->events = WL_SOCKET_READABLE; else {
+    if (!PQconsumeInput(task->conn)) tick_finish(task, "!PQconsumeInput"); else
+    if (PQisBusy(task->conn)) task->events = WL_SOCKET_READABLE; else {
         for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
             case PGRES_FATAL_ERROR: tick_error(task, result); break;
             case PGRES_COMMAND_OK: tick_command(task, result); break;
