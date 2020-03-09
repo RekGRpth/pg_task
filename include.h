@@ -132,7 +132,7 @@ void tick_timeout(Work *work);
 
 #define E(fmt, ...) ereport(ERROR, (errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
 #define F(fmt, ...) ereport(FATAL, (errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
-#define L(fmt, ...) ereport(LOG, (errmsg_internal(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
+#define L(fmt, ...) ereport(LOG, (errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
 #define W(fmt, ...) ereport(WARNING, (errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
 
 #endif // _INCLUDE_H_
