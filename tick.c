@@ -434,7 +434,7 @@ static void tick_success(Task *task, PGresult *result) {
     }
 }
 
-static void tick_error(Task *task, PGresult *result) {
+static void tick_fail(Task *task, PGresult *result) {
     char *value;
     if (!task->response.data) initStringInfo(&task->response);
     if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->response, "%sseverity%s\t%s", task->response.len ? "\n" : "", task->append ? "::text" : "", value);
@@ -559,7 +559,7 @@ static void tick_result(Task *task) {
     if (!PQconsumeInput(task->conn)) tick_finish(task, "!PQconsumeInput"); else
     if (PQisBusy(task->conn)) task->events = WL_SOCKET_READABLE; else {
         for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
-            case PGRES_FATAL_ERROR: tick_error(task, result); break;
+            case PGRES_FATAL_ERROR: tick_fail(task, result); break;
             case PGRES_COMMAND_OK: tick_command(task, result); break;
             case PGRES_TUPLES_OK: tick_success(task, result); break;
             default: L(PQresStatus(PQresultStatus(result))); break;

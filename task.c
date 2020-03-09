@@ -236,7 +236,7 @@ static void task_success(Task *task) {
     if (IsTransactionState()) E("IsTransactionState");
 }
 
-static void task_error(Task *task) {
+static void task_fail(Task *task) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
     if (!task->response.data) initStringInfo(&task->response);
@@ -295,7 +295,7 @@ static bool task_timeout(Task *task) {
     PG_TRY();
         task_success(task);
     PG_CATCH();
-        task_error(task);
+        task_fail(task);
     PG_END_TRY();
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
