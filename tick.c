@@ -416,21 +416,20 @@ static void tick_command(Task *task, PGresult *result) {
 }
 
 static void tick_success(Task *task, PGresult *result) {
-    if (task->length > 1 || PQntuples(result) > 0) {
-        if (!task->response.data) initStringInfo(&task->response);
-        if (task->length > 1 || PQnfields(result) > 1) {
-            if (task->response.len) appendStringInfoString(&task->response, "\n");
-            for (int col = 0; col < PQnfields(result); col++) {
-                if (col > 0) appendStringInfoString(&task->response, "\t");
-                appendStringInfoString(&task->response, PQfname(result, col));
-            }
+    if (task->length == 1 && !PQntuples(result)) return;
+    if (!task->response.data) initStringInfo(&task->response);
+    if (task->length > 1 || PQnfields(result) > 1) {
+        if (task->response.len) appendStringInfoString(&task->response, "\n");
+        for (int col = 0; col < PQnfields(result); col++) {
+            if (col > 0) appendStringInfoString(&task->response, "\t");
+            appendStringInfoString(&task->response, PQfname(result, col));
         }
-        for (int row = 0; row < PQntuples(result); row++) {
-            if (task->response.len) appendStringInfoString(&task->response, "\n");
-            for (int col = 0; col < PQnfields(result); col++) {
-                if (col > 1) appendStringInfoString(&task->response, "\t");
-                appendStringInfoString(&task->response, PQgetisnull(result, row, col) ? "(null)" : PQgetvalue(result, row, col));
-            }
+    }
+    for (int row = 0; row < PQntuples(result); row++) {
+        if (task->response.len) appendStringInfoString(&task->response, "\n");
+        for (int col = 0; col < PQnfields(result); col++) {
+            if (col > 1) appendStringInfoString(&task->response, "\t");
+            appendStringInfoString(&task->response, PQgetisnull(result, row, col) ? "(null)" : PQgetvalue(result, row, col));
         }
     }
 }
