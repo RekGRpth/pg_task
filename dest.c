@@ -43,7 +43,6 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
         if (value) pfree(value);
     }
     my->row++;
-    task->skip = 1;
     return true;
 }
 
@@ -62,6 +61,7 @@ static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
             if (task->append) appendStringInfo(&task->response, "::%s", SPI_gettype(typeinfo, col));
         }
     }
+    task->skip = 1;
 }
 
 static void rShutdown(DestReceiver *self) { }
@@ -89,7 +89,7 @@ void NullCommandMy(Task *task) { }
 
 void EndCommandMy(const char *commandTag, Task *task) {
     L(commandTag);
-    if (task->skip) task->skip = 0; else if (pg_strncasecmp(commandTag, "SELECT", sizeof("SELECT") - 1)) {
+    if (task->skip) task->skip = 0; else {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         if (!task->response.data) initStringInfo(&task->response);
         MemoryContextSwitchTo(oldMemoryContext);
