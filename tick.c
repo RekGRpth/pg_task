@@ -472,9 +472,13 @@ static void tick_query(Task *task) {
         return;
     }
     L("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
-    list = pg_parse_query(task->request);
-    task->length = list_length(list);
-    list_free_deep(list);
+    PG_TRY();
+        list = pg_parse_query(task->request);
+        task->length = list_length(list);
+        list_free_deep(list);
+    PG_CATCH();
+        FlushErrorState();
+    PG_END_TRY();
     initStringInfo(&buf);
     task->skip = 0;
     value = quote_identifier(work->data);
