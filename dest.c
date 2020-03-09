@@ -6,13 +6,8 @@ typedef struct DestReceiverMy {
     uint64 row;
 } DestReceiverMy;
 
-static Oid SPI_gettypeid_my(TupleDesc tupdesc, int fnumber) {
-    if (fnumber > tupdesc->natts || !fnumber || fnumber <= FirstLowInvalidHeapAttributeNumber) E("SPI_ERROR_NOATTRIBUTE");
-    return (fnumber > 0 ? TupleDescAttr(tupdesc, fnumber - 1) : SystemAttributeDefinition(fnumber))->atttypid;
-}
-
 static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
-    Oid foutoid, oid = SPI_gettypeid_my(tupdesc, fnumber);
+    Oid foutoid, oid = TupleDescAttr(tupdesc, fnumber - 1)->atttypid;
     bool isnull, typisvarlena;
     Datum val = slot_getattr(slot, fnumber, &isnull);
     if (isnull) return NULL;
