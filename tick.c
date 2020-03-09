@@ -142,13 +142,10 @@ static void tick_error(Task *task, const char *msg) {
     initStringInfo(&task->response);
     appendStringInfoString(&task->response, msg);
     if (len) appendStringInfo(&task->response, " and %.*s", len - 1, err);
-//    queue_remove(&task->queue);
     W(task->response.data);
     task->fail = true;
-//    PQfinish(task->conn);
     task_done(task);
     tick_finish(task);
-//    tick_free(task);
 }
 
 static void tick_remote(Work *work, const int64 id, char *group, char *remote, const int max) {
@@ -472,13 +469,7 @@ static void tick_query(Task *task) {
     StringInfoData buf;
     const char *value;
     List *list;
-    if (task_work(task)) {
-//        queue_remove(&task->queue);
-//        PQfinish(task->conn);
-//        tick_free(task);
-        tick_finish(task);
-        return;
-    }
+    if (task_work(task)) { tick_finish(task); return; }
     L("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
     PG_TRY();
         list = pg_parse_query(task->request);
@@ -545,24 +536,13 @@ static void tick_repeat(Task *task) {
         if (!PQsendQuery(task->conn, "COMMIT")) tick_error(task, "!PQsendQuery"); else task->events = WL_SOCKET_WRITEABLE;
         return;
     }
-    if (task_done(task)) {
-//        queue_remove(&task->queue);
-//        PQfinish(task->conn);
-//        tick_free(task);
-        tick_finish(task);
-        return;
-    }
+    if (task_done(task)) { tick_finish(task); return; }
     L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
     if (task->repeat) task_repeat(task);
     if (task->delete && !task->response.data) task_delete(task);
     if (task->response.data) pfree(task->response.data);
     task->response.data = NULL;
-    if (!task->live || task_live(task)) {
-//        queue_remove(&task->queue);
-//        PQfinish(task->conn);
-//        tick_free(task);
-        tick_finish(task);
-    } else tick_query(task);
+    if (!task->live || task_live(task)) tick_finish(task); else tick_query(task);
 }
 
 static void tick_result(Task *task) {
