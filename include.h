@@ -81,6 +81,7 @@ bool pg_try_advisory_lock_int8_my(int64 key);
 bool task_done(Task *task);
 bool task_live(Task *task);
 bool task_work(Task *task);
+bool tick_init(Work *work);
 char *TextDatumGetCStringMy(Datum datum);
 const char *PQftypeMy(Oid oid);
 Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
@@ -103,7 +104,6 @@ void SPI_finish_my(void);
 void SPI_start_transaction_my(const char *src);
 void task_delete(Task *task);
 void task_repeat(Task *task);
-void tick_init(Work *work);
 void tick_socket(Task *task);
 void tick_timeout(Work *work);
 

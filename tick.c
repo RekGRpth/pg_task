@@ -42,7 +42,7 @@ static void tick_type(Work *work) {
     pfree(buf.data);
 }
 
-static void tick_table(Work *work) {
+static bool tick_table(Work *work) {
     StringInfoData buf, name;
     List *names;
     const RangeVar *relation;
@@ -93,7 +93,8 @@ static void tick_table(Work *work) {
     appendStringInfo(&buf, "%i", work->oid);
     SetConfigOptionMy("pg_task.oid", buf.data);
     pfree(buf.data);
-    if (!pg_try_advisory_lock_int8_my(work->oid)) E("!pg_try_advisory_lock_int8_my(%i)", work->oid);
+    if (!pg_try_advisory_lock_int8_my(work->oid)) { W("!pg_try_advisory_lock_int8_my(%i)", work->oid); return true; }
+    return false;
 }
 
 static void tick_index(Work *work, const char *index) {
@@ -365,7 +366,8 @@ static void tick_init_conf(Work *work) {
     process_session_preload_libraries();
 }
 
-void tick_init(Work *work) {
+bool tick_init(Work *work) {
+    bool exit = false;
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     const char *table_quote = quote_identifier(work->table);
     StringInfoData buf;
@@ -381,7 +383,7 @@ void tick_init(Work *work) {
     L("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->reset, work->timeout, work->schema_table);
     if (work->schema) tick_schema(work);
     tick_type(work);
-    tick_table(work);
+    if (tick_table(work)) return true;
     tick_index(work, "dt");
     tick_index(work, "state");
     SetConfigOptionMy("pg_task.data", work->data);
@@ -394,6 +396,7 @@ void tick_init(Work *work) {
     SetConfigOptionMy("pg_task.timeout", buf.data);
     pfree(buf.data);
     queue_init(&work->queue);
+    return exit;
 }
 
 static bool tick_reload(void) {
@@ -582,7 +585,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     Work work;
     MemSet(&work, 0, sizeof(work));
     tick_init_conf(&work);
-    tick_init(&work);
+    sigterm = sigterm || tick_init(&work);
     while (!sigterm) {
         int nevents = queue_count(&work.queue) + 2;
         WaitEvent *events = palloc0(nevents * sizeof(*events));

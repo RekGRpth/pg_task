@@ -132,7 +132,7 @@ static void conf_check(Work *work) {
             work->table = "task";
             work->reset = reset;
             work->timeout = timeout;
-            tick_init(work);
+            if (tick_init(work)) work->timeout = -1;
         } else {
             work->timeout = -1;
             conf_tick(user, data, schema, table, reset, timeout);
