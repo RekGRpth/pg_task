@@ -532,10 +532,7 @@ static void tick_repeat(Task *task) {
         case PQTRANS_INTRANS: L("PQTRANS_INTRANS"); break;
         case PQTRANS_UNKNOWN: L("PQTRANS_UNKNOWN"); break;
     }
-    if (PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
-        if (!PQsendQuery(task->conn, "COMMIT")) tick_error(task, "!PQsendQuery"); else task->events = WL_SOCKET_WRITEABLE;
-        return;
-    }
+    if (PQtransactionStatus(task->conn) != PQTRANS_IDLE) { if (!PQsendQuery(task->conn, "COMMIT")) tick_error(task, "!PQsendQuery"); else task->events = WL_SOCKET_WRITEABLE; return; }
     if (task_done(task)) { tick_finish(task); return; }
     L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
     if (task->repeat) task_repeat(task);
