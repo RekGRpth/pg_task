@@ -138,6 +138,7 @@ static void tick_finish(Task *task, const char *msg) {
     if (len) appendStringInfo(&task->response, " and %.*s", len - 1, err);
     queue_remove(&task->queue);
     W(task->response.data);
+    task->fail = true;
     PQfinish(task->conn);
     task_done(task);
     tick_free(task);
@@ -167,6 +168,7 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
             PQfreemem(err);
         }
         W(task->response.data);
+        task->fail = true;
         task_done(task);
         tick_free(task);
         return;
@@ -183,6 +185,7 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
         initStringInfo(&task->response);
         appendStringInfoString(&task->response, "!superuser && !password");
         W(task->response.data);
+        task->fail = true;
         task_done(task);
         tick_free(task);
         return;
