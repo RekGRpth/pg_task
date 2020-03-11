@@ -461,8 +461,9 @@ static void tick_success(Task *task, PGresult *result) {
     for (int row = 0; row < PQntuples(result); row++) {
         if (task->response.len) appendStringInfoString(&task->response, "\n");
         for (int col = 0; col < PQnfields(result); col++) {
+            int len;
             if (col > 0) appendStringInfoChar(&task->response, task->delimiter);
-            switch (PQftype(result, col)) {
+            if (PQgetisnull(result, row, col)) appendStringInfoString(&task->response, task->null); else switch (PQftype(result, col)) {
                 case BITOID:
                 case BOOLOID:
                 case CIDOID:
@@ -475,12 +476,20 @@ static void tick_success(Task *task, PGresult *result) {
                 case OIDOID:
                 case TIDOID:
                 case XIDOID: if (task->string) {
-                    appendStringInfoString(&task->response, PQgetisnull(result, row, col) ? task->null : PQgetvalue(result, row, col));
+                    if (PQgetlength(result, row, col)) appendStringInfoString(&task->response, PQgetvalue(result, row, col));
                     break;
                 } // fall through
                 default:
                     if (task->quote) appendStringInfoChar(&task->response, task->quote);
-                    appendStringInfoString(&task->response, PQgetisnull(result, row, col) ? task->null : PQgetvalue(result, row, col));
+                    if ((len = PQgetlength(result, row, col))) {
+                        if (task->escape) {
+                            const char *value = PQgetvalue(result, row, col);
+                            for (int i = 0; len-- > 0; i++) {
+                                if (task->escape == value[i]) appendStringInfoChar(&task->response, task->escape);
+                                appendStringInfoChar(&task->response, value[i]);
+                            }
+                        } else appendStringInfoString(&task->response, PQgetvalue(result, row, col));
+                    }
                     if (task->quote) appendStringInfoChar(&task->response, task->quote);
                     break;
             }
