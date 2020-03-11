@@ -41,7 +41,7 @@ exec_simple_query_my(Task *task)
 	char		msec_str[32];
 
 	StatementTimeoutMy = task->timeout;
-	SetConfigOption("config.append_type_to_column_name", task->append ? "true" : NULL, PGC_USERSET, PGC_S_OVERRIDE);
+	SetConfigOption("config.append_type_to_column_name", task->append ? "true" : NULL, PGC_USERSET, PGC_S_SESSION);
 
 	/*
 	 * Report query to various monitoring facilities.
