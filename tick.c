@@ -443,10 +443,11 @@ static void tick_command(Task *task, PGresult *result) {
 static void tick_success(Task *task, PGresult *result) {
     if (task->length == 1 && !PQntuples(result)) return;
     if (!task->response.data) initStringInfo(&task->response);
-    if (task->length > 1 || PQnfields(result) > 1) {
+    if (task->header && (task->length > 1 || PQnfields(result) > 1)) {
         if (task->response.len) appendStringInfoString(&task->response, "\n");
         for (int col = 0; col < PQnfields(result); col++) {
-            if (col > 0) appendStringInfoString(&task->response, "\t");
+            if (col > 0) appendStringInfoChar(&task->response, task->delimiter);
+            if (task->quote) appendStringInfoChar(&task->response, task->quote);
             appendStringInfoString(&task->response, PQfname(result, col));
             if (task->append && !strstr(PQfname(result, col), "::")) {
                 Oid oid = PQftype(result, col);
@@ -454,13 +455,35 @@ static void tick_success(Task *task, PGresult *result) {
                 if (type) appendStringInfo(&task->response, "::%s", type);
                 else appendStringInfo(&task->response, "::%i", oid);
             }
+            if (task->quote) appendStringInfoChar(&task->response, task->quote);
         }
     }
     for (int row = 0; row < PQntuples(result); row++) {
         if (task->response.len) appendStringInfoString(&task->response, "\n");
         for (int col = 0; col < PQnfields(result); col++) {
-            if (col > 1) appendStringInfoString(&task->response, "\t");
-            appendStringInfoString(&task->response, PQgetisnull(result, row, col) ? "\\N" : PQgetvalue(result, row, col));
+            if (col > 0) appendStringInfoChar(&task->response, task->delimiter);
+            switch (PQftype(result, col)) {
+                case BITOID:
+                case BOOLOID:
+                case CIDOID:
+                case FLOAT4OID:
+                case FLOAT8OID:
+                case INT2OID:
+                case INT4OID:
+                case INT8OID:
+                case NUMERICOID:
+                case OIDOID:
+                case TIDOID:
+                case XIDOID: if (task->string) {
+                    appendStringInfoString(&task->response, PQgetisnull(result, row, col) ? task->null : PQgetvalue(result, row, col));
+                    break;
+                } // fall through
+                default:
+                    if (task->quote) appendStringInfoChar(&task->response, task->quote);
+                    appendStringInfoString(&task->response, PQgetisnull(result, row, col) ? task->null : PQgetvalue(result, row, col));
+                    if (task->quote) appendStringInfoChar(&task->response, task->quote);
+                    break;
+            }
         }
     }
 }

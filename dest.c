@@ -22,19 +22,42 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     if (!task->response.data) initStringInfo(&task->response);
     MemoryContextSwitchTo(oldMemoryContext);
-    if (!my->row && typeinfo->natts > 1 && task->length == 1) {
+    if (task->header && !my->row && typeinfo->natts > 1 && task->length == 1) {
         if (task->response.len) appendStringInfoString(&task->response, "\n");
         for (int col = 1; col <= typeinfo->natts; col++) {
-            if (col > 1) appendStringInfoString(&task->response, "\t");
+            if (col > 1) appendStringInfoChar(&task->response, task->delimiter);
+            if (task->quote) appendStringInfoChar(&task->response, task->quote);
             appendStringInfoString(&task->response, SPI_fname(typeinfo, col));
             if (task->append) appendStringInfo(&task->response, "::%s", SPI_gettype(typeinfo, col));
+            if (task->quote) appendStringInfoChar(&task->response, task->quote);
         }
     }
     if (task->response.len) appendStringInfoString(&task->response, "\n");
     for (int col = 1; col <= typeinfo->natts; col++) {
         char *value = SPI_getvalue_my(slot, typeinfo, col);
-        if (col > 1) appendStringInfoString(&task->response, "\t");
-        appendStringInfoString(&task->response, value ? value : "\\N");
+        if (col > 1) appendStringInfoChar(&task->response, task->delimiter);
+        switch (SPI_gettypeid(typeinfo, col)) {
+            case BITOID:
+            case BOOLOID:
+            case CIDOID:
+            case FLOAT4OID:
+            case FLOAT8OID:
+            case INT2OID:
+            case INT4OID:
+            case INT8OID:
+            case NUMERICOID:
+            case OIDOID:
+            case TIDOID:
+            case XIDOID: if (task->string) {
+                appendStringInfoString(&task->response, value ? value : task->null);
+                break;
+            } // fall through
+            default:
+                if (task->quote) appendStringInfoChar(&task->response, task->quote);
+                appendStringInfoString(&task->response, value ? value : task->null);
+                if (task->quote) appendStringInfoChar(&task->response, task->quote);
+                break;
+        }
         if (value) pfree(value);
     }
     my->row++;
@@ -45,15 +68,17 @@ static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
     DestReceiverMy *my = (DestReceiverMy *)self;
     Task *task = my->task;
     my->row = 0;
-    if (task->length > 1) {
+    if (task->header && task->length > 1) {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         if (!task->response.data) initStringInfo(&task->response);
         MemoryContextSwitchTo(oldMemoryContext);
         if (task->response.len) appendStringInfoString(&task->response, "\n");
         for (int col = 1; col <= typeinfo->natts; col++) {
-            if (col > 1) appendStringInfoString(&task->response, "\t");
+            if (col > 1) appendStringInfoChar(&task->response, task->delimiter);
+            if (task->quote) appendStringInfoChar(&task->response, task->quote);
             appendStringInfoString(&task->response, SPI_fname(typeinfo, col));
             if (task->append) appendStringInfo(&task->response, "::%s", SPI_gettype(typeinfo, col));
+            if (task->quote) appendStringInfoChar(&task->response, task->quote);
         }
     }
     task->skip = 1;
