@@ -38,7 +38,7 @@ bool task_work(Task *task) {
             "SET     state = 'WORK'::state,\n"
             "        start = current_timestamp,\n"
             "        pid = $" SPID "\n"
-            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout, append", work->schema_table);
+            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout, append, header, string, \"null\", delimiter, quote, escape", work->schema_table);
         command = buf.data;
     }
     #undef ID
@@ -54,11 +54,17 @@ bool task_work(Task *task) {
     } else {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         task->request = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "request", false));
+        task->null = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "null", false));
         MemoryContextSwitchTo(oldMemoryContext);
         task->timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "timeout", false));
         task->append = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "append", false));
+        task->header = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "header", false));
+        task->string = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "string", false));
+        task->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false));
+        task->quote = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "quote", true));
+        task->escape = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "escape", true));
         if (0 < StatementTimeout && StatementTimeout < task->timeout) task->timeout = StatementTimeout;
-        L("request = %s, timeout = %i", task->request, task->timeout);
+        L("request = %s, timeout = %i, append = %s, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c", task->request, task->timeout, task->append ? "true" : "false", task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote, task->escape);
     }
     SPI_finish_my();
     return exit;
@@ -219,6 +225,8 @@ bool task_done(Task *task) {
     #undef RESPONSE
     #undef SRESPONSE
     pg_advisory_unlock_int4_my(work->oid, task->id);
+    pfree(task->null);
+    task->null = NULL;
     return exit;
 }
 

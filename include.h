@@ -53,9 +53,15 @@ typedef struct Task {
     bool connected;
     bool delete;
     bool fail;
+    bool header;
     bool live;
     bool repeat;
+    bool string;
+    char delimiter;
+    char escape;
     char *group;
+    char *null;
+    char quote;
     char *remote;
     char *request;
     int64 id;

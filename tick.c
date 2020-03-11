@@ -75,6 +75,12 @@ static bool tick_table(Work *work) {
         "    live interval,\n"
         "    remote text,\n"
         "    append boolean NOT NULL DEFAULT false,\n"
+        "    header boolean NOT NULL DEFAULT true,\n"
+        "    string boolean NOT NULL DEFAULT true,\n"
+        "    \"null\" text NOT NULL DEFAULT '\\N',\n"
+        "    delimiter \"char\" NOT NULL DEFAULT '\t',\n"
+        "    quote \"char\",\n"
+        "    escape \"char\",\n"
         "    CONSTRAINT %2$s FOREIGN KEY (parent) REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
         ")", work->schema_table, name_quote);
     names = stringToQualifiedNameList(work->schema_table);
@@ -125,6 +131,7 @@ static void tick_index(Work *work, const char *index) {
 
 static void tick_free(Task *task) {
     if (task->group) pfree(task->group);
+    if (task->null) pfree(task->null);
     if (task->remote) pfree(task->remote);
     if (task->request) pfree(task->request);
     if (task->response.data) pfree(task->response.data);
