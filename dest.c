@@ -34,7 +34,7 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     for (int col = 1; col <= typeinfo->natts; col++) {
         char *value = SPI_getvalue_my(slot, typeinfo, col);
         if (col > 1) appendStringInfoString(&task->response, "\t");
-        appendStringInfoString(&task->response, value ? value : "(null)");
+        appendStringInfoString(&task->response, value ? value : "\\N");
         if (value) pfree(value);
     }
     my->row++;

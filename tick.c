@@ -26,7 +26,7 @@ static void tick_type(Work *work) {
     Oid type = InvalidOid;
     int32 typmod;
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
-    L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table);
+    L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : "\\N", work->table);
     initStringInfo(&name);
     if (schema_quote) appendStringInfo(&name, "%s.", schema_quote);
     appendStringInfoString(&name, "state");
@@ -47,7 +47,7 @@ static bool tick_table(Work *work) {
     List *names;
     const RangeVar *relation;
     const char *name_quote;
-    L("user = %s, data = %s, schema = %s, table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->schema_table);
+    L("user = %s, data = %s, schema = %s, table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : "\\N", work->table, work->schema_table);
     if (work->oid) pg_advisory_unlock_int8_my(work->oid);
     SetConfigOptionMy("pg_task.table", work->table);
     initStringInfo(&name);
@@ -103,7 +103,7 @@ static void tick_index(Work *work, const char *index) {
     const RangeVar *relation;
     const char *name_quote;
     const char *index_quote = quote_identifier(index);
-    L("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, index, work->schema_table);
+    L("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : "\\N", work->table, index, work->schema_table);
     initStringInfo(&name);
     appendStringInfo(&name, "%s_%s_idx", work->table, index);
     name_quote = quote_identifier(name.data);
@@ -164,7 +164,7 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
     task->max = max;
     task->remote = remote;
     task->work = work;
-    L("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : "(null)", task->max, work->oid);
+    L("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : "\\N", task->max, work->oid);
     if (!opts) {
         initStringInfo(&task->response);
         appendStringInfoString(&task->response, "!PQconninfoParse");
@@ -248,7 +248,7 @@ static void tick_task(const Work *work, const int64 id, char *group, const int m
     int user_len = strlen(work->user), data_len = strlen(work->data), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), group_len = strlen(group), max_len = sizeof(max), oid_len = sizeof(work->oid);
     BackgroundWorker worker;
     char *p = worker.bgw_extra;
-    L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, id, group, max, work->oid);
+    L("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : "\\N", work->table, id, group, max, work->oid);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = id;
@@ -324,7 +324,7 @@ void tick_timeout(Work *work) {
         char *group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
         char *remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
         MemoryContextSwitchTo(oldMemoryContext);
-        L("row = %lu, id = %li, group = %s, remote = %s, max = %i", row, id, group, remote ? remote : "(null)", max);
+        L("row = %lu, id = %li, group = %s, remote = %s, max = %i", row, id, group, remote ? remote : "\\N", max);
         if (remote) tick_remote(work, id, group, remote, max); else tick_task(work, id, group, max);
     }
     SPI_finish_my();
@@ -372,7 +372,7 @@ static void tick_init_conf(Work *work) {
     if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
-    L("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->reset, work->timeout);
+    L("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", work->user, work->data, work->schema ? work->schema : "\\N", work->table, work->reset, work->timeout);
     pqsignal(SIGHUP, init_sighup);
     pqsignal(SIGTERM, init_sigterm);
     BackgroundWorkerUnblockSignals();
@@ -395,7 +395,7 @@ bool tick_init(Work *work) {
     work->schema_table = buf.data;
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     if (work->table != table_quote) pfree((void *)table_quote);
-    L("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, schema_table = %s", work->user, work->data, work->schema ? work->schema : "(null)", work->table, work->reset, work->timeout, work->schema_table);
+    L("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, schema_table = %s", work->user, work->data, work->schema ? work->schema : "\\N", work->table, work->reset, work->timeout, work->schema_table);
     if (work->schema) tick_schema(work);
     tick_type(work);
     if (tick_table(work)) return true;
@@ -453,7 +453,7 @@ static void tick_success(Task *task, PGresult *result) {
         if (task->response.len) appendStringInfoString(&task->response, "\n");
         for (int col = 0; col < PQnfields(result); col++) {
             if (col > 1) appendStringInfoString(&task->response, "\t");
-            appendStringInfoString(&task->response, PQgetisnull(result, row, col) ? "(null)" : PQgetvalue(result, row, col));
+            appendStringInfoString(&task->response, PQgetisnull(result, row, col) ? "\\N" : PQgetvalue(result, row, col));
         }
     }
 }
