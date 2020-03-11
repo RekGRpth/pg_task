@@ -152,9 +152,11 @@ static void tick_error(Task *task, const char *msg) {
 static void tick_remote(Work *work, const int64 id, char *group, char *remote, const int max) {
     const char **keywords;
     const char **values;
-    StringInfoData buf;
-    int arg = 2;
+    StringInfoData buf, buf2;
+    int arg = 3;
     char *err;
+    char *options = NULL;
+//    const char *value;
 //    bool password = false;
     Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
     PQconninfoOption *opts = PQconninfoParse(remote, &err);
@@ -184,6 +186,7 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
 //        if (!pg_strncasecmp(opt->keyword, "password", sizeof("password") - 1)) password = true;
         if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
         if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) continue;
+        if (!pg_strncasecmp(opt->keyword, "options", sizeof("options") - 1)) { options = opt->val; continue; }
         arg++;
     }
 /*    if (!superuser() && !password) {
@@ -202,10 +205,34 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
     arg = 0;
     keywords[arg] = "application_name";
     values[arg] = buf.data;
+    initStringInfo(&buf2);
+    if (options) appendStringInfoString(&buf2, options);
+//    value = quote_identifier(work->data);
+    appendStringInfo(&buf2, "%s-c pg_task.data=%s", buf2.len ? " " : "", work->data);
+//    if (value != work->data) pfree((void *)value);
+//    value = quote_identifier(work->user);
+    appendStringInfo(&buf2, " -c pg_task.user=%s", work->user);
+//    if (value != work->user) pfree((void *)value);
+    if (work->schema) {
+//        value = quote_identifier(work->schema);
+        appendStringInfo(&buf2, " -c pg_task.schema=%s", work->schema);
+//        if (value != work->schema) pfree((void *)value);
+    }
+//    value = quote_identifier(work->table);
+    appendStringInfo(&buf2, " -c pg_task.table=%s", work->table);
+//    if (value != work->table) pfree((void *)value);
+    appendStringInfo(&buf2, " -c pg_task.oid=%i", work->oid);
+//    value = quote_identifier(group);
+    appendStringInfo(&buf2, " -c pg_task.group=%s", group);
+//    if (value != group) pfree((void *)value);
+    arg++;
+    keywords[arg] = "options";
+    values[arg] = buf2.data;
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
         if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
         if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) continue;
+        if (!pg_strncasecmp(opt->keyword, "options", sizeof("options") - 1)) continue;
         arg++;
         keywords[arg] = opt->keyword;
         values[arg] = opt->val;
@@ -223,6 +250,7 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
 //    if (!superuser() && PQconnectionNeedsPassword(task->conn) && !PQconnectionUsedPassword(task->conn)) tick_error(task, "!superuser && PQconnectionNeedsPassword && !PQconnectionUsedPassword"); else
     if (PQclientEncoding(task->conn) != GetDatabaseEncoding()) PQsetClientEncoding(task->conn, GetDatabaseEncodingName());
     pfree(buf.data);
+    pfree(buf2.data);
     pfree(keywords);
     pfree(values);
     PQconninfoFree(opts);
@@ -464,9 +492,9 @@ static void tick_fail(Task *task, PGresult *result) {
 }
 
 static void tick_query(Task *task) {
-    Work *work = task->work;
+//    Work *work = task->work;
     StringInfoData buf;
-    const char *value;
+//    const char *value;
     List *list;
     if (task_work(task)) { tick_finish(task); return; }
     L("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
@@ -479,7 +507,7 @@ static void tick_query(Task *task) {
     PG_END_TRY();
     initStringInfo(&buf);
     task->skip = 0;
-    value = quote_identifier(work->data);
+/*    value = quote_identifier(work->data);
     appendStringInfo(&buf, "SET \"pg_task.data\" = %s;\n", value);
     if (value != work->data) pfree((void *)value);
     task->skip++;
@@ -502,7 +530,7 @@ static void tick_query(Task *task) {
     value = quote_identifier(task->group);
     appendStringInfo(&buf, "SET \"pg_task.group\" = %s;\n", value);
     if (value != task->group) pfree((void *)value);
-    task->skip++;
+    task->skip++;*/
     appendStringInfo(&buf, "SET \"pg_task.id\" = %li;\n", task->id);
     task->skip++;
     if (task->timeout) {
