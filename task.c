@@ -2,6 +2,7 @@
 
 extern bool stmt_timeout_active;
 extern bool xact_started;
+extern const char *null;
 extern volatile sig_atomic_t sigterm;
 
 bool task_work(Task *task) {
@@ -194,7 +195,7 @@ bool task_done(Task *task) {
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    L("id = %li, response = %s, fail = %s", task->id, task->response.data ? task->response.data : "\\N", task->fail ? "true" : "false");
+    L("id = %li, response = %s, fail = %s", task->id, task->response.data ? task->response.data : null, task->fail ? "true" : "false");
     if (!command) {
         Work *work = task->work;
         StringInfoData buf;
@@ -335,9 +336,10 @@ static void task_init(Work *work, Task *task) {
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
+    null = GetConfigOption("pg_task.null", false, true);
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
-    L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : "\\N", work->table);
+    L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : null, work->table);
     SetConfigOptionMy("pg_task.data", work->data);
     SetConfigOptionMy("pg_task.user", work->user);
     if (work->schema) SetConfigOptionMy("pg_task.schema", work->schema);
