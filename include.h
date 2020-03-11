@@ -84,6 +84,7 @@ bool task_work(Task *task);
 bool tick_init(Work *work);
 char *TextDatumGetCStringMy(Datum datum);
 const char *PQftypeMy(Oid oid);
+const char *PQftypeMy(Oid oid);
 Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
 DestReceiver *CreateDestReceiverMy(Task *task);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);

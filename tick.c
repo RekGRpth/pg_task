@@ -441,6 +441,12 @@ static void tick_success(Task *task, PGresult *result) {
         for (int col = 0; col < PQnfields(result); col++) {
             if (col > 0) appendStringInfoString(&task->response, "\t");
             appendStringInfoString(&task->response, PQfname(result, col));
+            if (task->append && !strstr(PQfname(result, col), "::")) {
+                Oid oid = PQftype(result, col);
+                const char *type = PQftypeMy(oid);
+                if (type) appendStringInfo(&task->response, "::%s", type);
+                else appendStringInfo(&task->response, "::%i", oid);
+            }
         }
     }
     for (int row = 0; row < PQntuples(result); row++) {
