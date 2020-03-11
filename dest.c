@@ -35,8 +35,9 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     if (task->response.len) appendStringInfoString(&task->response, "\n");
     for (int col = 1; col <= typeinfo->natts; col++) {
         char *value = SPI_getvalue_my(slot, typeinfo, col);
+        int len = value ? strlen(value) : 0;
         if (col > 1) appendStringInfoChar(&task->response, task->delimiter);
-        switch (SPI_gettypeid(typeinfo, col)) {
+        if (!value) appendStringInfoString(&task->response, task->null); else switch (SPI_gettypeid(typeinfo, col)) {
             case BITOID:
             case BOOLOID:
             case CIDOID:
@@ -49,12 +50,19 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
             case OIDOID:
             case TIDOID:
             case XIDOID: if (task->string) {
-                appendStringInfoString(&task->response, value ? value : task->null);
+                if (len) appendStringInfoString(&task->response, value);
                 break;
             } // fall through
             default:
                 if (task->quote) appendStringInfoChar(&task->response, task->quote);
-                appendStringInfoString(&task->response, value ? value : task->null);
+                if (len) {
+                    if (task->escape) {
+                        for (int i = 0; len-- > 0; i++) {
+                            if (task->escape == value[i]) appendStringInfoChar(&task->response, task->escape);
+                            appendStringInfoChar(&task->response, value[i]);
+                        }
+                    } else appendStringInfoString(&task->response, value);
+                }
                 if (task->quote) appendStringInfoChar(&task->response, task->quote);
                 break;
         }
