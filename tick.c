@@ -449,10 +449,9 @@ static void tick_success(Task *task, PGresult *result) {
         if (task->response.len) appendStringInfoString(&task->response, "\n");
         for (int col = 0; col < PQnfields(result); col++) {
             const char *value = PQfname(result, col);
-            int len = strlen(value);
             if (col > 0) appendStringInfoChar(&task->response, task->delimiter);
             if (task->quote) appendStringInfoChar(&task->response, task->quote);
-            if (task->escape) init_escape(&task->response, value, len, task->escape);
+            if (task->escape) init_escape(&task->response, value, strlen(value), task->escape);
             else appendStringInfoString(&task->response, value);
             if (task->append && !strstr(value, "::")) {
                 Oid oid = PQftype(result, col);

@@ -25,10 +25,18 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     if (task->header && !my->row && typeinfo->natts > 1 && task->length == 1) {
         if (task->response.len) appendStringInfoString(&task->response, "\n");
         for (int col = 1; col <= typeinfo->natts; col++) {
+            const char *value = SPI_fname(typeinfo, col);
             if (col > 1) appendStringInfoChar(&task->response, task->delimiter);
             if (task->quote) appendStringInfoChar(&task->response, task->quote);
-            appendStringInfoString(&task->response, SPI_fname(typeinfo, col));
-            if (task->append) appendStringInfo(&task->response, "::%s", SPI_gettype(typeinfo, col));
+            if (task->escape) init_escape(&task->response, value, strlen(value), task->escape);
+            else appendStringInfoString(&task->response, value);
+            if (task->append) {
+                const char *type = SPI_gettype(typeinfo, col);
+                if (task->escape) init_escape(&task->response, "::", sizeof("::") - 1, task->escape);
+                else appendStringInfoString(&task->response, "::");
+                if (task->escape) init_escape(&task->response, type, strlen(type), task->escape);
+                else appendStringInfoString(&task->response, type);
+            }
             if (task->quote) appendStringInfoChar(&task->response, task->quote);
         }
     }
@@ -56,12 +64,8 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
             default:
                 if (task->quote) appendStringInfoChar(&task->response, task->quote);
                 if (len) {
-                    if (task->escape) {
-                        for (int i = 0; len-- > 0; i++) {
-                            if (task->escape == value[i]) appendStringInfoChar(&task->response, task->escape);
-                            appendStringInfoChar(&task->response, value[i]);
-                        }
-                    } else appendStringInfoString(&task->response, value);
+                    if (task->escape) init_escape(&task->response, value, len, task->escape);
+                    else appendStringInfoString(&task->response, value);
                 }
                 if (task->quote) appendStringInfoChar(&task->response, task->quote);
                 break;
