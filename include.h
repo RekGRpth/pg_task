@@ -97,6 +97,7 @@ SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void BeginCommandMy(const char *commandTag, Task *task);
 void EndCommandMy(const char *commandTag, Task *task);
 void exec_simple_query_my(Task *task);
+void init_escape(StringInfoData *buf, const char *data, int len, char escape);
 void init_sighup(SIGNAL_ARGS);
 void init_sigterm(SIGNAL_ARGS);
 void NullCommandMy(Task *task);

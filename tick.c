@@ -448,14 +448,21 @@ static void tick_success(Task *task, PGresult *result) {
     if (task->header && (task->length > 1 || PQnfields(result) > 1)) {
         if (task->response.len) appendStringInfoString(&task->response, "\n");
         for (int col = 0; col < PQnfields(result); col++) {
+            const char *value = PQfname(result, col);
+            int len = strlen(value);
             if (col > 0) appendStringInfoChar(&task->response, task->delimiter);
             if (task->quote) appendStringInfoChar(&task->response, task->quote);
-            appendStringInfoString(&task->response, PQfname(result, col));
-            if (task->append && !strstr(PQfname(result, col), "::")) {
+            if (task->escape) init_escape(&task->response, value, len, task->escape);
+            else appendStringInfoString(&task->response, value);
+            if (task->append && !strstr(value, "::")) {
                 Oid oid = PQftype(result, col);
                 const char *type = PQftypeMy(oid);
-                if (type) appendStringInfo(&task->response, "::%s", type);
-                else appendStringInfo(&task->response, "::%i", oid);
+                if (task->escape) init_escape(&task->response, "::", sizeof("::") - 1, task->escape);
+                else appendStringInfoString(&task->response, "::");
+                if (type) {
+                    if (task->escape) init_escape(&task->response, type, strlen(type), task->escape);
+                    else appendStringInfoString(&task->response, type);
+                } else appendStringInfo(&task->response, "%i", oid);
             }
             if (task->quote) appendStringInfoChar(&task->response, task->quote);
         }
@@ -463,6 +470,7 @@ static void tick_success(Task *task, PGresult *result) {
     for (int row = 0; row < PQntuples(result); row++) {
         if (task->response.len) appendStringInfoString(&task->response, "\n");
         for (int col = 0; col < PQnfields(result); col++) {
+            const char *value = PQgetvalue(result, row, col);
             int len = PQgetlength(result, row, col);
             if (col > 0) appendStringInfoChar(&task->response, task->delimiter);
             if (PQgetisnull(result, row, col)) appendStringInfoString(&task->response, task->null); else switch (PQftype(result, col)) {
@@ -478,19 +486,14 @@ static void tick_success(Task *task, PGresult *result) {
                 case OIDOID:
                 case TIDOID:
                 case XIDOID: if (task->string) {
-                    if (len) appendStringInfoString(&task->response, PQgetvalue(result, row, col));
+                    if (len) appendStringInfoString(&task->response, value);
                     break;
                 } // fall through
                 default:
                     if (task->quote) appendStringInfoChar(&task->response, task->quote);
                     if (len) {
-                        if (task->escape) {
-                            const char *value = PQgetvalue(result, row, col);
-                            for (int i = 0; len-- > 0; i++) {
-                                if (task->escape == value[i]) appendStringInfoChar(&task->response, task->escape);
-                                appendStringInfoChar(&task->response, value[i]);
-                            }
-                        } else appendStringInfoString(&task->response, PQgetvalue(result, row, col));
+                        if (task->escape) init_escape(&task->response, value, len, task->escape);
+                        else appendStringInfoString(&task->response, value);
                     }
                     if (task->quote) appendStringInfoChar(&task->response, task->quote);
                     break;

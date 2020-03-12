@@ -24,6 +24,13 @@ void init_sigterm(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
+void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
+    for (int i = 0; len-- > 0; i++) {
+        if (escape == data[i]) appendStringInfoChar(buf, escape);
+        appendStringInfoChar(buf, data[i]);
+    }
+}
+
 static void conf_work(void) {
     StringInfoData buf;
     BackgroundWorker worker;
