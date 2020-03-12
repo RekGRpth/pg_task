@@ -15,6 +15,25 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
     return OidOutputFunctionCall(foutoid, val);
 }
 
+static void headers(TupleDesc typeinfo, Task *task) {
+    if (task->response.len) appendStringInfoString(&task->response, "\n");
+    for (int col = 1; col <= typeinfo->natts; col++) {
+        const char *value = SPI_fname(typeinfo, col);
+        if (col > 1) appendStringInfoChar(&task->response, task->delimiter);
+        if (task->quote) appendStringInfoChar(&task->response, task->quote);
+        if (task->escape) init_escape(&task->response, value, strlen(value), task->escape);
+        else appendStringInfoString(&task->response, value);
+        if (task->append) {
+            const char *type = SPI_gettype(typeinfo, col);
+            if (task->escape) init_escape(&task->response, "::", sizeof("::") - 1, task->escape);
+            else appendStringInfoString(&task->response, "::");
+            if (task->escape) init_escape(&task->response, type, strlen(type), task->escape);
+            else appendStringInfoString(&task->response, type);
+        }
+        if (task->quote) appendStringInfoChar(&task->response, task->quote);
+    }
+}
+
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     TupleDesc typeinfo = slot->tts_tupleDescriptor;
     DestReceiverMy *my = (DestReceiverMy *)self;
@@ -22,24 +41,7 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     if (!task->response.data) initStringInfo(&task->response);
     MemoryContextSwitchTo(oldMemoryContext);
-    if (task->header && !my->row && (typeinfo->natts > 1 || task->length > 1)) {
-        if (task->response.len) appendStringInfoString(&task->response, "\n");
-        for (int col = 1; col <= typeinfo->natts; col++) {
-            const char *value = SPI_fname(typeinfo, col);
-            if (col > 1) appendStringInfoChar(&task->response, task->delimiter);
-            if (task->quote) appendStringInfoChar(&task->response, task->quote);
-            if (task->escape) init_escape(&task->response, value, strlen(value), task->escape);
-            else appendStringInfoString(&task->response, value);
-            if (task->append) {
-                const char *type = SPI_gettype(typeinfo, col);
-                if (task->escape) init_escape(&task->response, "::", sizeof("::") - 1, task->escape);
-                else appendStringInfoString(&task->response, "::");
-                if (task->escape) init_escape(&task->response, type, strlen(type), task->escape);
-                else appendStringInfoString(&task->response, type);
-            }
-            if (task->quote) appendStringInfoChar(&task->response, task->quote);
-        }
-    }
+    if (task->header && !my->row && typeinfo->natts > 1 && task->length == 1) headers(typeinfo, task);
     if (task->response.len) appendStringInfoString(&task->response, "\n");
     for (int col = 1; col <= typeinfo->natts; col++) {
         char *value = SPI_getvalue_my(slot, typeinfo, col);
@@ -66,6 +68,12 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
 static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
     DestReceiverMy *my = (DestReceiverMy *)self;
     Task *task = my->task;
+    if (task->header && task->length > 1) {
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+        if (!task->response.data) initStringInfo(&task->response);
+        MemoryContextSwitchTo(oldMemoryContext);
+        headers(typeinfo, task);
+    }
     my->row = 0;
     task->skip = 1;
 }
