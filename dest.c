@@ -22,7 +22,7 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     if (!task->response.data) initStringInfo(&task->response);
     MemoryContextSwitchTo(oldMemoryContext);
-    if (task->header && !my->row && typeinfo->natts > 1 && task->length == 1) {
+    if (task->header && !my->row && (typeinfo->natts > 1 || task->length > 1)) {
         if (task->response.len) appendStringInfoString(&task->response, "\n");
         for (int col = 1; col <= typeinfo->natts; col++) {
             const char *value = SPI_fname(typeinfo, col);
@@ -45,30 +45,17 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
         char *value = SPI_getvalue_my(slot, typeinfo, col);
         int len = value ? strlen(value) : 0;
         if (col > 1) appendStringInfoChar(&task->response, task->delimiter);
-        if (!value) appendStringInfoString(&task->response, task->null); else switch (SPI_gettypeid(typeinfo, col)) {
-            case BITOID:
-            case BOOLOID:
-            case CIDOID:
-            case FLOAT4OID:
-            case FLOAT8OID:
-            case INT2OID:
-            case INT4OID:
-            case INT8OID:
-            case NUMERICOID:
-            case OIDOID:
-            case TIDOID:
-            case XIDOID: if (task->string) {
+        if (!value) appendStringInfoString(&task->response, task->null); else {
+            if (!init_oid_is_string(SPI_gettypeid(typeinfo, col)) && task->string) {
                 if (len) appendStringInfoString(&task->response, value);
-                break;
-            } // fall through
-            default:
+            } else {
                 if (task->quote) appendStringInfoChar(&task->response, task->quote);
                 if (len) {
                     if (task->escape) init_escape(&task->response, value, len, task->escape);
                     else appendStringInfoString(&task->response, value);
                 }
                 if (task->quote) appendStringInfoChar(&task->response, task->quote);
-                break;
+            }
         }
         if (value) pfree(value);
     }
@@ -80,7 +67,7 @@ static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
     DestReceiverMy *my = (DestReceiverMy *)self;
     Task *task = my->task;
     my->row = 0;
-    if (task->header && task->length > 1) {
+    /*if (task->header && task->length > 1) {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         if (!task->response.data) initStringInfo(&task->response);
         MemoryContextSwitchTo(oldMemoryContext);
@@ -92,7 +79,7 @@ static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
             if (task->append) appendStringInfo(&task->response, "::%s", SPI_gettype(typeinfo, col));
             if (task->quote) appendStringInfoChar(&task->response, task->quote);
         }
-    }
+    }*/
     task->skip = 1;
 }
 
