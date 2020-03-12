@@ -78,7 +78,6 @@ static bool tick_table(Work *work) {
         "    append boolean NOT NULL DEFAULT false,\n"
         "    header boolean NOT NULL DEFAULT true,\n"
         "    string boolean NOT NULL DEFAULT true,\n"
-        "    \"cross\" boolean NOT NULL DEFAULT false,\n"
         "    \"null\" text NOT NULL DEFAULT '\\N',\n"
         "    delimiter \"char\" NOT NULL DEFAULT '\t',\n"
         "    quote \"char\",\n"
