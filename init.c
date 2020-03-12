@@ -31,6 +31,25 @@ void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
     }
 }
 
+bool init_oid_is_string(Oid oid) {
+    switch (oid) {
+        case BITOID:
+        case BOOLOID:
+        case CIDOID:
+        case FLOAT4OID:
+        case FLOAT8OID:
+        case INT2OID:
+        case INT4OID:
+        case INT8OID:
+        case NUMERICOID:
+        case OIDOID:
+        case TIDOID:
+        case XIDOID:
+            return false;
+        default: return true;
+    }
+}
+
 static void conf_work(void) {
     StringInfoData buf;
     BackgroundWorker worker;

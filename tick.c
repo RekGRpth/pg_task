@@ -78,6 +78,7 @@ static bool tick_table(Work *work) {
         "    append boolean NOT NULL DEFAULT false,\n"
         "    header boolean NOT NULL DEFAULT true,\n"
         "    string boolean NOT NULL DEFAULT true,\n"
+        "    \"cross\" boolean NOT NULL DEFAULT false,\n"
         "    \"null\" text NOT NULL DEFAULT '\\N',\n"
         "    delimiter \"char\" NOT NULL DEFAULT '\t',\n"
         "    quote \"char\",\n"
@@ -472,30 +473,17 @@ static void tick_success(Task *task, PGresult *result) {
             const char *value = PQgetvalue(result, row, col);
             int len = PQgetlength(result, row, col);
             if (col > 0) appendStringInfoChar(&task->response, task->delimiter);
-            if (PQgetisnull(result, row, col)) appendStringInfoString(&task->response, task->null); else switch (PQftype(result, col)) {
-                case BITOID:
-                case BOOLOID:
-                case CIDOID:
-                case FLOAT4OID:
-                case FLOAT8OID:
-                case INT2OID:
-                case INT4OID:
-                case INT8OID:
-                case NUMERICOID:
-                case OIDOID:
-                case TIDOID:
-                case XIDOID: if (task->string) {
+            if (PQgetisnull(result, row, col)) appendStringInfoString(&task->response, task->null); else {
+                if (!init_oid_is_string(PQftype(result, col)) && task->string) {
                     if (len) appendStringInfoString(&task->response, value);
-                    break;
-                } // fall through
-                default:
+                } else {
                     if (task->quote) appendStringInfoChar(&task->response, task->quote);
                     if (len) {
                         if (task->escape) init_escape(&task->response, value, len, task->escape);
                         else appendStringInfoString(&task->response, value);
                     }
                     if (task->quote) appendStringInfoChar(&task->response, task->quote);
-                    break;
+                }
             }
         }
     }

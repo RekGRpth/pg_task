@@ -51,6 +51,7 @@ typedef struct Work {
 typedef struct Task {
     bool append;
     bool connected;
+    bool cross;
     bool delete;
     bool fail;
     bool header;
@@ -80,6 +81,7 @@ typedef struct Task {
     Work *work;
 } Task;
 
+bool init_oid_is_string(Oid oid);
 bool pg_advisory_unlock_int4_my(int32 key1, int32 key2);
 bool pg_advisory_unlock_int8_my(int64 key);
 bool pg_try_advisory_lock_int4_my(int32 key1, int32 key2);
