@@ -3,21 +3,32 @@
 
 typedef struct queue_t {
     struct queue_t *prev;
+    union {
+        struct queue_t *head;
+        size_t size;
+    };
     struct queue_t *next;
 } queue_t;
 
-int queue_count(queue_t *queue);
+#define queue_size(q) (q)->size
 
-#define queue_init(q) (q)->prev = (q)->next = (q)
+#define queue_init(q) \
+    do { \
+        (q)->prev = q; \
+        (q)->size = 0; \
+        (q)->next = q; \
+    } while (0)
 
-#define queue_empty(h) ((h) == (h)->prev)
+#define queue_empty(h) (h == (h)->prev)
 
 #define queue_insert_head(h, x) \
     do { \
         (x)->next = (h)->next; \
-        (x)->next->prev = (x); \
-        (x)->prev = (h); \
-        (h)->next = (x); \
+        (x)->next->prev = x; \
+        (x)->prev = h; \
+        (h)->next = x; \
+        (x)->head = h; \
+        (h)->size++; \
     } while (0)
 
 #define queue_insert_after queue_insert_head
@@ -25,9 +36,11 @@ int queue_count(queue_t *queue);
 #define queue_insert_tail(h, x) \
     do { \
         (x)->prev = (h)->prev; \
-        (x)->prev->next = (x); \
-        (x)->next = (h); \
-        (h)->prev = (x); \
+        (x)->prev->next = x; \
+        (x)->next = h; \
+        (h)->prev = x; \
+        (x)->head = h; \
+        (h)->size++; \
     } while (0)
 
 #define queue_head(h) (h)->next
@@ -46,6 +59,8 @@ int queue_count(queue_t *queue);
         (x)->prev->next = (x)->next; \
         (x)->prev = NULL; \
         (x)->next = NULL; \
+        (x)->head->size--; \
+        (x)->head = NULL; \
     } while (0)
 
 #define queue_data(q, t, o) (t *)((char *)q - offsetof(t, o))

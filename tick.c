@@ -612,7 +612,7 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     tick_init_conf(&work);
     sigterm = sigterm || tick_init(&work);
     while (!sigterm) {
-        int nevents = queue_count(&work.queue) + 2;
+        int nevents = queue_size(&work.queue) + 2;
         WaitEvent *events = palloc0(nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
