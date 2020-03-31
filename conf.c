@@ -8,7 +8,7 @@ static void conf_user(const char *user) {
     StringInfoData buf;
     const char *user_quote = quote_identifier(user);
     List *names;
-    L("user = %s", user);
+    D1("user = %s", user);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE ROLE %s WITH LOGIN", user_quote);
     names = stringToQualifiedNameList(user_quote);
@@ -35,7 +35,7 @@ static void conf_data(const char *user, const char *data) {
     const char *user_quote = quote_identifier(user);
     const char *data_quote = quote_identifier(data);
     List *names;
-    L("user = %s, data = %s", user, data);
+    D1("user = %s, data = %s", user, data);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE DATABASE %s WITH OWNER = %s", data_quote, user_quote);
     names = stringToQualifiedNameList(data_quote);
@@ -63,7 +63,7 @@ static void conf_tick(const char *user, const char *data, const char *schema, co
     int user_len = strlen(user), data_len = strlen(data), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), reset_len = sizeof(reset), timeout_len = sizeof(timeout);
     BackgroundWorker worker;
     char *p = worker.bgw_extra;
-    L("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", user, data, schema ? schema : null, table, reset, timeout);
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", user, data, schema ? schema : null, table, reset, timeout);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = MyProcPid;
@@ -123,7 +123,7 @@ static void conf_check(Work *work) {
         char *table = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", false));
         int reset = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "reset", false));
         int timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "timeout", false));
-        L("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", row, user, data, schema ? schema : null, table, reset, timeout);
+        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", row, user, data, schema ? schema : null, table, reset, timeout);
         conf_user(user);
         conf_data(user, data);
         if (!pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !schema && !pg_strncasecmp(table, "task", sizeof("task") - 1)) {
@@ -194,11 +194,11 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
         nevents = WaitEventSetWait(set, work.timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) L("WL_LATCH_SET");
-            if (event->events & WL_SOCKET_READABLE) L("WL_SOCKET_READABLE");
-            if (event->events & WL_SOCKET_WRITEABLE) L("WL_SOCKET_WRITEABLE");
-            if (event->events & WL_POSTMASTER_DEATH) L("WL_POSTMASTER_DEATH");
-            if (event->events & WL_EXIT_ON_PM_DEATH) L("WL_EXIT_ON_PM_DEATH");
+            if (event->events & WL_LATCH_SET) D1("WL_LATCH_SET");
+            if (event->events & WL_SOCKET_READABLE) D1("WL_SOCKET_READABLE");
+            if (event->events & WL_SOCKET_WRITEABLE) D1("WL_SOCKET_WRITEABLE");
+            if (event->events & WL_POSTMASTER_DEATH) D1("WL_POSTMASTER_DEATH");
+            if (event->events & WL_EXIT_ON_PM_DEATH) D1("WL_EXIT_ON_PM_DEATH");
             if (event->events & WL_LATCH_SET) conf_latch(&work);
             if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
         }

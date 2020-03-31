@@ -96,13 +96,13 @@ DestReceiver *CreateDestReceiverMy(Task *task) {
 void ReadyForQueryMy(Task *task) { }
 
 void BeginCommandMy(const char *commandTag, Task *task) {
-    L(commandTag);
+    D1(commandTag);
 }
 
 void NullCommandMy(Task *task) { }
 
 void EndCommandMy(const char *commandTag, Task *task) {
-    L(commandTag);
+    D1(commandTag);
     if (task->skip) task->skip = 0; else {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         if (!task->response.data) initStringInfo(&task->response);

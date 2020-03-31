@@ -85,6 +85,6 @@ void _PG_init(void); void _PG_init(void) {
     DefineCustomStringVariable("pg_task.null", "pg_task null", NULL, &null, "\\N", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.default_reset", "pg_task default_reset", NULL, &default_reset, 60, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.default_timeout", "pg_task default_timeout", NULL, &default_timeout, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    L("json = %s, default_table = %s, default_reset = %i, default_timeout = %i", json, default_table, default_reset, default_timeout);
+    D1("json = %s, default_table = %s, default_reset = %i, default_timeout = %i", json, default_table, default_reset, default_timeout);
     conf_work();
 }

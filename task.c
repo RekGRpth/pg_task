@@ -18,7 +18,7 @@ bool task_work(Task *task) {
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     task->count++;
-    L("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work->oid, task->count, task->pid);
+    D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work->oid, task->count, task->pid);
     if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) {
         W("!pg_try_advisory_lock_int4_my(%i, %li)", work->oid, task->id);
         return true;
@@ -65,7 +65,7 @@ bool task_work(Task *task) {
         task->quote = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "quote", true));
         task->escape = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "escape", true));
         if (0 < StatementTimeout && StatementTimeout < task->timeout) task->timeout = StatementTimeout;
-        L("request = %s, timeout = %i, append = %s, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c", task->request, task->timeout, task->append ? "true" : "false", task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote, task->escape);
+        D1("request = %s, timeout = %i, append = %s, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c", task->request, task->timeout, task->append ? "true" : "false", task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote, task->escape);
     }
     SPI_finish_my();
     return exit;
@@ -195,7 +195,7 @@ bool task_done(Task *task) {
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    L("id = %li, response = %s, fail = %s", task->id, task->response.data ? task->response.data : null, task->fail ? "true" : "false");
+    D1("id = %li, response = %s, fail = %s", task->id, task->response.data ? task->response.data : null, task->fail ? "true" : "false");
     if (!command) {
         Work *work = task->work;
         StringInfoData buf;
@@ -300,7 +300,7 @@ static void task_fail(Task *task) {
 
 static bool task_timeout(Task *task) {
     if (task_work(task)) return true;
-    L("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
+    D1("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
     PG_TRY();
         task_success(task);
     PG_CATCH();
@@ -309,7 +309,7 @@ static bool task_timeout(Task *task) {
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
     if (task_done(task)) return true;
-    L("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
+    D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
     if (task->repeat) task_repeat(task);
     if (task->delete && !task->response.data) task_delete(task);
     if (task->response.data) pfree(task->response.data);
@@ -339,7 +339,7 @@ static void task_init(Work *work, Task *task) {
     null = GetConfigOption("pg_task.null", false, true);
     SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
-    L("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : null, work->table);
+    D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : null, work->table);
     SetConfigOptionMy("pg_task.data", work->data);
     SetConfigOptionMy("pg_task.user", work->user);
     if (work->schema) SetConfigOptionMy("pg_task.schema", work->schema);
@@ -352,7 +352,7 @@ static void task_init(Work *work, Task *task) {
     work->schema_table = buf.data;
     work->oid = *(typeof(work->oid) *)p;
     p += sizeof(work->oid);
-    L("oid = %i", work->oid);
+    D1("oid = %i", work->oid);
     initStringInfo(&buf);
     appendStringInfo(&buf, "%i", work->oid);
     SetConfigOptionMy("pg_task.oid", buf.data);
@@ -366,7 +366,7 @@ static void task_init(Work *work, Task *task) {
     task->group = p;
     p += strlen(task->group) + 1;
     task->max = *(typeof(task->max) *)p;
-    L("id = %li, group = %s, max = %i", task->id, task->group, task->max);
+    D1("id = %li, group = %s, max = %i", task->id, task->group, task->max);
     pqsignal(SIGTERM, init_sigterm);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
@@ -395,11 +395,11 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
         nevents = WaitEventSetWait(set, 0, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) L("WL_LATCH_SET");
-            if (event->events & WL_SOCKET_READABLE) L("WL_SOCKET_READABLE");
-            if (event->events & WL_SOCKET_WRITEABLE) L("WL_SOCKET_WRITEABLE");
-            if (event->events & WL_POSTMASTER_DEATH) L("WL_POSTMASTER_DEATH");
-            if (event->events & WL_EXIT_ON_PM_DEATH) L("WL_EXIT_ON_PM_DEATH");
+            if (event->events & WL_LATCH_SET) D1("WL_LATCH_SET");
+            if (event->events & WL_SOCKET_READABLE) D1("WL_SOCKET_READABLE");
+            if (event->events & WL_SOCKET_WRITEABLE) D1("WL_SOCKET_WRITEABLE");
+            if (event->events & WL_POSTMASTER_DEATH) D1("WL_POSTMASTER_DEATH");
+            if (event->events & WL_EXIT_ON_PM_DEATH) D1("WL_EXIT_ON_PM_DEATH");
             if (event->events & WL_LATCH_SET) task_latch();
         }
         if (!nevents) sigterm = sigterm || task_timeout(&task);
