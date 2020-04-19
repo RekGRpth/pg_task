@@ -608,10 +608,11 @@ void tick_socket(Task *task) {
 void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
     TimestampTz stop = GetCurrentTimestamp(), start = stop;
     Work work;
+    if (StandbyMode) { W("StandbyMode"); return; }
     MemSet(&work, 0, sizeof(work));
     tick_init_conf(&work);
     sigterm = sigterm || tick_init(&work);
-    while (!sigterm) {
+    while (!sigterm && !StandbyMode) {
         int nevents = queue_size(&work.queue) + 2;
         WaitEvent *events = palloc0(nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);

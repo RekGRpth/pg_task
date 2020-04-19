@@ -383,10 +383,11 @@ static void task_latch(void) {
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     Work work;
     Task task;
+    if (StandbyMode) { W("StandbyMode"); return; }
     MemSet(&work, 0, sizeof(work));
     MemSet(&task, 0, sizeof(task));
     task_init(&work, &task);
-    while (!sigterm) {
+    while (!sigterm && !StandbyMode) {
         int nevents = 2;
         WaitEvent *events = palloc0(nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
