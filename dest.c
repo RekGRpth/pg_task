@@ -95,12 +95,35 @@ DestReceiver *CreateDestReceiverMy(Task *task) {
 
 void ReadyForQueryMy(Task *task) { }
 
+#if (PG_VERSION_NUM >= 130000)
+void BeginCommandMy(CommandTag commandTag, Task *task) {
+    D1(GetCommandTagName(commandTag));
+}
+#else
 void BeginCommandMy(const char *commandTag, Task *task) {
     D1(commandTag);
 }
+#endif
 
 void NullCommandMy(Task *task) { }
 
+#if (PG_VERSION_NUM >= 130000)
+void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_output) {
+    char completionTag[COMPLETION_TAG_BUFSIZE];
+    CommandTag tag = qc->commandTag;
+    const char *tagname = GetCommandTagName(tag);
+    if (command_tag_display_rowcount(tag) && !force_undecorated_output) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, tag == CMDTAG_INSERT ? "%s 0 " UINT64_FORMAT : "%s " UINT64_FORMAT, tagname, qc->nprocessed);
+    else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
+    D1(completionTag);
+    if (task->skip) task->skip = 0; else {
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+        if (!task->response.data) initStringInfo(&task->response);
+        MemoryContextSwitchTo(oldMemoryContext);
+        if (task->response.len) appendStringInfoString(&task->response, "\n");
+        appendStringInfoString(&task->response, completionTag);
+    }
+}
+#else
 void EndCommandMy(const char *commandTag, Task *task) {
     D1(commandTag);
     if (task->skip) task->skip = 0; else {
@@ -111,3 +134,4 @@ void EndCommandMy(const char *commandTag, Task *task) {
         appendStringInfoString(&task->response, commandTag);
     }
 }
+#endif

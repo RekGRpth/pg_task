@@ -110,8 +110,14 @@ exec_simple_query_my(Task *task)
 	{
 		RawStmt    *parsetree = lfirst_node(RawStmt, parsetree_item);
 		bool		snapshot_set = false;
+#if (PG_VERSION_NUM >= 130000)
+		CommandTag	commandTag;
+		QueryCompletion qc;
+		MemoryContext per_parsetree_context = NULL;
+#else
 		const char *commandTag;
 		char		completionTag[COMPLETION_TAG_BUFSIZE];
+#endif
 		List	   *querytree_list,
 				   *plantree_list;
 		Portal		portal;
@@ -126,7 +132,11 @@ exec_simple_query_my(Task *task)
 		 */
 		commandTag = CreateCommandTag(parsetree->stmt);
 
+#if (PG_VERSION_NUM >= 130000)
+		set_ps_display(GetCommandTagName(commandTag));
+#else
 		set_ps_display(commandTag, false);
+#endif
 
 		BeginCommandMy(commandTag, task);
 
@@ -171,6 +181,47 @@ exec_simple_query_my(Task *task)
 			snapshot_set = true;
 		}
 
+#if (PG_VERSION_NUM >= 130000)
+		/*
+		 * OK to analyze, rewrite, and plan this query.
+		 *
+		 * Switch to appropriate context for constructing query and plan trees
+		 * (these can't be in the transaction context, as that will get reset
+		 * when the command is COMMIT/ROLLBACK).  If we have multiple
+		 * parsetrees, we use a separate context for each one, so that we can
+		 * free that memory before moving on to the next one.  But for the
+		 * last (or only) parsetree, just use MessageContext, which will be
+		 * reset shortly after completion anyway.  In event of an error, the
+		 * per_parsetree_context will be deleted when MessageContext is reset.
+		 */
+		if (lnext(parsetree_list, parsetree_item) != NULL)
+		{
+			per_parsetree_context =
+				AllocSetContextCreate(MessageContext,
+									  "per-parsetree message context",
+									  ALLOCSET_DEFAULT_SIZES);
+			oldcontext = MemoryContextSwitchTo(per_parsetree_context);
+		}
+		else
+			oldcontext = MemoryContextSwitchTo(MessageContext);
+
+		querytree_list = pg_analyze_and_rewrite(parsetree, query_string,
+												NULL, 0, NULL);
+
+		plantree_list = pg_plan_queries(querytree_list, query_string,
+										CURSOR_OPT_PARALLEL_OK, NULL);
+
+		/*
+		 * Done with the snapshot used for parsing/planning.
+		 *
+		 * While it looks promising to reuse the same snapshot for query
+		 * execution (at least for simple protocol), unfortunately it causes
+		 * execution to use a snapshot that has been acquired before locking
+		 * any of the tables mentioned in the query.  This creates user-
+		 * visible anomalies, so refrain.  Refer to
+		 * https://postgr.es/m/flat/5075D8DF.6050500@fuzzy.cz for details.
+		 */
+#else
 		/*
 		 * OK to analyze, rewrite, and plan this query.
 		 *
@@ -186,6 +237,7 @@ exec_simple_query_my(Task *task)
 										CURSOR_OPT_PARALLEL_OK, NULL);
 
 		/* Done with the snapshot used for parsing/planning */
+#endif
 		if (snapshot_set)
 			PopActiveSnapshot();
 
@@ -200,11 +252,19 @@ exec_simple_query_my(Task *task)
 		/* Don't display the portal in pg_cursors */
 		portal->visible = false;
 
+#if (PG_VERSION_NUM >= 130000)
+		/*
+		 * We don't have to copy anything into the portal, because everything
+		 * we are passing here is in MessageContext or the
+		 * per_parsetree_context, and so will outlive the portal anyway.
+		 */
+#else
 		/*
 		 * We don't have to copy anything into the portal, because everything
 		 * we are passing here is in MessageContext, which will outlive the
 		 * portal anyway.
 		 */
+#endif
 		PortalDefineQuery(portal,
 						  NULL,
 						  query_string,
@@ -254,6 +314,15 @@ exec_simple_query_my(Task *task)
 		/*
 		 * Run the portal to completion, and then drop it (and the receiver).
 		 */
+#if (PG_VERSION_NUM >= 130000)
+		(void) PortalRun(portal,
+						 FETCH_ALL,
+						 true,	/* always top level */
+						 true,
+						 receiver,
+						 receiver,
+						 &qc);
+#else
 		(void) PortalRun(portal,
 						 FETCH_ALL,
 						 true,	/* always top level */
@@ -261,12 +330,17 @@ exec_simple_query_my(Task *task)
 						 receiver,
 						 receiver,
 						 completionTag);
+#endif
 
 		receiver->rDestroy(receiver);
 
 		PortalDrop(portal, false);
 
+#if (PG_VERSION_NUM >= 130000)
+		if (lnext(parsetree_list, parsetree_item) == NULL)
+#else
 		if (lnext(parsetree_item) == NULL)
+#endif
 		{
 			/*
 			 * If this is the last parsetree of the query string, close down
@@ -296,6 +370,15 @@ exec_simple_query_my(Task *task)
 			 * those that start or end a transaction block.
 			 */
 			CommandCounterIncrement();
+#if (PG_VERSION_NUM >= 130000)
+
+			/*
+			 * Disable statement timeout between queries of a multi-query
+			 * string, so that the timeout applies separately to each query.
+			 * (Our next loop iteration will start a fresh timeout.)
+			 */
+			disable_statement_timeout();
+#endif
 		}
 
 		/*
@@ -304,7 +387,15 @@ exec_simple_query_my(Task *task)
 		 * command the client sent, regardless of rewriting. (But a command
 		 * aborted by error will not send an EndCommand report at all.)
 		 */
+#if (PG_VERSION_NUM >= 130000)
+		EndCommandMy(&qc, task, false);
+
+		/* Now we may drop the per-parsetree context, if one was created. */
+		if (per_parsetree_context)
+			MemoryContextDelete(per_parsetree_context);
+#else
 		EndCommandMy(completionTag, task);
+#endif
 	}							/* end loop over parsetrees */
 
 	/*
@@ -499,6 +590,25 @@ IsTransactionExitStmt(Node *parsetree)
  * enables compromises between accuracy of timeouts and cost of starting a
  * timeout.
  */
+#if (PG_VERSION_NUM >= 130000)
+static void
+enable_statement_timeout(void)
+{
+	/* must be within an xact */
+	Assert(xact_started);
+
+	if (StatementTimeoutMy > 0)
+	{
+		if (!get_timeout_active(STATEMENT_TIMEOUT))
+			enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeoutMy);
+	}
+	else
+	{
+		if (get_timeout_active(STATEMENT_TIMEOUT))
+			disable_timeout(STATEMENT_TIMEOUT, false);
+	}
+}
+#else
 static void
 enable_statement_timeout(void)
 {
@@ -516,10 +626,19 @@ enable_statement_timeout(void)
 	else
 		disable_timeout(STATEMENT_TIMEOUT, false);
 }
+#endif
 
 /*
  * Disable statement timeout, if active.
  */
+#if (PG_VERSION_NUM >= 130000)
+static void
+disable_statement_timeout(void)
+{
+	if (get_timeout_active(STATEMENT_TIMEOUT))
+		disable_timeout(STATEMENT_TIMEOUT, false);
+}
+#else
 static void
 disable_statement_timeout(void)
 {
@@ -530,3 +649,5 @@ disable_statement_timeout(void)
 		stmt_timeout_active = false;
 	}
 }
+#endif
+

@@ -577,6 +577,9 @@ static void tick_connect(Task *task) {
         case CONNECTION_AUTH_OK: D1("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: D1("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
         case CONNECTION_BAD: D1("PQstatus == CONNECTION_BAD"); tick_error(task, "PQstatus == CONNECTION_BAD"); return;
+#if (PG_VERSION_NUM >= 130000)
+        case CONNECTION_CHECK_TARGET: D1("PQstatus == CONNECTION_CHECK_TARGET"); break;
+#endif
         case CONNECTION_CHECK_WRITABLE: D1("PQstatus == CONNECTION_CHECK_WRITABLE"); break;
         case CONNECTION_CONSUME: D1("PQstatus == CONNECTION_CONSUME"); break;
         case CONNECTION_GSS_STARTUP: D1("PQstatus == CONNECTION_GSS_STARTUP"); break;
