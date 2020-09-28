@@ -583,6 +583,8 @@ IsTransactionExitStmt(Node *parsetree)
 	return false;
 }
 
+#if (PG_VERSION_NUM >= 130000)
+
 /*
  * Start statement timeout timer, if enabled.
  *
@@ -590,7 +592,6 @@ IsTransactionExitStmt(Node *parsetree)
  * enables compromises between accuracy of timeouts and cost of starting a
  * timeout.
  */
-#if (PG_VERSION_NUM >= 130000)
 static void
 enable_statement_timeout(void)
 {
@@ -608,7 +609,25 @@ enable_statement_timeout(void)
 			disable_timeout(STATEMENT_TIMEOUT, false);
 	}
 }
+
+/*
+ * Disable statement timeout, if active.
+ */
+static void
+disable_statement_timeout(void)
+{
+	if (get_timeout_active(STATEMENT_TIMEOUT))
+		disable_timeout(STATEMENT_TIMEOUT, false);
+}
 #else
+
+/*
+ * Start statement timeout timer, if enabled.
+ *
+ * If there's already a timeout running, don't restart the timer.  That
+ * enables compromises between accuracy of timeouts and cost of starting a
+ * timeout.
+ */
 static void
 enable_statement_timeout(void)
 {
@@ -626,19 +645,10 @@ enable_statement_timeout(void)
 	else
 		disable_timeout(STATEMENT_TIMEOUT, false);
 }
-#endif
 
 /*
  * Disable statement timeout, if active.
  */
-#if (PG_VERSION_NUM >= 130000)
-static void
-disable_statement_timeout(void)
-{
-	if (get_timeout_active(STATEMENT_TIMEOUT))
-		disable_timeout(STATEMENT_TIMEOUT, false);
-}
-#else
 static void
 disable_statement_timeout(void)
 {
