@@ -44,21 +44,17 @@ static void tick_type(Work *work) {
 }
 
 static bool tick_table(Work *work) {
-    StringInfoData buf, name;
+    StringInfoData buf;
     List *names;
     const RangeVar *relation;
-    const char *name_quote;
     D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : null, work->table, work->schema_table);
     if (work->oid) pg_advisory_unlock_int8_my(work->oid);
     SetConfigOptionMy("pg_task.table", work->table);
-    initStringInfo(&name);
-    appendStringInfo(&name, "%s_parent_fkey", work->table);
-    name_quote = quote_identifier(name.data);
     initStringInfo(&buf);
     appendStringInfo(&buf,
         "CREATE TABLE %1$s (\n"
         "    id bigserial NOT NULL PRIMARY KEY,\n"
-        "    parent int8 DEFAULT current_setting('pg_task.id', true)::int8,\n"
+        "    parent int8 DEFAULT current_setting('pg_task.id', true)::int8 REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL,\n"
         "    dt timestamptz NOT NULL DEFAULT current_timestamp,\n"
         "    start timestamptz,\n"
         "    stop timestamptz,\n"
@@ -81,9 +77,8 @@ static bool tick_table(Work *work) {
         "    \"null\" text NOT NULL DEFAULT '\\N',\n"
         "    delimiter \"char\" NOT NULL DEFAULT '\t',\n"
         "    quote \"char\",\n"
-        "    escape \"char\",\n"
-        "    CONSTRAINT %2$s FOREIGN KEY (parent) REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL\n"
-        ")", work->schema_table, name_quote);
+        "    escape \"char\"\n"
+        ")", work->schema_table);
     names = stringToQualifiedNameList(work->schema_table);
     relation = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
@@ -93,8 +88,6 @@ static bool tick_table(Work *work) {
     SPI_finish_my();
     pfree((void *)relation);
     list_free_deep(names);
-    if (name_quote != name.data) pfree((void *)name_quote);
-    pfree(name.data);
     SetConfigOptionMy("pg_task.table", work->table);
     resetStringInfo(&buf);
     appendStringInfo(&buf, "%i", work->oid);
