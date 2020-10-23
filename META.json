@@ -1,0 +1,34 @@
+{
+    "name": "pg_task",
+    "abstract": "PostgreSQL task",
+    "description": "PostgreSQL job scheduler pg_task allows to execute any sql command at any specific time at background asynchronously",
+    "version": "1.0.0",
+    "maintainer": "RekGRpth <rekgrpth@gmail.com>",
+    "license": "mit",
+    "provides": {
+        "pg_task": {
+            "file": "pg_task.so",
+            "version": "1.0.0"
+        }
+    },
+    "resources": {
+        "bugtracker": {
+            "web": "https://github.com/RekGRpth/pg_task/issues"
+        },
+        "repository": {
+            "url": "git://github.com/RekGRpth/pg_task.git",
+            "web": "https://github.com/RekGRpth/pg_task",
+            "type": "git"
+        }
+    },
+    "generated_by": "RekGRpth",
+    "meta-spec": {
+        "version": "1.0.0",
+        "url": "http://pgxn.org/meta/spec.txt"
+    },
+    "tags": [
+        "task",
+        "job",
+        "scheduler"
+    ]
+}
