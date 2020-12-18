@@ -186,11 +186,13 @@ bool task_done(Task *task) {
     #define SFAIL S(FAIL)
     #define RESPONSE 3
     #define SRESPONSE S(RESPONSE)
+    #define GROUP 4
+    #define SGROUP S(GROUP)
     bool exit = false;
     Work *work = task->work;
-    static Oid argtypes[] = {[ID - 1] = INT8OID, [FAIL - 1] = BOOLOID, [RESPONSE - 1] = TEXTOID};
-    Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [FAIL - 1] = BoolGetDatum(task->fail = task->response.data ? task->fail : false), [RESPONSE - 1] = task->response.data ? CStringGetTextDatum(task->response.data) : (Datum)NULL};
-    char nulls[] = {[ID - 1] = ' ', [FAIL - 1] = ' ', [RESPONSE - 1] = task->response.data ? ' ' : 'n'};
+    static Oid argtypes[] = {[ID - 1] = INT8OID, [FAIL - 1] = BOOLOID, [RESPONSE - 1] = TEXTOID, [GROUP - 1] = TEXTOID};
+    Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [FAIL - 1] = BoolGetDatum(task->fail = task->response.data ? task->fail : false), [RESPONSE - 1] = task->response.data ? CStringGetTextDatum(task->response.data) : (Datum)NULL, [GROUP - 1] = CStringGetTextDatum(task->group)};
+    char nulls[] = {[ID - 1] = ' ', [FAIL - 1] = ' ', [RESPONSE - 1] = task->response.data ? ' ' : 'n', [GROUP - 1] = ' '};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
@@ -201,6 +203,8 @@ bool task_done(Task *task) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
+            "WITH s AS (SELECT id FROM %1$s WHERE max < 0 AND dt < current_timestamp AND \"group\" = $" SGROUP " AND state = 'PLAN'::state FOR UPDATE\n)\n"
+            "UPDATE %1$s AS u SET dt = current_timestamp FROM s WHERE u.id = s.id;\n"
             "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " AND state IN ('WORK'::state, 'TAKE'::state) FOR UPDATE\n)\n"
             "UPDATE %1$s AS u SET state = CASE WHEN $" SFAIL " THEN 'FAIL'::state ELSE 'DONE'::state END, stop = current_timestamp, response = $" SRESPONSE " FROM s WHERE u.id = s.id\n"
             "RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live", work->schema_table);
@@ -225,6 +229,9 @@ bool task_done(Task *task) {
     if (task->response.data) pfree((void *)values[RESPONSE - 1]);
     #undef RESPONSE
     #undef SRESPONSE
+    pfree((void *)values[GROUP - 1]);
+    #undef GROUP
+    #undef SGROUP
     pg_advisory_unlock_int4_my(work->oid, task->id);
     pfree(task->null);
     task->null = NULL;
