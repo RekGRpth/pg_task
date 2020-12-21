@@ -170,7 +170,7 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
     int arg = 3;
     char *err;
     char *options = NULL;
-//    bool password = false;
+    bool password = false;
     Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
     PQconninfoOption *opts = PQconninfoParse(remote, &err);
     task->group = group;
@@ -183,13 +183,13 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
         D1("%s = %s", opt->keyword, opt->val);
-//        if (!pg_strncasecmp(opt->keyword, "password", sizeof("password") - 1)) password = true;
+        if (!pg_strncasecmp(opt->keyword, "password", sizeof("password") - 1)) password = true;
         if (!pg_strncasecmp(opt->keyword, "fallback_application_name", sizeof("fallback_application_name") - 1)) continue;
         if (!pg_strncasecmp(opt->keyword, "application_name", sizeof("application_name") - 1)) continue;
         if (!pg_strncasecmp(opt->keyword, "options", sizeof("options") - 1)) { options = opt->val; continue; }
         arg++;
     }
-//    if (!superuser() && !password) { tick_error2(task, "!superuser && !password", NULL); return; }
+    if (!superuser() && !password) { tick_error2(task, "!superuser && !password", NULL); return; }
     keywords = palloc(arg * sizeof(*keywords));
     values = palloc(arg * sizeof(*values));
     initStringInfo(&buf);
@@ -227,7 +227,7 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
     if (PQstatus(task->conn) == CONNECTION_BAD) tick_error(task, "PQstatus == CONNECTION_BAD"); else
     if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) tick_error(task, "PQsetnonblocking == -1"); else
     if ((task->fd = PQsocket(task->conn)) < 0) tick_error(task, "PQsocket < 0"); else
-//    if (!superuser() && PQconnectionNeedsPassword(task->conn) && !PQconnectionUsedPassword(task->conn)) tick_error(task, "!superuser && PQconnectionNeedsPassword && !PQconnectionUsedPassword"); else
+    if (!superuser() && PQconnectionNeedsPassword(task->conn) && !PQconnectionUsedPassword(task->conn)) tick_error(task, "!superuser && PQconnectionNeedsPassword && !PQconnectionUsedPassword"); else
     if (PQclientEncoding(task->conn) != GetDatabaseEncoding()) PQsetClientEncoding(task->conn, GetDatabaseEncodingName());
     pfree(buf.data);
     pfree(buf2.data);
