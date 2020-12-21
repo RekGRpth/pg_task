@@ -150,6 +150,19 @@ static void tick_error(Task *task, const char *msg) {
     tick_finish(task);
 }
 
+static void tick_error2(Task *task, const char *msg, const char *err) {
+    initStringInfo(&task->response);
+    appendStringInfoString(&task->response, msg);
+    if (err) {
+        int len = strlen(err);
+        if (len) appendStringInfo(&task->response, " and %.*s", len - 1, err);
+    }
+    W(task->response.data);
+    task->fail = true;
+    task_done(task);
+    tick_finish(task);
+}
+
 static void tick_remote(Work *work, const int64 id, char *group, char *remote, const int max) {
     const char **keywords;
     const char **values;
@@ -166,20 +179,7 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
     task->remote = remote;
     task->work = work;
     D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : null, task->max, work->oid);
-    if (!opts) {
-        initStringInfo(&task->response);
-        appendStringInfoString(&task->response, "!PQconninfoParse");
-        if (err) {
-            int len = strlen(err);
-            if (len) appendStringInfo(&task->response, " and %.*s", len - 1, err);
-            PQfreemem(err);
-        }
-        W(task->response.data);
-        task->fail = true;
-        task_done(task);
-        tick_free(task);
-        return;
-    }
+    if (!opts) { tick_error2(task, "!PQconninfoParse", err); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
         D1("%s = %s", opt->keyword, opt->val);
@@ -189,15 +189,7 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
         if (!pg_strncasecmp(opt->keyword, "options", sizeof("options") - 1)) { options = opt->val; continue; }
         arg++;
     }
-/*    if (!superuser() && !password) {
-        initStringInfo(&task->response);
-        appendStringInfoString(&task->response, "!superuser && !password");
-        W(task->response.data);
-        task->fail = true;
-        task_done(task);
-        tick_free(task);
-        return;
-    }*/
+//    if (!superuser() && !password) { tick_error2(task, "!superuser && !password", NULL); return; }
     keywords = palloc(arg * sizeof(*keywords));
     values = palloc(arg * sizeof(*values));
     initStringInfo(&buf);
