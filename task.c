@@ -233,7 +233,7 @@ bool task_done(Task *task) {
     #undef GROUP
     #undef SGROUP
     pg_advisory_unlock_int4_my(work->oid, task->id);
-    pfree(task->null);
+    if (task->null) pfree(task->null);
     task->null = NULL;
     return exit;
 }

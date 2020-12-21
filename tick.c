@@ -160,7 +160,7 @@ static void tick_error2(Task *task, const char *msg, const char *err) {
     W(task->response.data);
     task->fail = true;
     task_done(task);
-    tick_finish(task);
+    tick_free(task);
 }
 
 static void tick_remote(Work *work, const int64 id, char *group, char *remote, const int max) {
@@ -227,7 +227,7 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
     if (PQstatus(task->conn) == CONNECTION_BAD) tick_error(task, "PQstatus == CONNECTION_BAD"); else
     if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) tick_error(task, "PQsetnonblocking == -1"); else
     if ((task->fd = PQsocket(task->conn)) < 0) tick_error(task, "PQsocket < 0"); else
-    if (!superuser() && PQconnectionNeedsPassword(task->conn) && !PQconnectionUsedPassword(task->conn)) tick_error(task, "!superuser && PQconnectionNeedsPassword && !PQconnectionUsedPassword"); else
+    if (!superuser() && !PQconnectionUsedPassword(task->conn)) tick_error(task, "!superuser && !PQconnectionUsedPassword"); else
     if (PQclientEncoding(task->conn) != GetDatabaseEncoding()) PQsetClientEncoding(task->conn, GetDatabaseEncodingName());
     pfree(buf.data);
     pfree(buf2.data);
