@@ -157,4 +157,6 @@ void tick_timeout(Work *work);
 #define N(fmt, ...) ereport(NOTICE, (errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
 #define W(fmt, ...) ereport(WARNING, (errmsg(GET_FORMAT(fmt, ##__VA_ARGS__), ##__VA_ARGS__)))
 
+#define countof(array) (sizeof(array)/sizeof(array[0]))
+
 #endif // _INCLUDE_H_

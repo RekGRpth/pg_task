@@ -16,7 +16,7 @@ bool task_work(Task *task) {
     Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [PID - 1] = Int32GetDatum(task->pid)};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
-    StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
+    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
     task->count++;
     D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work->oid, task->count, task->pid);
     if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) {
@@ -47,7 +47,7 @@ bool task_work(Task *task) {
     #undef PID
     #undef SPID
     SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
+    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     if (SPI_processed != 1) {
         W("SPI_processed != 1");
@@ -78,7 +78,7 @@ void task_repeat(Task *task) {
     Datum values[] = {[ID - 1] = Int64GetDatum(task->id)};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
-    StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
+    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
     if (!command) {
         Work *work = task->work;
         StringInfoData buf;
@@ -94,7 +94,7 @@ void task_repeat(Task *task) {
     #undef ID
     #undef SID
     SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
+    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT, true);
     SPI_finish_my();
 }
@@ -106,7 +106,7 @@ void task_delete(Task *task) {
     Datum values[] = {[ID - 1] = Int64GetDatum(task->id)};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
-    StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
+    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
     if (!command) {
         Work *work = task->work;
         StringInfoData buf;
@@ -117,7 +117,7 @@ void task_delete(Task *task) {
     #undef ID
     #undef SID
     SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
+    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE, true);
     SPI_finish_my();
 }
@@ -139,8 +139,8 @@ bool task_live(Task *task) {
     char nulls[] = {[GROUP - 1] = ' ', [REMOTE - 1] = task->remote ? ' ' : 'n', [MAX - 1] = ' ', [COUNT - 1] = ' ', [START - 1] = ' '};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
-    StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
+    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
+    StaticAssertStmt(countof(argtypes) == countof(nulls), "countof(argtypes) == countof(values)");
     if (!command) {
         Work *work = task->work;
         StringInfoData buf;
@@ -166,7 +166,7 @@ bool task_live(Task *task) {
     #undef START
     #undef SSTART
     SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
+    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
     if (!SPI_processed) exit = true; else task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false));
     SPI_finish_my();
@@ -195,8 +195,8 @@ bool task_done(Task *task) {
     char nulls[] = {[ID - 1] = ' ', [FAIL - 1] = ' ', [RESPONSE - 1] = task->response.data ? ' ' : 'n', [GROUP - 1] = ' '};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
-    StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
-    StaticAssertStmt(sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(nulls)/sizeof(nulls[0]), "sizeof(argtypes)/sizeof(argtypes[0]) == sizeof(values)/sizeof(values[0])");
+    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
+    StaticAssertStmt(countof(argtypes) == countof(nulls), "countof(argtypes) == countof(values)");
     D1("id = %li, response = %s, fail = %s", task->id, task->response.data ? task->response.data : null, task->fail ? "true" : "false");
     if (!command) {
         Work *work = task->work;
@@ -215,7 +215,7 @@ bool task_done(Task *task) {
     #undef FAIL
     #undef SFAIL
     SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, sizeof(argtypes)/sizeof(argtypes[0]), argtypes);
+    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
     if (SPI_processed != 1) {
         W("SPI_processed != 1");
