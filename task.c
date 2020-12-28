@@ -203,7 +203,7 @@ bool task_done(Task *task) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %1$s WHERE max < 0 AND dt < current_timestamp AND \"group\" = $" SGROUP " AND state = 'PLAN'::state FOR UPDATE\n)\n"
+            "WITH s AS (SELECT id FROM %1$s WHERE max < 0 AND dt < current_timestamp AND \"group\" = $" SGROUP " AND state = 'PLAN'::state FOR UPDATE SKIP LOCKED\n)\n"
             "UPDATE %1$s AS u SET dt = current_timestamp FROM s WHERE u.id = s.id;\n"
             "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " AND state IN ('WORK'::state, 'TAKE'::state) FOR UPDATE\n)\n"
             "UPDATE %1$s AS u SET state = CASE WHEN $" SFAIL " THEN 'FAIL'::state ELSE 'DONE'::state END, stop = current_timestamp, response = $" SRESPONSE " FROM s WHERE u.id = s.id\n"
