@@ -126,7 +126,7 @@ static void conf_check(Work *work) {
         D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", row, user, data, schema ? schema : null, table, reset, timeout);
         conf_user(user);
         conf_data(user, data);
-        if (!pg_strncasecmp(user, "postgres", sizeof("postgres") - 1) && !pg_strncasecmp(data, "postgres", sizeof("postgres") - 1) && !schema && !pg_strncasecmp(table, "task", sizeof("task") - 1)) {
+        if (!pg_strcasecmp(user, "postgres") && !pg_strcasecmp(data, "postgres") && !schema && !pg_strcasecmp(table, "task")) {
             work->user = "postgres";
             work->data = "postgres";
             work->schema = NULL;
