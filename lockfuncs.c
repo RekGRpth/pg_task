@@ -19,6 +19,7 @@
 #define SET_LOCKTAG_INT32(tag, key1, key2) \
 	SET_LOCKTAG_ADVISORY(tag, MyDatabaseId, key1, key2, 2)
 
+#if (PG_VERSION_NUM < 130000)
 static void
 PreventAdvisoryLocksInParallelMode(void)
 {
@@ -27,31 +28,40 @@ PreventAdvisoryLocksInParallelMode(void)
 				(errcode(ERRCODE_INVALID_TRANSACTION_STATE),
 				 errmsg("cannot use advisory locks during a parallel operation")));
 }
+#endif
 
 bool pg_try_advisory_lock_int8_my(int64 key) {
     LOCKTAG tag;
+#if (PG_VERSION_NUM < 130000)
     PreventAdvisoryLocksInParallelMode();
+#endif
     SET_LOCKTAG_INT64(tag, key);
     return LockAcquire(&tag, ExclusiveLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
 }
 
 bool pg_advisory_unlock_int8_my(int64 key) {
     LOCKTAG tag;
+#if (PG_VERSION_NUM < 130000)
     PreventAdvisoryLocksInParallelMode();
+#endif
     SET_LOCKTAG_INT64(tag, key);
     return LockHeldByMe(&tag, ExclusiveLock) && LockRelease(&tag, ExclusiveLock, true);
 }
 
 bool pg_try_advisory_lock_int4_my(int32 key1, int32 key2) {
     LOCKTAG tag;
+#if (PG_VERSION_NUM < 130000)
     PreventAdvisoryLocksInParallelMode();
+#endif
     SET_LOCKTAG_INT32(tag, key1, key2);
     return LockAcquire(&tag, ExclusiveLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
 }
 
 bool pg_advisory_unlock_int4_my(int32 key1, int32 key2) {
     LOCKTAG tag;
+#if (PG_VERSION_NUM < 130000)
     PreventAdvisoryLocksInParallelMode();
+#endif
     SET_LOCKTAG_INT32(tag, key1, key2);
     return LockHeldByMe(&tag, ExclusiveLock) && LockRelease(&tag, ExclusiveLock, true);
 }
