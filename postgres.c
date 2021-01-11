@@ -8,10 +8,13 @@ static int StatementTimeoutMy;
  */
 bool xact_started = false;
 
+#if (PG_VERSION_NUM >= 130000)
+#else
 /*
  * Flag to keep track of whether statement timeout timer is active.
  */
 bool stmt_timeout_active = false;
+#endif
 
 static bool check_log_statement(List *stmt_list);
 static int	errdetail_execute(List *raw_parsetree_list);
