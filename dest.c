@@ -16,21 +16,21 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
 }
 
 static void headers(TupleDesc typeinfo, Task *task) {
-    if (task->response.len) appendStringInfoString(&task->response, "\n");
+    if (task->output.len) appendStringInfoString(&task->output, "\n");
     for (int col = 1; col <= typeinfo->natts; col++) {
         const char *value = SPI_fname(typeinfo, col);
-        if (col > 1) appendStringInfoChar(&task->response, task->delimiter);
-        if (task->quote) appendStringInfoChar(&task->response, task->quote);
-        if (task->escape) init_escape(&task->response, value, strlen(value), task->escape);
-        else appendStringInfoString(&task->response, value);
+        if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
+        if (task->quote) appendStringInfoChar(&task->output, task->quote);
+        if (task->escape) init_escape(&task->output, value, strlen(value), task->escape);
+        else appendStringInfoString(&task->output, value);
         if (task->append) {
             const char *type = SPI_gettype(typeinfo, col);
-            if (task->escape) init_escape(&task->response, "::", sizeof("::") - 1, task->escape);
-            else appendStringInfoString(&task->response, "::");
-            if (task->escape) init_escape(&task->response, type, strlen(type), task->escape);
-            else appendStringInfoString(&task->response, type);
+            if (task->escape) init_escape(&task->output, "::", sizeof("::") - 1, task->escape);
+            else appendStringInfoString(&task->output, "::");
+            if (task->escape) init_escape(&task->output, type, strlen(type), task->escape);
+            else appendStringInfoString(&task->output, type);
         }
-        if (task->quote) appendStringInfoChar(&task->response, task->quote);
+        if (task->quote) appendStringInfoChar(&task->output, task->quote);
     }
 }
 
@@ -39,24 +39,24 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     DestReceiverMy *my = (DestReceiverMy *)self;
     Task *task = my->task;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    if (!task->response.data) initStringInfo(&task->response);
+    if (!task->output.data) initStringInfo(&task->output);
     MemoryContextSwitchTo(oldMemoryContext);
     if (task->header && !my->row && typeinfo->natts > 1 && task->length == 1) headers(typeinfo, task);
-    if (task->response.len) appendStringInfoString(&task->response, "\n");
+    if (task->output.len) appendStringInfoString(&task->output, "\n");
     for (int col = 1; col <= typeinfo->natts; col++) {
         char *value = SPI_getvalue_my(slot, typeinfo, col);
         int len = value ? strlen(value) : 0;
-        if (col > 1) appendStringInfoChar(&task->response, task->delimiter);
-        if (!value) appendStringInfoString(&task->response, task->null); else {
+        if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
+        if (!value) appendStringInfoString(&task->output, task->null); else {
             if (!init_oid_is_string(SPI_gettypeid(typeinfo, col)) && task->string) {
-                if (len) appendStringInfoString(&task->response, value);
+                if (len) appendStringInfoString(&task->output, value);
             } else {
-                if (task->quote) appendStringInfoChar(&task->response, task->quote);
+                if (task->quote) appendStringInfoChar(&task->output, task->quote);
                 if (len) {
-                    if (task->escape) init_escape(&task->response, value, len, task->escape);
-                    else appendStringInfoString(&task->response, value);
+                    if (task->escape) init_escape(&task->output, value, len, task->escape);
+                    else appendStringInfoString(&task->output, value);
                 }
-                if (task->quote) appendStringInfoChar(&task->response, task->quote);
+                if (task->quote) appendStringInfoChar(&task->output, task->quote);
             }
         }
         if (value) pfree(value);
@@ -70,7 +70,7 @@ static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
     Task *task = my->task;
     if (task->header && task->length > 1) {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-        if (!task->response.data) initStringInfo(&task->response);
+        if (!task->output.data) initStringInfo(&task->output);
         MemoryContextSwitchTo(oldMemoryContext);
         headers(typeinfo, task);
     }
@@ -117,10 +117,10 @@ void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_
     D1(completionTag);
     if (task->skip) task->skip = 0; else {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-        if (!task->response.data) initStringInfo(&task->response);
+        if (!task->output.data) initStringInfo(&task->output);
         MemoryContextSwitchTo(oldMemoryContext);
-        if (task->response.len) appendStringInfoString(&task->response, "\n");
-        appendStringInfoString(&task->response, completionTag);
+        if (task->output.len) appendStringInfoString(&task->output, "\n");
+        appendStringInfoString(&task->output, completionTag);
     }
 }
 #else
@@ -128,10 +128,10 @@ void EndCommandMy(const char *commandTag, Task *task) {
     D1(commandTag);
     if (task->skip) task->skip = 0; else {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-        if (!task->response.data) initStringInfo(&task->response);
+        if (!task->output.data) initStringInfo(&task->output);
         MemoryContextSwitchTo(oldMemoryContext);
-        if (task->response.len) appendStringInfoString(&task->response, "\n");
-        appendStringInfoString(&task->response, commandTag);
+        if (task->output.len) appendStringInfoString(&task->output, "\n");
+        appendStringInfoString(&task->output, commandTag);
     }
 }
 #endif

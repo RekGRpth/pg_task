@@ -42,7 +42,7 @@ bool task_work(Task *task) {
             "SET     state = 'WORK'::state,\n"
             "        start = current_timestamp,\n"
             "        pid = $" SPID "\n"
-            "FROM s WHERE u.id = s.id RETURNING request, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout, append, header, string, \"null\", delimiter, quote, escape", work->schema_table);
+            "FROM s WHERE u.id = s.id RETURNING input, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout, append, header, string, \"null\", delimiter, quote, escape", work->schema_table);
         command = buf.data;
     }
     #undef ID
@@ -57,7 +57,7 @@ bool task_work(Task *task) {
         exit = true;
     } else {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-        task->request = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "request", false));
+        task->input = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "input", false));
         task->null = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "null", false));
         MemoryContextSwitchTo(oldMemoryContext);
         task->timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "timeout", false));
@@ -68,7 +68,7 @@ bool task_work(Task *task) {
         task->quote = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "quote", true));
         task->escape = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "escape", true));
         if (0 < StatementTimeout && StatementTimeout < task->timeout) task->timeout = StatementTimeout;
-        D1("request = %s, timeout = %i, append = %s, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c", task->request, task->timeout, task->append ? "true" : "false", task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote, task->escape);
+        D1("input = %s, timeout = %i, append = %s, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c", task->input, task->timeout, task->append ? "true" : "false", task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote, task->escape);
     }
     SPI_finish_my();
     return exit;
@@ -87,10 +87,10 @@ void task_repeat(Task *task) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "INSERT INTO %1$s (parent, dt, \"group\", max, request, timeout, delete, repeat, drift, count, live)\n"
+            "INSERT INTO %1$s (parent, dt, \"group\", max, input, timeout, delete, repeat, drift, count, live)\n"
             "SELECT $" SID ", CASE WHEN drift THEN current_timestamp + repeat\n"
             "ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
-            "END AS dt, \"group\", max, request, timeout, delete, repeat, drift, count, live\n"
+            "END AS dt, \"group\", max, input, timeout, delete, repeat, drift, count, live\n"
             "FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::state, 'FAIL'::state) LIMIT 1", work->schema_table);
         command = buf.data;
     }
@@ -187,20 +187,20 @@ bool task_done(Task *task) {
     #define SID S(ID)
     #define FAIL 2
     #define SFAIL S(FAIL)
-    #define RESPONSE 3
-    #define SRESPONSE S(RESPONSE)
+    #define OUTPUT 3
+    #define SOUTPUT S(OUTPUT)
     #define GROUP 4
     #define SGROUP S(GROUP)
     bool exit = false;
     Work *work = task->work;
-    static Oid argtypes[] = {[ID - 1] = INT8OID, [FAIL - 1] = BOOLOID, [RESPONSE - 1] = TEXTOID, [GROUP - 1] = TEXTOID};
-    Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [FAIL - 1] = BoolGetDatum(task->fail = task->response.data ? task->fail : false), [RESPONSE - 1] = task->response.data ? CStringGetTextDatum(task->response.data) : (Datum)NULL, [GROUP - 1] = CStringGetTextDatum(task->group)};
-    char nulls[] = {[ID - 1] = ' ', [FAIL - 1] = ' ', [RESPONSE - 1] = task->response.data ? ' ' : 'n', [GROUP - 1] = ' '};
+    static Oid argtypes[] = {[ID - 1] = INT8OID, [FAIL - 1] = BOOLOID, [OUTPUT - 1] = TEXTOID, [GROUP - 1] = TEXTOID};
+    Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [FAIL - 1] = BoolGetDatum(task->fail = task->output.data ? task->fail : false), [OUTPUT - 1] = task->output.data ? CStringGetTextDatum(task->output.data) : (Datum)NULL, [GROUP - 1] = CStringGetTextDatum(task->group)};
+    char nulls[] = {[ID - 1] = ' ', [FAIL - 1] = ' ', [OUTPUT - 1] = task->output.data ? ' ' : 'n', [GROUP - 1] = ' '};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
     StaticAssertStmt(countof(argtypes) == countof(nulls), "countof(argtypes) == countof(values)");
-    D1("id = %li, response = %s, fail = %s", task->id, task->response.data ? task->response.data : null, task->fail ? "true" : "false");
+    D1("id = %li, output = %s, fail = %s", task->id, task->output.data ? task->output.data : null, task->fail ? "true" : "false");
     if (!command) {
         Work *work = task->work;
         StringInfoData buf;
@@ -209,7 +209,7 @@ bool task_done(Task *task) {
             "WITH s AS (SELECT id FROM %1$s WHERE max < 0 AND dt < current_timestamp AND \"group\" = $" SGROUP " AND state = 'PLAN'::state FOR UPDATE SKIP LOCKED\n)\n"
             "UPDATE %1$s AS u SET dt = current_timestamp FROM s WHERE u.id = s.id;\n"
             "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " AND state IN ('WORK'::state, 'TAKE'::state) FOR UPDATE\n)\n"
-            "UPDATE %1$s AS u SET state = CASE WHEN $" SFAIL " THEN 'FAIL'::state ELSE 'DONE'::state END, stop = current_timestamp, response = $" SRESPONSE " FROM s WHERE u.id = s.id\n"
+            "UPDATE %1$s AS u SET state = CASE WHEN $" SFAIL " THEN 'FAIL'::state ELSE 'DONE'::state END, stop = current_timestamp, output = $" SOUTPUT " FROM s WHERE u.id = s.id\n"
             "RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live", work->schema_table);
         command = buf.data;
     }
@@ -229,9 +229,9 @@ bool task_done(Task *task) {
         task->live = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
     }
     SPI_finish_my();
-    if (task->response.data) pfree((void *)values[RESPONSE - 1]);
-    #undef RESPONSE
-    #undef SRESPONSE
+    if (task->output.data) pfree((void *)values[OUTPUT - 1]);
+    #undef OUTPUT
+    #undef SOUTPUT
     pfree((void *)values[GROUP - 1]);
     #undef GROUP
     #undef SGROUP
@@ -249,8 +249,8 @@ static void task_success(Task *task) {
     ReadyForQueryMy(task);
     SetCurrentStatementStartTimestamp();
     exec_simple_query_my(task);
-    pfree(task->request);
-    task->request = "COMMIT";
+    pfree(task->input);
+    task->input = "COMMIT";
     if (IsTransactionState()) exec_simple_query_my(task);
     if (IsTransactionState()) E("IsTransactionState");
 }
@@ -258,36 +258,36 @@ static void task_success(Task *task) {
 static void task_fail(Task *task) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
-    if (!task->response.data) initStringInfo(&task->response);
+    if (!task->output.data) initStringInfo(&task->output);
     MemoryContextSwitchTo(oldMemoryContext);
-    if (edata->elevel) appendStringInfo(&task->response, "%selevel%s%c%i", task->response.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->elevel);
-    if (edata->output_to_server) appendStringInfo(&task->response, "%soutput_to_server%s%ctrue", task->response.len ? "\n" : "", task->append ? "::bool" : "", task->delimiter);
-    if (edata->output_to_client) appendStringInfo(&task->response, "%soutput_to_client%s%ctrue", task->response.len ? "\n" : "", task->append ? "::bool" : "", task->delimiter);
-    if (edata->show_funcname) appendStringInfo(&task->response, "%sshow_funcname%s%ctrue", task->response.len ? "\n" : "", task->append ? "::bool" : "", task->delimiter);
-    if (edata->hide_stmt) appendStringInfo(&task->response, "%shide_stmt%s%ctrue", task->response.len ? "\n" : "", task->append ? "::bool" : "", task->delimiter);
-    if (edata->hide_ctx) appendStringInfo(&task->response, "%shide_ctx%s%ctrue", task->response.len ? "\n" : "", task->append ? "::bool" : "", task->delimiter);
-    if (edata->filename) appendStringInfo(&task->response, "%sfilename%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->filename);
-    if (edata->lineno) appendStringInfo(&task->response, "%slineno%s%c%i", task->response.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->lineno);
-    if (edata->funcname) appendStringInfo(&task->response, "%sfuncname%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->funcname);
-    if (edata->domain) appendStringInfo(&task->response, "%sdomain%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->domain);
-    if (edata->context_domain) appendStringInfo(&task->response, "%scontext_domain%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->context_domain);
-    if (edata->sqlerrcode) appendStringInfo(&task->response, "%ssqlerrcode%s%c%i", task->response.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->sqlerrcode);
-    if (edata->message) appendStringInfo(&task->response, "%smessage%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->message);
-    if (edata->detail) appendStringInfo(&task->response, "%sdetail%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->detail);
-    if (edata->detail_log) appendStringInfo(&task->response, "%sdetail_log%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->detail_log);
-    if (edata->hint) appendStringInfo(&task->response, "%shint%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->hint);
-    if (edata->context) appendStringInfo(&task->response, "%scontext%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->context);
-    if (edata->message_id) appendStringInfo(&task->response, "%smessage_id%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->message_id);
-    if (edata->schema_name) appendStringInfo(&task->response, "%sschema_name%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->schema_name);
-    if (edata->table_name) appendStringInfo(&task->response, "%stable_name%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->table_name);
-    if (edata->column_name) appendStringInfo(&task->response, "%scolumn_name%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->column_name);
-    if (edata->datatype_name) appendStringInfo(&task->response, "%sdatatype_name%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->datatype_name);
-    if (edata->constraint_name) appendStringInfo(&task->response, "%sconstraint_name%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->constraint_name);
-    if (edata->cursorpos) appendStringInfo(&task->response, "%scursorpos%s%c%i", task->response.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->cursorpos);
-    if (edata->internalpos) appendStringInfo(&task->response, "%sinternalpos%s%c%i", task->response.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->internalpos);
-    if (edata->internalquery) appendStringInfo(&task->response, "%sinternalquery%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->internalquery);
-    if (edata->saved_errno) appendStringInfo(&task->response, "%ssaved_errno%s%c%i", task->response.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->saved_errno);
-    appendStringInfo(&task->response, "%sROLLBACK", task->response.len ? "\n" : "");
+    if (edata->elevel) appendStringInfo(&task->output, "%selevel%s%c%i", task->output.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->elevel);
+    if (edata->output_to_server) appendStringInfo(&task->output, "%soutput_to_server%s%ctrue", task->output.len ? "\n" : "", task->append ? "::bool" : "", task->delimiter);
+    if (edata->output_to_client) appendStringInfo(&task->output, "%soutput_to_client%s%ctrue", task->output.len ? "\n" : "", task->append ? "::bool" : "", task->delimiter);
+    if (edata->show_funcname) appendStringInfo(&task->output, "%sshow_funcname%s%ctrue", task->output.len ? "\n" : "", task->append ? "::bool" : "", task->delimiter);
+    if (edata->hide_stmt) appendStringInfo(&task->output, "%shide_stmt%s%ctrue", task->output.len ? "\n" : "", task->append ? "::bool" : "", task->delimiter);
+    if (edata->hide_ctx) appendStringInfo(&task->output, "%shide_ctx%s%ctrue", task->output.len ? "\n" : "", task->append ? "::bool" : "", task->delimiter);
+    if (edata->filename) appendStringInfo(&task->output, "%sfilename%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->filename);
+    if (edata->lineno) appendStringInfo(&task->output, "%slineno%s%c%i", task->output.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->lineno);
+    if (edata->funcname) appendStringInfo(&task->output, "%sfuncname%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->funcname);
+    if (edata->domain) appendStringInfo(&task->output, "%sdomain%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->domain);
+    if (edata->context_domain) appendStringInfo(&task->output, "%scontext_domain%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->context_domain);
+    if (edata->sqlerrcode) appendStringInfo(&task->output, "%ssqlerrcode%s%c%i", task->output.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->sqlerrcode);
+    if (edata->message) appendStringInfo(&task->output, "%smessage%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->message);
+    if (edata->detail) appendStringInfo(&task->output, "%sdetail%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->detail);
+    if (edata->detail_log) appendStringInfo(&task->output, "%sdetail_log%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->detail_log);
+    if (edata->hint) appendStringInfo(&task->output, "%shint%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->hint);
+    if (edata->context) appendStringInfo(&task->output, "%scontext%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->context);
+    if (edata->message_id) appendStringInfo(&task->output, "%smessage_id%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->message_id);
+    if (edata->schema_name) appendStringInfo(&task->output, "%sschema_name%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->schema_name);
+    if (edata->table_name) appendStringInfo(&task->output, "%stable_name%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->table_name);
+    if (edata->column_name) appendStringInfo(&task->output, "%scolumn_name%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->column_name);
+    if (edata->datatype_name) appendStringInfo(&task->output, "%sdatatype_name%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->datatype_name);
+    if (edata->constraint_name) appendStringInfo(&task->output, "%sconstraint_name%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->constraint_name);
+    if (edata->cursorpos) appendStringInfo(&task->output, "%scursorpos%s%c%i", task->output.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->cursorpos);
+    if (edata->internalpos) appendStringInfo(&task->output, "%sinternalpos%s%c%i", task->output.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->internalpos);
+    if (edata->internalquery) appendStringInfo(&task->output, "%sinternalquery%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->internalquery);
+    if (edata->saved_errno) appendStringInfo(&task->output, "%ssaved_errno%s%c%i", task->output.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->saved_errno);
+    appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
     FreeErrorData(edata);
     HOLD_INTERRUPTS();
     disable_all_timeouts(false);
@@ -313,7 +313,7 @@ static void task_fail(Task *task) {
 
 static bool task_timeout(Task *task) {
     if (task_work(task)) return true;
-    D1("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
+    D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
     PG_TRY();
         task_success(task);
     PG_CATCH();
@@ -324,9 +324,9 @@ static bool task_timeout(Task *task) {
     if (task_done(task)) return true;
     D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
     if (task->repeat) task_repeat(task);
-    if (task->delete && !task->response.data) task_delete(task);
-    if (task->response.data) pfree(task->response.data);
-    task->response.data = NULL;
+    if (task->delete && !task->output.data) task_delete(task);
+    if (task->output.data) pfree(task->output.data);
+    task->output.data = NULL;
     return !task->live || task_live(task);
 }
 

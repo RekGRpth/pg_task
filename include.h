@@ -61,10 +61,10 @@ typedef struct Task {
     char delimiter;
     char escape;
     char *group;
+    char *input;
     char *null;
     char quote;
     char *remote;
-    char *request;
     int64 id;
     int count;
     int events;
@@ -76,7 +76,7 @@ typedef struct Task {
     int timeout;
     PGconn *conn;
     queue_t queue;
-    StringInfoData response;
+    StringInfoData output;
     TimestampTz start;
     Work *work;
 } Task;

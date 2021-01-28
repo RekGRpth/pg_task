@@ -33,7 +33,7 @@ static void disable_statement_timeout(void);
 void
 exec_simple_query_my(Task *task)
 {
-	const char *query_string = task->request;
+	const char *query_string = task->input;
 	CommandDest dest = whereToSendOutput = DestDebug;
 	MemoryContext oldcontext;
 	List	   *parsetree_list;

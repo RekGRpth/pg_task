@@ -61,8 +61,8 @@ static bool tick_table(Work *work) {
         "    \"group\" text NOT NULL DEFAULT 'group',\n"
         "    max int4,\n"
         "    pid int4,\n"
-        "    request text NOT NULL,\n"
-        "    response text,\n"
+        "    input text NOT NULL,\n"
+        "    output text,\n"
         "    state state NOT NULL DEFAULT 'PLAN'::state,\n"
         "    timeout interval,\n"
         "    delete boolean NOT NULL DEFAULT false,\n"
@@ -127,8 +127,8 @@ static void tick_free(Task *task) {
     if (task->group) pfree(task->group);
     if (task->null) pfree(task->null);
     if (task->remote) pfree(task->remote);
-    if (task->request) pfree(task->request);
-    if (task->response.data) pfree(task->response.data);
+    if (task->input) pfree(task->input);
+    if (task->output.data) pfree(task->output.data);
     pfree(task);
 }
 
@@ -141,23 +141,23 @@ static void tick_finish(Task *task) {
 static void tick_error(Task *task, const char *msg) {
     char *err = PQerrorMessage(task->conn);
     int len = strlen(err);
-    initStringInfo(&task->response);
-    appendStringInfoString(&task->response, msg);
-    if (len) appendStringInfo(&task->response, " and %.*s", len - 1, err);
-    W(task->response.data);
+    initStringInfo(&task->output);
+    appendStringInfoString(&task->output, msg);
+    if (len) appendStringInfo(&task->output, " and %.*s", len - 1, err);
+    W(task->output.data);
     task->fail = true;
     task_done(task);
     tick_finish(task);
 }
 
 static void tick_error2(Task *task, const char *msg, const char *err) {
-    initStringInfo(&task->response);
-    appendStringInfoString(&task->response, msg);
+    initStringInfo(&task->output);
+    appendStringInfoString(&task->output, msg);
     if (err) {
         int len = strlen(err);
-        if (len) appendStringInfo(&task->response, " and %.*s", len - 1, err);
+        if (len) appendStringInfo(&task->output, " and %.*s", len - 1, err);
     }
-    W(task->response.data);
+    W(task->output.data);
     task->fail = true;
     task_done(task);
     tick_free(task);
@@ -423,50 +423,50 @@ static bool tick_latch(void) {
 
 static void tick_command(Task *task, PGresult *result) {
     if (task->skip) { task->skip--; return; }
-    if (!task->response.data) initStringInfo(&task->response);
-    appendStringInfo(&task->response, "%s%s", task->response.len ? "\n" : "", PQcmdStatus(result));
+    if (!task->output.data) initStringInfo(&task->output);
+    appendStringInfo(&task->output, "%s%s", task->output.len ? "\n" : "", PQcmdStatus(result));
 }
 
 static void tick_success(Task *task, PGresult *result) {
     if (task->length == 1 && !PQntuples(result)) return;
-    if (!task->response.data) initStringInfo(&task->response);
+    if (!task->output.data) initStringInfo(&task->output);
     if (task->header && (task->length > 1 || PQnfields(result) > 1)) {
-        if (task->response.len) appendStringInfoString(&task->response, "\n");
+        if (task->output.len) appendStringInfoString(&task->output, "\n");
         for (int col = 0; col < PQnfields(result); col++) {
             const char *value = PQfname(result, col);
-            if (col > 0) appendStringInfoChar(&task->response, task->delimiter);
-            if (task->quote) appendStringInfoChar(&task->response, task->quote);
-            if (task->escape) init_escape(&task->response, value, strlen(value), task->escape);
-            else appendStringInfoString(&task->response, value);
+            if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
+            if (task->quote) appendStringInfoChar(&task->output, task->quote);
+            if (task->escape) init_escape(&task->output, value, strlen(value), task->escape);
+            else appendStringInfoString(&task->output, value);
             if (task->append && !strstr(value, "::")) {
                 Oid oid = PQftype(result, col);
                 const char *type = PQftypeMy(oid);
-                if (task->escape) init_escape(&task->response, "::", sizeof("::") - 1, task->escape);
-                else appendStringInfoString(&task->response, "::");
+                if (task->escape) init_escape(&task->output, "::", sizeof("::") - 1, task->escape);
+                else appendStringInfoString(&task->output, "::");
                 if (type) {
-                    if (task->escape) init_escape(&task->response, type, strlen(type), task->escape);
-                    else appendStringInfoString(&task->response, type);
-                } else appendStringInfo(&task->response, "%i", oid);
+                    if (task->escape) init_escape(&task->output, type, strlen(type), task->escape);
+                    else appendStringInfoString(&task->output, type);
+                } else appendStringInfo(&task->output, "%i", oid);
             }
-            if (task->quote) appendStringInfoChar(&task->response, task->quote);
+            if (task->quote) appendStringInfoChar(&task->output, task->quote);
         }
     }
     for (int row = 0; row < PQntuples(result); row++) {
-        if (task->response.len) appendStringInfoString(&task->response, "\n");
+        if (task->output.len) appendStringInfoString(&task->output, "\n");
         for (int col = 0; col < PQnfields(result); col++) {
             const char *value = PQgetvalue(result, row, col);
             int len = PQgetlength(result, row, col);
-            if (col > 0) appendStringInfoChar(&task->response, task->delimiter);
-            if (PQgetisnull(result, row, col)) appendStringInfoString(&task->response, task->null); else {
+            if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
+            if (PQgetisnull(result, row, col)) appendStringInfoString(&task->output, task->null); else {
                 if (!init_oid_is_string(PQftype(result, col)) && task->string) {
-                    if (len) appendStringInfoString(&task->response, value);
+                    if (len) appendStringInfoString(&task->output, value);
                 } else {
-                    if (task->quote) appendStringInfoChar(&task->response, task->quote);
+                    if (task->quote) appendStringInfoChar(&task->output, task->quote);
                     if (len) {
-                        if (task->escape) init_escape(&task->response, value, len, task->escape);
-                        else appendStringInfoString(&task->response, value);
+                        if (task->escape) init_escape(&task->output, value, len, task->escape);
+                        else appendStringInfoString(&task->output, value);
                     }
-                    if (task->quote) appendStringInfoChar(&task->response, task->quote);
+                    if (task->quote) appendStringInfoChar(&task->output, task->quote);
                 }
             }
         }
@@ -475,26 +475,26 @@ static void tick_success(Task *task, PGresult *result) {
 
 static void tick_fail(Task *task, PGresult *result) {
     char *value;
-    if (!task->response.data) initStringInfo(&task->response);
-    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->response, "%sseverity%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY_NONLOCALIZED))) appendStringInfo(&task->response, "%sseverity_nonlocalized%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&task->response, "%ssqlstate%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY))) appendStringInfo(&task->response, "%smessage_primary%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL))) appendStringInfo(&task->response, "%smessage_detail%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))) appendStringInfo(&task->response, "%smessage_hint%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_STATEMENT_POSITION))) appendStringInfo(&task->response, "%sstatement_position%s%c%s", task->response.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_POSITION))) appendStringInfo(&task->response, "%sinternal_position%s%c%s", task->response.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_QUERY))) appendStringInfo(&task->response, "%sinternal_query%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_CONTEXT))) appendStringInfo(&task->response, "%scontext%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SCHEMA_NAME))) appendStringInfo(&task->response, "%sschema_name%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_TABLE_NAME))) appendStringInfo(&task->response, "%stable_name%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_COLUMN_NAME))) appendStringInfo(&task->response, "%scolumn_name%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_DATATYPE_NAME))) appendStringInfo(&task->response, "%sdatatype_name%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_CONSTRAINT_NAME))) appendStringInfo(&task->response, "%sconstraint_name%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FILE))) appendStringInfo(&task->response, "%ssource_file%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_LINE))) appendStringInfo(&task->response, "%ssource_line%s%c%s", task->response.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->response, "%ssource_function%s%c%s", task->response.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    appendStringInfo(&task->response, "%sROLLBACK", task->response.len ? "\n" : "");
+    if (!task->output.data) initStringInfo(&task->output);
+    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->output, "%sseverity%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY_NONLOCALIZED))) appendStringInfo(&task->output, "%sseverity_nonlocalized%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&task->output, "%ssqlstate%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY))) appendStringInfo(&task->output, "%smessage_primary%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL))) appendStringInfo(&task->output, "%smessage_detail%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))) appendStringInfo(&task->output, "%smessage_hint%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_STATEMENT_POSITION))) appendStringInfo(&task->output, "%sstatement_position%s%c%s", task->output.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_POSITION))) appendStringInfo(&task->output, "%sinternal_position%s%c%s", task->output.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_QUERY))) appendStringInfo(&task->output, "%sinternal_query%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_CONTEXT))) appendStringInfo(&task->output, "%scontext%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SCHEMA_NAME))) appendStringInfo(&task->output, "%sschema_name%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_TABLE_NAME))) appendStringInfo(&task->output, "%stable_name%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_COLUMN_NAME))) appendStringInfo(&task->output, "%scolumn_name%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_DATATYPE_NAME))) appendStringInfo(&task->output, "%sdatatype_name%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_CONSTRAINT_NAME))) appendStringInfo(&task->output, "%sconstraint_name%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FILE))) appendStringInfo(&task->output, "%ssource_file%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_LINE))) appendStringInfo(&task->output, "%ssource_line%s%c%s", task->output.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->output, "%ssource_function%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
     task->skip++;
     task->fail = true;
 }
@@ -503,9 +503,9 @@ static void tick_query(Task *task) {
     StringInfoData buf;
     List *list;
     if (task_work(task)) { tick_finish(task); return; }
-    D1("id = %li, timeout = %i, request = %s, count = %i", task->id, task->timeout, task->request, task->count);
+    D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
     PG_TRY();
-        list = pg_parse_query(task->request);
+        list = pg_parse_query(task->input);
         task->length = list_length(list);
         list_free_deep(list);
     PG_CATCH();
@@ -523,12 +523,12 @@ static void tick_query(Task *task) {
         appendStringInfoString(&buf, "SET \"config.append_type_to_column_name\" = true;\n");
         task->skip++;
     }
-    appendStringInfoString(&buf, task->request);
-    pfree(task->request);
-    task->request = buf.data;
-    if (!PQsendQuery(task->conn, task->request)) tick_error(task, "!PQsendQuery"); else {
-        pfree(task->request);
-        task->request = NULL;
+    appendStringInfoString(&buf, task->input);
+    pfree(task->input);
+    task->input = buf.data;
+    if (!PQsendQuery(task->conn, task->input)) tick_error(task, "!PQsendQuery"); else {
+        pfree(task->input);
+        task->input = NULL;
         task->events = WL_SOCKET_WRITEABLE;
     }
 }
@@ -538,9 +538,9 @@ static void tick_repeat(Task *task) {
     if (task_done(task)) { tick_finish(task); return; }
     D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
     if (task->repeat) task_repeat(task);
-    if (task->delete && !task->response.data) task_delete(task);
-    if (task->response.data) pfree(task->response.data);
-    task->response.data = NULL;
+    if (task->delete && !task->output.data) task_delete(task);
+    if (task->output.data) pfree(task->output.data);
+    task->output.data = NULL;
     if (!task->live || task_live(task)) tick_finish(task); else tick_query(task);
 }
 
