@@ -76,6 +76,7 @@ typedef struct Task {
     int timeout;
     PGconn *conn;
     queue_t queue;
+    StringInfoData error;
     StringInfoData output;
     TimestampTz start;
     Work *work;

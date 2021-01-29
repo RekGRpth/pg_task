@@ -63,6 +63,7 @@ static bool tick_table(Work *work) {
         "    pid int4,\n"
         "    input text NOT NULL,\n"
         "    output text,\n"
+        "    error text,\n"
         "    state state NOT NULL DEFAULT 'PLAN'::state,\n"
         "    timeout interval,\n"
         "    delete boolean NOT NULL DEFAULT false,\n"
@@ -129,6 +130,7 @@ static void tick_free(Task *task) {
     if (task->remote) pfree(task->remote);
     if (task->input) pfree(task->input);
     if (task->output.data) pfree(task->output.data);
+    if (task->error.data) pfree(task->error.data);
     pfree(task);
 }
 
@@ -475,26 +477,26 @@ static void tick_success(Task *task, PGresult *result) {
 
 static void tick_fail(Task *task, PGresult *result) {
     char *value;
-    if (!task->output.data) initStringInfo(&task->output);
-    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->output, "%sseverity%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY_NONLOCALIZED))) appendStringInfo(&task->output, "%sseverity_nonlocalized%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&task->output, "%ssqlstate%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY))) appendStringInfo(&task->output, "%smessage_primary%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL))) appendStringInfo(&task->output, "%smessage_detail%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))) appendStringInfo(&task->output, "%smessage_hint%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_STATEMENT_POSITION))) appendStringInfo(&task->output, "%sstatement_position%s%c%s", task->output.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_POSITION))) appendStringInfo(&task->output, "%sinternal_position%s%c%s", task->output.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_QUERY))) appendStringInfo(&task->output, "%sinternal_query%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_CONTEXT))) appendStringInfo(&task->output, "%scontext%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SCHEMA_NAME))) appendStringInfo(&task->output, "%sschema_name%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_TABLE_NAME))) appendStringInfo(&task->output, "%stable_name%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_COLUMN_NAME))) appendStringInfo(&task->output, "%scolumn_name%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_DATATYPE_NAME))) appendStringInfo(&task->output, "%sdatatype_name%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_CONSTRAINT_NAME))) appendStringInfo(&task->output, "%sconstraint_name%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FILE))) appendStringInfo(&task->output, "%ssource_file%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_LINE))) appendStringInfo(&task->output, "%ssource_line%s%c%s", task->output.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->output, "%ssource_function%s%c%s", task->output.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
+    if (!task->error.data) initStringInfo(&task->error);
+    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->error, "%sseverity%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY_NONLOCALIZED))) appendStringInfo(&task->error, "%sseverity_nonlocalized%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&task->error, "%ssqlstate%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY))) appendStringInfo(&task->error, "%smessage_primary%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL))) appendStringInfo(&task->error, "%smessage_detail%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))) appendStringInfo(&task->error, "%smessage_hint%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_STATEMENT_POSITION))) appendStringInfo(&task->error, "%sstatement_position%s%c%s", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_POSITION))) appendStringInfo(&task->error, "%sinternal_position%s%c%s", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_QUERY))) appendStringInfo(&task->error, "%sinternal_query%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_CONTEXT))) appendStringInfo(&task->error, "%scontext%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SCHEMA_NAME))) appendStringInfo(&task->error, "%sschema_name%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_TABLE_NAME))) appendStringInfo(&task->error, "%stable_name%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_COLUMN_NAME))) appendStringInfo(&task->error, "%scolumn_name%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_DATATYPE_NAME))) appendStringInfo(&task->error, "%sdatatype_name%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_CONSTRAINT_NAME))) appendStringInfo(&task->error, "%sconstraint_name%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FILE))) appendStringInfo(&task->error, "%ssource_file%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_LINE))) appendStringInfo(&task->error, "%ssource_line%s%c%s", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->error, "%ssource_function%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    appendStringInfo(&task->error, "%sROLLBACK", task->error.len ? "\n" : "");
     task->skip++;
     task->fail = true;
 }
@@ -541,6 +543,8 @@ static void tick_repeat(Task *task) {
     if (task->delete && !task->output.data) task_delete(task);
     if (task->output.data) pfree(task->output.data);
     task->output.data = NULL;
+    if (task->error.data) pfree(task->error.data);
+    task->error.data = NULL;
     if (!task->live || task_live(task)) tick_finish(task); else tick_query(task);
 }
 
