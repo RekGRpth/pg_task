@@ -52,6 +52,8 @@ input text - sql to execute
 
 output text - result received
 
+error text - error occured
+
 state state - PLAN, TAKE, WORK, DONE, FAIL or STOP
 
 timeout interval - allowed time to run
