@@ -292,7 +292,7 @@ static void task_fail(Task *task) {
     if (edata->internalpos) appendStringInfo(&task->error, "%sinternalpos%s%c%i", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->internalpos);
     if (edata->internalquery) appendStringInfo(&task->error, "%sinternalquery%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->internalquery);
     if (edata->saved_errno) appendStringInfo(&task->error, "%ssaved_errno%s%c%i", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->saved_errno);
-    appendStringInfo(&task->error, "%sROLLBACK", task->error.len ? "\n" : "");
+//    appendStringInfo(&task->error, "%sROLLBACK", task->error.len ? "\n" : "");
     FreeErrorData(edata);
     HOLD_INTERRUPTS();
     disable_all_timeouts(false);

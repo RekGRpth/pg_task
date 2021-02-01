@@ -98,7 +98,7 @@ INSERT INTO task (repeat, input, drift) VALUES ('5 min', 'SELECT now()', false)
 ```
 then repeat task will start after 5 minutes after task done (instead after planned time as default)
 
-if exception occures it catched and writed in result as text
+if exception occures it catched and writed in error as text
 ```sql
 INSERT INTO task (input) VALUES ('SELECT 1/0')
 ```
