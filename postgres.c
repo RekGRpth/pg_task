@@ -36,7 +36,7 @@ static void capture_stderr_start(void) {
 }
 
 static void capture_stderr_stop(Task *task) {
-	char buffer[1024];
+	char buffer[1024 + 1];
 	int nread;
 	if (fflush(stderr)) E("fflush");
 	if (dup2(stderr_fd, STDERR_FILENO) < 0) E("dup2 < 0");
@@ -48,7 +48,8 @@ static void capture_stderr_stop(Task *task) {
 			initStringInfo(&task->error);
 			MemoryContextSwitchTo(oldMemoryContext);
 		}
-		appendStringInfo(&task->error, "%*.*s", nread, nread, buffer);
+		buffer[nread] = '\0';
+		appendStringInfoString(&task->error, buffer);
 		if (fwrite(buffer, nread, 1, stderr) != 1) E("fwrite");
 	}
 	if (close(pipes[READ]) < 0) E("close < 0");
