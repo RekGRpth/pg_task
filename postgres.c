@@ -43,13 +43,13 @@ static void capture_stderr_stop(Task *task) {
 	if (close(stderr_fd) < 0) E("close < 0");
 	if (close(pipes[WRITE]) < 0) E("close < 0");
 	while ((nread = read(pipes[READ], buffer, sizeof(buffer))) > 0) {
-		if (fwrite(buffer, nread, 1, stderr) != 1) E("fwrite");
 		if (!task->error.data) {
 			MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
 			initStringInfo(&task->error);
 			MemoryContextSwitchTo(oldMemoryContext);
 		}
-		appendBinaryStringInfo(&task->error, buffer, nread);
+		appendStringInfo(&task->error, "%*.*s", nread, nread, buffer);
+		if (fwrite(buffer, nread, 1, stderr) != 1) E("fwrite");
 	}
 	if (close(pipes[READ]) < 0) E("close < 0");
 }
