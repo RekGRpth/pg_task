@@ -477,6 +477,7 @@ static void tick_success(Task *task, PGresult *result) {
 
 static void tick_fail(Task *task, PGresult *result) {
     char *value;
+    if (!task->output.data) initStringInfo(&task->output);
     if (!task->error.data) initStringInfo(&task->error);
     if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->error, "%sseverity%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
     if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY_NONLOCALIZED))) appendStringInfo(&task->error, "%sseverity_nonlocalized%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
@@ -496,7 +497,7 @@ static void tick_fail(Task *task, PGresult *result) {
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FILE))) appendStringInfo(&task->error, "%ssource_file%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_LINE))) appendStringInfo(&task->error, "%ssource_line%s%c%s", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->error, "%ssource_function%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-//    appendStringInfo(&task->error, "%sROLLBACK", task->error.len ? "\n" : "");
+    appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
     task->skip++;
     task->fail = true;
 }
