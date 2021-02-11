@@ -291,7 +291,7 @@ void tick_timeout(Work *work) {
             "    FROM    pg_stat_activity\n"
             "    WHERE   datname = current_catalog\n"
             "    AND     usename = current_user\n"
-            "    AND     application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), \"group\")\n"
+            "    AND     application_name = concat_ws(' ', 'pg_task', current_setting('pg_task.schema', true), current_setting('pg_task.table', false), \"group\")\n"
             ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id;\n"
             "WITH s AS (WITH s AS (WITH s AS (WITH s AS (WITH s AS (\n"
             "SELECT      id, \"group\", COALESCE(max, ~(1<<31)) AS max, a.pid\n"
@@ -299,7 +299,7 @@ void tick_timeout(Work *work) {
             "LEFT JOIN   pg_stat_activity AS a\n"
             "ON          datname = current_catalog\n"
             "AND         usename = current_user\n"
-            "AND         application_name = concat_ws(' ', 'pg_task', NULLIF(current_setting('pg_task.schema', true), ''), current_setting('pg_task.table', false), \"group\")\n"
+            "AND         application_name = concat_ws(' ', 'pg_task', current_setting('pg_task.schema', true), current_setting('pg_task.table', false), \"group\")\n"
             "WHERE       t.state = 'PLAN'::state\n"
             "AND         dt + concat_ws(' ', (CASE WHEN max < 0 THEN -max ELSE 0 END)::text, 'msec')::interval <= current_timestamp\n"
             ") SELECT id, \"group\", CASE WHEN max > 0 THEN max ELSE 1 END - count(pid) AS count FROM s GROUP BY id, \"group\", max\n"
@@ -339,7 +339,7 @@ static bool tick_check(void) {
         "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, reset int4, timeout int4)\n"
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM NULLIF(current_setting('pg_task.schema', true), '') AND \"table\" = current_setting('pg_task.table', false) AND reset = current_setting('pg_task.reset', false)::int4 AND timeout = current_setting('pg_task.timeout', false)::int4";
+        ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM current_setting('pg_task.schema', true) AND \"table\" = current_setting('pg_task.table', false) AND reset = current_setting('pg_task.reset', false)::int4 AND timeout = current_setting('pg_task.timeout', false)::int4";
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
