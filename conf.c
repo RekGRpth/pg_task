@@ -59,6 +59,8 @@ static void conf_data(const char *user, const char *data) {
 }
 
 static void conf_tick(const char *user, const char *data, const char *schema, const char *table, const int reset, const int timeout) {
+    BackgroundWorkerHandle *handle;
+    pid_t pid;
     StringInfoData buf;
     int user_len = strlen(user), data_len = strlen(data), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), reset_len = sizeof(reset), timeout_len = sizeof(timeout);
     BackgroundWorker worker;
@@ -93,7 +95,14 @@ static void conf_tick(const char *user, const char *data, const char *schema, co
     p = (char *)memcpy(p, table, table_len) + table_len + 1;
     p = (char *)memcpy(p, &reset, reset_len) + reset_len;
     p = (char *)memcpy(p, &timeout, timeout_len) + timeout_len;
-    RegisterDynamicBackgroundWorker_my(&worker);
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) E("!RegisterDynamicBackgroundWorker");
+    switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
+        case BGWH_NOT_YET_STARTED: E("WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED"); break;
+        case BGWH_POSTMASTER_DIED: E("WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED"); break;
+        case BGWH_STARTED: break;
+        case BGWH_STOPPED: E("WaitForBackgroundWorkerStartup == BGWH_STOPPED"); break;
+    }
+    pfree(handle);
 }
 
 static void conf_check(Work *work) {

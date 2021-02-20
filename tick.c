@@ -173,12 +173,14 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
     char *err;
     char *options = NULL;
     bool password = false;
-    Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
     PQconninfoOption *opts = PQconninfoParse(remote, &err);
-    task->group = group;
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+    Task *task = palloc0(sizeof(*task));
+    task->group = pstrdup(group);
+    task->remote = pstrdup(remote);
+    MemoryContextSwitchTo(oldMemoryContext);
     task->id = id;
     task->max = max;
-    task->remote = remote;
     task->work = work;
     D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : null, task->max, work->oid);
     if (!opts) { tick_error2(task, "!PQconninfoParse", err); if (err) PQfreemem(err); return; }
@@ -239,6 +241,8 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
 }
 
 static void tick_task(const Work *work, const int64 id, char *group, const int max) {
+    BackgroundWorkerHandle *handle;
+    pid_t pid;
     StringInfoData buf;
     int user_len = strlen(work->user), data_len = strlen(work->data), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), group_len = strlen(group), max_len = sizeof(max), oid_len = sizeof(work->oid);
     BackgroundWorker worker;
@@ -275,8 +279,14 @@ static void tick_task(const Work *work, const int64 id, char *group, const int m
     p = (char *)memcpy(p, &work->oid, oid_len) + oid_len;
     p = (char *)memcpy(p, group, group_len) + group_len + 1;
     p = (char *)memcpy(p, &max, max_len) + max_len;
-    RegisterDynamicBackgroundWorker_my(&worker);
-    pfree(group);
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) E("!RegisterDynamicBackgroundWorker");
+    switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
+        case BGWH_NOT_YET_STARTED: E("WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED"); break;
+        case BGWH_POSTMASTER_DIED: E("WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED"); break;
+        case BGWH_STARTED: break;
+        case BGWH_STOPPED: E("WaitForBackgroundWorkerStartup == BGWH_STOPPED"); break;
+    }
+    pfree(handle);
 }
 
 static void tick_update(Work *work) {
@@ -337,6 +347,8 @@ void tick_timeout(Work *work) {
         MemoryContextSwitchTo(oldMemoryContext);
         D1("row = %lu, id = %li, group = %s, remote = %s, max = %i", row, id, group, remote ? remote : null, max);
         if (remote) tick_remote(work, id, group, remote, max); else tick_task(work, id, group, max);
+        pfree(group);
+        if (remote) pfree(remote);
     }
     SPI_finish_my();
 }
