@@ -182,6 +182,32 @@ bool task_live(Task *task) {
     return exit;
 }
 
+static void task_update(Task *task) {
+    #define GROUP 1
+    #define SGROUP S(GROUP)
+    Work *work = task->work;
+    static Oid argtypes[] = {[GROUP - 1] = TEXTOID};
+    Datum values[] = {[GROUP - 1] = CStringGetTextDatum(task->group)};
+    static SPI_plan *plan = NULL;
+    static char *command = NULL;
+    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
+    if (!command) {
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfo(&buf,
+            "WITH s AS (SELECT id FROM %1$s WHERE max < 0 AND dt < current_timestamp AND \"group\" = $" SGROUP " AND state = 'PLAN'::state FOR UPDATE SKIP LOCKED\n)\n"
+            "UPDATE %1$s AS u SET dt = current_timestamp FROM s WHERE u.id = s.id", work->schema_table);
+        command = buf.data;
+    }
+    SPI_connect_my(command);
+    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE, true);
+    SPI_finish_my();
+    pfree((void *)values[GROUP - 1]);
+    #undef GROUP
+    #undef SGROUP
+}
+
 bool task_done(Task *task) {
     #define ID 1
     #define SID S(ID)
@@ -203,13 +229,11 @@ bool task_done(Task *task) {
     StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
     StaticAssertStmt(countof(argtypes) == countof(nulls), "countof(argtypes) == countof(values)");
     D1("id = %li, output = %s, error = %s, fail = %s", task->id, task->output.data ? task->output.data : null, task->error.data ? task->error.data : null, task->fail ? "true" : "false");
+    task_update(task);
     if (!command) {
-        Work *work = task->work;
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %1$s WHERE max < 0 AND dt < current_timestamp AND \"group\" = $" SGROUP " AND state = 'PLAN'::state FOR UPDATE SKIP LOCKED\n)\n"
-            "UPDATE %1$s AS u SET dt = current_timestamp FROM s WHERE u.id = s.id;\n"
             "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " AND state IN ('WORK'::state, 'TAKE'::state) FOR UPDATE\n)\n"
             "UPDATE %1$s AS u SET state = CASE WHEN $" SFAIL " THEN 'FAIL'::state ELSE 'DONE'::state END, stop = current_timestamp, output = $" SOUTPUT ", error = $" SERROR " FROM s WHERE u.id = s.id\n"
             "RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live", work->schema_table);
