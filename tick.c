@@ -279,7 +279,7 @@ static void tick_task(const Work *work, const int64 id, char *group, const int m
     pfree(group);
 }
 
-void tick_timeout(Work *work) {
+static void tick_update(Work *work) {
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     if (!command) {
@@ -292,7 +292,23 @@ void tick_timeout(Work *work) {
             "    WHERE   datname = current_catalog\n"
             "    AND     usename = current_user\n"
             "    AND     application_name = concat_ws(' ', 'pg_task', current_setting('pg_task.schema', true), current_setting('pg_task.table', false), \"group\")\n"
-            ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id;\n"
+            ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", work->schema_table);
+        command = buf.data;
+    }
+    SPI_connect_my(command);
+    if (!plan) plan = SPI_prepare_my(command, 0, NULL);
+    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE, true);
+    SPI_finish_my();
+}
+
+void tick_timeout(Work *work) {
+    static SPI_plan *plan = NULL;
+    static char *command = NULL;
+    tick_update(work);
+    if (!command) {
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfo(&buf,
             "WITH s AS (WITH s AS (WITH s AS (WITH s AS (WITH s AS (\n"
             "SELECT      id, \"group\", COALESCE(max, ~(1<<31)) AS max, a.pid\n"
             "FROM        %1$s AS t\n"
