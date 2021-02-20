@@ -30,7 +30,7 @@ bool task_work(Task *task) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf, "%li", task->id);
-        SetConfigOptionMy("pg_task.id", buf.data);
+        set_config_option("pg_task.id", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
         pfree(buf.data);
     }
     if (!command) {
@@ -382,13 +382,13 @@ static void task_init(Work *work, Task *task) {
     if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     null = GetConfigOption("pg_task.null", false, true);
-    SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
+    set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : null, work->table);
-    SetConfigOptionMy("pg_task.data", work->data);
-    SetConfigOptionMy("pg_task.user", work->user);
-    if (work->schema) SetConfigOptionMy("pg_task.schema", work->schema);
-    SetConfigOptionMy("pg_task.table", work->table);
+    set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    if (work->schema) set_config_option("pg_task.schema", work->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     table_quote = quote_identifier(work->table);
     initStringInfo(&buf);
@@ -400,7 +400,7 @@ static void task_init(Work *work, Task *task) {
     D1("oid = %i", work->oid);
     initStringInfo(&buf);
     appendStringInfo(&buf, "%i", work->oid);
-    SetConfigOptionMy("pg_task.oid", buf.data);
+    set_config_option("pg_task.oid", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     if (work->table != table_quote) pfree((void *)table_quote);
@@ -417,7 +417,7 @@ static void task_init(Work *work, Task *task) {
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
     process_session_preload_libraries();
-    SetConfigOptionMy("pg_task.group", task->group);
+    set_config_option("pg_task.group", task->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
 }
 
 static void task_latch(void) {

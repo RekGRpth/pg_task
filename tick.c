@@ -19,7 +19,7 @@ static void tick_schema(Work *work) {
     list_free_deep(names);
     if (schema_quote != work->schema) pfree((void *)schema_quote);
     pfree(buf.data);
-    SetConfigOptionMy("pg_task.schema", work->schema);
+    set_config_option("pg_task.schema", work->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
 }
 
 static void tick_type(Work *work) {
@@ -49,7 +49,7 @@ static bool tick_table(Work *work) {
     const RangeVar *relation;
     D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : null, work->table, work->schema_table);
     if (work->oid) pg_advisory_unlock_int8_my(work->oid);
-    SetConfigOptionMy("pg_task.table", work->table);
+    set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfo(&buf);
     appendStringInfo(&buf,
         "CREATE TABLE %1$s (\n"
@@ -89,10 +89,10 @@ static bool tick_table(Work *work) {
     SPI_finish_my();
     pfree((void *)relation);
     list_free_deep(names);
-    SetConfigOptionMy("pg_task.table", work->table);
+    set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     resetStringInfo(&buf);
     appendStringInfo(&buf, "%i", work->oid);
-    SetConfigOptionMy("pg_task.oid", buf.data);
+    set_config_option("pg_task.oid", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     if (!pg_try_advisory_lock_int8_my(work->oid)) { W("!pg_try_advisory_lock_int8_my(%i)", work->oid); return true; }
     return false;
@@ -384,7 +384,7 @@ static void tick_init_conf(Work *work) {
     if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     null = GetConfigOption("pg_task.null", false, true);
-    SetConfigOptionMy("application_name", MyBgworkerEntry->bgw_type);
+    set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", work->user, work->data, work->schema ? work->schema : null, work->table, work->reset, work->timeout);
     pqsignal(SIGHUP, init_sighup);
     pqsignal(SIGTERM, init_sigterm);
@@ -414,14 +414,14 @@ bool tick_init(Work *work) {
     if (tick_table(work)) return true;
     tick_index(work, "dt");
     tick_index(work, "state");
-    SetConfigOptionMy("pg_task.data", work->data);
-    SetConfigOptionMy("pg_task.user", work->user);
+    set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfo(&buf);
     appendStringInfo(&buf, "%i", work->reset);
-    SetConfigOptionMy("pg_task.reset", buf.data);
+    set_config_option("pg_task.reset", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     resetStringInfo(&buf);
     appendStringInfo(&buf, "%i", work->timeout);
-    SetConfigOptionMy("pg_task.timeout", buf.data);
+    set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     queue_init(&work->queue);
     return exit;

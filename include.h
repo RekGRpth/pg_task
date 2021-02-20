@@ -111,7 +111,6 @@ void init_sigterm(SIGNAL_ARGS);
 void NullCommandMy(Task *task);
 void ReadyForQueryMy(Task *task);
 void RegisterDynamicBackgroundWorker_my(BackgroundWorker *worker);
-void SetConfigOptionMy(const char *name, const char *value);
 void SPI_commit_my(void);
 void SPI_connect_my(const char *src);
 void SPI_execute_plan_my(SPI_plan *plan, Datum *values, const char *nulls, int res, bool commit);
