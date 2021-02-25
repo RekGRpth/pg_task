@@ -58,7 +58,7 @@ static void conf_data(const char *user, const char *data) {
     pfree(buf.data);
 }
 
-static void conf_tick(const char *user, const char *data, const char *schema, const char *table, const int reset, const int timeout) {
+static void conf_work(const char *user, const char *data, const char *schema, const char *table, const int reset, const int timeout) {
     BackgroundWorkerHandle *handle;
     pid_t pid;
     StringInfoData buf;
@@ -145,7 +145,7 @@ static void conf_check(Work *work) {
             if (work_init(work)) work->timeout = -1;
         } else {
             work->timeout = -1;
-            conf_tick(user, data, schema, table, reset, timeout);
+            conf_work(user, data, schema, table, reset, timeout);
         }
         pfree(user);
         pfree(data);
