@@ -98,7 +98,7 @@ static bool work_table(Work *work) {
 }
 
 static void work_index(Work *work, const char *index) {
-    StringInfoData buf, name;
+    StringInfoData buf, name, idx;
     List *names;
     const RangeVar *relation;
     const char *name_quote;
@@ -109,7 +109,14 @@ static void work_index(Work *work, const char *index) {
     name_quote = quote_identifier(name.data);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE INDEX %s ON %s USING btree (%s)", name_quote, work->schema_table, index_quote);
-    names = stringToQualifiedNameList(name_quote);
+    initStringInfo(&idx);
+    if (work->schema) {
+        const char *schema_quote = quote_identifier(work->schema);
+        appendStringInfo(&idx, "%s.", schema_quote);
+        if (schema_quote != work->schema) pfree((void *)schema_quote);
+    }
+    appendStringInfoString(&idx, name_quote);
+    names = stringToQualifiedNameList(idx.data);
     relation = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
@@ -120,6 +127,7 @@ static void work_index(Work *work, const char *index) {
     list_free_deep(names);
     pfree(buf.data);
     pfree(name.data);
+    pfree(idx.data);
     if (name_quote != name.data) pfree((void *)name_quote);
     if (index_quote != index) pfree((void *)index_quote);
 }
