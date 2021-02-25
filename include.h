@@ -4,6 +4,7 @@
 #include <postgres.h>
 
 #include <access/printtup.h>
+#include <access/relation.h>
 #include <access/xact.h>
 #include <catalog/heap.h>
 #include <catalog/namespace.h>
@@ -30,6 +31,7 @@
 #include <utils/lsyscache.h>
 #include <utils/ps_status.h>
 #include <utils/regproc.h>
+#include <utils/rel.h>
 #include <utils/snapmgr.h>
 #include <utils/timeout.h>
 

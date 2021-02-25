@@ -44,7 +44,7 @@ static void work_type(Work *work) {
 static bool work_table(Work *work) {
     StringInfoData buf;
     List *names;
-    const RangeVar *relation;
+    const RangeVar *rangevar;
     D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work->user, work->data, work->schema ? work->schema : null, work->table, work->schema_table, work->schema_type);
     if (work->oid) pg_advisory_unlock_int8_my(work->oid);
     set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
@@ -79,14 +79,14 @@ static bool work_table(Work *work) {
         "    escape \"char\"\n"
         ")", work->schema_table, work->schema_type);
     names = stringToQualifiedNameList(work->schema_table);
-    relation = makeRangeVarFromNameList(names);
+    rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
-    if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     else D1("table %s already exists", work->schema_table);
-    work->oid = RangeVarGetRelid(relation, NoLock, false);
+    work->oid = RangeVarGetRelid(rangevar, NoLock, false);
     SPI_commit_my();
     SPI_finish_my();
-    pfree((void *)relation);
+    pfree((void *)rangevar);
     list_free_deep(names);
     set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     resetStringInfo(&buf);
@@ -100,7 +100,8 @@ static bool work_table(Work *work) {
 static void work_index(Work *work, const char *index) {
     StringInfoData buf, name, idx;
     List *names;
-    const RangeVar *relation;
+    Relation relation;
+    const RangeVar *rangevar;
     const char *name_quote;
     const char *index_quote = quote_identifier(index);
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
@@ -114,13 +115,19 @@ static void work_index(Work *work, const char *index) {
     if (work->schema) appendStringInfo(&idx, "%s.", schema_quote);
     appendStringInfoString(&idx, name_quote);
     names = stringToQualifiedNameList(idx.data);
-    relation = makeRangeVarFromNameList(names);
+    rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
-    if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
-    else D1("index %s already exists", name_quote);
+    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
+        SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+    } else if ((relation = relation_openrv_extended(rangevar, NoLock, true))) {
+        if (relation->rd_index && relation->rd_index->indrelid != work->oid) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+        relation_close(relation, NoLock);
+    } else {
+        D1("index %s already exists", name_quote);
+    }
     SPI_commit_my();
     SPI_finish_my();
-    pfree((void *)relation);
+    pfree((void *)rangevar);
     list_free_deep(names);
     pfree(buf.data);
     pfree(name.data);
