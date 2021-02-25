@@ -37,12 +37,12 @@ bool task_work(Task *task) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " AND state = 'TAKE'::state FOR UPDATE)\n"
+            "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " AND state = 'TAKE'::%2$s FOR UPDATE)\n"
             "UPDATE  %1$s AS u\n"
-            "SET     state = 'WORK'::state,\n"
+            "SET     state = 'WORK'::%2$s,\n"
             "        start = current_timestamp,\n"
             "        pid = $" SPID "\n"
-            "FROM s WHERE u.id = s.id RETURNING input, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout, append, header, string, \"null\", delimiter, quote, escape", work->schema_table);
+            "FROM s WHERE u.id = s.id RETURNING input, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout, append, header, string, \"null\", delimiter, quote, escape", work->schema_table, work->schema_type);
         command = buf.data;
     }
     #undef ID
@@ -91,7 +91,7 @@ void task_repeat(Task *task) {
             "SELECT $" SID ", CASE WHEN drift THEN current_timestamp + repeat\n"
             "ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
             "END AS dt, \"group\", max, input, timeout, delete, repeat, drift, count, live\n"
-            "FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::state, 'FAIL'::state) LIMIT 1", work->schema_table);
+            "FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) LIMIT 1", work->schema_table, work->schema_type);
         command = buf.data;
     }
     #undef ID
@@ -114,7 +114,7 @@ void task_delete(Task *task) {
         Work *work = task->work;
         StringInfoData buf;
         initStringInfo(&buf);
-        appendStringInfo(&buf, "DELETE FROM %s WHERE id = $" SID " AND state IN ('DONE'::state, 'FAIL'::state)", work->schema_table);
+        appendStringInfo(&buf, "DELETE FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::%2$s, 'FAIL'::%2$s)", work->schema_table, work->schema_type);
         command = buf.data;
     }
     #undef ID
@@ -152,14 +152,14 @@ bool task_live(Task *task) {
             "WITH s AS (\n"
             "SELECT  id\n"
             "FROM    %1$s\n"
-            "WHERE   state = 'PLAN'::state\n"
+            "WHERE   state = 'PLAN'::%2$s\n"
             "AND     dt <= current_timestamp\n"
             "AND     \"group\" = $" SGROUP "\n"
             "AND     remote IS NOT DISTINCT FROM $" SREMOTE "\n"
             "AND     COALESCE(max, ~(1<<31)) >= $" SMAX "\n"
             "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $" SCOUNT " AND $" SSTART " + live > current_timestamp ELSE COALESCE(count, 0) > $" SCOUNT " OR $" SSTART " + COALESCE(live, '0 sec'::interval) > current_timestamp END\n"
             "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id", work->schema_table);
+            ") UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id", work->schema_table, work->schema_type);
         command = buf.data;
     }
     #undef MAX
@@ -195,8 +195,8 @@ static void task_update(Task *task) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %1$s WHERE max < 0 AND dt < current_timestamp AND \"group\" = $" SGROUP " AND state = 'PLAN'::state FOR UPDATE SKIP LOCKED\n)\n"
-            "UPDATE %1$s AS u SET dt = current_timestamp FROM s WHERE u.id = s.id", work->schema_table);
+            "WITH s AS (SELECT id FROM %1$s WHERE max < 0 AND dt < current_timestamp AND \"group\" = $" SGROUP " AND state = 'PLAN'::%2$s FOR UPDATE SKIP LOCKED\n)\n"
+            "UPDATE %1$s AS u SET dt = current_timestamp FROM s WHERE u.id = s.id", work->schema_table, work->schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -234,9 +234,9 @@ bool task_done(Task *task) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " AND state IN ('WORK'::state, 'TAKE'::state) FOR UPDATE\n)\n"
-            "UPDATE %1$s AS u SET state = CASE WHEN $" SFAIL " THEN 'FAIL'::state ELSE 'DONE'::state END, stop = current_timestamp, output = $" SOUTPUT ", error = $" SERROR " FROM s WHERE u.id = s.id\n"
-            "RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::state, 'FAIL'::state) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live", work->schema_table);
+            "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " AND state IN ('WORK'::%2$s, 'TAKE'::%2$s) FOR UPDATE\n)\n"
+            "UPDATE %1$s AS u SET state = CASE WHEN $" SFAIL " THEN 'FAIL'::%2$s ELSE 'DONE'::%2$s END, stop = current_timestamp, output = $" SOUTPUT ", error = $" SERROR " FROM s WHERE u.id = s.id\n"
+            "RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live", work->schema_table, work->schema_type);
         command = buf.data;
     }
     #undef ID
@@ -395,6 +395,10 @@ static void task_init(Work *work, Task *task) {
     if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, table_quote);
     work->schema_table = buf.data;
+    initStringInfo(&buf);
+    if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
+    appendStringInfoString(&buf, "state");
+    work->schema_type = buf.data;
     work->oid = *(typeof(work->oid) *)p;
     p += sizeof(work->oid);
     D1("oid = %i", work->oid);

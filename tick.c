@@ -23,23 +23,19 @@ static void tick_schema(Work *work) {
 }
 
 static void tick_type(Work *work) {
-    StringInfoData buf, name;
+    StringInfoData buf;
     Oid type = InvalidOid;
     int32 typmod;
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : null, work->table);
-    initStringInfo(&name);
-    if (schema_quote) appendStringInfo(&name, "%s.", schema_quote);
-    appendStringInfoString(&name, "state");
     initStringInfo(&buf);
-    appendStringInfo(&buf, "CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')", name.data);
+    appendStringInfo(&buf, "CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')", work->schema_type);
     SPI_connect_my(buf.data);
-    parseTypeString(name.data, &type, &typmod, true);
+    parseTypeString(work->schema_type, &type, &typmod, true);
     if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
     SPI_finish_my();
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
-    pfree(name.data);
     pfree(buf.data);
 }
 
@@ -47,7 +43,7 @@ static bool tick_table(Work *work) {
     StringInfoData buf;
     List *names;
     const RangeVar *relation;
-    D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : null, work->table, work->schema_table);
+    D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work->user, work->data, work->schema ? work->schema : null, work->table, work->schema_table, work->schema_type);
     if (work->oid) pg_advisory_unlock_int8_my(work->oid);
     set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfo(&buf);
@@ -64,7 +60,7 @@ static bool tick_table(Work *work) {
         "    input text NOT NULL,\n"
         "    output text,\n"
         "    error text,\n"
-        "    state state NOT NULL DEFAULT 'PLAN'::state,\n"
+        "    state %2$s NOT NULL DEFAULT 'PLAN'::%2$s,\n"
         "    timeout interval,\n"
         "    delete boolean NOT NULL DEFAULT false,\n"
         "    repeat interval,\n"
@@ -79,7 +75,7 @@ static bool tick_table(Work *work) {
         "    delimiter \"char\" NOT NULL DEFAULT '\t',\n"
         "    quote \"char\",\n"
         "    escape \"char\"\n"
-        ")", work->schema_table);
+        ")", work->schema_table, work->schema_type);
     names = stringToQualifiedNameList(work->schema_table);
     relation = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
@@ -296,13 +292,13 @@ static void tick_update(Work *work) {
         StringInfoData buf;
         initStringInfo(&buf);
         appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %1$s AS t WHERE dt < current_timestamp - concat_ws(' ', (current_setting('pg_task.reset', false)::int4 * current_setting('pg_task.timeout', false)::int4)::text, 'msec')::interval AND state IN ('TAKE'::state, 'WORK'::state) AND pid NOT IN (\n"
+            "WITH s AS (SELECT id FROM %1$s AS t WHERE dt < current_timestamp - concat_ws(' ', (current_setting('pg_task.reset', false)::int4 * current_setting('pg_task.timeout', false)::int4)::text, 'msec')::interval AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND pid NOT IN (\n"
             "    SELECT  pid\n"
             "    FROM    pg_stat_activity\n"
             "    WHERE   datname = current_catalog\n"
             "    AND     usename = current_user\n"
             "    AND     application_name = concat_ws(' ', 'pg_task', current_setting('pg_task.schema', true), current_setting('pg_task.table', false), \"group\")\n"
-            ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::state FROM s WHERE u.id = s.id", work->schema_table);
+            ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::%2$s FROM s WHERE u.id = s.id", work->schema_table, work->schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -326,13 +322,13 @@ void tick_timeout(Work *work) {
             "ON          datname = current_catalog\n"
             "AND         usename = current_user\n"
             "AND         application_name = concat_ws(' ', 'pg_task', current_setting('pg_task.schema', true), current_setting('pg_task.table', false), \"group\")\n"
-            "WHERE       t.state = 'PLAN'::state\n"
+            "WHERE       t.state = 'PLAN'::%2$s\n"
             "AND         dt + concat_ws(' ', (CASE WHEN max < 0 THEN -max ELSE 0 END)::text, 'msec')::interval <= current_timestamp\n"
             ") SELECT id, \"group\", CASE WHEN max > 0 THEN max ELSE 1 END - count(pid) AS count FROM s GROUP BY id, \"group\", max\n"
             ") SELECT array_agg(id ORDER BY id) AS id, \"group\", count FROM s WHERE count > 0 GROUP BY \"group\", count\n"
             ") SELECT unnest(id[:count]) AS id, \"group\", count FROM s ORDER BY count DESC\n"
             ") SELECT s.* FROM s INNER JOIN %1$s USING (id) FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %1$s AS u SET state = 'TAKE'::state FROM s WHERE u.id = s.id RETURNING u.id, u.group, u.remote, COALESCE(u.max, ~(1<<31)) AS max", work->schema_table);
+            ") UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id, u.group, u.remote, COALESCE(u.max, ~(1<<31)) AS max", work->schema_table, work->schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -417,9 +413,16 @@ bool tick_init(Work *work) {
     appendStringInfoString(&buf, table_quote);
     if (work->schema_table) pfree(work->schema_table);
     work->schema_table = buf.data;
+    oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+    initStringInfo(&buf);
+    MemoryContextSwitchTo(oldMemoryContext);
+    if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
+    appendStringInfoString(&buf, "state");
+    if (work->schema_type) pfree(work->schema_type);
+    work->schema_type = buf.data;
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     if (work->table != table_quote) pfree((void *)table_quote);
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, schema_table = %s", work->user, work->data, work->schema ? work->schema : null, work->table, work->reset, work->timeout, work->schema_table);
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, schema_table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : null, work->table, work->reset, work->timeout, work->schema_table, work->schema_type);
     if (work->schema) tick_schema(work);
     tick_type(work);
     if (tick_table(work)) return true;

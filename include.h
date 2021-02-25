@@ -41,6 +41,7 @@ typedef struct Work {
     char *data;
     char *schema;
     char *schema_table;
+    char *schema_type;
     char *table;
     char *user;
     int reset;
