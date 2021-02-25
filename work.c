@@ -14,7 +14,7 @@ static void work_schema(Work *work) {
     names = stringToQualifiedNameList(schema_quote);
     SPI_connect_my(buf.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
-    else D1("schema \"%s\" already exists", schema_quote);
+    else D1("schema %s already exists", schema_quote);
     SPI_commit_my();
     SPI_finish_my();
     list_free_deep(names);
@@ -34,7 +34,7 @@ static void work_type(Work *work) {
     SPI_connect_my(buf.data);
     parseTypeString(work->schema_type, &type, &typmod, true);
     if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
-    else D1("type \"%s\" already exists", work->schema_type);
+    else D1("type %s already exists", work->schema_type);
     SPI_commit_my();
     SPI_finish_my();
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
@@ -82,7 +82,7 @@ static bool work_table(Work *work) {
     relation = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
-    else D1("table \"%s\" already exists", work->schema_table);
+    else D1("table %s already exists", work->schema_table);
     work->oid = RangeVarGetRelid(relation, NoLock, false);
     SPI_commit_my();
     SPI_finish_my();
@@ -113,7 +113,7 @@ static void work_index(Work *work, const char *index) {
     relation = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(relation, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
-    else D1("index \"%s\" already exists", name_quote);
+    else D1("index %s already exists", name_quote);
     SPI_commit_my();
     SPI_finish_my();
     pfree((void *)relation);
