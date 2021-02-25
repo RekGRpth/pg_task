@@ -121,9 +121,10 @@ static void work_index(Work *work, const char *index) {
         SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     } else if ((relation = relation_openrv_extended(rangevar, NoLock, true))) {
         if (relation->rd_index && relation->rd_index->indrelid != work->oid) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+        else D1("index %s already exists", idx.data);
         relation_close(relation, NoLock);
     } else {
-        D1("index %s already exists", name_quote);
+        D1("index %s already exists", idx.data);
     }
     SPI_commit_my();
     SPI_finish_my();
