@@ -103,6 +103,7 @@ static void work_index(Work *work, const char *index) {
     const RangeVar *relation;
     const char *name_quote;
     const char *index_quote = quote_identifier(index);
+    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : null, work->table, index, work->schema_table);
     initStringInfo(&name);
     appendStringInfo(&name, "%s_%s_idx", work->table, index);
@@ -110,11 +111,7 @@ static void work_index(Work *work, const char *index) {
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE INDEX %s ON %s USING btree (%s)", name_quote, work->schema_table, index_quote);
     initStringInfo(&idx);
-    if (work->schema) {
-        const char *schema_quote = quote_identifier(work->schema);
-        appendStringInfo(&idx, "%s.", schema_quote);
-        if (schema_quote != work->schema) pfree((void *)schema_quote);
-    }
+    if (work->schema) appendStringInfo(&idx, "%s.", schema_quote);
     appendStringInfoString(&idx, name_quote);
     names = stringToQualifiedNameList(idx.data);
     relation = makeRangeVarFromNameList(names);
@@ -128,6 +125,7 @@ static void work_index(Work *work, const char *index) {
     pfree(buf.data);
     pfree(name.data);
     pfree(idx.data);
+    if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     if (name_quote != name.data) pfree((void *)name_quote);
     if (index_quote != index) pfree((void *)index_quote);
 }
