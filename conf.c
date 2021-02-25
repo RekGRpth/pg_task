@@ -76,7 +76,7 @@ static void conf_tick(const char *user, const char *data, const char *schema, co
     if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_library_name, buf.data, buf.len);
     resetStringInfo(&buf);
-    appendStringInfoString(&buf, "tick_worker");
+    appendStringInfoString(&buf, "work_worker");
     if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_function_name, buf.data, buf.len);
     resetStringInfo(&buf);
@@ -142,7 +142,7 @@ static void conf_check(Work *work) {
             work->table = "task";
             work->reset = reset;
             work->timeout = timeout;
-            if (tick_init(work)) work->timeout = -1;
+            if (work_init(work)) work->timeout = -1;
         } else {
             work->timeout = -1;
             conf_tick(user, data, schema, table, reset, timeout);
@@ -209,11 +209,11 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
             if (event->events & WL_POSTMASTER_DEATH) D1("WL_POSTMASTER_DEATH");
             if (event->events & WL_EXIT_ON_PM_DEATH) D1("WL_EXIT_ON_PM_DEATH");
             if (event->events & WL_LATCH_SET) conf_latch(&work);
-            if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
+            if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
         }
         stop = GetCurrentTimestamp();
         if (work.timeout > 0 && (TimestampDifferenceExceeds(start, stop, work.timeout) || !nevents)) {
-            tick_timeout(&work);
+            work_timeout(&work);
             start = stop;
         }
         FreeWaitEventSet(set);

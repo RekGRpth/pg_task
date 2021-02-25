@@ -91,7 +91,7 @@ bool pg_try_advisory_lock_int8_my(int64 key);
 bool task_done(Task *task);
 bool task_live(Task *task);
 bool task_work(Task *task);
-bool tick_init(Work *work);
+bool work_init(Work *work);
 char *TextDatumGetCStringMy(Datum datum);
 const char *PQftypeMy(Oid oid);
 const char *PQftypeMy(Oid oid);
@@ -120,8 +120,8 @@ void SPI_finish_my(void);
 void SPI_start_transaction_my(const char *src);
 void task_delete(Task *task);
 void task_repeat(Task *task);
-void tick_socket(Task *task);
-void tick_timeout(Work *work);
+void work_socket(Task *task);
+void work_timeout(Work *work);
 
 #define Q(name) #name
 #define S(macro) Q(macro)

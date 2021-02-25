@@ -4,7 +4,7 @@ extern const char *null;
 extern volatile sig_atomic_t sighup;
 extern volatile sig_atomic_t sigterm;
 
-static void tick_schema(Work *work) {
+static void work_schema(Work *work) {
     StringInfoData buf;
     List *names;
     const char *schema_quote = quote_identifier(work->schema);
@@ -22,7 +22,7 @@ static void tick_schema(Work *work) {
     set_config_option("pg_task.schema", work->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
 }
 
-static void tick_type(Work *work) {
+static void work_type(Work *work) {
     StringInfoData buf;
     Oid type = InvalidOid;
     int32 typmod;
@@ -39,7 +39,7 @@ static void tick_type(Work *work) {
     pfree(buf.data);
 }
 
-static bool tick_table(Work *work) {
+static bool work_table(Work *work) {
     StringInfoData buf;
     List *names;
     const RangeVar *relation;
@@ -94,7 +94,7 @@ static bool tick_table(Work *work) {
     return false;
 }
 
-static void tick_index(Work *work, const char *index) {
+static void work_index(Work *work, const char *index) {
     StringInfoData buf, name;
     List *names;
     const RangeVar *relation;
@@ -120,7 +120,7 @@ static void tick_index(Work *work, const char *index) {
     if (index_quote != index) pfree((void *)index_quote);
 }
 
-static void tick_free(Task *task) {
+static void work_free(Task *task) {
     if (task->group) pfree(task->group);
     if (task->null) pfree(task->null);
     if (task->remote) pfree(task->remote);
@@ -130,13 +130,13 @@ static void tick_free(Task *task) {
     pfree(task);
 }
 
-static void tick_finish(Task *task) {
+static void work_finish(Task *task) {
     queue_remove(&task->queue);
     PQfinish(task->conn);
-    tick_free(task);
+    work_free(task);
 }
 
-static void tick_error(Task *task, const char *msg) {
+static void work_error(Task *task, const char *msg) {
     char *err = PQerrorMessage(task->conn);
     int len = strlen(err);
     initStringInfo(&task->output);
@@ -145,10 +145,10 @@ static void tick_error(Task *task, const char *msg) {
     W(task->output.data);
     task->fail = true;
     task_done(task);
-    tick_finish(task);
+    work_finish(task);
 }
 
-static void tick_error2(Task *task, const char *msg, const char *err) {
+static void work_error2(Task *task, const char *msg, const char *err) {
     initStringInfo(&task->output);
     appendStringInfoString(&task->output, msg);
     if (err) {
@@ -158,10 +158,10 @@ static void tick_error2(Task *task, const char *msg, const char *err) {
     W(task->output.data);
     task->fail = true;
     task_done(task);
-    tick_free(task);
+    work_free(task);
 }
 
-static void tick_remote(Work *work, const int64 id, char *group, char *remote, const int max) {
+static void work_remote(Work *work, const int64 id, char *group, char *remote, const int max) {
     const char **keywords;
     const char **values;
     StringInfoData buf, buf2;
@@ -179,7 +179,7 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
     task->max = max;
     task->work = work;
     D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : null, task->max, work->oid);
-    if (!opts) { tick_error2(task, "!PQconninfoParse", err); if (err) PQfreemem(err); return; }
+    if (!opts) { work_error2(task, "!PQconninfoParse", err); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
         D1("%s = %s", opt->keyword, opt->val);
@@ -189,7 +189,7 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
         if (!pg_strcasecmp(opt->keyword, "options")) { options = opt->val; continue; }
         arg++;
     }
-    if (!superuser() && !password) { tick_error2(task, "!superuser && !password", NULL); return; }
+    if (!superuser() && !password) { work_error2(task, "!superuser && !password", NULL); return; }
     keywords = palloc(arg * sizeof(*keywords));
     values = palloc(arg * sizeof(*values));
     initStringInfo(&buf);
@@ -223,11 +223,11 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
     task->events = WL_SOCKET_WRITEABLE;
     task->start = GetCurrentTimestamp();
     queue_insert_tail(&work->queue, &task->queue);
-    if (!(task->conn = PQconnectStartParams(keywords, values, false))) tick_error(task, "!PQconnectStartParams"); else
-    if (PQstatus(task->conn) == CONNECTION_BAD) tick_error(task, "PQstatus == CONNECTION_BAD"); else
-    if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) tick_error(task, "PQsetnonblocking == -1"); else
-    if ((task->fd = PQsocket(task->conn)) < 0) tick_error(task, "PQsocket < 0"); else
-    if (!superuser() && !PQconnectionUsedPassword(task->conn)) tick_error(task, "!superuser && !PQconnectionUsedPassword"); else
+    if (!(task->conn = PQconnectStartParams(keywords, values, false))) work_error(task, "!PQconnectStartParams"); else
+    if (PQstatus(task->conn) == CONNECTION_BAD) work_error(task, "PQstatus == CONNECTION_BAD"); else
+    if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) work_error(task, "PQsetnonblocking == -1"); else
+    if ((task->fd = PQsocket(task->conn)) < 0) work_error(task, "PQsocket < 0"); else
+    if (!superuser() && !PQconnectionUsedPassword(task->conn)) work_error(task, "!superuser && !PQconnectionUsedPassword"); else
     if (PQclientEncoding(task->conn) != GetDatabaseEncoding()) PQsetClientEncoding(task->conn, GetDatabaseEncodingName());
     pfree(buf.data);
     pfree(buf2.data);
@@ -236,7 +236,7 @@ static void tick_remote(Work *work, const int64 id, char *group, char *remote, c
     PQconninfoFree(opts);
 }
 
-static void tick_task(const Work *work, const int64 id, char *group, const int max) {
+static void work_task(const Work *work, const int64 id, char *group, const int max) {
     BackgroundWorkerHandle *handle;
     pid_t pid;
     StringInfoData buf;
@@ -285,7 +285,7 @@ static void tick_task(const Work *work, const int64 id, char *group, const int m
     pfree(handle);
 }
 
-static void tick_update(Work *work) {
+static void work_update(Work *work) {
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     if (!command) {
@@ -307,10 +307,10 @@ static void tick_update(Work *work) {
     SPI_finish_my();
 }
 
-void tick_timeout(Work *work) {
+void work_timeout(Work *work) {
     static SPI_plan *plan = NULL;
     static char *command = NULL;
-    tick_update(work);
+    work_update(work);
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -342,14 +342,14 @@ void tick_timeout(Work *work) {
         char *remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
         MemoryContextSwitchTo(oldMemoryContext);
         D1("row = %lu, id = %li, group = %s, remote = %s, max = %i", row, id, group, remote ? remote : null, max);
-        if (remote) tick_remote(work, id, group, remote, max); else tick_task(work, id, group, max);
+        if (remote) work_remote(work, id, group, remote, max); else work_task(work, id, group, max);
         pfree(group);
         if (remote) pfree(remote);
     }
     SPI_finish_my();
 }
 
-static bool tick_check(void) {
+static bool work_check(void) {
     bool exit = false;
     static SPI_plan *plan = NULL;
     static const char *command =
@@ -372,7 +372,7 @@ static bool tick_check(void) {
     return exit;
 }
 
-static void tick_init_conf(Work *work) {
+static void work_init_conf(Work *work) {
     char *p = MyBgworkerEntry->bgw_extra;
     work->user = p;
     p += strlen(work->user) + 1;
@@ -401,7 +401,7 @@ static void tick_init_conf(Work *work) {
     process_session_preload_libraries();
 }
 
-bool tick_init(Work *work) {
+bool work_init(Work *work) {
     bool exit = false;
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     const char *table_quote = quote_identifier(work->table);
@@ -423,11 +423,11 @@ bool tick_init(Work *work) {
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     if (work->table != table_quote) pfree((void *)table_quote);
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, schema_table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : null, work->table, work->reset, work->timeout, work->schema_table, work->schema_type);
-    if (work->schema) tick_schema(work);
-    tick_type(work);
-    if (tick_table(work)) return true;
-    tick_index(work, "dt");
-    tick_index(work, "state");
+    if (work->schema) work_schema(work);
+    work_type(work);
+    if (work_table(work)) return true;
+    work_index(work, "dt");
+    work_index(work, "state");
     set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfo(&buf);
@@ -441,26 +441,26 @@ bool tick_init(Work *work) {
     return exit;
 }
 
-static bool tick_reload(void) {
+static bool work_reload(void) {
     sighup = false;
     ProcessConfigFile(PGC_SIGHUP);
-    return tick_check();
+    return work_check();
 }
 
-static bool tick_latch(void) {
+static bool work_latch(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
-    if (sighup) return tick_reload();
+    if (sighup) return work_reload();
     return false;
 }
 
-static void tick_command(Task *task, PGresult *result) {
+static void work_command(Task *task, PGresult *result) {
     if (task->skip) { task->skip--; return; }
     if (!task->output.data) initStringInfo(&task->output);
     appendStringInfo(&task->output, "%s%s", task->output.len ? "\n" : "", PQcmdStatus(result));
 }
 
-static void tick_success(Task *task, PGresult *result) {
+static void work_success(Task *task, PGresult *result) {
     if (task->length == 1 && !PQntuples(result)) return;
     if (!task->output.data) initStringInfo(&task->output);
     if (task->header && (task->length > 1 || PQnfields(result) > 1)) {
@@ -506,7 +506,7 @@ static void tick_success(Task *task, PGresult *result) {
     }
 }
 
-static void tick_fail(Task *task, PGresult *result) {
+static void work_fail(Task *task, PGresult *result) {
     char *value;
     if (!task->output.data) initStringInfo(&task->output);
     if (!task->error.data) initStringInfo(&task->error);
@@ -533,10 +533,10 @@ static void tick_fail(Task *task, PGresult *result) {
     task->fail = true;
 }
 
-static void tick_query(Task *task) {
+static void work_query(Task *task) {
     StringInfoData buf;
     List *list;
-    if (task_work(task)) { tick_finish(task); return; }
+    if (task_work(task)) { work_finish(task); return; }
     D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
     PG_TRY();
         list = pg_parse_query(task->input);
@@ -560,16 +560,16 @@ static void tick_query(Task *task) {
     appendStringInfoString(&buf, task->input);
     pfree(task->input);
     task->input = buf.data;
-    if (!PQsendQuery(task->conn, task->input)) tick_error(task, "!PQsendQuery"); else {
+    if (!PQsendQuery(task->conn, task->input)) work_error(task, "!PQsendQuery"); else {
         pfree(task->input);
         task->input = NULL;
         task->events = WL_SOCKET_WRITEABLE;
     }
 }
 
-static void tick_repeat(Task *task) {
-    if (PQtransactionStatus(task->conn) != PQTRANS_IDLE) { if (!PQsendQuery(task->conn, "COMMIT")) tick_error(task, "!PQsendQuery"); else task->events = WL_SOCKET_WRITEABLE; return; }
-    if (task_done(task)) { tick_finish(task); return; }
+static void work_repeat(Task *task) {
+    if (PQtransactionStatus(task->conn) != PQTRANS_IDLE) { if (!PQsendQuery(task->conn, "COMMIT")) work_error(task, "!PQsendQuery"); else task->events = WL_SOCKET_WRITEABLE; return; }
+    if (task_done(task)) { work_finish(task); return; }
     D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
     if (task->repeat) task_repeat(task);
     if (task->delete && !task->output.data) task_delete(task);
@@ -577,27 +577,27 @@ static void tick_repeat(Task *task) {
     task->output.data = NULL;
     if (task->error.data) pfree(task->error.data);
     task->error.data = NULL;
-    if (!task->live || task_live(task)) tick_finish(task); else tick_query(task);
+    if (!task->live || task_live(task)) work_finish(task); else work_query(task);
 }
 
-static void tick_result(Task *task) {
-    if (!PQconsumeInput(task->conn)) tick_error(task, "!PQconsumeInput"); else
+static void work_result(Task *task) {
+    if (!PQconsumeInput(task->conn)) work_error(task, "!PQconsumeInput"); else
     if (PQisBusy(task->conn)) task->events = WL_SOCKET_READABLE; else {
         for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
-            case PGRES_COMMAND_OK: tick_command(task, result); break;
-            case PGRES_FATAL_ERROR: tick_fail(task, result); break;
-            case PGRES_TUPLES_OK: tick_success(task, result); break;
+            case PGRES_COMMAND_OK: work_command(task, result); break;
+            case PGRES_FATAL_ERROR: work_fail(task, result); break;
+            case PGRES_TUPLES_OK: work_success(task, result); break;
             default: D1(PQresStatus(PQresultStatus(result))); break;
         }
-        tick_repeat(task);
+        work_repeat(task);
     }
 }
 
-static void tick_connect(Task *task) {
+static void work_connect(Task *task) {
     switch (PQstatus(task->conn)) {
         case CONNECTION_AUTH_OK: D1("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: D1("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
-        case CONNECTION_BAD: D1("PQstatus == CONNECTION_BAD"); tick_error(task, "PQstatus == CONNECTION_BAD"); return;
+        case CONNECTION_BAD: D1("PQstatus == CONNECTION_BAD"); work_error(task, "PQstatus == CONNECTION_BAD"); return;
 #if (PG_VERSION_NUM >= 130000)
         case CONNECTION_CHECK_TARGET: D1("PQstatus == CONNECTION_CHECK_TARGET"); break;
 #endif
@@ -613,28 +613,28 @@ static void tick_connect(Task *task) {
     }
     switch (PQconnectPoll(task->conn)) {
         case PGRES_POLLING_ACTIVE: D1("PQconnectPoll == PGRES_POLLING_ACTIVE"); break;
-        case PGRES_POLLING_FAILED: D1("PQconnectPoll == PGRES_POLLING_FAILED"); tick_error(task, "PQconnectPoll == PGRES_POLLING_FAILED"); return;
+        case PGRES_POLLING_FAILED: D1("PQconnectPoll == PGRES_POLLING_FAILED"); work_error(task, "PQconnectPoll == PGRES_POLLING_FAILED"); return;
         case PGRES_POLLING_OK: D1("PQconnectPoll == PGRES_POLLING_OK"); task->connected = true; break;
         case PGRES_POLLING_READING: D1("PQconnectPoll == PGRES_POLLING_READING"); task->events = WL_SOCKET_READABLE; break;
         case PGRES_POLLING_WRITING: D1("PQconnectPoll == PGRES_POLLING_WRITING"); task->events = WL_SOCKET_WRITEABLE; break;
     }
-    if ((task->fd = PQsocket(task->conn)) < 0) tick_error(task, "PQsocket < 0");
+    if ((task->fd = PQsocket(task->conn)) < 0) work_error(task, "PQsocket < 0");
     if (task->connected) {
-        if (!(task->pid = PQbackendPID(task->conn))) tick_error(task, "!PQbackendPID"); else tick_query(task);
+        if (!(task->pid = PQbackendPID(task->conn))) work_error(task, "!PQbackendPID"); else work_query(task);
     }
 }
 
-void tick_socket(Task *task) {
+void work_socket(Task *task) {
     D1("connected = %s", task->connected ? "true" : "false");
-    if (task->connected) tick_result(task); else tick_connect(task);
+    if (task->connected) work_result(task); else work_connect(task);
 }
 
-void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
+void work_worker(Datum main_arg); void work_worker(Datum main_arg) {
     TimestampTz stop = GetCurrentTimestamp(), start = stop;
     Work work;
     MemSet(&work, 0, sizeof(work));
-    tick_init_conf(&work);
-    sigterm = sigterm || tick_init(&work);
+    work_init_conf(&work);
+    sigterm = sigterm || work_init(&work);
     while (!sigterm) {
         int nevents = queue_size(&work.queue) + 2;
         WaitEvent *events = palloc0(nevents * sizeof(*events));
@@ -658,12 +658,12 @@ void tick_worker(Datum main_arg); void tick_worker(Datum main_arg) {
             if (event->events & WL_SOCKET_WRITEABLE) D1("WL_SOCKET_WRITEABLE");
             if (event->events & WL_POSTMASTER_DEATH) D1("WL_POSTMASTER_DEATH");
             if (event->events & WL_EXIT_ON_PM_DEATH) D1("WL_EXIT_ON_PM_DEATH");
-            if (event->events & WL_LATCH_SET) sigterm = sigterm || tick_latch();
-            if (event->events & WL_SOCKET_MASK) tick_socket(event->user_data);
+            if (event->events & WL_LATCH_SET) sigterm = sigterm || work_latch();
+            if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
         }
         stop = GetCurrentTimestamp();
         if (work.timeout > 0 && (TimestampDifferenceExceeds(start, stop, work.timeout) || !nevents)) {
-            tick_timeout(&work);
+            work_timeout(&work);
             start = stop;
         }
         FreeWaitEventSet(set);
