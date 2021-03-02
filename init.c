@@ -78,9 +78,8 @@ static void conf_work(void) {
 }
 
 void _PG_init(void); void _PG_init(void) {
-    if (IsBinaryUpgrade) return;
+    if (IsBinaryUpgrade) { W("IsBinaryUpgrade"); return; }
     if (!process_shared_preload_libraries_in_progress) F("!process_shared_preload_libraries_in_progress");
-    if (StandbyMode) { W("StandbyMode"); return; }
     DefineCustomStringVariable("pg_task.json", "pg_task json", NULL, &json, "[{\"data\":\"postgres\"}]", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_table", "pg_task default_table", NULL, &default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.null", "pg_task null", NULL, &null, "\\N", PGC_SIGHUP, 0, NULL, NULL, NULL);
