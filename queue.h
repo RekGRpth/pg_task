@@ -65,6 +65,6 @@ typedef struct queue_t {
 
 #define queue_data(q, t, o) (t *)((char *)q - offsetof(t, o))
 
-#define queue_each(h, q) for (queue_t *(q) = (h)->next; (q) != (h); (q) = (q)->next)
+#define queue_each(h, q) for (queue_t *(q) = (h)->next, *_; (q) != (h) && (_ = (q)->next); (queue) = _)
 
 #endif // _QUEUE_H_
