@@ -19,7 +19,7 @@ typedef struct queue_t {
         (q)->next = q; \
     } while (0)
 
-#define queue_empty(h) (h == (h)->prev)
+#define queue_empty(h) ((h) == (h)->prev)
 
 #define queue_insert_head(h, x) \
     do { \
