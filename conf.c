@@ -1,8 +1,6 @@
 #include "include.h"
 
 const char *null;
-extern volatile sig_atomic_t sighup;
-extern volatile sig_atomic_t sigterm;
 
 static void conf_user(const char *user) {
     StringInfoData buf;
@@ -162,8 +160,8 @@ static void conf_init(Work *work) {
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     null = GetConfigOption("pg_task.null", false, true);
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pqsignal(SIGHUP, init_sighup);
-    pqsignal(SIGTERM, init_sigterm);
+    pqsignal(SIGHUP, SignalHandlerForConfigReload);
+    pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
@@ -173,7 +171,7 @@ static void conf_init(Work *work) {
 }
 
 static void conf_reload(Work *work) {
-    sighup = false;
+    ConfigReloadPending = false;
     ProcessConfigFile(PGC_SIGHUP);
     conf_check(work);
 }
@@ -181,7 +179,7 @@ static void conf_reload(Work *work) {
 static void conf_latch(Work *work) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
-    if (sighup) conf_reload(work);
+    if (ConfigReloadPending) conf_reload(work);
 }
 
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
@@ -190,7 +188,7 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     MemSet(&work, 0, sizeof(work));
     conf_init(&work);
     conf_check(&work);
-    while (!sigterm) {
+    while (!ShutdownRequestPending) {
         int nevents = queue_size(&work.queue) + 2;
         WaitEvent *events = palloc0(nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);

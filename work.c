@@ -1,8 +1,6 @@
 #include "include.h"
 
 extern const char *null;
-extern volatile sig_atomic_t sighup;
-extern volatile sig_atomic_t sigterm;
 
 static void work_schema(Work *work) {
     StringInfoData buf;
@@ -411,8 +409,8 @@ static void work_init_conf(Work *work) {
     null = GetConfigOption("pg_task.null", false, true);
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", work->user, work->data, work->schema ? work->schema : null, work->table, work->reset, work->timeout);
-    pqsignal(SIGHUP, init_sighup);
-    pqsignal(SIGTERM, init_sigterm);
+    pqsignal(SIGHUP, SignalHandlerForConfigReload);
+    pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
@@ -460,7 +458,7 @@ bool work_init(Work *work) {
 }
 
 static bool work_reload(void) {
-    sighup = false;
+    ConfigReloadPending = false;
     ProcessConfigFile(PGC_SIGHUP);
     return work_check();
 }
@@ -468,7 +466,7 @@ static bool work_reload(void) {
 static bool work_latch(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
-    if (sighup) return work_reload();
+    if (ConfigReloadPending) return work_reload();
     return false;
 }
 
@@ -652,8 +650,8 @@ void work_worker(Datum main_arg); void work_worker(Datum main_arg) {
     Work work;
     MemSet(&work, 0, sizeof(work));
     work_init_conf(&work);
-    sigterm = sigterm || work_init(&work);
-    while (!sigterm) {
+    ShutdownRequestPending = ShutdownRequestPending || work_init(&work);
+    while (!ShutdownRequestPending) {
         int nevents = queue_size(&work.queue) + 2;
         WaitEvent *events = palloc0(nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
@@ -676,7 +674,7 @@ void work_worker(Datum main_arg); void work_worker(Datum main_arg) {
             if (event->events & WL_SOCKET_WRITEABLE) D1("WL_SOCKET_WRITEABLE");
             if (event->events & WL_POSTMASTER_DEATH) D1("WL_POSTMASTER_DEATH");
             if (event->events & WL_EXIT_ON_PM_DEATH) D1("WL_EXIT_ON_PM_DEATH");
-            if (event->events & WL_LATCH_SET) sigterm = sigterm || work_latch();
+            if (event->events & WL_LATCH_SET) ShutdownRequestPending = ShutdownRequestPending || work_latch();
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
         }
         stop = GetCurrentTimestamp();

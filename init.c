@@ -7,22 +7,6 @@ static char *json;
 static char *null;
 static int default_reset;
 static int default_timeout;
-volatile sig_atomic_t sighup = false;
-volatile sig_atomic_t sigterm = false;
-
-void init_sighup(SIGNAL_ARGS) {
-    int save_errno = errno;
-    sighup = true;
-    SetLatch(MyLatch);
-    errno = save_errno;
-}
-
-void init_sigterm(SIGNAL_ARGS) {
-    int save_errno = errno;
-    sigterm = true;
-    SetLatch(MyLatch);
-    errno = save_errno;
-}
 
 void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
     for (int i = 0; len-- > 0; i++) {

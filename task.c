@@ -6,7 +6,6 @@ extern bool stmt_timeout_active;
 #endif
 extern bool xact_started;
 extern const char *null;
-extern volatile sig_atomic_t sigterm;
 
 bool task_work(Task *task) {
     #define ID 1
@@ -416,7 +415,7 @@ static void task_init(Work *work, Task *task) {
     p += strlen(task->group) + 1;
     task->max = *(typeof(task->max) *)p;
     D1("id = %li, group = %s, max = %i", task->id, task->group, task->max);
-    pqsignal(SIGTERM, init_sigterm);
+    pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
@@ -435,7 +434,7 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
     MemSet(&work, 0, sizeof(work));
     MemSet(&task, 0, sizeof(task));
     task_init(&work, &task);
-    while (!sigterm) {
+    while (!ShutdownRequestPending) {
         int nevents = 2;
         WaitEvent *events = palloc0(nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
@@ -451,7 +450,7 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
             if (event->events & WL_EXIT_ON_PM_DEATH) D1("WL_EXIT_ON_PM_DEATH");
             if (event->events & WL_LATCH_SET) task_latch();
         }
-        if (!nevents) sigterm = sigterm || task_timeout(&task);
+        if (!nevents) ShutdownRequestPending = ShutdownRequestPending || task_timeout(&task);
         FreeWaitEventSet(set);
         pfree(events);
     }
