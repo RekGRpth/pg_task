@@ -17,7 +17,7 @@ static void conf_user(const char *user) {
         CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
         ParseState *pstate = make_parsestate(NULL);
         stmt->role = (char *)user;
-        stmt->options = lappend(stmt->options, makeDefElem("canlogin", (Node *)makeInteger(1), -1));
+        stmt->options = list_make1(makeDefElem("canlogin", (Node *)makeInteger(1), -1));
         pstate->p_sourcetext = buf.data;
         CreateRole(pstate, stmt);
         list_free_deep(stmt->options);
@@ -44,7 +44,7 @@ static void conf_data(const char *user, const char *data) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
         stmt->dbname = (char *)data;
-        stmt->options = lappend(stmt->options, makeDefElem("owner", (Node *)makeString((char *)user), -1));
+        stmt->options = list_make1(makeDefElem("owner", (Node *)makeString((char *)user), -1));
         pstate->p_sourcetext = buf.data;
         createdb(pstate, stmt);
         list_free_deep(stmt->options);
