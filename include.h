@@ -108,9 +108,11 @@ void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_
 void BeginCommandMy(const char *commandTag, Task *task);
 void EndCommandMy(const char *commandTag, Task *task);
 #endif
+void conf_worker(Datum main_arg);
 void exec_simple_query_my(Task *task);
 void init_escape(StringInfoData *buf, const char *data, int len, char escape);
 void NullCommandMy(Task *task);
+void _PG_init(void);
 void ReadyForQueryMy(Task *task);
 void SPI_commit_my(void);
 void SPI_connect_my(const char *src);
@@ -120,8 +122,10 @@ void SPI_finish_my(void);
 void SPI_start_transaction_my(const char *src);
 void task_delete(Task *task);
 void task_repeat(Task *task);
+void task_worker(Datum main_arg);
 void work_socket(Task *task);
 void work_timeout(Work *work);
+void work_worker(Datum main_arg);
 
 #define Q(name) #name
 #define S(macro) Q(macro)

@@ -427,7 +427,7 @@ static void task_latch(void) {
     CHECK_FOR_INTERRUPTS();
 }
 
-void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
+void task_worker(Datum main_arg) {
     Work work;
     Task task;
     MemSet(&work, 0, sizeof(work));

@@ -642,7 +642,7 @@ void work_socket(Task *task) {
     if (task->connected) work_result(task); else work_connect(task);
 }
 
-void work_worker(Datum main_arg); void work_worker(Datum main_arg) {
+void work_worker(Datum main_arg) {
     TimestampTz stop = GetCurrentTimestamp(), start = stop;
     Work work;
     MemSet(&work, 0, sizeof(work));

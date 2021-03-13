@@ -71,7 +71,7 @@ static void init_conf(void) {
     init_work();
 }
 
-void _PG_init(void); void _PG_init(void) {
+void _PG_init(void) {
     if (IsBinaryUpgrade) { W("IsBinaryUpgrade"); return; }
     if (!process_shared_preload_libraries_in_progress) F("!process_shared_preload_libraries_in_progress");
     init_conf();
