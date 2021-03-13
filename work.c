@@ -237,12 +237,12 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     task->events = WL_SOCKET_WRITEABLE;
     task->start = GetCurrentTimestamp();
     queue_insert_tail(&work->queue, &task->queue);
-    if (!(task->conn = PQconnectStartParams(keywords, values, false))) work_error(task, "!PQconnectStartParams"); else
-    if (PQstatus(task->conn) == CONNECTION_BAD) work_error(task, "PQstatus == CONNECTION_BAD"); else
-    if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) work_error(task, "PQsetnonblocking == -1"); else
-    if ((task->fd = PQsocket(task->conn)) < 0) work_error(task, "PQsocket < 0"); else
-    if (!superuser() && !PQconnectionUsedPassword(task->conn)) work_error(task, "!superuser && !PQconnectionUsedPassword"); else
-    if (PQclientEncoding(task->conn) != GetDatabaseEncoding()) PQsetClientEncoding(task->conn, GetDatabaseEncodingName());
+    if (!(task->conn = PQconnectStartParams(keywords, values, false))) work_error(task, "!PQconnectStartParams");
+    else if (PQstatus(task->conn) == CONNECTION_BAD) work_error(task, "PQstatus == CONNECTION_BAD");
+    else if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) work_error(task, "PQsetnonblocking == -1");
+    else if ((task->fd = PQsocket(task->conn)) < 0) work_error(task, "PQsocket < 0");
+    else if (!superuser() && !PQconnectionUsedPassword(task->conn)) work_error(task, "!superuser && !PQconnectionUsedPassword");
+    else if (PQclientEncoding(task->conn) != GetDatabaseEncoding()) PQsetClientEncoding(task->conn, GetDatabaseEncodingName());
     pfree(buf.data);
     pfree(buf2.data);
     pfree(keywords);
