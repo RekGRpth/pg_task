@@ -169,6 +169,7 @@ static void conf_init(Work *work) {
     process_session_preload_libraries();
     work->timeout = -1;
     queue_init(&work->queue);
+    conf_check(work);
 }
 
 static void conf_reload(Work *work) {
@@ -187,7 +188,6 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     TimestampTz stop = GetCurrentTimestamp(), start = stop;
     Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
     conf_init(work);
-    conf_check(work);
     while (!ShutdownRequestPending) {
         int nevents = queue_size(&work->queue) + 2;
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
