@@ -218,6 +218,29 @@ bool task_work(Task *task) {
     return exit;
 }
 
+void task_delete(Task *task) {
+    #define ID 1
+    #define SID S(ID)
+    static Oid argtypes[] = {[ID - 1] = INT8OID};
+    Datum values[] = {[ID - 1] = Int64GetDatum(task->id)};
+    static SPI_plan *plan = NULL;
+    static char *command = NULL;
+    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
+    if (!command) {
+        Work *work = task->work;
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfo(&buf, "DELETE FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::%2$s, 'FAIL'::%2$s)", work->schema_table, work->schema_type);
+        command = buf.data;
+    }
+    #undef ID
+    #undef SID
+    SPI_connect_my(command);
+    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE, true);
+    SPI_finish_my();
+}
+
 void task_repeat(Task *task) {
     #define ID 1
     #define SID S(ID)
@@ -244,43 +267,6 @@ void task_repeat(Task *task) {
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT, true);
     SPI_finish_my();
-}
-
-void task_delete(Task *task) {
-    #define ID 1
-    #define SID S(ID)
-    static Oid argtypes[] = {[ID - 1] = INT8OID};
-    Datum values[] = {[ID - 1] = Int64GetDatum(task->id)};
-    static SPI_plan *plan = NULL;
-    static char *command = NULL;
-    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
-    if (!command) {
-        Work *work = task->work;
-        StringInfoData buf;
-        initStringInfo(&buf);
-        appendStringInfo(&buf, "DELETE FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::%2$s, 'FAIL'::%2$s)", work->schema_table, work->schema_type);
-        command = buf.data;
-    }
-    #undef ID
-    #undef SID
-    SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE, true);
-    SPI_finish_my();
-}
-
-static void task_success(Task *task) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
-    MemoryContextResetAndDeleteChildren(MessageContext);
-    InvalidateCatalogSnapshotConditionally();
-    MemoryContextSwitchTo(oldMemoryContext);
-    ReadyForQueryMy(task);
-    SetCurrentStatementStartTimestamp();
-    exec_simple_query_my(task);
-    pfree(task->input);
-    task->input = "COMMIT";
-    if (IsTransactionState()) exec_simple_query_my(task);
-    if (IsTransactionState()) E("IsTransactionState");
 }
 
 static void task_fail(Task *task) {
@@ -338,27 +324,6 @@ static void task_fail(Task *task) {
     xact_started = false;
     RESUME_INTERRUPTS();
     task->fail = true;
-}
-
-static bool task_timeout(Task *task) {
-    if (task_work(task)) return true;
-    D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
-    PG_TRY();
-        task_success(task);
-    PG_CATCH();
-        task_fail(task);
-    PG_END_TRY();
-    pgstat_report_stat(false);
-    pgstat_report_activity(STATE_IDLE, NULL);
-    if (task_done(task)) return true;
-    D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
-    if (task->repeat) task_repeat(task);
-    if (task->delete && !task->output.data) task_delete(task);
-    if (task->output.data) pfree(task->output.data);
-    task->output.data = NULL;
-    if (task->error.data) pfree(task->error.data);
-    task->error.data = NULL;
-    return !task->live || task_live(task);
 }
 
 static void task_init(Work *work, Task *task) {
@@ -425,6 +390,41 @@ static void task_init(Work *work, Task *task) {
 static void task_latch(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
+}
+
+static void task_success(Task *task) {
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
+    MemoryContextResetAndDeleteChildren(MessageContext);
+    InvalidateCatalogSnapshotConditionally();
+    MemoryContextSwitchTo(oldMemoryContext);
+    ReadyForQueryMy(task);
+    SetCurrentStatementStartTimestamp();
+    exec_simple_query_my(task);
+    pfree(task->input);
+    task->input = "COMMIT";
+    if (IsTransactionState()) exec_simple_query_my(task);
+    if (IsTransactionState()) E("IsTransactionState");
+}
+
+static bool task_timeout(Task *task) {
+    if (task_work(task)) return true;
+    D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
+    PG_TRY();
+        task_success(task);
+    PG_CATCH();
+        task_fail(task);
+    PG_END_TRY();
+    pgstat_report_stat(false);
+    pgstat_report_activity(STATE_IDLE, NULL);
+    if (task_done(task)) return true;
+    D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
+    if (task->repeat) task_repeat(task);
+    if (task->delete && !task->output.data) task_delete(task);
+    if (task->output.data) pfree(task->output.data);
+    task->output.data = NULL;
+    if (task->error.data) pfree(task->error.data);
+    task->error.data = NULL;
+    return !task->live || task_live(task);
 }
 
 void task_worker(Datum main_arg) {
