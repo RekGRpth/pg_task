@@ -55,7 +55,6 @@ typedef struct Work {
 
 typedef struct Task {
     bool append;
-    bool connected;
     bool delete;
     bool fail;
     bool header;

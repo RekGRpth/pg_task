@@ -594,19 +594,17 @@ static void work_repeat(Task *task) {
 }
 
 static void work_result(Task *task) {
-    if (!PQconsumeInput(task->conn)) work_error(task, "!PQconsumeInput"); else
-    if (PQisBusy(task->conn)) task->events = WL_SOCKET_READABLE; else {
-        for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
-            case PGRES_COMMAND_OK: work_command(task, result); break;
-            case PGRES_FATAL_ERROR: work_fail(task, result); break;
-            case PGRES_TUPLES_OK: work_success(task, result); break;
-            default: D1(PQresStatus(PQresultStatus(result))); break;
-        }
-        work_repeat(task);
+    for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
+        case PGRES_COMMAND_OK: work_command(task, result); break;
+        case PGRES_FATAL_ERROR: work_fail(task, result); break;
+        case PGRES_TUPLES_OK: work_success(task, result); break;
+        default: D1(PQresStatus(PQresultStatus(result))); break;
     }
+    work_repeat(task);
 }
 
 static void work_connect(Task *task) {
+    bool connected = false;
     switch (PQstatus(task->conn)) {
         case CONNECTION_AUTH_OK: D1("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: D1("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
@@ -619,7 +617,7 @@ static void work_connect(Task *task) {
         case CONNECTION_GSS_STARTUP: D1("PQstatus == CONNECTION_GSS_STARTUP"); break;
         case CONNECTION_MADE: D1("PQstatus == CONNECTION_MADE"); break;
         case CONNECTION_NEEDED: D1("PQstatus == CONNECTION_NEEDED"); break;
-        case CONNECTION_OK: D1("PQstatus == CONNECTION_OK"); task->connected = true; break;
+        case CONNECTION_OK: D1("PQstatus == CONNECTION_OK"); connected = true; break;
         case CONNECTION_SETENV: D1("PQstatus == CONNECTION_SETENV"); break;
         case CONNECTION_SSL_STARTUP: D1("PQstatus == CONNECTION_SSL_STARTUP"); break;
         case CONNECTION_STARTED: D1("PQstatus == CONNECTION_STARTED"); break;
@@ -627,19 +625,22 @@ static void work_connect(Task *task) {
     switch (PQconnectPoll(task->conn)) {
         case PGRES_POLLING_ACTIVE: D1("PQconnectPoll == PGRES_POLLING_ACTIVE"); break;
         case PGRES_POLLING_FAILED: D1("PQconnectPoll == PGRES_POLLING_FAILED"); work_error(task, "PQconnectPoll == PGRES_POLLING_FAILED"); return;
-        case PGRES_POLLING_OK: D1("PQconnectPoll == PGRES_POLLING_OK"); task->connected = true; break;
+        case PGRES_POLLING_OK: D1("PQconnectPoll == PGRES_POLLING_OK"); connected = true; break;
         case PGRES_POLLING_READING: D1("PQconnectPoll == PGRES_POLLING_READING"); task->events = WL_SOCKET_READABLE; break;
         case PGRES_POLLING_WRITING: D1("PQconnectPoll == PGRES_POLLING_WRITING"); task->events = WL_SOCKET_WRITEABLE; break;
     }
     if ((task->fd = PQsocket(task->conn)) < 0) work_error(task, "PQsocket < 0");
-    if (task->connected) {
+    if (connected) {
         if (!(task->pid = PQbackendPID(task->conn))) work_error(task, "!PQbackendPID"); else work_query(task);
     }
 }
 
 void work_socket(Task *task) {
-    D1("connected = %s", task->connected ? "true" : "false");
-    if (task->connected) work_result(task); else work_connect(task);
+    if (PQstatus(task->conn) != CONNECTION_OK) work_connect(task); else {
+        if (!PQconsumeInput(task->conn)) work_error(task, "!PQconsumeInput");
+        else if (PQisBusy(task->conn)) task->events = WL_SOCKET_READABLE;
+        else work_result(task);
+    }
 }
 
 void work_worker(Datum main_arg) {
