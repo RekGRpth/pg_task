@@ -7,6 +7,94 @@ extern bool stmt_timeout_active;
 extern bool xact_started;
 extern char *default_null;
 
+static void task_update(Task *task) {
+    #define GROUP 1
+    #define SGROUP S(GROUP)
+    Work *work = task->work;
+    static Oid argtypes[] = {[GROUP - 1] = TEXTOID};
+    Datum values[] = {[GROUP - 1] = CStringGetTextDatum(task->group)};
+    static SPI_plan *plan = NULL;
+    static char *command = NULL;
+    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
+    if (!command) {
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfo(&buf,
+            "WITH s AS (SELECT id FROM %1$s WHERE max < 0 AND dt < current_timestamp AND \"group\" = $" SGROUP " AND state = 'PLAN'::%2$s FOR UPDATE SKIP LOCKED\n)\n"
+            "UPDATE %1$s AS u SET dt = current_timestamp FROM s WHERE u.id = s.id", work->schema_table, work->schema_type);
+        command = buf.data;
+    }
+    SPI_connect_my(command);
+    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE, true);
+    SPI_finish_my();
+    pfree((void *)values[GROUP - 1]);
+    #undef GROUP
+    #undef SGROUP
+}
+
+bool task_done(Task *task) {
+    #define ID 1
+    #define SID S(ID)
+    #define FAIL 2
+    #define SFAIL S(FAIL)
+    #define OUTPUT 3
+    #define SOUTPUT S(OUTPUT)
+    #define ERROR_ 4
+    #define SERROR S(ERROR_)
+    #define GROUP 5
+    #define SGROUP S(GROUP)
+    bool exit = false;
+    Work *work = task->work;
+    static Oid argtypes[] = {[ID - 1] = INT8OID, [FAIL - 1] = BOOLOID, [OUTPUT - 1] = TEXTOID, [ERROR_ - 1] = TEXTOID, [GROUP - 1] = TEXTOID};
+    Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [FAIL - 1] = BoolGetDatum(task->fail = task->output.data ? task->fail : false), [OUTPUT - 1] = task->output.data ? CStringGetTextDatum(task->output.data) : (Datum)NULL, [ERROR_ - 1] = task->error.data ? CStringGetTextDatum(task->error.data) : (Datum)NULL, [GROUP - 1] = CStringGetTextDatum(task->group)};
+    char nulls[] = {[ID - 1] = ' ', [FAIL - 1] = ' ', [OUTPUT - 1] = task->output.data ? ' ' : 'n', [ERROR_ - 1] = task->error.data ? ' ' : 'n', [GROUP - 1] = ' '};
+    static SPI_plan *plan = NULL;
+    static char *command = NULL;
+    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
+    StaticAssertStmt(countof(argtypes) == countof(nulls), "countof(argtypes) == countof(values)");
+    D1("id = %li, output = %s, error = %s, fail = %s", task->id, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null, task->fail ? "true" : "false");
+    task_update(task);
+    if (!command) {
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfo(&buf,
+            "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " AND state IN ('WORK'::%2$s, 'TAKE'::%2$s) FOR UPDATE\n)\n"
+            "UPDATE %1$s AS u SET state = CASE WHEN $" SFAIL " THEN 'FAIL'::%2$s ELSE 'DONE'::%2$s END, stop = current_timestamp, output = $" SOUTPUT ", error = $" SERROR " FROM s WHERE u.id = s.id\n"
+            "RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live", work->schema_table, work->schema_type);
+        command = buf.data;
+    }
+    #undef ID
+    #undef SID
+    #undef FAIL
+    #undef SFAIL
+    SPI_connect_my(command);
+    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
+    SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
+    if (SPI_processed != 1) {
+        W("SPI_processed != 1");
+        exit = true;
+    } else {
+        task->delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
+        task->repeat = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "repeat", false));
+        task->live = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
+    }
+    SPI_finish_my();
+    if (task->output.data) pfree((void *)values[OUTPUT - 1]);
+    #undef OUTPUT
+    #undef SOUTPUT
+    if (task->error.data) pfree((void *)values[ERROR_ - 1]);
+    #undef ERROR_
+    #undef SERROR
+    pfree((void *)values[GROUP - 1]);
+    #undef GROUP
+    #undef SGROUP
+    pg_advisory_unlock_int4_my(work->oid, task->id);
+    if (task->null) pfree(task->null);
+    task->null = NULL;
+    return exit;
+}
+
 bool task_work(Task *task) {
     #define ID 1
     #define SID S(ID)
@@ -178,94 +266,6 @@ bool task_live(Task *task) {
     if (task->remote) pfree((void *)values[REMOTE - 1]);
     #undef REMOTE
     #undef SREMOTE
-    return exit;
-}
-
-static void task_update(Task *task) {
-    #define GROUP 1
-    #define SGROUP S(GROUP)
-    Work *work = task->work;
-    static Oid argtypes[] = {[GROUP - 1] = TEXTOID};
-    Datum values[] = {[GROUP - 1] = CStringGetTextDatum(task->group)};
-    static SPI_plan *plan = NULL;
-    static char *command = NULL;
-    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
-    if (!command) {
-        StringInfoData buf;
-        initStringInfo(&buf);
-        appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %1$s WHERE max < 0 AND dt < current_timestamp AND \"group\" = $" SGROUP " AND state = 'PLAN'::%2$s FOR UPDATE SKIP LOCKED\n)\n"
-            "UPDATE %1$s AS u SET dt = current_timestamp FROM s WHERE u.id = s.id", work->schema_table, work->schema_type);
-        command = buf.data;
-    }
-    SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE, true);
-    SPI_finish_my();
-    pfree((void *)values[GROUP - 1]);
-    #undef GROUP
-    #undef SGROUP
-}
-
-bool task_done(Task *task) {
-    #define ID 1
-    #define SID S(ID)
-    #define FAIL 2
-    #define SFAIL S(FAIL)
-    #define OUTPUT 3
-    #define SOUTPUT S(OUTPUT)
-    #define ERROR_ 4
-    #define SERROR S(ERROR_)
-    #define GROUP 5
-    #define SGROUP S(GROUP)
-    bool exit = false;
-    Work *work = task->work;
-    static Oid argtypes[] = {[ID - 1] = INT8OID, [FAIL - 1] = BOOLOID, [OUTPUT - 1] = TEXTOID, [ERROR_ - 1] = TEXTOID, [GROUP - 1] = TEXTOID};
-    Datum values[] = {[ID - 1] = Int64GetDatum(task->id), [FAIL - 1] = BoolGetDatum(task->fail = task->output.data ? task->fail : false), [OUTPUT - 1] = task->output.data ? CStringGetTextDatum(task->output.data) : (Datum)NULL, [ERROR_ - 1] = task->error.data ? CStringGetTextDatum(task->error.data) : (Datum)NULL, [GROUP - 1] = CStringGetTextDatum(task->group)};
-    char nulls[] = {[ID - 1] = ' ', [FAIL - 1] = ' ', [OUTPUT - 1] = task->output.data ? ' ' : 'n', [ERROR_ - 1] = task->error.data ? ' ' : 'n', [GROUP - 1] = ' '};
-    static SPI_plan *plan = NULL;
-    static char *command = NULL;
-    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
-    StaticAssertStmt(countof(argtypes) == countof(nulls), "countof(argtypes) == countof(values)");
-    D1("id = %li, output = %s, error = %s, fail = %s", task->id, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null, task->fail ? "true" : "false");
-    task_update(task);
-    if (!command) {
-        StringInfoData buf;
-        initStringInfo(&buf);
-        appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " AND state IN ('WORK'::%2$s, 'TAKE'::%2$s) FOR UPDATE\n)\n"
-            "UPDATE %1$s AS u SET state = CASE WHEN $" SFAIL " THEN 'FAIL'::%2$s ELSE 'DONE'::%2$s END, stop = current_timestamp, output = $" SOUTPUT ", error = $" SERROR " FROM s WHERE u.id = s.id\n"
-            "RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live", work->schema_table, work->schema_type);
-        command = buf.data;
-    }
-    #undef ID
-    #undef SID
-    #undef FAIL
-    #undef SFAIL
-    SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
-    if (SPI_processed != 1) {
-        W("SPI_processed != 1");
-        exit = true;
-    } else {
-        task->delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
-        task->repeat = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "repeat", false));
-        task->live = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
-    }
-    SPI_finish_my();
-    if (task->output.data) pfree((void *)values[OUTPUT - 1]);
-    #undef OUTPUT
-    #undef SOUTPUT
-    if (task->error.data) pfree((void *)values[ERROR_ - 1]);
-    #undef ERROR_
-    #undef SERROR
-    pfree((void *)values[GROUP - 1]);
-    #undef GROUP
-    #undef SGROUP
-    pg_advisory_unlock_int4_my(work->oid, task->id);
-    if (task->null) pfree(task->null);
-    task->null = NULL;
     return exit;
 }
 
