@@ -95,6 +95,63 @@ bool task_done(Task *task) {
     return exit;
 }
 
+bool task_live(Task *task) {
+    #define GROUP 1
+    #define SGROUP S(GROUP)
+    #define REMOTE 2
+    #define SREMOTE S(REMOTE)
+    #define MAX 3
+    #define SMAX S(MAX)
+    #define COUNT 4
+    #define SCOUNT S(COUNT)
+    #define START 5
+    #define SSTART S(START)
+    bool exit = false;
+    static Oid argtypes[] = {[GROUP - 1] = TEXTOID, [REMOTE - 1] = TEXTOID, [MAX - 1] = INT4OID, [COUNT - 1] = INT4OID, [START - 1] = TIMESTAMPTZOID};
+    Datum values[] = {[GROUP - 1] = CStringGetTextDatum(task->group), [REMOTE - 1] = task->remote ? CStringGetTextDatum(task->remote) : (Datum)NULL, [MAX - 1] = Int32GetDatum(task->max), [COUNT - 1] = Int32GetDatum(task->count), [START - 1] = TimestampTzGetDatum(task->start)};
+    char nulls[] = {[GROUP - 1] = ' ', [REMOTE - 1] = task->remote ? ' ' : 'n', [MAX - 1] = ' ', [COUNT - 1] = ' ', [START - 1] = ' '};
+    static SPI_plan *plan = NULL;
+    static char *command = NULL;
+    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
+    StaticAssertStmt(countof(argtypes) == countof(nulls), "countof(argtypes) == countof(values)");
+    if (!command) {
+        Work *work = task->work;
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfo(&buf,
+            "WITH s AS (\n"
+            "SELECT  id\n"
+            "FROM    %1$s\n"
+            "WHERE   state = 'PLAN'::%2$s\n"
+            "AND     dt <= current_timestamp\n"
+            "AND     \"group\" = $" SGROUP "\n"
+            "AND     remote IS NOT DISTINCT FROM $" SREMOTE "\n"
+            "AND     COALESCE(max, ~(1<<31)) >= $" SMAX "\n"
+            "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $" SCOUNT " AND $" SSTART " + live > current_timestamp ELSE COALESCE(count, 0) > $" SCOUNT " OR $" SSTART " + COALESCE(live, '0 sec'::interval) > current_timestamp END\n"
+            "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
+            ") UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id", work->schema_table, work->schema_type);
+        command = buf.data;
+    }
+    #undef MAX
+    #undef SMAX
+    #undef COUNT
+    #undef SCOUNT
+    #undef START
+    #undef SSTART
+    SPI_connect_my(command);
+    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
+    SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
+    if (!SPI_processed) exit = true; else task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false));
+    SPI_finish_my();
+    pfree((void *)values[GROUP - 1]);
+    #undef GROUP
+    #undef SGROUP
+    if (task->remote) pfree((void *)values[REMOTE - 1]);
+    #undef REMOTE
+    #undef SREMOTE
+    return exit;
+}
+
 bool task_work(Task *task) {
     #define ID 1
     #define SID S(ID)
@@ -210,63 +267,6 @@ void task_delete(Task *task) {
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE, true);
     SPI_finish_my();
-}
-
-bool task_live(Task *task) {
-    #define GROUP 1
-    #define SGROUP S(GROUP)
-    #define REMOTE 2
-    #define SREMOTE S(REMOTE)
-    #define MAX 3
-    #define SMAX S(MAX)
-    #define COUNT 4
-    #define SCOUNT S(COUNT)
-    #define START 5
-    #define SSTART S(START)
-    bool exit = false;
-    static Oid argtypes[] = {[GROUP - 1] = TEXTOID, [REMOTE - 1] = TEXTOID, [MAX - 1] = INT4OID, [COUNT - 1] = INT4OID, [START - 1] = TIMESTAMPTZOID};
-    Datum values[] = {[GROUP - 1] = CStringGetTextDatum(task->group), [REMOTE - 1] = task->remote ? CStringGetTextDatum(task->remote) : (Datum)NULL, [MAX - 1] = Int32GetDatum(task->max), [COUNT - 1] = Int32GetDatum(task->count), [START - 1] = TimestampTzGetDatum(task->start)};
-    char nulls[] = {[GROUP - 1] = ' ', [REMOTE - 1] = task->remote ? ' ' : 'n', [MAX - 1] = ' ', [COUNT - 1] = ' ', [START - 1] = ' '};
-    static SPI_plan *plan = NULL;
-    static char *command = NULL;
-    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
-    StaticAssertStmt(countof(argtypes) == countof(nulls), "countof(argtypes) == countof(values)");
-    if (!command) {
-        Work *work = task->work;
-        StringInfoData buf;
-        initStringInfo(&buf);
-        appendStringInfo(&buf,
-            "WITH s AS (\n"
-            "SELECT  id\n"
-            "FROM    %1$s\n"
-            "WHERE   state = 'PLAN'::%2$s\n"
-            "AND     dt <= current_timestamp\n"
-            "AND     \"group\" = $" SGROUP "\n"
-            "AND     remote IS NOT DISTINCT FROM $" SREMOTE "\n"
-            "AND     COALESCE(max, ~(1<<31)) >= $" SMAX "\n"
-            "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $" SCOUNT " AND $" SSTART " + live > current_timestamp ELSE COALESCE(count, 0) > $" SCOUNT " OR $" SSTART " + COALESCE(live, '0 sec'::interval) > current_timestamp END\n"
-            "ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1 FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id", work->schema_table, work->schema_type);
-        command = buf.data;
-    }
-    #undef MAX
-    #undef SMAX
-    #undef COUNT
-    #undef SCOUNT
-    #undef START
-    #undef SSTART
-    SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
-    if (!SPI_processed) exit = true; else task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false));
-    SPI_finish_my();
-    pfree((void *)values[GROUP - 1]);
-    #undef GROUP
-    #undef SGROUP
-    if (task->remote) pfree((void *)values[REMOTE - 1]);
-    #undef REMOTE
-    #undef SREMOTE
-    return exit;
 }
 
 static void task_success(Task *task) {
