@@ -186,15 +186,16 @@ static void conf_latch(Work *work) {
 
 void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     TimestampTz stop = GetCurrentTimestamp(), start = stop;
-    Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
-    conf_init(work);
+    Work work;
+    MemSet(&work, 0, sizeof(work));
+    conf_init(&work);
     while (!ShutdownRequestPending) {
-        int nevents = queue_size(&work->queue) + 2;
+        int nevents = queue_size(&work.queue) + 2;
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
-        queue_each(&work->queue, queue) {
+        queue_each(&work.queue, queue) {
             Task *task = queue_data(queue, Task, queue);
             if (task->events & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
                 case 0: /*D1("PQflush = 0");*/ break;
@@ -203,19 +204,18 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
             }
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, task->fd, NULL, task);
         }
-        nevents = WaitEventSetWait(set, work->timeout, events, nevents, PG_WAIT_EXTENSION);
+        nevents = WaitEventSetWait(set, work.timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) conf_latch(work);
+            if (event->events & WL_LATCH_SET) conf_latch(&work);
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
         }
         stop = GetCurrentTimestamp();
-        if (work->timeout > 0 && (TimestampDifferenceExceeds(start, stop, work->timeout) || !nevents)) {
-            work_timeout(work);
+        if (work.timeout > 0 && (TimestampDifferenceExceeds(start, stop, work.timeout) || !nevents)) {
+            work_timeout(&work);
             start = stop;
         }
         FreeWaitEventSet(set);
         pfree(events);
     }
-    pfree(work);
 }
