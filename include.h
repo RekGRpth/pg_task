@@ -110,8 +110,6 @@ void EndCommandMy(const char *commandTag, Task *task);
 #endif
 void exec_simple_query_my(Task *task);
 void init_escape(StringInfoData *buf, const char *data, int len, char escape);
-void init_sighup(SIGNAL_ARGS);
-void init_sigterm(SIGNAL_ARGS);
 void NullCommandMy(Task *task);
 void ReadyForQueryMy(Task *task);
 void SPI_commit_my(void);
