@@ -119,9 +119,9 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_finish_my(void);
 void SPI_start_transaction_my(const char *src);
 void task_delete(Task *task);
-void work_error(Task *task, const char *msg);
 void task_repeat(Task *task);
 void task_worker(Datum main_arg);
+void work_error(Task *task, const char *msg);
 void work_socket(Task *task);
 void work_timeout(Work *work);
 void work_worker(Datum main_arg);
