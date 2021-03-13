@@ -201,11 +201,6 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
         nevents = WaitEventSetWait(set, work->timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) D1("WL_LATCH_SET");
-            if (event->events & WL_SOCKET_READABLE) D1("WL_SOCKET_READABLE");
-            if (event->events & WL_SOCKET_WRITEABLE) D1("WL_SOCKET_WRITEABLE");
-            if (event->events & WL_POSTMASTER_DEATH) D1("WL_POSTMASTER_DEATH");
-            if (event->events & WL_EXIT_ON_PM_DEATH) D1("WL_EXIT_ON_PM_DEATH");
             if (event->events & WL_LATCH_SET) conf_latch(work);
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
         }
