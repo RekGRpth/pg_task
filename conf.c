@@ -196,6 +196,11 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
         queue_each(&work->queue, queue) {
             Task *task = queue_data(queue, Task, queue);
+            if (task->events & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
+                case 0: /*D1("PQflush = 0");*/ break;
+                case 1: D1("PQflush = 1"); break;
+                default: D1("PQflush = default"); break;
+            }
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, task->fd, NULL, task);
         }
         nevents = WaitEventSetWait(set, work->timeout, events, nevents, PG_WAIT_EXTENSION);
