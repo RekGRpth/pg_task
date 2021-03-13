@@ -428,11 +428,9 @@ static void task_latch(void) {
 }
 
 void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
-    Work work;
-    Task task;
-    MemSet(&work, 0, sizeof(work));
-    MemSet(&task, 0, sizeof(task));
-    task_init(&work, &task);
+    Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
+    Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
+    task_init(work, task);
     while (!ShutdownRequestPending) {
         int nevents = 2;
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
@@ -449,8 +447,10 @@ void task_worker(Datum main_arg); void task_worker(Datum main_arg) {
             if (event->events & WL_EXIT_ON_PM_DEATH) D1("WL_EXIT_ON_PM_DEATH");
             if (event->events & WL_LATCH_SET) task_latch();
         }
-        if (!nevents) ShutdownRequestPending = ShutdownRequestPending || task_timeout(&task);
+        if (!nevents) ShutdownRequestPending = ShutdownRequestPending || task_timeout(task);
         FreeWaitEventSet(set);
         pfree(events);
     }
+    pfree(task);
+    pfree(work);
 }
