@@ -386,7 +386,7 @@ static bool work_check(void) {
     return exit;
 }
 
-static void work_init_conf(Work *work) {
+static void work_conf(Work *work) {
     char *p = MyBgworkerEntry->bgw_extra;
     work->user = p;
     p += strlen(work->user) + 1;
@@ -646,7 +646,7 @@ void work_worker(Datum main_arg) {
     TimestampTz stop = GetCurrentTimestamp(), start = stop;
     Work work;
     MemSet(&work, 0, sizeof(work));
-    work_init_conf(&work);
+    work_conf(&work);
     ShutdownRequestPending = ShutdownRequestPending || work_init(&work);
     while (!ShutdownRequestPending) {
         int nevents = queue_size(&work.queue) + 2;
