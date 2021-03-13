@@ -5,7 +5,7 @@
 extern bool stmt_timeout_active;
 #endif
 extern bool xact_started;
-extern const char *null;
+extern char *default_null;
 
 bool task_work(Task *task) {
     #define ID 1
@@ -227,7 +227,7 @@ bool task_done(Task *task) {
     static char *command = NULL;
     StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
     StaticAssertStmt(countof(argtypes) == countof(nulls), "countof(argtypes) == countof(values)");
-    D1("id = %li, output = %s, error = %s, fail = %s", task->id, task->output.data ? task->output.data : null, task->error.data ? task->error.data : null, task->fail ? "true" : "false");
+    D1("id = %li, output = %s, error = %s, fail = %s", task->id, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null, task->fail ? "true" : "false");
     task_update(task);
     if (!command) {
         StringInfoData buf;
@@ -380,10 +380,9 @@ static void task_init(Work *work, Task *task) {
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
-    null = GetConfigOption("pg_task.null", false, true);
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
-    D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : null, work->table);
+    D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table);
     set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (work->schema) set_config_option("pg_task.schema", work->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);

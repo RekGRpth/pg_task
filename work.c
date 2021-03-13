@@ -1,6 +1,6 @@
 #include "include.h"
 
-extern const char *null;
+extern char *default_null;
 
 static void work_schema(Work *work) {
     StringInfoData buf;
@@ -26,7 +26,7 @@ static void work_type(Work *work) {
     Oid type = InvalidOid;
     int32 typmod;
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
-    D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : null, work->table);
+    D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table);
     initStringInfo(&buf);
     appendStringInfo(&buf, "CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')", work->schema_type);
     SPI_connect_my(buf.data);
@@ -43,7 +43,7 @@ static bool work_table(Work *work) {
     StringInfoData buf;
     List *names;
     const RangeVar *rangevar;
-    D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work->user, work->data, work->schema ? work->schema : null, work->table, work->schema_table, work->schema_type);
+    D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->schema_table, work->schema_type);
     if (work->oid) pg_advisory_unlock_int8_my(work->oid);
     set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfo(&buf);
@@ -103,7 +103,7 @@ static void work_index(Work *work, const char *index) {
     const char *name_quote;
     const char *index_quote = quote_identifier(index);
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
-    D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : null, work->table, index, work->schema_table);
+    D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, index, work->schema_table);
     initStringInfo(&name);
     appendStringInfo(&name, "%s_%s_idx", work->table, index);
     name_quote = quote_identifier(name.data);
@@ -192,7 +192,7 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     task->id = id;
     task->max = max;
     task->work = work;
-    D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : null, task->max, work->oid);
+    D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->oid);
     if (!opts) { work_error2(task, "!PQconninfoParse", err); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
@@ -257,7 +257,7 @@ static void work_task(const Work *work, const int64 id, char *group, const int m
     int user_len = strlen(work->user), data_len = strlen(work->data), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), group_len = strlen(group), max_len = sizeof(max), oid_len = sizeof(work->oid);
     BackgroundWorker worker;
     char *p = worker.bgw_extra;
-    D1("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : null, work->table, id, group, max, work->oid);
+    D1("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, id, group, max, work->oid);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = id;
@@ -355,7 +355,7 @@ void work_timeout(Work *work) {
         char *group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
         char *remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
         MemoryContextSwitchTo(oldMemoryContext);
-        D1("row = %lu, id = %li, group = %s, remote = %s, max = %i", row, id, group, remote ? remote : null, max);
+        D1("row = %lu, id = %li, group = %s, remote = %s, max = %i", row, id, group, remote ? remote : default_null, max);
         if (remote) work_remote(work, id, group, remote, max); else work_task(work, id, group, max);
         pfree(group);
         if (remote) pfree(remote);
@@ -404,9 +404,8 @@ static void work_init_conf(Work *work) {
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
-    null = GetConfigOption("pg_task.null", false, true);
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", work->user, work->data, work->schema ? work->schema : null, work->table, work->reset, work->timeout);
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
     BackgroundWorkerUnblockSignals();
@@ -436,7 +435,7 @@ bool work_init(Work *work) {
     work->schema_type = buf.data;
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     if (work->table != table_quote) pfree((void *)table_quote);
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, schema_table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : null, work->table, work->reset, work->timeout, work->schema_table, work->schema_type);
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, schema_table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->schema_table, work->schema_type);
     if (work->schema) work_schema(work);
     work_type(work);
     if (work_table(work)) return true;
