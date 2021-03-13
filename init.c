@@ -8,13 +8,6 @@ static char *default_table;
 static int default_reset;
 static int default_timeout;
 
-void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
-    for (int i = 0; len-- > 0; i++) {
-        if (escape == data[i]) appendStringInfoChar(buf, escape);
-        appendStringInfoChar(buf, data[i]);
-    }
-}
-
 bool init_oid_is_string(Oid oid) {
     switch (oid) {
         case BITOID:
@@ -31,6 +24,13 @@ bool init_oid_is_string(Oid oid) {
         case XIDOID:
             return false;
         default: return true;
+    }
+}
+
+void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
+    for (int i = 0; len-- > 0; i++) {
+        if (escape == data[i]) appendStringInfoChar(buf, escape);
+        appendStringInfoChar(buf, data[i]);
     }
 }
 
