@@ -133,7 +133,7 @@ static void conf_check(Work *work) {
         int timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "timeout", false));
         MemoryContextSwitchTo(oldMemoryContext);
         D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", row, user, data, schema ? schema : default_null, table, reset, timeout);
-        if (!pg_strcasecmp(user, "postgres") && !pg_strcasecmp(data, "postgres") && !schema && !pg_strcasecmp(table, "task")) {
+        if (!strcmp(user, "postgres") && !strcmp(data, "postgres") && !schema && !strcmp(table, "task")) {
             work->user = "postgres";
             work->data = "postgres";
             work->schema = NULL;

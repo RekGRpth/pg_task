@@ -197,10 +197,10 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
         D1("%s = %s", opt->keyword, opt->val);
-        if (!pg_strcasecmp(opt->keyword, "password")) password = true;
-        if (!pg_strcasecmp(opt->keyword, "fallback_application_name")) continue;
-        if (!pg_strcasecmp(opt->keyword, "application_name")) continue;
-        if (!pg_strcasecmp(opt->keyword, "options")) { options = opt->val; continue; }
+        if (!strcmp(opt->keyword, "password")) password = true;
+        if (!strcmp(opt->keyword, "fallback_application_name")) continue;
+        if (!strcmp(opt->keyword, "application_name")) continue;
+        if (!strcmp(opt->keyword, "options")) { options = opt->val; continue; }
         arg++;
     }
     if (!superuser() && !password) { work_error2(task, "!superuser && !password", NULL); return; }
@@ -224,9 +224,9 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     values[arg] = buf2.data;
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
-        if (!pg_strcasecmp(opt->keyword, "fallback_application_name")) continue;
-        if (!pg_strcasecmp(opt->keyword, "application_name")) continue;
-        if (!pg_strcasecmp(opt->keyword, "options")) continue;
+        if (!strcmp(opt->keyword, "fallback_application_name")) continue;
+        if (!strcmp(opt->keyword, "application_name")) continue;
+        if (!strcmp(opt->keyword, "options")) continue;
         arg++;
         keywords[arg] = opt->keyword;
         values[arg] = opt->val;
