@@ -186,11 +186,9 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     char *options = NULL;
     bool password = false;
     PQconninfoOption *opts = PQconninfoParse(remote, &err);
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    Task *task = palloc0(sizeof(*task));
-    task->group = pstrdup(group);
-    task->remote = pstrdup(remote);
-    MemoryContextSwitchTo(oldMemoryContext);
+    Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
+    task->group = MemoryContextStrdup(TopMemoryContext, group);
+    task->remote = MemoryContextStrdup(TopMemoryContext, remote);
     task->id = id;
     task->max = max;
     task->work = work;
@@ -206,8 +204,8 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
         arg++;
     }
     if (!superuser() && !password) { work_error2(task, "!superuser && !password", NULL); return; }
-    keywords = palloc(arg * sizeof(*keywords));
-    values = palloc(arg * sizeof(*values));
+    keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
+    values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
     initStringInfo(&buf);
     appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, group);
     arg = 0;
@@ -653,7 +651,7 @@ void work_worker(Datum main_arg); void work_worker(Datum main_arg) {
     ShutdownRequestPending = ShutdownRequestPending || work_init(&work);
     while (!ShutdownRequestPending) {
         int nevents = queue_size(&work.queue) + 2;
-        WaitEvent *events = palloc0(nevents * sizeof(*events));
+        WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);

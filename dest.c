@@ -87,7 +87,7 @@ static void rShutdown(DestReceiver *self) { }
 static void rDestroy(DestReceiver *self) { }
 
 DestReceiver *CreateDestReceiverMy(Task *task) {
-    DestReceiverMy *self = (DestReceiverMy *)palloc0(sizeof(*self));
+    DestReceiverMy *self = (DestReceiverMy *)MemoryContextAllocZero(TopMemoryContext, sizeof(*self));
     self->pub.receiveSlot = receiveSlot;
     self->pub.rStartup = rStartup;
     self->pub.rShutdown = rShutdown;

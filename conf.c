@@ -190,7 +190,7 @@ void conf_worker(Datum main_arg); void conf_worker(Datum main_arg) {
     conf_check(&work);
     while (!ShutdownRequestPending) {
         int nevents = queue_size(&work.queue) + 2;
-        WaitEvent *events = palloc0(nevents * sizeof(*events));
+        WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
