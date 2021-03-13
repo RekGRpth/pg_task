@@ -190,19 +190,28 @@ void conf_worker(Datum main_arg) {
     MemSet(&work, 0, sizeof(work));
     conf_init(&work);
     while (!ShutdownRequestPending) {
-        int nevents = queue_size(&work.queue) + 2;
-        WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
-        WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
+        WaitEvent *events;
+        WaitEventSet *set;
+        int nevents = 2;
+        queue_each(&work.queue, queue) {
+            Task *task = queue_data(queue, Task, queue);
+            if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0"); continue; }
+            nevents++;
+        }
+        events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
+        set = CreateWaitEventSet(TopMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
         queue_each(&work.queue, queue) {
             Task *task = queue_data(queue, Task, queue);
+            int fd = PQsocket(task->conn);
+            if (fd < 0) continue;
             if (task->events & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
                 case 0: /*D1("PQflush = 0");*/ break;
                 case 1: D1("PQflush = 1"); break;
                 default: D1("PQflush = default"); break;
             }
-            AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, task->fd, NULL, task);
+            AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, fd, NULL, task);
         }
         nevents = WaitEventSetWait(set, work.timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
