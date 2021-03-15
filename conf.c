@@ -227,4 +227,5 @@ void conf_worker(Datum main_arg) {
         FreeWaitEventSet(set);
         pfree(events);
     }
+    work_fini(&work);
 }
