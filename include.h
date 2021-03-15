@@ -122,6 +122,7 @@ void task_delete(Task *task);
 void task_repeat(Task *task);
 void task_worker(Datum main_arg);
 void work_error(Task *task, const char *msg);
+void work_fini(Work *work);
 void work_socket(Task *task);
 void work_timeout(Work *work);
 void work_worker(Datum main_arg);

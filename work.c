@@ -164,6 +164,13 @@ void work_error(Task *task, const char *msg) {
     work_finish(task);
 }
 
+void work_fini(Work *work) {
+    queue_each(&work->queue, queue) {
+        Task *task = queue_data(queue, Task, queue);
+        work_finish(task);
+    }
+}
+
 static void work_error2(Task *task, const char *msg, const char *err) {
     initStringInfo(&task->output);
     appendStringInfoString(&task->output, msg);
@@ -685,4 +692,5 @@ void work_worker(Datum main_arg) {
         FreeWaitEventSet(set);
         pfree(events);
     }
+    work_fini(&work);
 }
