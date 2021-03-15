@@ -152,25 +152,6 @@ static void work_finish(Task *task) {
     work_free(task);
 }
 
-void work_error(Task *task, const char *msg) {
-    char *err = PQerrorMessage(task->conn);
-    int len = strlen(err);
-    initStringInfo(&task->output);
-    appendStringInfoString(&task->output, msg);
-    if (len) appendStringInfo(&task->output, " and %.*s", len - 1, err);
-    W(task->output.data);
-    task->fail = true;
-    task_done(task);
-    work_finish(task);
-}
-
-void work_fini(Work *work) {
-    queue_each(&work->queue, queue) {
-        Task *task = queue_data(queue, Task, queue);
-        work_finish(task);
-    }
-}
-
 static void work_error2(Task *task, const char *msg, const char *err) {
     initStringInfo(&task->output);
     appendStringInfoString(&task->output, msg);
@@ -182,6 +163,17 @@ static void work_error2(Task *task, const char *msg, const char *err) {
     task->fail = true;
     task_done(task);
     work_free(task);
+}
+
+void work_error(Task *task, const char *msg) {
+    work_error2(task, msg, PQerrorMessage(task->conn));
+}
+
+void work_fini(Work *work) {
+    queue_each(&work->queue, queue) {
+        Task *task = queue_data(queue, Task, queue);
+        work_error(task, "ShutdownRequestPending");
+    }
 }
 
 static void work_remote(Work *work, const int64 id, char *group, char *remote, const int max) {
