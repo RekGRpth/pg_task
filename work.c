@@ -201,7 +201,7 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
         if (!strcmp(opt->keyword, "options")) { options = opt->val; continue; }
         arg++;
     }
-    if (!superuser() && !password) { work_error(task, "!superuser && !password", NULL); return; }
+    if (!superuser() && !password) { work_error(task, "!superuser && !password", NULL); PQconninfoFree(opts); return; }
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
     initStringInfo(&buf);
