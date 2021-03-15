@@ -646,6 +646,11 @@ void work_worker(Datum main_arg) {
     work_conf(&work);
     ShutdownRequestPending = ShutdownRequestPending || work_init(&work);
     while (!ShutdownRequestPending) {
+        fsec_t fsec;
+        int hour;
+        int min;
+        int sec;
+        int timeout = work.timeout * 1000;
         WaitEvent *events;
         WaitEventSet *set;
         int nevents = 2;
@@ -669,7 +674,12 @@ void work_worker(Datum main_arg) {
             }
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, fd, NULL, task);
         }
-        nevents = WaitEventSetWait(set, work.timeout, events, nevents, PG_WAIT_EXTENSION);
+        dt2time(GetCurrentTimestamp(), &hour, &min, &sec, &fsec);
+        timeout -= fsec;
+        if (work.timeout > 1000 && timeout > sec * 1000 * 1000) timeout -= sec * 1000 * 1000;
+        if (work.timeout > 60 * 1000 && timeout > min * 60 * 1000 * 1000) timeout -= min * 60 * 1000 * 1000;
+        if (work.timeout > 60 * 60 * 1000 && timeout > hour * 60 * 60 * 1000 * 1000) timeout -= hour * 60 * 60 * 1000 * 1000;
+        nevents = WaitEventSetWait(set, timeout / 1000, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) ShutdownRequestPending = ShutdownRequestPending || work_latch();
