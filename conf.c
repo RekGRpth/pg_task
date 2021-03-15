@@ -195,7 +195,7 @@ void conf_worker(Datum main_arg) {
         int nevents = 2;
         queue_each(&work.queue, queue) {
             Task *task = queue_data(queue, Task, queue);
-            if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0"); continue; }
+            if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0", PQerrorMessage(task->conn)); continue; }
             nevents++;
         }
         events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
