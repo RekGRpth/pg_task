@@ -153,14 +153,17 @@ static void work_finish(Task *task) {
 }
 
 void work_error(Task *task, const char *msg, const char *err) {
-    initStringInfo(&task->error);
-    appendStringInfoString(&task->error, msg);
+    if (!task->output.data) initStringInfo(&task->output);
+    if (!task->error.data) initStringInfo(&task->error);
+    appendStringInfo(&task->error, "%s%s", task->error.len ? "\n" : "", msg);
     if (err) {
         int len = strlen(err);
         if (len) appendStringInfo(&task->error, " and %.*s", len - 1, err);
     }
     W(task->error.data);
+    appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
     task->fail = true;
+    task->skip++;
     task_done(task);
     work_free(task);
 }
