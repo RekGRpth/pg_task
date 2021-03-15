@@ -153,13 +153,13 @@ static void work_finish(Task *task) {
 }
 
 void work_error(Task *task, const char *msg, const char *err) {
-    initStringInfo(&task->output);
-    appendStringInfoString(&task->output, msg);
+    initStringInfo(&task->error);
+    appendStringInfoString(&task->error, msg);
     if (err) {
         int len = strlen(err);
-        if (len) appendStringInfo(&task->output, " and %.*s", len - 1, err);
+        if (len) appendStringInfo(&task->error, " and %.*s", len - 1, err);
     }
-    W(task->output.data);
+    W(task->error.data);
     task->fail = true;
     task_done(task);
     work_free(task);
