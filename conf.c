@@ -2,32 +2,6 @@
 
 extern char *default_null;
 
-static void conf_user(const char *user) {
-    StringInfoData buf;
-    const char *user_quote = quote_identifier(user);
-    List *names;
-    D1("user = %s", user);
-    initStringInfo(&buf);
-    appendStringInfo(&buf, "CREATE ROLE %s WITH LOGIN", user_quote);
-    names = stringToQualifiedNameList(user_quote);
-    SPI_start_transaction_my(buf.data);
-    if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
-        CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
-        ParseState *pstate = make_parsestate(NULL);
-        stmt->role = (char *)user;
-        stmt->options = list_make1(makeDefElem("canlogin", (Node *)makeInteger(1), -1));
-        pstate->p_sourcetext = buf.data;
-        CreateRole(pstate, stmt);
-        list_free_deep(stmt->options);
-        free_parsestate(pstate);
-        pfree(stmt);
-    } else D1("user %s already exists", user_quote);
-    SPI_commit_my();
-    list_free_deep(names);
-    if (user_quote != user) pfree((void *)user_quote);
-    pfree(buf.data);
-}
-
 static void conf_data(const char *user, const char *data) {
     StringInfoData buf;
     const char *user_quote = quote_identifier(user);
@@ -56,6 +30,32 @@ static void conf_data(const char *user, const char *data) {
     pfree(buf.data);
 }
 
+static void conf_user(const char *user) {
+    StringInfoData buf;
+    const char *user_quote = quote_identifier(user);
+    List *names;
+    D1("user = %s", user);
+    initStringInfo(&buf);
+    appendStringInfo(&buf, "CREATE ROLE %s WITH LOGIN", user_quote);
+    names = stringToQualifiedNameList(user_quote);
+    SPI_start_transaction_my(buf.data);
+    if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
+        CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
+        ParseState *pstate = make_parsestate(NULL);
+        stmt->role = (char *)user;
+        stmt->options = list_make1(makeDefElem("canlogin", (Node *)makeInteger(1), -1));
+        pstate->p_sourcetext = buf.data;
+        CreateRole(pstate, stmt);
+        list_free_deep(stmt->options);
+        free_parsestate(pstate);
+        pfree(stmt);
+    } else D1("user %s already exists", user_quote);
+    SPI_commit_my();
+    list_free_deep(names);
+    if (user_quote != user) pfree((void *)user_quote);
+    pfree(buf.data);
+}
+
 static void conf_work(const char *user, const char *data, const char *schema, const char *table, const int reset, const int timeout) {
     BackgroundWorkerHandle *handle;
     pid_t pid;
@@ -63,6 +63,8 @@ static void conf_work(const char *user, const char *data, const char *schema, co
     int user_len = strlen(user), data_len = strlen(data), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), reset_len = sizeof(reset), timeout_len = sizeof(timeout);
     BackgroundWorker worker;
     char *p = worker.bgw_extra;
+    conf_user(user);
+    conf_data(user, data);
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", user, data, schema ? schema : default_null, table, reset, timeout);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -142,8 +144,6 @@ static void conf_check(Work *work) {
             work->timeout = timeout;
             if (work_init(work)) work->timeout = -1;
         } else {
-            conf_user(user);
-            conf_data(user, data);
             work->timeout = -1;
             conf_work(user, data, schema, table, reset, timeout);
         }
