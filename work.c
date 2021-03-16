@@ -304,6 +304,8 @@ static void work_update(Work *work) {
     ArrayType *pids = NULL;
     static SPI_plan *plan = NULL;
     static char *command = NULL;
+    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
+    StaticAssertStmt(countof(argtypes) == countof(nulls), "countof(argtypes) == countof(values)");
     if (!command) {
         StringInfoData buf;
         initStringInfo(&buf);
@@ -348,14 +350,13 @@ void work_timeout(Work *work) {
         initStringInfo(&buf);
         appendStringInfo(&buf,
             "WITH s AS (WITH s AS (WITH s AS (WITH s AS (WITH s AS (\n"
-            "SELECT      id, \"group\", COALESCE(max, ~(1<<31)) AS max, a.pid\n"
+            "SELECT      t.id, t.group, COALESCE(t.max, ~(1<<31)) AS max, a.pid\n"
             "FROM        %1$s AS t\n"
-            "LEFT JOIN   pg_stat_activity AS a\n"
-            "ON          datname = current_catalog\n"
-            "AND         usename = current_user\n"
-            "AND         application_name = concat_ws(' ', 'pg_task', current_setting('pg_task.schema', true), current_setting('pg_task.table', false), \"group\")\n"
+            "LEFT JOIN   %1$s AS a\n"
+            "ON          a.state = 'WORK'::%2$s\n"
+            "AND         t.group = a.group\n"
             "WHERE       t.state = 'PLAN'::%2$s\n"
-            "AND         dt + concat_ws(' ', (CASE WHEN max < 0 THEN -max ELSE 0 END)::text, 'msec')::interval <= current_timestamp\n"
+            "AND         t.dt + concat_ws(' ', (CASE WHEN t.max < 0 THEN -t.max ELSE 0 END)::text, 'msec')::interval <= current_timestamp\n"
             ") SELECT id, \"group\", CASE WHEN max > 0 THEN max ELSE 1 END - count(pid) AS count FROM s GROUP BY id, \"group\", max\n"
             ") SELECT array_agg(id ORDER BY id) AS id, \"group\", count FROM s WHERE count > 0 GROUP BY \"group\", count\n"
             ") SELECT unnest(id[:count]) AS id, \"group\", count FROM s ORDER BY count DESC\n"
