@@ -351,7 +351,7 @@ void work_timeout(Work *work) {
         char *group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
         char *remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
         D1("row = %lu, id = %li, group = %s, remote = %s, max = %i", row, id, group, remote ? remote : default_null, max);
-        if (remote) work_remote(work, id, group, remote, max); else work_task(work, id, group, max);
+        remote ? work_remote(work, id, group, remote, max) : work_task(work, id, group, max);
         pfree(group);
         if (remote) pfree(remote);
     }
@@ -581,7 +581,7 @@ static void work_repeat(Task *task) {
     task->output.data = NULL;
     if (task->error.data) pfree(task->error.data);
     task->error.data = NULL;
-    if (!task->live || task_live(task)) work_finish(task); else work_query(task);
+    (!task->live || task_live(task)) ? work_finish(task) : work_query(task);
 }
 
 static void work_result(Task *task) {
@@ -621,7 +621,7 @@ static void work_connect(Task *task) {
         case PGRES_POLLING_WRITING: D1("PQconnectPoll == PGRES_POLLING_WRITING"); task->events = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
-        if (!(task->pid = PQbackendPID(task->conn))) work_error(task, "!PQbackendPID", PQerrorMessage(task->conn)); else work_query(task);
+        !(task->pid = PQbackendPID(task->conn)) ? work_error(task, "!PQbackendPID", PQerrorMessage(task->conn)) : work_query(task);
     }
 }
 

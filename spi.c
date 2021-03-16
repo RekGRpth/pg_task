@@ -2,7 +2,7 @@
 
 void SPI_start_transaction_my(const char *src) {
     SPI_start_transaction();
-    if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else disable_timeout(STATEMENT_TIMEOUT, false);
+    StatementTimeout > 0 ? enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout) : disable_timeout(STATEMENT_TIMEOUT, false);
     pgstat_report_activity(STATE_RUNNING, src);
 }
 
