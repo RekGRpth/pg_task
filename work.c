@@ -331,9 +331,11 @@ static void work_update(Work *work) {
             pid[i] = Int32GetDatum(task->pid);
             i++;
         }
-        pids = construct_array(pid, i, INT4OID, sizeof(int), true, TYPALIGN_INT);
-        values[0] = PointerGetDatum(pids);
-        nulls[0] = ' ';
+        if (i) {
+            pids = construct_array(pid, i, INT4OID, sizeof(int), true, TYPALIGN_INT);
+            values[0] = PointerGetDatum(pids);
+            nulls[0] = ' ';
+        }
     }
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE, true);
     SPI_finish_my();
