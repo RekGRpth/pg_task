@@ -152,7 +152,7 @@ static void work_finish(Task *task) {
     work_free(task);
 }
 
-void work_error(Task *task, const char *msg, const char *err) {
+void work_error(Task *task, const char *msg, const char *err, bool finish) {
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
     appendStringInfo(&task->error, "%s%s", task->error.len ? "\n" : "", msg);
@@ -165,13 +165,13 @@ void work_error(Task *task, const char *msg, const char *err) {
     task->fail = true;
     task->skip++;
     task_done(task);
-    work_free(task);
+    finish ? work_finish(task) : work_free(task);
 }
 
 void work_fini(Work *work) {
     queue_each(&work->queue, queue) {
         Task *task = queue_data(queue, Task, queue);
-        work_error(task, "ShutdownRequestPending", NULL);
+        work_error(task, "ShutdownRequestPending", NULL, true);
     }
 }
 
@@ -191,7 +191,7 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     task->max = max;
     task->work = work;
     D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->oid);
-    if (!opts) { work_error(task, "!PQconninfoParse", err); if (err) PQfreemem(err); return; }
+    if (!opts) { work_error(task, "!PQconninfoParse", err, true); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
         D1("%s = %s", opt->keyword, opt->val);
@@ -201,7 +201,7 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
         if (!strcmp(opt->keyword, "options")) { options = opt->val; continue; }
         arg++;
     }
-    if (!superuser() && !password) { work_error(task, "!superuser && !password", NULL); PQconninfoFree(opts); return; }
+    if (!superuser() && !password) { work_error(task, "!superuser && !password", NULL, true); PQconninfoFree(opts); return; }
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
     initStringInfoMy(TopMemoryContext, &buf);
@@ -235,10 +235,10 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     task->events = WL_SOCKET_WRITEABLE;
     task->start = GetCurrentTimestamp();
     queue_insert_tail(&work->queue, &task->queue);
-    if (!(task->conn = PQconnectStartParams(keywords, values, false))) work_error(task, "!PQconnectStartParams", PQerrorMessage(task->conn));
-    else if (PQstatus(task->conn) == CONNECTION_BAD) work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn));
-    else if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) work_error(task, "PQsetnonblocking == -1", PQerrorMessage(task->conn));
-    else if (!superuser() && !PQconnectionUsedPassword(task->conn)) work_error(task, "!superuser && !PQconnectionUsedPassword", PQerrorMessage(task->conn));
+    if (!(task->conn = PQconnectStartParams(keywords, values, false))) work_error(task, "!PQconnectStartParams", PQerrorMessage(task->conn), true);
+    else if (PQstatus(task->conn) == CONNECTION_BAD) work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true);
+    else if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) work_error(task, "PQsetnonblocking == -1", PQerrorMessage(task->conn), true);
+    else if (!superuser() && !PQconnectionUsedPassword(task->conn)) work_error(task, "!superuser && !PQconnectionUsedPassword", PQerrorMessage(task->conn), true);
     else if (PQclientEncoding(task->conn) != GetDatabaseEncoding()) PQsetClientEncoding(task->conn, GetDatabaseEncodingName());
     pfree(buf.data);
     pfree(buf2.data);
@@ -588,7 +588,7 @@ static void work_query(Task *task) {
     appendStringInfoString(&buf, task->input);
     pfree(task->input);
     task->input = buf.data;
-    if (!PQsendQuery(task->conn, task->input)) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn)); else {
+    if (!PQsendQuery(task->conn, task->input)) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); else {
         pfree(task->input);
         task->input = NULL;
         task->events = WL_SOCKET_WRITEABLE;
@@ -596,7 +596,7 @@ static void work_query(Task *task) {
 }
 
 static void work_repeat(Task *task) {
-    if (PQtransactionStatus(task->conn) != PQTRANS_IDLE) { if (!PQsendQuery(task->conn, "COMMIT")) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn)); else task->events = WL_SOCKET_WRITEABLE; return; }
+    if (PQtransactionStatus(task->conn) != PQTRANS_IDLE) { if (!PQsendQuery(task->conn, "COMMIT")) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); else task->events = WL_SOCKET_WRITEABLE; return; }
     if (task_done(task)) { work_finish(task); return; }
     D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
     if (task->repeat) task_repeat(task);
@@ -623,7 +623,7 @@ static void work_connect(Task *task) {
     switch (PQstatus(task->conn)) {
         case CONNECTION_AUTH_OK: D1("PQstatus == CONNECTION_AUTH_OK"); break;
         case CONNECTION_AWAITING_RESPONSE: D1("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
-        case CONNECTION_BAD: D1("PQstatus == CONNECTION_BAD"); work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn)); return;
+        case CONNECTION_BAD: D1("PQstatus == CONNECTION_BAD"); work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); return;
 #if (PG_VERSION_NUM >= 130000)
         case CONNECTION_CHECK_TARGET: D1("PQstatus == CONNECTION_CHECK_TARGET"); break;
 #endif
@@ -639,19 +639,19 @@ static void work_connect(Task *task) {
     }
     if (!connected) switch (PQconnectPoll(task->conn)) {
         case PGRES_POLLING_ACTIVE: D1("PQconnectPoll == PGRES_POLLING_ACTIVE"); break;
-        case PGRES_POLLING_FAILED: D1("PQconnectPoll == PGRES_POLLING_FAILED"); work_error(task, "PQconnectPoll == PGRES_POLLING_FAILED", PQerrorMessage(task->conn)); return;
+        case PGRES_POLLING_FAILED: D1("PQconnectPoll == PGRES_POLLING_FAILED"); work_error(task, "PQconnectPoll == PGRES_POLLING_FAILED", PQerrorMessage(task->conn), true); return;
         case PGRES_POLLING_OK: D1("PQconnectPoll == PGRES_POLLING_OK"); connected = true; break;
         case PGRES_POLLING_READING: D1("PQconnectPoll == PGRES_POLLING_READING"); task->events = WL_SOCKET_READABLE; break;
         case PGRES_POLLING_WRITING: D1("PQconnectPoll == PGRES_POLLING_WRITING"); task->events = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
-        !(task->pid = PQbackendPID(task->conn)) ? work_error(task, "!PQbackendPID", PQerrorMessage(task->conn)) : work_query(task);
+        !(task->pid = PQbackendPID(task->conn)) ? work_error(task, "!PQbackendPID", PQerrorMessage(task->conn), true) : work_query(task);
     }
 }
 
 void work_socket(Task *task) {
     if (PQstatus(task->conn) != CONNECTION_OK) work_connect(task); else {
-        if (!PQconsumeInput(task->conn)) work_error(task, "!PQconsumeInput", PQerrorMessage(task->conn));
+        if (!PQconsumeInput(task->conn)) work_error(task, "!PQconsumeInput", PQerrorMessage(task->conn), true);
         else if (PQisBusy(task->conn)) task->events = WL_SOCKET_READABLE;
         else work_result(task);
     }
@@ -674,7 +674,7 @@ void work_worker(Datum main_arg) {
         int nevents = 2;
         queue_each(&work.queue, queue) {
             Task *task = queue_data(queue, Task, queue);
-            if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0", PQerrorMessage(task->conn)); continue; }
+            if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0", PQerrorMessage(task->conn), true); continue; }
             nevents++;
         }
         events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
