@@ -8,7 +8,7 @@ static void conf_data(const char *user, const char *data) {
     const char *data_quote = quote_identifier(data);
     List *names;
     D1("user = %s, data = %s", user, data);
-    initStringInfo(&buf);
+    initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "CREATE DATABASE %s WITH OWNER = %s", data_quote, user_quote);
     names = stringToQualifiedNameList(data_quote);
     SPI_start_transaction_my(buf.data);
@@ -35,7 +35,7 @@ static void conf_user(const char *user) {
     const char *user_quote = quote_identifier(user);
     List *names;
     D1("user = %s", user);
-    initStringInfo(&buf);
+    initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "CREATE ROLE %s WITH LOGIN", user_quote);
     names = stringToQualifiedNameList(user_quote);
     SPI_start_transaction_my(buf.data);
@@ -71,7 +71,7 @@ static void conf_work(const char *user, const char *data, const char *schema, co
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    initStringInfo(&buf);
+    initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfoString(&buf, "pg_task");
     if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_library_name, buf.data, buf.len);

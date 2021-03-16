@@ -18,7 +18,7 @@ static void task_update(Task *task) {
     StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
     if (!command) {
         StringInfoData buf;
-        initStringInfo(&buf);
+        initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %1$s WHERE max < 0 AND dt < current_timestamp AND \"group\" = $" SGROUP " AND state = 'PLAN'::%2$s FOR UPDATE SKIP LOCKED\n)\n"
             "UPDATE %1$s AS u SET dt = current_timestamp FROM s WHERE u.id = s.id", work->schema_table, work->schema_type);
@@ -57,7 +57,7 @@ bool task_done(Task *task) {
     task_update(task);
     if (!command) {
         StringInfoData buf;
-        initStringInfo(&buf);
+        initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " AND state IN ('WORK'::%2$s, 'TAKE'::%2$s) FOR UPDATE\n)\n"
             "UPDATE %1$s AS u SET state = CASE WHEN $" SFAIL " THEN 'FAIL'::%2$s ELSE 'DONE'::%2$s END, stop = current_timestamp, output = $" SOUTPUT ", error = $" SERROR " FROM s WHERE u.id = s.id\n"
@@ -117,7 +117,7 @@ bool task_live(Task *task) {
     if (!command) {
         Work *work = task->work;
         StringInfoData buf;
-        initStringInfo(&buf);
+        initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf,
             "WITH s AS (\n"
             "SELECT  id\n"
@@ -172,14 +172,14 @@ bool task_work(Task *task) {
     }
     if (!task->conn) {
         StringInfoData buf;
-        initStringInfo(&buf);
+        initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf, "%li", task->id);
         set_config_option("pg_task.id", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
         pfree(buf.data);
     }
     if (!command) {
         StringInfoData buf;
-        initStringInfo(&buf);
+        initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %1$s WHERE id = $" SID " AND state = 'TAKE'::%2$s FOR UPDATE)\n"
             "UPDATE  %1$s AS u\n"
@@ -227,7 +227,7 @@ void task_delete(Task *task) {
     if (!command) {
         Work *work = task->work;
         StringInfoData buf;
-        initStringInfo(&buf);
+        initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf, "DELETE FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::%2$s, 'FAIL'::%2$s)", work->schema_table, work->schema_type);
         command = buf.data;
     }
@@ -250,7 +250,7 @@ void task_repeat(Task *task) {
     if (!command) {
         Work *work = task->work;
         StringInfoData buf;
-        initStringInfo(&buf);
+        initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf,
             "INSERT INTO %1$s (parent, dt, \"group\", max, input, timeout, delete, repeat, drift, count, live)\n"
             "SELECT $" SID ", CASE WHEN drift THEN current_timestamp + repeat\n"
@@ -352,18 +352,18 @@ static void task_init(Work *work, Task *task) {
     set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     table_quote = quote_identifier(work->table);
-    initStringInfo(&buf);
+    initStringInfoMy(TopMemoryContext, &buf);
     if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, table_quote);
     work->schema_table = buf.data;
-    initStringInfo(&buf);
+    initStringInfoMy(TopMemoryContext, &buf);
     if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, "state");
     work->schema_type = buf.data;
     work->oid = *(typeof(work->oid) *)p;
     p += sizeof(work->oid);
     D1("oid = %i", work->oid);
-    initStringInfo(&buf);
+    initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "%i", work->oid);
     set_config_option("pg_task.oid", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);

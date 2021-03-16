@@ -41,7 +41,7 @@ static void init_work(void) {
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    initStringInfo(&buf);
+    initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfoString(&buf, "pg_task");
     if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_library_name, buf.data, buf.len);

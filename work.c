@@ -7,7 +7,7 @@ static void work_schema(Work *work) {
     List *names;
     const char *schema_quote = quote_identifier(work->schema);
     D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema, work->table);
-    initStringInfo(&buf);
+    initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "CREATE SCHEMA %s", schema_quote);
     names = stringToQualifiedNameList(schema_quote);
     SPI_connect_my(buf.data);
@@ -27,7 +27,7 @@ static void work_type(Work *work) {
     int32 typmod;
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table);
-    initStringInfo(&buf);
+    initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')", work->schema_type);
     SPI_connect_my(buf.data);
     parseTypeString(work->schema_type, &type, &typmod, true);
@@ -46,7 +46,7 @@ static bool work_table(Work *work) {
     D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->schema_table, work->schema_type);
     if (work->oid) pg_advisory_unlock_int8_my(work->oid);
     set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    initStringInfo(&buf);
+    initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf,
         "CREATE TABLE %1$s (\n"
         "    id bigserial NOT NULL PRIMARY KEY,\n"
@@ -104,12 +104,12 @@ static void work_index(Work *work, const char *index) {
     const char *index_quote = quote_identifier(index);
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, index, work->schema_table);
-    initStringInfo(&name);
+    initStringInfoMy(TopMemoryContext, &name);
     appendStringInfo(&name, "%s_%s_idx", work->table, index);
     name_quote = quote_identifier(name.data);
-    initStringInfo(&buf);
+    initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "CREATE INDEX %s ON %s USING btree (%s)", name_quote, work->schema_table, index_quote);
-    initStringInfo(&idx);
+    initStringInfoMy(TopMemoryContext, &idx);
     if (work->schema) appendStringInfo(&idx, "%s.", schema_quote);
     appendStringInfoString(&idx, name_quote);
     names = stringToQualifiedNameList(idx.data);
@@ -153,8 +153,8 @@ static void work_finish(Task *task) {
 }
 
 void work_error(Task *task, const char *msg, const char *err) {
-    if (!task->output.data) initStringInfo(&task->output);
-    if (!task->error.data) initStringInfo(&task->error);
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
     appendStringInfo(&task->error, "%s%s", task->error.len ? "\n" : "", msg);
     if (err) {
         int len = strlen(err);
@@ -204,12 +204,12 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     if (!superuser() && !password) { work_error(task, "!superuser && !password", NULL); PQconninfoFree(opts); return; }
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
-    initStringInfo(&buf);
+    initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, group);
     arg = 0;
     keywords[arg] = "application_name";
     values[arg] = buf.data;
-    initStringInfo(&buf2);
+    initStringInfoMy(TopMemoryContext, &buf2);
     if (options) appendStringInfoString(&buf2, options);
     appendStringInfo(&buf2, "%s-c pg_task.data=%s", buf2.len ? " " : "", work->data);
     appendStringInfo(&buf2, " -c pg_task.user=%s", work->user);
@@ -261,7 +261,7 @@ static void work_task(const Work *work, const int64 id, char *group, const int m
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    initStringInfo(&buf);
+    initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfoString(&buf, "pg_task");
     if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_library_name, buf.data, buf.len);
@@ -308,7 +308,7 @@ static void work_update(Work *work) {
     StaticAssertStmt(countof(argtypes) == countof(nulls), "countof(argtypes) == countof(values)");
     if (!command) {
         StringInfoData buf;
-        initStringInfo(&buf);
+        initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %1$s AS t WHERE dt < current_timestamp - concat_ws(' ', (current_setting('pg_task.reset', false)::int4 * current_setting('pg_task.timeout', false)::int4)::text, 'msec')::interval AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND pid NOT IN (\n"
             "    SELECT  pid\n"
@@ -349,7 +349,7 @@ void work_timeout(Work *work) {
     work_update(work);
     if (!command) {
         StringInfoData buf;
-        initStringInfo(&buf);
+        initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf,
             "WITH s AS (WITH s AS (WITH s AS (WITH s AS (WITH s AS (\n"
             "SELECT      t.id, t.group, COALESCE(t.max, ~(1<<31)) AS max, a.pid\n"
@@ -458,7 +458,7 @@ bool work_init(Work *work) {
     work_index(work, "state");
     set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    initStringInfo(&buf);
+    initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "%i", work->reset);
     set_config_option("pg_task.reset", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     resetStringInfo(&buf);
@@ -484,13 +484,13 @@ static bool work_latch(void) {
 
 static void work_command(Task *task, PGresult *result) {
     if (task->skip) { task->skip--; return; }
-    if (!task->output.data) initStringInfo(&task->output);
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     appendStringInfo(&task->output, "%s%s", task->output.len ? "\n" : "", PQcmdStatus(result));
 }
 
 static void work_success(Task *task, PGresult *result) {
     if (task->length == 1 && !PQntuples(result)) return;
-    if (!task->output.data) initStringInfo(&task->output);
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (task->header && (task->length > 1 || PQnfields(result) > 1)) {
         if (task->output.len) appendStringInfoString(&task->output, "\n");
         for (int col = 0; col < PQnfields(result); col++) {
@@ -536,8 +536,8 @@ static void work_success(Task *task, PGresult *result) {
 
 static void work_fail(Task *task, PGresult *result) {
     char *value;
-    if (!task->output.data) initStringInfo(&task->output);
-    if (!task->error.data) initStringInfo(&task->error);
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
     if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->error, "%sseverity%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
     if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY_NONLOCALIZED))) appendStringInfo(&task->error, "%sseverity_nonlocalized%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
     if ((value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&task->error, "%ssqlstate%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
@@ -573,7 +573,7 @@ static void work_query(Task *task) {
     PG_CATCH();
         FlushErrorState();
     PG_END_TRY();
-    initStringInfo(&buf);
+    initStringInfoMy(TopMemoryContext, &buf);
     task->skip = 0;
     appendStringInfo(&buf, "SET \"pg_task.id\" = %li;\n", task->id);
     task->skip++;
