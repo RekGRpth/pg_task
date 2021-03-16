@@ -348,8 +348,8 @@ void work_timeout(Work *work) {
     for (uint64 row = 0; row < SPI_processed; row++) {
         int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
         int max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "max", false));
-        char *group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
-        char *remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
+        char *group = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
+        char *remote = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
         D1("row = %lu, id = %li, group = %s, remote = %s, max = %i", row, id, group, remote ? remote : default_null, max);
         remote ? work_remote(work, id, group, remote, max) : work_task(work, id, group, max);
         pfree(group);

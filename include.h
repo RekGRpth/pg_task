@@ -93,7 +93,7 @@ bool task_done(Task *task);
 bool task_live(Task *task);
 bool task_work(Task *task);
 bool work_init(Work *work);
-char *TextDatumGetCStringMy(Datum datum);
+char *TextDatumGetCStringMy(MemoryContext memoryContext, Datum datum);
 const char *PQftypeMy(Oid oid);
 const char *PQftypeMy(Oid oid);
 Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null);

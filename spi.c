@@ -1,9 +1,5 @@
 #include "include.h"
 
-char *TextDatumGetCStringMy(Datum datum) {
-    return datum ? TextDatumGetCString(datum) : NULL;
-}
-
 Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null) {
     bool isnull;
     Datum datum = SPI_getbinval(tuple, tupdesc, SPI_fnumber(tupdesc, fname), &isnull);
