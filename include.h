@@ -109,6 +109,7 @@ void EndCommandMy(const char *commandTag, Task *task);
 void conf_worker(Datum main_arg);
 void exec_simple_query_my(Task *task);
 void init_escape(StringInfoData *buf, const char *data, int len, char escape);
+void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf);
 void NullCommandMy(Task *task);
 void _PG_init(void);
 void ReadyForQueryMy(Task *task);

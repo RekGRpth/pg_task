@@ -38,11 +38,7 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     TupleDesc typeinfo = slot->tts_tupleDescriptor;
     DestReceiverMy *my = (DestReceiverMy *)self;
     Task *task = my->task;
-    if (!task->output.data) {
-        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-        initStringInfo(&task->output);
-        MemoryContextSwitchTo(oldMemoryContext);
-    }
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (task->header && !my->row && typeinfo->natts > 1 && task->length == 1) headers(typeinfo, task);
     if (task->output.len) appendStringInfoString(&task->output, "\n");
     for (int col = 1; col <= typeinfo->natts; col++) {
@@ -71,11 +67,7 @@ static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
     DestReceiverMy *my = (DestReceiverMy *)self;
     Task *task = my->task;
     if (task->header && task->length > 1) {
-        if (!task->output.data) {
-            MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-            initStringInfo(&task->output);
-            MemoryContextSwitchTo(oldMemoryContext);
-        }
+        if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
         headers(typeinfo, task);
     }
     my->row = 0;
@@ -120,11 +112,7 @@ void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
     D1(completionTag);
     if (task->skip) task->skip = 0; else {
-        if (!task->output.data) {
-            MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-            initStringInfo(&task->output);
-            MemoryContextSwitchTo(oldMemoryContext);
-        }
+        if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
         if (task->output.len) appendStringInfoString(&task->output, "\n");
         appendStringInfoString(&task->output, completionTag);
     }
@@ -133,11 +121,7 @@ void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_
 void EndCommandMy(const char *commandTag, Task *task) {
     D1(commandTag);
     if (task->skip) task->skip = 0; else {
-        if (!task->output.data) {
-            MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-            initStringInfo(&task->output);
-            MemoryContextSwitchTo(oldMemoryContext);
-        }
+        if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
         if (task->output.len) appendStringInfoString(&task->output, "\n");
         appendStringInfoString(&task->output, commandTag);
     }

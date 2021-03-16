@@ -43,11 +43,7 @@ static void capture_stderr_stop(Task *task) {
 	if (close(stderr_fd) < 0) E("close < 0");
 	if (close(pipes[WRITE]) < 0) E("close < 0");
 	while ((nread = read(pipes[READ], buffer, sizeof(buffer))) > 0) {
-		if (!task->error.data) {
-			MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-			initStringInfo(&task->error);
-			MemoryContextSwitchTo(oldMemoryContext);
-		}
+		if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
 		buffer[nread] = '\0';
 		appendStringInfoString(&task->error, buffer);
 		if (fwrite(buffer, nread, 1, stderr) != 1) E("fwrite");

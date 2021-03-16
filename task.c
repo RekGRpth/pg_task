@@ -272,9 +272,9 @@ void task_repeat(Task *task) {
 static void task_fail(Task *task) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
-    if (!task->output.data) initStringInfo(&task->output);
-    if (!task->error.data) initStringInfo(&task->error);
     MemoryContextSwitchTo(oldMemoryContext);
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
     if (edata->elevel) appendStringInfo(&task->error, "%selevel%s%c%i", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->elevel);
     if (edata->output_to_server) appendStringInfo(&task->error, "%soutput_to_server%s%ctrue", task->error.len ? "\n" : "", task->append ? "::bool" : "", task->delimiter);
     if (edata->output_to_client) appendStringInfo(&task->error, "%soutput_to_client%s%ctrue", task->error.len ? "\n" : "", task->append ? "::bool" : "", task->delimiter);

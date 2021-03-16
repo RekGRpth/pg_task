@@ -348,10 +348,8 @@ void work_timeout(Work *work) {
     for (uint64 row = 0; row < SPI_processed; row++) {
         int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
         int max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "max", false));
-        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
         char *group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
         char *remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
-        MemoryContextSwitchTo(oldMemoryContext);
         D1("row = %lu, id = %li, group = %s, remote = %s, max = %i", row, id, group, remote ? remote : default_null, max);
         if (remote) work_remote(work, id, group, remote, max); else work_task(work, id, group, max);
         pfree(group);
@@ -416,16 +414,12 @@ bool work_init(Work *work) {
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     const char *table_quote = quote_identifier(work->table);
     StringInfoData buf;
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    initStringInfo(&buf);
-    MemoryContextSwitchTo(oldMemoryContext);
+    initStringInfoMy(TopMemoryContext, &buf);
     if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, table_quote);
     if (work->schema_table) pfree(work->schema_table);
     work->schema_table = buf.data;
-    oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    initStringInfo(&buf);
-    MemoryContextSwitchTo(oldMemoryContext);
+    initStringInfoMy(TopMemoryContext, &buf);
     if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, "state");
     if (work->schema_type) pfree(work->schema_type);
