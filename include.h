@@ -41,6 +41,7 @@
 typedef struct _SPI_plan SPI_plan;
 
 typedef struct Work {
+    ArrayType *pids;
     char *data;
     char *schema;
     char *schema_table;

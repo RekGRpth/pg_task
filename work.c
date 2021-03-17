@@ -146,9 +146,28 @@ static void work_free(Task *task) {
     pfree(task);
 }
 
+static void work_pid(Work *work) {
+    Datum *pid;
+    int i = queue_size(&work->queue);
+    if (work->pids) pfree(work->pids);
+    work->pids = NULL;
+    if (!i) return;
+    pid = MemoryContextAlloc(TopMemoryContext, i * sizeof(*pid));
+    queue_each(&work->queue, queue) {
+        Task *task = queue_data(queue, Task, queue);
+        if (!task->pid) continue;
+        pid[i] = Int32GetDatum(task->pid);
+        i++;
+    }
+    if (i) work->pids = construct_array(pid, i, INT4OID, sizeof(int), true, TYPALIGN_INT);
+    pfree(pid);
+}
+
 static void work_finish(Task *task) {
+    Work *work = task->work;
     queue_remove(&task->queue);
     PQfinish(task->conn);
+    work_pid(work);
     work_free(task);
 }
 
@@ -298,9 +317,8 @@ static void work_task(const Work *work, const int64 id, char *group, const int m
 
 static void work_update(Work *work) {
     static Oid argtypes[] = {INT4ARRAYOID};
-    Datum values[] = {(Datum)NULL};
-    char nulls[] = {'n'};
-    ArrayType *pids = NULL;
+    Datum values[] = {work->pids ? PointerGetDatum(work->pids) : (Datum)NULL};
+    char nulls[] = {work->pids ? ' ' : 'n'};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
@@ -320,26 +338,9 @@ static void work_update(Work *work) {
         command = buf.data;
     }
     SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, 1, argtypes);
-    if (queue_size(&work->queue)) {
-        int i = 0;
-        Datum *pid = MemoryContextAlloc(TopMemoryContext, queue_size(&work->queue) * sizeof(*pid));
-        queue_each(&work->queue, queue) {
-            Task *task = queue_data(queue, Task, queue);
-            if (!task->pid) continue;
-            pid[i] = Int32GetDatum(task->pid);
-            i++;
-        }
-        if (i) {
-            pids = construct_array(pid, i, INT4OID, sizeof(int), true, TYPALIGN_INT);
-            values[0] = PointerGetDatum(pids);
-            nulls[0] = ' ';
-        }
-        pfree(pid);
-    }
+    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE, true);
     SPI_finish_my();
-    if (pids) pfree(pids);
 }
 
 void work_timeout(Work *work) {
@@ -644,7 +645,10 @@ static void work_connect(Task *task) {
         case PGRES_POLLING_WRITING: D1("PQconnectPoll == PGRES_POLLING_WRITING"); task->events = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
-        !(task->pid = PQbackendPID(task->conn)) ? work_error(task, "!PQbackendPID", PQerrorMessage(task->conn), true) : work_query(task);
+        Work *work = task->work;
+        if(!(task->pid = PQbackendPID(task->conn))) { work_error(task, "!PQbackendPID", PQerrorMessage(task->conn), true); return; }
+        work_pid(work);
+        work_query(task);
     }
 }
 
