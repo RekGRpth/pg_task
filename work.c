@@ -147,20 +147,25 @@ static void work_free(Task *task) {
 }
 
 static void work_pid(Work *work) {
-    Datum *pid;
-    int i = queue_size(&work->queue);
+    Datum *elems;
+    int nelems = queue_size(&work->queue);
     if (work->pids) pfree(work->pids);
     work->pids = NULL;
-    if (!i) return;
-    pid = MemoryContextAlloc(TopMemoryContext, i * sizeof(*pid));
+    if (!nelems) return;
+    elems = MemoryContextAlloc(TopMemoryContext, nelems * sizeof(*elems));
+    nelems = 0;
     queue_each(&work->queue, queue) {
         Task *task = queue_data(queue, Task, queue);
         if (!task->pid) continue;
-        pid[i] = Int32GetDatum(task->pid);
-        i++;
+        elems[nelems] = Int32GetDatum(task->pid);
+        nelems++;
     }
-    if (i) work->pids = construct_array(pid, i, INT4OID, sizeof(int), true, TYPALIGN_INT);
-    pfree(pid);
+    if (nelems) {
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+        work->pids = construct_array(elems, nelems, INT4OID, sizeof(int), true, TYPALIGN_INT);
+        MemoryContextSwitchTo(oldMemoryContext);
+    }
+    pfree(elems);
 }
 
 static void work_finish(Task *task) {
