@@ -147,25 +147,22 @@ static void work_free(Task *task) {
 }
 
 static void work_pid(Work *work) {
-    Datum *elems;
     int nelems = queue_size(&work->queue);
-    if (work->pids) pfree(work->pids);
-    work->pids = NULL;
+    if (work->pids.data) pfree(work->pids.data);
+    work->pids.data = NULL;
     if (!nelems) return;
-    elems = MemoryContextAlloc(TopMemoryContext, nelems * sizeof(*elems));
+    initStringInfoMy(TopMemoryContext, &work->pids);
+    appendStringInfoString(&work->pids, "{");
     nelems = 0;
     queue_each(&work->queue, queue) {
         Task *task = queue_data(queue, Task, queue);
         if (!task->pid) continue;
-        elems[nelems] = Int32GetDatum(task->pid);
+        if (nelems) appendStringInfoString(&work->pids, ",");
+        appendStringInfo(&work->pids, "%i", task->pid);
         nelems++;
     }
-    if (nelems) {
-        MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-        work->pids = construct_array(elems, nelems, INT4OID, sizeof(int), true, TYPALIGN_INT);
-        MemoryContextSwitchTo(oldMemoryContext);
-    }
-    pfree(elems);
+    appendStringInfoString(&work->pids, "}");
+    D1("pids = %s", work->pids.data);
 }
 
 static void work_finish(Task *task) {
@@ -321,9 +318,9 @@ static void work_task(const Work *work, const int64 id, char *group, const int m
 }
 
 static void work_update(Work *work) {
-    static Oid argtypes[] = {INT4ARRAYOID};
-    Datum values[] = {work->pids ? PointerGetDatum(work->pids) : (Datum)NULL};
-    char nulls[] = {work->pids ? ' ' : 'n'};
+    static Oid argtypes[] = {TEXTOID};
+    Datum values[] = {work->pids.data ? CStringGetTextDatum(work->pids.data) : (Datum)NULL};
+    char nulls[] = {work->pids.data ? ' ' : 'n'};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
@@ -338,7 +335,7 @@ static void work_update(Work *work) {
             "    WHERE   datname = current_catalog\n"
             "    AND     usename = current_user\n"
             "    AND     application_name = concat_ws(' ', 'pg_task', current_setting('pg_task.schema', true), current_setting('pg_task.table', false), \"group\")\n"
-            "    UNION   SELECT unnest($1) AS pid\n"
+            "    UNION   SELECT unnest($1::int4[]) AS pid\n"
             ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::%2$s FROM s WHERE u.id = s.id", work->schema_table, work->schema_type);
         command = buf.data;
     }
@@ -346,6 +343,7 @@ static void work_update(Work *work) {
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE, true);
     SPI_finish_my();
+    if (work->pids.data) pfree((void *)values[0]);
 }
 
 void work_timeout(Work *work) {

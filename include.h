@@ -41,7 +41,6 @@
 typedef struct _SPI_plan SPI_plan;
 
 typedef struct Work {
-    ArrayType *pids;
     char *data;
     char *schema;
     char *schema_table;
@@ -52,6 +51,7 @@ typedef struct Work {
     int timeout;
     Oid oid;
     queue_t queue;
+    StringInfoData pids;
 } Work;
 
 typedef struct Task {
