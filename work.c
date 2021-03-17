@@ -300,7 +300,6 @@ static void work_update(Work *work) {
     static Oid argtypes[] = {INT4ARRAYOID};
     Datum values[] = {(Datum)NULL};
     char nulls[] = {'n'};
-    Datum *pid = NULL;
     ArrayType *pids = NULL;
     static SPI_plan *plan = NULL;
     static char *command = NULL;
@@ -324,7 +323,7 @@ static void work_update(Work *work) {
     if (!plan) plan = SPI_prepare_my(command, 1, argtypes);
     if (queue_size(&work->queue)) {
         int i = 0;
-        pid = MemoryContextAlloc(TopMemoryContext, queue_size(&work->queue) * sizeof(*pid));
+        Datum *pid = MemoryContextAlloc(TopMemoryContext, queue_size(&work->queue) * sizeof(*pid));
         queue_each(&work->queue, queue) {
             Task *task = queue_data(queue, Task, queue);
             if (!task->pid) continue;
@@ -336,11 +335,11 @@ static void work_update(Work *work) {
             values[0] = PointerGetDatum(pids);
             nulls[0] = ' ';
         }
+        pfree(pid);
     }
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE, true);
     SPI_finish_my();
     if (pids) pfree(pids);
-    if (pid) pfree(pid);
 }
 
 void work_timeout(Work *work) {
