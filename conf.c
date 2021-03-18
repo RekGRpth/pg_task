@@ -63,8 +63,6 @@ static void conf_work(const char *user, const char *data, const char *schema, co
     int user_len = strlen(user), data_len = strlen(data), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), reset_len = sizeof(reset), timeout_len = sizeof(timeout);
     BackgroundWorker worker;
     char *p = worker.bgw_extra;
-    conf_user(user);
-    conf_data(user, data);
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", user, data, schema ? schema : default_null, table, reset, timeout);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -118,9 +116,11 @@ static void conf_check(Work *work) {
         "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, reset int4, timeout int4)\n"
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT DISTINCT s.* FROM s\n"
+        ") SELECT DISTINCT s.*, u.usesysid IS NOT NULL AS user_exists, d.oid IS NOT NULL AS data_exists FROM s\n"
         "LEFT JOIN   pg_stat_activity AS a ON a.usename = \"user\" AND a.datname = data AND application_name = concat_ws(' ', 'pg_task', schema, \"table\", reset::text, timeout::text) AND pid != pg_backend_pid()\n"
         "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
+        "LEFT JOIN   pg_database AS d ON d.datname = data AND NOT datistemplate AND datallowconn\n"
+        "LEFT JOIN   pg_user AS u ON u.usename = \"user\"\n"
         "WHERE       a.pid IS NULL";
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
@@ -132,7 +132,9 @@ static void conf_check(Work *work) {
         char *table = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", false));
         int reset = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "reset", false));
         int timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "timeout", false));
-        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", row, user, data, schema ? schema : default_null, table, reset, timeout);
+        bool user_exists = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user_exists", false));
+        bool data_exists = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data_exists", false));
+        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, user_exists = %s, data_exists = %s", row, user, data, schema ? schema : default_null, table, reset, timeout, user_exists ? "true" : "false", data_exists ? "true" : "false");
         if (!strcmp(user, "postgres") && !strcmp(data, "postgres") && !schema && !strcmp(table, "task")) {
             work->user = "postgres";
             work->data = "postgres";
@@ -142,6 +144,8 @@ static void conf_check(Work *work) {
             work->timeout = timeout;
             if (work_init(work)) work->timeout = -1;
         } else {
+            if (!user_exists) conf_user(user);
+            if (!data_exists) conf_data(user, data);
             work->timeout = -1;
             conf_work(user, data, schema, table, reset, timeout);
         }
