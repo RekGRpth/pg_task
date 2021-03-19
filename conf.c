@@ -202,6 +202,7 @@ void conf_worker(Datum main_arg) {
         int nevents = 2;
         queue_each(&work.queue, queue) {
             Task *task = queue_data(queue, Task, queue);
+            if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); continue; }
             if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0", PQerrorMessage(task->conn), true); continue; }
             nevents++;
         }
@@ -211,14 +212,12 @@ void conf_worker(Datum main_arg) {
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
         queue_each(&work.queue, queue) {
             Task *task = queue_data(queue, Task, queue);
-            int fd = PQsocket(task->conn);
-            if (fd < 0) continue;
             if (task->events & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
                 case 0: /*D1("PQflush = 0");*/ break;
                 case 1: D1("PQflush = 1"); break;
                 default: D1("PQflush = default"); break;
             }
-            AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, fd, NULL, task);
+            AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, PQsocket(task->conn), NULL, task);
         }
         dt2time(GetCurrentTimestamp(), &hour, &min, &sec, &fsec);
         timeout -= fsec;
