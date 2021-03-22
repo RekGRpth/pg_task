@@ -664,22 +664,19 @@ void work_socket(Task *task) {
 }
 
 void work_worker(Datum main_arg) {
-    TimestampTz stop = GetCurrentTimestamp(), start = stop;
+    struct timeval start, stop;
     Work work;
+    if (gettimeofday(&start, NULL)) E("gettimeofday and %m");
     MemSet(&work, 0, sizeof(work));
     work_conf(&work);
     ShutdownRequestPending = ShutdownRequestPending || work_init(&work);
     while (!ShutdownRequestPending) {
-        fsec_t fsec;
-        int hour;
-        int min;
-        int sec;
-        int timeout = work.timeout * 1000;
         WaitEvent *events;
         WaitEventSet *set;
         int nevents = 2;
         queue_each(&work.queue, queue) {
             Task *task = queue_data(queue, Task, queue);
+            if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); continue; }
             if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0", PQerrorMessage(task->conn), true); continue; }
             nevents++;
         }
@@ -689,28 +686,21 @@ void work_worker(Datum main_arg) {
         AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
         queue_each(&work.queue, queue) {
             Task *task = queue_data(queue, Task, queue);
-            int fd = PQsocket(task->conn);
-            if (fd < 0) continue;
             if (task->events & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
                 case 0: /*D1("PQflush = 0");*/ break;
                 case 1: D1("PQflush = 1"); break;
                 default: D1("PQflush = default"); break;
             }
-            AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, fd, NULL, task);
+            AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, PQsocket(task->conn), NULL, task);
         }
-        dt2time(GetCurrentTimestamp(), &hour, &min, &sec, &fsec);
-        timeout -= fsec;
-        if (work.timeout > 1000 && timeout > sec * 1000 * 1000) timeout -= sec * 1000 * 1000;
-        if (work.timeout > 60 * 1000 && timeout > min * 60 * 1000 * 1000) timeout -= min * 60 * 1000 * 1000;
-        if (work.timeout > 60 * 60 * 1000 && timeout > hour * 60 * 60 * 1000 * 1000) timeout -= hour * 60 * 60 * 1000 * 1000;
-        nevents = WaitEventSetWait(set, timeout / 1000, events, nevents, PG_WAIT_EXTENSION);
+        nevents = WaitEventSetWait(set, conf_calculate(&work), events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) ShutdownRequestPending = ShutdownRequestPending || work_latch();
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
         }
-        stop = GetCurrentTimestamp();
-        if (work.timeout > 0 && (TimestampDifferenceExceeds(start, stop, work.timeout) || !nevents)) {
+        if (gettimeofday(&stop, NULL)) E("gettimeofday and %m");
+        if (work.timeout > 0 && (conf_timeval_difference_exceeds(start, stop, work.timeout) || !nevents)) {
             work_timeout(&work);
             start = stop;
         }

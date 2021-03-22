@@ -2,6 +2,30 @@
 
 extern char *default_null;
 
+bool conf_timeval_difference_exceeds(struct timeval start, struct timeval stop, int msec) {
+    return ((int64)stop.tv_sec - (int64)start.tv_sec) * USECS_PER_SEC + (int64)stop.tv_usec - (int64)start.tv_usec >= (int64)msec * INT64CONST(1000);
+}
+
+int conf_calculate(Work *work) {
+    int64 hour;
+    int64 min;
+    int64 sec;
+    int64 timeout = work->timeout * INT64CONST(1000);
+    struct timeval tp;
+    if (gettimeofday(&tp, NULL)) E("gettimeofday and %m");
+    sec = (int64)tp.tv_sec - ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY);
+    hour = sec / SECS_PER_HOUR;
+    sec -= hour * SECS_PER_HOUR;
+    min = sec / SECS_PER_MINUTE;
+    sec -= min * SECS_PER_MINUTE;
+    if (work->timeout * INT64CONST(1000) > USECS_PER_HOUR && timeout > (hour *= USECS_PER_HOUR)) timeout -= hour;
+    if (work->timeout * INT64CONST(1000) > USECS_PER_MINUTE && timeout > (min *= USECS_PER_MINUTE)) timeout -= min;
+    if (work->timeout * INT64CONST(1000) > USECS_PER_SEC && timeout > (sec *= USECS_PER_SEC)) timeout -= sec;
+    if (timeout > tp.tv_usec) timeout -= tp.tv_usec;
+    timeout = timeout / INT64CONST(1000);
+    return timeout;
+}
+
 static void conf_data(const char *user, const char *data) {
     StringInfoData buf;
     const char *user_quote = quote_identifier(user);
@@ -187,16 +211,12 @@ static void conf_latch(Work *work) {
 }
 
 void conf_worker(Datum main_arg) {
-    TimestampTz stop = GetCurrentTimestamp(), start = stop;
+    struct timeval start, stop;
     Work work;
+    if (gettimeofday(&start, NULL)) E("gettimeofday and %m");
     MemSet(&work, 0, sizeof(work));
     conf_init(&work);
     while (!ShutdownRequestPending) {
-        fsec_t fsec;
-        int hour;
-        int min;
-        int sec;
-        int timeout = work.timeout * 1000;
         WaitEvent *events;
         WaitEventSet *set;
         int nevents = 2;
@@ -219,19 +239,14 @@ void conf_worker(Datum main_arg) {
             }
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, PQsocket(task->conn), NULL, task);
         }
-        dt2time(GetCurrentTimestamp(), &hour, &min, &sec, &fsec);
-        timeout -= fsec;
-        if (work.timeout > 1000 && timeout > sec * 1000 * 1000) timeout -= sec * 1000 * 1000;
-        if (work.timeout > 60 * 1000 && timeout > min * 60 * 1000 * 1000) timeout -= min * 60 * 1000 * 1000;
-        if (work.timeout > 60 * 60 * 1000 && timeout > hour * 60 * 60 * 1000 * 1000) timeout -= hour * 60 * 60 * 1000 * 1000;
-        nevents = WaitEventSetWait(set, timeout / 1000, events, nevents, PG_WAIT_EXTENSION);
+        nevents = WaitEventSetWait(set, conf_calculate(&work), events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) conf_latch(&work);
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
         }
-        stop = GetCurrentTimestamp();
-        if (work.timeout > 0 && (TimestampDifferenceExceeds(start, stop, work.timeout) || !nevents)) {
+        if (gettimeofday(&stop, NULL)) E("gettimeofday and %m");
+        if (work.timeout > 0 && (conf_timeval_difference_exceeds(start, stop, work.timeout) || !nevents)) {
             work_timeout(&work);
             start = stop;
         }
