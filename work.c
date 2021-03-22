@@ -669,9 +669,9 @@ void work_worker(Datum main_arg) {
     work_conf(&work);
     ShutdownRequestPending = ShutdownRequestPending || work_init(&work);
     while (!ShutdownRequestPending) {
+        int nevents = 2;
         WaitEvent *events;
         WaitEventSet *set;
-        int nevents = 2;
         queue_each(&work.queue, queue) {
             Task *task = queue_data(queue, Task, queue);
             if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); continue; }
@@ -691,10 +691,13 @@ void work_worker(Datum main_arg) {
             }
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, PQsocket(task->conn), NULL, task);
         }
-        if (!(nevents = WaitEventSetWait(set, conf_calculate(&work), events, nevents, PG_WAIT_EXTENSION))) work_timeout(&work); else for (int i = 0; i < nevents; i++) {
-            WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) ShutdownRequestPending = ShutdownRequestPending || work_latch();
-            if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
+        nevents = WaitEventSetWait(set, conf_calculate(&work), events, nevents, PG_WAIT_EXTENSION);
+        if (!ShutdownRequestPending) {
+            if (!nevents) work_timeout(&work); else for (int i = 0; i < nevents; i++) {
+                WaitEvent *event = &events[i];
+                if (event->events & WL_LATCH_SET) ShutdownRequestPending = work_latch();
+                if (event->events & WL_SOCKET_MASK && !ShutdownRequestPending) work_socket(event->user_data);
+            }
         }
         FreeWaitEventSet(set);
         pfree(events);
