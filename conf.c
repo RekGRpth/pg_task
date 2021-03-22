@@ -14,9 +14,9 @@ int conf_calculate(Work *work) {
     sec -= hour * SECS_PER_HOUR;
     min = sec / SECS_PER_MINUTE;
     sec -= min * SECS_PER_MINUTE;
-    if (timeout > (hour *= USECS_PER_HOUR)) timeout -= hour;
-    if (timeout > (min *= USECS_PER_MINUTE)) timeout -= min;
-    if (timeout > (sec *= USECS_PER_SEC)) timeout -= sec;
+    if (timeout > USECS_PER_HOUR && timeout > (hour *= USECS_PER_HOUR)) timeout -= hour;
+    if (timeout > USECS_PER_MINUTE && timeout > (min *= USECS_PER_MINUTE)) timeout -= min;
+    if (timeout > USECS_PER_SEC && timeout > (sec *= USECS_PER_SEC)) timeout -= sec;
     if (timeout > tp.tv_usec) timeout -= tp.tv_usec;
     timeout = timeout / INT64CONST(1000);
     return timeout;
