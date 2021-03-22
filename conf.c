@@ -2,10 +2,6 @@
 
 extern char *default_null;
 
-bool conf_timeval_difference_exceeds(struct timeval start, struct timeval stop, int msec) {
-    return ((int64)stop.tv_sec - (int64)start.tv_sec) * USECS_PER_SEC + (int64)stop.tv_usec - (int64)start.tv_usec >= (int64)msec * INT64CONST(1000);
-}
-
 int conf_calculate(Work *work) {
     int64 hour;
     int64 min;
@@ -18,9 +14,9 @@ int conf_calculate(Work *work) {
     sec -= hour * SECS_PER_HOUR;
     min = sec / SECS_PER_MINUTE;
     sec -= min * SECS_PER_MINUTE;
-    if (work->timeout * INT64CONST(1000) > USECS_PER_HOUR && timeout > (hour *= USECS_PER_HOUR)) timeout -= hour;
-    if (work->timeout * INT64CONST(1000) > USECS_PER_MINUTE && timeout > (min *= USECS_PER_MINUTE)) timeout -= min;
-    if (work->timeout * INT64CONST(1000) > USECS_PER_SEC && timeout > (sec *= USECS_PER_SEC)) timeout -= sec;
+    if (timeout > (hour *= USECS_PER_HOUR)) timeout -= hour;
+    if (timeout > (min *= USECS_PER_MINUTE)) timeout -= min;
+    if (timeout > (sec *= USECS_PER_SEC)) timeout -= sec;
     if (timeout > tp.tv_usec) timeout -= tp.tv_usec;
     timeout = timeout / INT64CONST(1000);
     return timeout;
@@ -211,9 +207,7 @@ static void conf_latch(Work *work) {
 }
 
 void conf_worker(Datum main_arg) {
-    struct timeval start, stop;
     Work work;
-    if (gettimeofday(&start, NULL)) E("gettimeofday and %m");
     MemSet(&work, 0, sizeof(work));
     conf_init(&work);
     while (!ShutdownRequestPending) {
@@ -239,16 +233,10 @@ void conf_worker(Datum main_arg) {
             }
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, PQsocket(task->conn), NULL, task);
         }
-        nevents = WaitEventSetWait(set, conf_calculate(&work), events, nevents, PG_WAIT_EXTENSION);
-        for (int i = 0; i < nevents; i++) {
+        if (!(nevents = WaitEventSetWait(set, conf_calculate(&work), events, nevents, PG_WAIT_EXTENSION))) work_timeout(&work); else for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) conf_latch(&work);
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
-        }
-        if (gettimeofday(&stop, NULL)) E("gettimeofday and %m");
-        if (work.timeout > 0 && (conf_timeval_difference_exceeds(start, stop, work.timeout) || !nevents)) {
-            work_timeout(&work);
-            start = stop;
         }
         FreeWaitEventSet(set);
         pfree(events);

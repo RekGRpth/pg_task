@@ -664,9 +664,7 @@ void work_socket(Task *task) {
 }
 
 void work_worker(Datum main_arg) {
-    struct timeval start, stop;
     Work work;
-    if (gettimeofday(&start, NULL)) E("gettimeofday and %m");
     MemSet(&work, 0, sizeof(work));
     work_conf(&work);
     ShutdownRequestPending = ShutdownRequestPending || work_init(&work);
@@ -693,16 +691,10 @@ void work_worker(Datum main_arg) {
             }
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, PQsocket(task->conn), NULL, task);
         }
-        nevents = WaitEventSetWait(set, conf_calculate(&work), events, nevents, PG_WAIT_EXTENSION);
-        for (int i = 0; i < nevents; i++) {
+        if (!(nevents = WaitEventSetWait(set, conf_calculate(&work), events, nevents, PG_WAIT_EXTENSION))) work_timeout(&work); else for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) ShutdownRequestPending = ShutdownRequestPending || work_latch();
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
-        }
-        if (gettimeofday(&stop, NULL)) E("gettimeofday and %m");
-        if (work.timeout > 0 && (conf_timeval_difference_exceeds(start, stop, work.timeout) || !nevents)) {
-            work_timeout(&work);
-            start = stop;
         }
         FreeWaitEventSet(set);
         pfree(events);
