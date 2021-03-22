@@ -432,19 +432,10 @@ void task_worker(Datum main_arg) {
     MemSet(&task, 0, sizeof(task));
     task_init(&work, &task);
     while (!ShutdownRequestPending) {
-        int nevents = 2;
-        WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
-        WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
-        AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
-        AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
-        nevents = WaitEventSetWait(set, 0, events, nevents, PG_WAIT_EXTENSION);
+        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_EXIT_ON_PM_DEATH | WL_TIMEOUT, 0, PG_WAIT_EXTENSION);
         if (!ShutdownRequestPending) {
-            if (!nevents) ShutdownRequestPending = task_timeout(&task); else for (int i = 0; i < nevents; i++) {
-                WaitEvent *event = &events[i];
-                if (event->events & WL_LATCH_SET) task_latch();
-            }
+            if (rc & WL_TIMEOUT) ShutdownRequestPending = task_timeout(&task);
+            if (rc & WL_LATCH_SET && !ShutdownRequestPending) task_latch();
         }
-        FreeWaitEventSet(set);
-        pfree(events);
     }
 }
