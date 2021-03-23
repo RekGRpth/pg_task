@@ -538,8 +538,7 @@ static void work_success(Task *task, PGresult *result) {
 }
 
 static void work_fail(Task *task, PGresult *result) {
-    char *value;
-    W("%.*s", (int)strlen(PQresultErrorMessage(result)) - 1, PQresultErrorMessage(result));
+    char *value = NULL;
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
     if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->error, "%sseverity%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
@@ -560,7 +559,7 @@ static void work_fail(Task *task, PGresult *result) {
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FILE))) appendStringInfo(&task->error, "%ssource_file%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_LINE))) appendStringInfo(&task->error, "%ssource_line%s%c%s", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->error, "%ssource_function%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
+    if (value) appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
     task->skip++;
     task->fail = true;
 }
@@ -619,7 +618,7 @@ static void work_repeat(Task *task) {
 static void work_result(Task *task) {
     for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
         case PGRES_COMMAND_OK: work_command(task, result); break;
-        case PGRES_FATAL_ERROR: work_fail(task, result); break;
+        case PGRES_FATAL_ERROR: W("PQresultStatus == PGRES_FATAL_ERROR and %.*s", (int)strlen(PQresultErrorMessage(result)) - 1, PQresultErrorMessage(result)); work_fail(task, result); break;
         case PGRES_TUPLES_OK: work_success(task, result); break;
         default: D1(PQresStatus(PQresultStatus(result))); break;
     }
