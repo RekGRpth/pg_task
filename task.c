@@ -433,9 +433,7 @@ void task_worker(Datum main_arg) {
     task_init(&work, &task);
     while (!ShutdownRequestPending) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_EXIT_ON_PM_DEATH | WL_TIMEOUT, 0, PG_WAIT_EXTENSION);
-        if (!ShutdownRequestPending) {
-            if (rc & WL_TIMEOUT) ShutdownRequestPending = task_timeout(&task);
-            if (rc & WL_LATCH_SET && !ShutdownRequestPending) task_latch();
-        }
+        if (rc & WL_TIMEOUT) if (task_timeout(&task)) break;
+        if (rc & WL_LATCH_SET) task_latch();
     }
 }

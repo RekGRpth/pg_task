@@ -699,18 +699,16 @@ void work_worker(Datum main_arg) {
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, PQsocket(task->conn), NULL, task);
         }
         nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
-        if (!ShutdownRequestPending) {
-            for (int i = 0; i < nevents; i++) {
-                WaitEvent *event = &events[i];
-                if (event->events & WL_LATCH_SET) ShutdownRequestPending = work_latch();
-                if (event->events & WL_SOCKET_MASK && !ShutdownRequestPending) work_socket(event->user_data);
-            }
-            if (work.timeout >= 0) {
-                INSTR_TIME_SET_CURRENT(cur_time);
-                INSTR_TIME_SUBTRACT(cur_time, start_time);
-                cur_timeout = work.timeout - (long)INSTR_TIME_GET_MILLISEC(cur_time);
-                if (cur_timeout <= 0) work_timeout(&work);
-            }
+        for (int i = 0; i < nevents; i++) {
+            WaitEvent *event = &events[i];
+            if (event->events & WL_LATCH_SET) ShutdownRequestPending = work_latch();
+            if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
+        }
+        if (work.timeout >= 0) {
+            INSTR_TIME_SET_CURRENT(cur_time);
+            INSTR_TIME_SUBTRACT(cur_time, start_time);
+            cur_timeout = work.timeout - (long)INSTR_TIME_GET_MILLISEC(cur_time);
+            if (cur_timeout <= 0) work_timeout(&work);
         }
         FreeWaitEventSet(set);
         pfree(events);
