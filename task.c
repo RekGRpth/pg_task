@@ -267,7 +267,7 @@ void task_repeat(Task *task) {
     SPI_finish_my();
 }
 
-static void task_fail(Task *task) {
+static void task_error(Task *task) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
     MemoryContextSwitchTo(oldMemoryContext);
@@ -302,6 +302,10 @@ static void task_fail(Task *task) {
     if (edata->saved_errno) appendStringInfo(&task->error, "%ssaved_errno%s%c%i", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->saved_errno);
     appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
     FreeErrorData(edata);
+}
+
+static void task_fail(Task *task) {
+    task_error(task);
     HOLD_INTERRUPTS();
     disable_all_timeouts(false);
     QueryCancelPending = false;
