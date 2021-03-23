@@ -539,6 +539,7 @@ static void work_success(Task *task, PGresult *result) {
 
 static void work_fail(Task *task, PGresult *result) {
     char *value;
+    W("%.*s", (int)strlen(PQresultErrorMessage(result)) - 1, PQresultErrorMessage(result));
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
     if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->error, "%sseverity%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
