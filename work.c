@@ -701,7 +701,7 @@ void work_worker(Datum main_arg) {
         nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) ShutdownRequestPending = work_latch();
+            if (event->events & WL_LATCH_SET) ShutdownRequestPending = ShutdownRequestPending || work_latch();
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
         }
         if (work.timeout >= 0) {
