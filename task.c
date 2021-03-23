@@ -270,6 +270,7 @@ void task_error(Task *task, ErrorData *edata) {
     if (edata->internalquery) appendStringInfo(&task->error, "%sinternalquery%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->internalquery);
     if (edata->saved_errno) appendStringInfo(&task->error, "%ssaved_errno%s%c%i", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->saved_errno);
     appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
+    task->fail = true;
 }
 
 void task_repeat(Task *task) {
@@ -325,7 +326,6 @@ static void task_fail(Task *task) {
     FlushErrorState();
     xact_started = false;
     RESUME_INTERRUPTS();
-    task->fail = true;
 }
 
 static void task_init(Work *work, Task *task) {
