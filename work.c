@@ -604,7 +604,7 @@ static void work_repeat(Task *task) {
         else task->events = WL_SOCKET_WRITEABLE;
         return;
     }
-    if (task_done(task) || PQstatus(task->conn) != CONNECTION_OK) { work_finish(task); return; }
+    if (task_done(task)) { work_finish(task); return; }
     D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
     if (task->repeat) task_repeat(task);
     if (task->delete && !task->output.data) task_delete(task);
@@ -612,7 +612,7 @@ static void work_repeat(Task *task) {
     task->output.data = NULL;
     if (task->error.data) pfree(task->error.data);
     task->error.data = NULL;
-    (!task->live || task_live(task)) ? work_finish(task) : work_query(task);
+    (PQstatus(task->conn) != CONNECTION_OK || !task->live || task_live(task)) ? work_finish(task) : work_query(task);
 }
 
 static void work_result(Task *task) {
