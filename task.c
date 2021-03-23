@@ -267,10 +267,7 @@ void task_repeat(Task *task) {
     SPI_finish_my();
 }
 
-static void task_error(Task *task) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    ErrorData *edata = CopyErrorData();
-    MemoryContextSwitchTo(oldMemoryContext);
+static void task_error(Task *task, ErrorData *edata) {
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
     if (edata->elevel) appendStringInfo(&task->error, "%selevel%s%c%i", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->elevel);
@@ -301,11 +298,14 @@ static void task_error(Task *task) {
     if (edata->internalquery) appendStringInfo(&task->error, "%sinternalquery%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->internalquery);
     if (edata->saved_errno) appendStringInfo(&task->error, "%ssaved_errno%s%c%i", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->saved_errno);
     appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
-    FreeErrorData(edata);
 }
 
 static void task_fail(Task *task) {
-    task_error(task);
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+    ErrorData *edata = CopyErrorData();
+    MemoryContextSwitchTo(oldMemoryContext);
+    task_error(task, edata);
+    FreeErrorData(edata);
     HOLD_INTERRUPTS();
     disable_all_timeouts(false);
     QueryCancelPending = false;
