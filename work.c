@@ -189,6 +189,30 @@ void work_error(Task *task, const char *msg, const char *err, bool finish) {
     finish ? work_finish(task) : work_free(task);
 }
 
+static bool is_log_level_output(int elevel, int log_min_level) {
+    if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
+        if (log_min_level == LOG || log_min_level <= ERROR) return true;
+    } else if (log_min_level == LOG) { /* elevel != LOG */
+        if (elevel >= FATAL) return true;
+    } /* Neither is LOG */ else if (elevel >= log_min_level) return true;
+    return false;
+}
+
+static void work_edata(ErrorData *edata, const char *filename, int lineno, const char *funcname) {
+    edata->elevel = FATAL;
+    edata->output_to_server = is_log_level_output(edata->elevel, log_min_messages);
+    edata->output_to_client = edata->elevel != LOG_SERVER_ONLY && (edata->elevel >= client_min_messages || edata->elevel == INFO);
+    edata->filename = MemoryContextStrdup(TopMemoryContext, filename);
+    edata->lineno = lineno;
+    edata->funcname = MemoryContextStrdup(TopMemoryContext, funcname);
+    edata->domain = TEXTDOMAIN ? TEXTDOMAIN : PG_TEXTDOMAIN("postgres");
+    edata->context_domain = edata->domain;
+    edata->sqlerrcode = ERRCODE_ADMIN_SHUTDOWN;
+    edata->saved_errno = errno;
+    edata->message = MemoryContextStrdup(TopMemoryContext, "terminating connection due to administrator command");
+    edata->message_id = MemoryContextStrdup(TopMemoryContext, "terminating connection due to administrator command");
+}
+
 void work_fini(Work *work) {
     queue_each(&work->queue, queue) {
         Task *task = queue_data(queue, Task, queue);
@@ -196,18 +220,12 @@ void work_fini(Work *work) {
         if (!cancel) work_error(task, "ShutdownRequestPending", "!PQgetCancel\n", true); else {
             char err[256];
             if (!PQcancel(cancel, err, sizeof(err))) work_error(task, "ShutdownRequestPending", err, true); else {
-                StringInfoData buf;
-                initStringInfoMy(TopMemoryContext, &buf);
-                appendStringInfo(&buf,
-                    "severity\tFATAL\n"
-                    "severity_nonlocalized\tFATAL\n"
-                    "sqlstate\t57P01\n"
-                    "message_primary\tterminating connection due to administrator command\n"
-                    "source_file\t%s\n"
-                    "source_line\t%i\n"
-                    "source_function\t%s", __FILE__, __LINE__, __func__);
-                work_error(task, buf.data, NULL, true);
-                pfree(buf.data);
+                ErrorData *edata = MemoryContextAllocZero(TopMemoryContext, sizeof(*edata));
+                work_edata(edata, __FILE__, __LINE__, __func__);
+                task_error(task, edata);
+                FreeErrorData(edata);
+                task_done(task);
+                work_finish(task);
             }
             PQfreeCancel(cancel);
         }

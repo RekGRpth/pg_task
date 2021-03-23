@@ -239,35 +239,7 @@ void task_delete(Task *task) {
     SPI_finish_my();
 }
 
-void task_repeat(Task *task) {
-    #define ID 1
-    #define SID S(ID)
-    static Oid argtypes[] = {[ID - 1] = INT8OID};
-    Datum values[] = {[ID - 1] = Int64GetDatum(task->id)};
-    static SPI_plan *plan = NULL;
-    static char *command = NULL;
-    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
-    if (!command) {
-        Work *work = task->work;
-        StringInfoData buf;
-        initStringInfoMy(TopMemoryContext, &buf);
-        appendStringInfo(&buf,
-            "INSERT INTO %1$s (parent, dt, \"group\", max, input, timeout, delete, repeat, drift, count, live)\n"
-            "SELECT $" SID ", CASE WHEN drift THEN current_timestamp + repeat\n"
-            "ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
-            "END AS dt, \"group\", max, input, timeout, delete, repeat, drift, count, live\n"
-            "FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) LIMIT 1", work->schema_table, work->schema_type);
-        command = buf.data;
-    }
-    #undef ID
-    #undef SID
-    SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT, true);
-    SPI_finish_my();
-}
-
-static void task_error(Task *task, ErrorData *edata) {
+void task_error(Task *task, ErrorData *edata) {
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
     if (edata->elevel) appendStringInfo(&task->error, "%selevel%s%c%i", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->elevel);
@@ -298,6 +270,34 @@ static void task_error(Task *task, ErrorData *edata) {
     if (edata->internalquery) appendStringInfo(&task->error, "%sinternalquery%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, edata->internalquery);
     if (edata->saved_errno) appendStringInfo(&task->error, "%ssaved_errno%s%c%i", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->saved_errno);
     appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
+}
+
+void task_repeat(Task *task) {
+    #define ID 1
+    #define SID S(ID)
+    static Oid argtypes[] = {[ID - 1] = INT8OID};
+    Datum values[] = {[ID - 1] = Int64GetDatum(task->id)};
+    static SPI_plan *plan = NULL;
+    static char *command = NULL;
+    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
+    if (!command) {
+        Work *work = task->work;
+        StringInfoData buf;
+        initStringInfoMy(TopMemoryContext, &buf);
+        appendStringInfo(&buf,
+            "INSERT INTO %1$s (parent, dt, \"group\", max, input, timeout, delete, repeat, drift, count, live)\n"
+            "SELECT $" SID ", CASE WHEN drift THEN current_timestamp + repeat\n"
+            "ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
+            "END AS dt, \"group\", max, input, timeout, delete, repeat, drift, count, live\n"
+            "FROM %1$s WHERE id = $" SID " AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) LIMIT 1", work->schema_table, work->schema_type);
+        command = buf.data;
+    }
+    #undef ID
+    #undef SID
+    SPI_connect_my(command);
+    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT, true);
+    SPI_finish_my();
 }
 
 static void task_fail(Task *task) {
