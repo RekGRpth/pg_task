@@ -99,7 +99,6 @@ const char *PQftypeMy(Oid oid);
 const char *PQftypeMy(Oid oid);
 Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
 DestReceiver *CreateDestReceiverMy(Task *task);
-int conf_calculate(Work *work);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 #if (PG_VERSION_NUM >= 130000)
 void BeginCommandMy(CommandTag commandTag, Task *task);

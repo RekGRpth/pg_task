@@ -2,26 +2,6 @@
 
 extern char *default_null;
 
-int conf_calculate(Work *work) {
-    int64 hour;
-    int64 min;
-    int64 sec;
-    int64 timeout = work->timeout * INT64CONST(1000);
-    struct timeval tp;
-    if (gettimeofday(&tp, NULL)) E("gettimeofday and %m");
-    sec = (int64)tp.tv_sec - ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY);
-    hour = sec / SECS_PER_HOUR;
-    sec -= hour * SECS_PER_HOUR;
-    min = sec / SECS_PER_MINUTE;
-    sec -= min * SECS_PER_MINUTE;
-    if (timeout > USECS_PER_HOUR && timeout > (hour *= USECS_PER_HOUR)) timeout -= hour;
-    if (timeout > USECS_PER_MINUTE && timeout > (min *= USECS_PER_MINUTE)) timeout -= min;
-    if (timeout > USECS_PER_SEC && timeout > (sec *= USECS_PER_SEC)) timeout -= sec;
-    if (timeout > tp.tv_usec) timeout -= tp.tv_usec;
-    timeout = timeout / INT64CONST(1000);
-    return timeout;
-}
-
 static void conf_data(const char *user, const char *data) {
     StringInfoData buf;
     const char *user_quote = quote_identifier(user);
@@ -207,6 +187,9 @@ static void conf_latch(Work *work) {
 }
 
 void conf_worker(Datum main_arg) {
+    instr_time cur_time;
+    instr_time start_time;
+    long cur_timeout = -1;
     Work work;
     MemSet(&work, 0, sizeof(work));
     conf_init(&work);
@@ -214,6 +197,10 @@ void conf_worker(Datum main_arg) {
         int nevents = 2;
         WaitEvent *events;
         WaitEventSet *set;
+        if (work.timeout >= 0 && cur_timeout <= 0) {
+            INSTR_TIME_SET_CURRENT(start_time);
+            cur_timeout = work.timeout;
+        }
         queue_each(&work.queue, queue) {
             Task *task = queue_data(queue, Task, queue);
             if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); continue; }
@@ -233,12 +220,18 @@ void conf_worker(Datum main_arg) {
             }
             AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, PQsocket(task->conn), NULL, task);
         }
-        nevents = WaitEventSetWait(set, conf_calculate(&work), events, nevents, PG_WAIT_EXTENSION);
+        nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
         if (!ShutdownRequestPending) {
-            if (!nevents) work_timeout(&work); else for (int i = 0; i < nevents; i++) {
+            for (int i = 0; i < nevents; i++) {
                 WaitEvent *event = &events[i];
                 if (event->events & WL_LATCH_SET) conf_latch(&work);
-                if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
+                if (event->events & WL_SOCKET_MASK && !ShutdownRequestPending) work_socket(event->user_data);
+            }
+            if (work.timeout >= 0) {
+                INSTR_TIME_SET_CURRENT(cur_time);
+                INSTR_TIME_SUBTRACT(cur_time, start_time);
+                cur_timeout = work.timeout - (long)INSTR_TIME_GET_MILLISEC(cur_time);
+                if (cur_timeout <= 0) work_timeout(&work);
             }
         }
         FreeWaitEventSet(set);
