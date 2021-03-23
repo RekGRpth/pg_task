@@ -192,7 +192,13 @@ void work_error(Task *task, const char *msg, const char *err, bool finish) {
 void work_fini(Work *work) {
     queue_each(&work->queue, queue) {
         Task *task = queue_data(queue, Task, queue);
-        work_error(task, "ShutdownRequestPending", NULL, true);
+        PGcancel *cancel = PQgetCancel(task->conn);
+        if (!cancel) work_error(task, "ShutdownRequestPending", "!PQgetCancel\n", true); else {
+            char err[256];
+            if (!PQcancel(cancel, err, sizeof(err))) work_error(task, "ShutdownRequestPending", err, true);
+            else work_error(task, "ShutdownRequestPending", NULL, true);
+            PQfreeCancel(cancel);
+        }
     }
 }
 
