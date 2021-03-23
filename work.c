@@ -195,8 +195,20 @@ void work_fini(Work *work) {
         PGcancel *cancel = PQgetCancel(task->conn);
         if (!cancel) work_error(task, "ShutdownRequestPending", "!PQgetCancel\n", true); else {
             char err[256];
-            if (!PQcancel(cancel, err, sizeof(err))) work_error(task, "ShutdownRequestPending", err, true);
-            else work_error(task, "ShutdownRequestPending", NULL, true);
+            if (!PQcancel(cancel, err, sizeof(err))) work_error(task, "ShutdownRequestPending", err, true); else {
+                StringInfoData buf;
+                initStringInfoMy(TopMemoryContext, &buf);
+                appendStringInfo(&buf,
+                    "severity\tFATAL\n"
+                    "severity_nonlocalized\tFATAL\n"
+                    "sqlstate\t57P01\n"
+                    "message_primary\tterminating connection due to administrator command\n"
+                    "source_file\t%s\n"
+                    "source_line\t%i\n"
+                    "source_function\t%s", __FILE__, __LINE__, __func__);
+                work_error(task, buf.data, NULL, true);
+                pfree(buf.data);
+            }
             PQfreeCancel(cancel);
         }
     }
