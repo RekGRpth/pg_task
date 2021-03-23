@@ -201,14 +201,12 @@ static bool is_log_level_output(int elevel, int log_min_level) {
 static void work_edata(ErrorData *edata, const char *filename, int lineno, const char *funcname) {
     edata->elevel = FATAL;
     edata->output_to_server = is_log_level_output(edata->elevel, log_min_messages);
-    edata->output_to_client = edata->elevel != LOG_SERVER_ONLY && (edata->elevel >= client_min_messages || edata->elevel == INFO);
     edata->filename = MemoryContextStrdup(TopMemoryContext, filename);
     edata->lineno = lineno;
     edata->funcname = MemoryContextStrdup(TopMemoryContext, funcname);
     edata->domain = TEXTDOMAIN ? TEXTDOMAIN : PG_TEXTDOMAIN("postgres");
     edata->context_domain = edata->domain;
     edata->sqlerrcode = ERRCODE_ADMIN_SHUTDOWN;
-    edata->saved_errno = errno;
     edata->message = MemoryContextStrdup(TopMemoryContext, "terminating connection due to administrator command");
     edata->message_id = MemoryContextStrdup(TopMemoryContext, "terminating connection due to administrator command");
 }
