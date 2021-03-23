@@ -618,7 +618,7 @@ static void work_result(Task *task) {
         case PGRES_TUPLES_OK: work_success(task, result); break;
         default: D1(PQresStatus(PQresultStatus(result))); break;
     }
-    work_repeat(task);
+    if (PQstatus(task->conn) == CONNECTION_OK) work_repeat(task);
 }
 
 static void work_connect(Task *task) {
