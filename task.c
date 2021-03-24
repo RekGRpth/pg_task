@@ -64,9 +64,9 @@ bool task_done(Task *task) {
     SPI_finish_my();
     if (task->output.data) pfree((void *)values[2]);
     if (task->error.data) pfree((void *)values[3]);
-    DirectFunctionCall2(pg_advisory_unlock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id));
     if (task->null) pfree(task->null);
     task->null = NULL;
+    DirectFunctionCall2(pg_advisory_unlock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id));
     return exit;
 }
 
