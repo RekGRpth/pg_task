@@ -529,52 +529,6 @@ static void work_command(Task *task, PGresult *result) {
     appendStringInfo(&task->output, "%s%s", task->output.len ? "\n" : "", PQcmdStatus(result));
 }
 
-static void work_success(Task *task, PGresult *result) {
-    if (task->length == 1 && !PQntuples(result)) return;
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-    if (task->header && (task->length > 1 || PQnfields(result) > 1)) {
-        if (task->output.len) appendStringInfoString(&task->output, "\n");
-        for (int col = 0; col < PQnfields(result); col++) {
-            const char *value = PQfname(result, col);
-            if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
-            if (task->quote) appendStringInfoChar(&task->output, task->quote);
-            if (task->escape) init_escape(&task->output, value, strlen(value), task->escape);
-            else appendStringInfoString(&task->output, value);
-            if (task->append && !strstr(value, "::")) {
-                Oid oid = PQftype(result, col);
-                const char *type = PQftypeMy(oid);
-                if (task->escape) init_escape(&task->output, "::", sizeof("::") - 1, task->escape);
-                else appendStringInfoString(&task->output, "::");
-                if (type) {
-                    if (task->escape) init_escape(&task->output, type, strlen(type), task->escape);
-                    else appendStringInfoString(&task->output, type);
-                } else appendStringInfo(&task->output, "%i", oid);
-            }
-            if (task->quote) appendStringInfoChar(&task->output, task->quote);
-        }
-    }
-    for (int row = 0; row < PQntuples(result); row++) {
-        if (task->output.len) appendStringInfoString(&task->output, "\n");
-        for (int col = 0; col < PQnfields(result); col++) {
-            const char *value = PQgetvalue(result, row, col);
-            int len = PQgetlength(result, row, col);
-            if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
-            if (PQgetisnull(result, row, col)) appendStringInfoString(&task->output, task->null); else {
-                if (!init_oid_is_string(PQftype(result, col)) && task->string) {
-                    if (len) appendStringInfoString(&task->output, value);
-                } else {
-                    if (task->quote) appendStringInfoChar(&task->output, task->quote);
-                    if (len) {
-                        if (task->escape) init_escape(&task->output, value, len, task->escape);
-                        else appendStringInfoString(&task->output, value);
-                    }
-                    if (task->quote) appendStringInfoChar(&task->output, task->quote);
-                }
-            }
-        }
-    }
-}
-
 static void work_fail(Task *task, PGresult *result) {
     char *value = NULL;
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
@@ -636,33 +590,6 @@ static void work_query(Task *task) {
     }
 }
 
-static void work_repeat(Task *task) {
-    if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
-        if (!PQsendQuery(task->conn, "COMMIT")) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false);
-        else task->events = WL_SOCKET_WRITEABLE;
-        return;
-    }
-    if (task_done(task)) { work_finish(task); return; }
-    D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
-    if (task->repeat) task_repeat(task);
-    if (task->delete && !task->output.data) task_delete(task);
-    if (task->output.data) pfree(task->output.data);
-    task->output.data = NULL;
-    if (task->error.data) pfree(task->error.data);
-    task->error.data = NULL;
-    (PQstatus(task->conn) != CONNECTION_OK || !task->live || task_live(task)) ? work_finish(task) : work_query(task);
-}
-
-static void work_result(Task *task) {
-    for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
-        case PGRES_COMMAND_OK: work_command(task, result); break;
-        case PGRES_FATAL_ERROR: W("PQresultStatus == PGRES_FATAL_ERROR and %.*s", (int)strlen(PQresultErrorMessage(result)) - 1, PQresultErrorMessage(result)); work_fail(task, result); break;
-        case PGRES_TUPLES_OK: work_success(task, result); break;
-        default: D1(PQresStatus(PQresultStatus(result))); break;
-    }
-    work_repeat(task);
-}
-
 static void work_connect(Task *task) {
     bool connected = false;
     switch (PQstatus(task->conn)) {
@@ -695,6 +622,79 @@ static void work_connect(Task *task) {
         work_pid(work);
         work_query(task);
     }
+}
+
+static void work_repeat(Task *task) {
+    if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
+        if (!PQsendQuery(task->conn, "COMMIT")) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false);
+        else task->events = WL_SOCKET_WRITEABLE;
+        return;
+    }
+    if (task_done(task)) { work_finish(task); return; }
+    D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
+    if (task->repeat) task_repeat(task);
+    if (task->delete && !task->output.data) task_delete(task);
+    if (task->output.data) pfree(task->output.data);
+    task->output.data = NULL;
+    if (task->error.data) pfree(task->error.data);
+    task->error.data = NULL;
+    (PQstatus(task->conn) != CONNECTION_OK || !task->live || task_live(task)) ? work_finish(task) : work_query(task);
+}
+
+static void work_success(Task *task, PGresult *result) {
+    if (task->length == 1 && !PQntuples(result)) return;
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    if (task->header && (task->length > 1 || PQnfields(result) > 1)) {
+        if (task->output.len) appendStringInfoString(&task->output, "\n");
+        for (int col = 0; col < PQnfields(result); col++) {
+            const char *value = PQfname(result, col);
+            if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
+            if (task->quote) appendStringInfoChar(&task->output, task->quote);
+            if (task->escape) init_escape(&task->output, value, strlen(value), task->escape);
+            else appendStringInfoString(&task->output, value);
+            if (task->append && !strstr(value, "::")) {
+                Oid oid = PQftype(result, col);
+                const char *type = PQftypeMy(oid);
+                if (task->escape) init_escape(&task->output, "::", sizeof("::") - 1, task->escape);
+                else appendStringInfoString(&task->output, "::");
+                if (type) {
+                    if (task->escape) init_escape(&task->output, type, strlen(type), task->escape);
+                    else appendStringInfoString(&task->output, type);
+                } else appendStringInfo(&task->output, "%i", oid);
+            }
+            if (task->quote) appendStringInfoChar(&task->output, task->quote);
+        }
+    }
+    for (int row = 0; row < PQntuples(result); row++) {
+        if (task->output.len) appendStringInfoString(&task->output, "\n");
+        for (int col = 0; col < PQnfields(result); col++) {
+            const char *value = PQgetvalue(result, row, col);
+            int len = PQgetlength(result, row, col);
+            if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
+            if (PQgetisnull(result, row, col)) appendStringInfoString(&task->output, task->null); else {
+                if (!init_oid_is_string(PQftype(result, col)) && task->string) {
+                    if (len) appendStringInfoString(&task->output, value);
+                } else {
+                    if (task->quote) appendStringInfoChar(&task->output, task->quote);
+                    if (len) {
+                        if (task->escape) init_escape(&task->output, value, len, task->escape);
+                        else appendStringInfoString(&task->output, value);
+                    }
+                    if (task->quote) appendStringInfoChar(&task->output, task->quote);
+                }
+            }
+        }
+    }
+}
+
+static void work_result(Task *task) {
+    for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
+        case PGRES_COMMAND_OK: work_command(task, result); break;
+        case PGRES_FATAL_ERROR: W("PQresultStatus == PGRES_FATAL_ERROR and %.*s", (int)strlen(PQresultErrorMessage(result)) - 1, PQresultErrorMessage(result)); work_fail(task, result); break;
+        case PGRES_TUPLES_OK: work_success(task, result); break;
+        default: D1(PQresStatus(PQresultStatus(result))); break;
+    }
+    work_repeat(task);
 }
 
 void work_socket(Task *task) {
