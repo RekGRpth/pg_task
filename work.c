@@ -197,19 +197,19 @@ static bool is_log_level_output(int elevel, int log_min_level) {
 }
 
 static void work_edata(Task *task, const char *filename, int lineno, const char *funcname, const char *message) {
-    ErrorData *edata = MemoryContextAllocZero(TopMemoryContext, sizeof(*edata));
-    edata->elevel = FATAL;
-    edata->output_to_server = is_log_level_output(edata->elevel, log_min_messages);
-    edata->filename = filename;
-    edata->lineno = lineno;
-    edata->funcname = funcname;
-    edata->domain = TEXTDOMAIN ? TEXTDOMAIN : PG_TEXTDOMAIN("postgres");
-    edata->context_domain = edata->domain;
-    edata->sqlerrcode = ERRCODE_ADMIN_SHUTDOWN;
-    edata->message = MemoryContextStrdup(TopMemoryContext, message);
-    edata->message_id = edata->message;
-    task_error(task, edata);
-    FreeErrorData(edata);
+    ErrorData edata;
+    MemSet(&edata, 0, sizeof(edata));
+    edata.elevel = FATAL;
+    edata.output_to_server = is_log_level_output(edata.elevel, log_min_messages);
+    edata.filename = filename;
+    edata.lineno = lineno;
+    edata.funcname = funcname;
+    edata.domain = TEXTDOMAIN ? TEXTDOMAIN : PG_TEXTDOMAIN("postgres");
+    edata.context_domain = edata.domain;
+    edata.sqlerrcode = ERRCODE_ADMIN_SHUTDOWN;
+    edata.message = (char *)message;
+    edata.message_id = edata.message;
+    task_error(task, &edata);
     task_done(task);
 }
 
