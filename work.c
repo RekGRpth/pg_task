@@ -240,14 +240,16 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     char *err;
     char *options = NULL;
     bool password = false;
-    PQconninfoOption *opts = PQconninfoParse(remote, &err);
-    Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
+    PQconninfoOption *opts;
+    Task *task;
+    if (!DatumGetBool(DirectFunctionCall2(pg_try_advisory_lock_int4, Int32GetDatum(work->oid), Int32GetDatum(id)))) { W("!pg_try_advisory_lock_int4(%i, %li)", work->oid, id); return; }
+    opts = PQconninfoParse(remote, &err);
+    task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
     task->group = MemoryContextStrdup(TopMemoryContext, group);
     task->remote = MemoryContextStrdup(TopMemoryContext, remote);
     task->id = id;
     task->max = max;
     task->work = work;
-    if (!DatumGetBool(DirectFunctionCall2(pg_try_advisory_lock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id)))) { W("!pg_try_advisory_lock_int4(%i, %li)", work->oid, task->id); return; }
     D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->oid);
     if (!opts) { work_error(task, "!PQconninfoParse", err, false); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
