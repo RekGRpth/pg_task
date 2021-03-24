@@ -66,7 +66,7 @@ bool task_done(Task *task) {
     if (task->error.data) pfree((void *)values[3]);
     if (task->null) pfree(task->null);
     task->null = NULL;
-    DirectFunctionCall2(pg_advisory_unlock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id));
+    if (!DatumGetBool(DirectFunctionCall2(pg_advisory_unlock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id)))) { W("!pg_advisory_unlock_int4(%i, %li)", work->oid, task->id); return true; }
     return exit;
 }
 
