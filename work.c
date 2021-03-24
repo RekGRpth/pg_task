@@ -248,7 +248,7 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     task->max = max;
     task->work = work;
     D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->oid);
-    if (!opts) { work_error(task, "!PQconninfoParse", err, true); if (err) PQfreemem(err); return; }
+    if (!opts) { work_error(task, "!PQconninfoParse", err, false); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
         D1("%s = %s", opt->keyword, opt->val);
@@ -258,7 +258,7 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
         if (!strcmp(opt->keyword, "options")) { options = opt->val; continue; }
         arg++;
     }
-    if (!superuser() && !password) { work_error(task, "!superuser && !password", NULL, true); PQconninfoFree(opts); return; }
+    if (!superuser() && !password) { work_error(task, "!superuser && !password", NULL, false); PQconninfoFree(opts); return; }
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
     initStringInfoMy(TopMemoryContext, &buf);
