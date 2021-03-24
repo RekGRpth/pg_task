@@ -495,34 +495,6 @@ void work_timeout(Work *work) {
     SPI_finish_my();
 }
 
-static void work_init(Work *work) {
-    char *p = MyBgworkerEntry->bgw_extra;
-    work->user = p;
-    p += strlen(work->user) + 1;
-    work->data = p;
-    p += strlen(work->data) + 1;
-    work->schema = p;
-    p += strlen(work->schema) + 1;
-    work->table = p;
-    p += strlen(work->table) + 1;
-    work->reset = *(typeof(work->reset) *)p;
-    p += sizeof(work->reset);
-    work->timeout = *(typeof(work->timeout) *)p;
-    if (work->table == work->schema + 1) work->schema = NULL;
-    if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
-    if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-    if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
-    if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
-    set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout);
-    pqsignal(SIGHUP, SignalHandlerForConfigReload);
-    pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
-    BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnection(work->data, work->user, 0);
-    pgstat_report_appname(MyBgworkerEntry->bgw_type);
-    process_session_preload_libraries();
-}
-
 static void work_command(Task *task, PGresult *result) {
     if (task->skip) { task->skip--; return; }
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
@@ -703,6 +675,34 @@ void work_socket(Task *task) {
         else if (PQisBusy(task->conn)) task->events = WL_SOCKET_READABLE;
         else work_result(task);
     }
+}
+
+static void work_init(Work *work) {
+    char *p = MyBgworkerEntry->bgw_extra;
+    work->user = p;
+    p += strlen(work->user) + 1;
+    work->data = p;
+    p += strlen(work->data) + 1;
+    work->schema = p;
+    p += strlen(work->schema) + 1;
+    work->table = p;
+    p += strlen(work->table) + 1;
+    work->reset = *(typeof(work->reset) *)p;
+    p += sizeof(work->reset);
+    work->timeout = *(typeof(work->timeout) *)p;
+    if (work->table == work->schema + 1) work->schema = NULL;
+    if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
+    if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
+    if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
+    if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
+    set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout);
+    pqsignal(SIGHUP, SignalHandlerForConfigReload);
+    pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
+    BackgroundWorkerUnblockSignals();
+    BackgroundWorkerInitializeConnection(work->data, work->user, 0);
+    pgstat_report_appname(MyBgworkerEntry->bgw_type);
+    process_session_preload_libraries();
 }
 
 void work_worker(Datum main_arg) {
