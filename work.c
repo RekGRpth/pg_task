@@ -711,7 +711,7 @@ void work_worker(Datum main_arg) {
     Work work;
     MemSet(&work, 0, sizeof(work));
     work_conf(&work);
-    if (!work_init(&work)) proc_exit(1);
+    if (work_init(&work)) proc_exit(1);
     for (;;) {
         int nevents = 2;
         WaitEvent *events;
