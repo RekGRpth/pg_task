@@ -197,7 +197,7 @@ void conf_worker(Datum main_arg) {
         int nevents = 2;
         WaitEvent *events;
         WaitEventSet *set;
-        if (work.timeout >= 0 && cur_timeout <= 0) {
+        if (cur_timeout <= 0) {
             INSTR_TIME_SET_CURRENT(start_time);
             cur_timeout = work.timeout;
         }
