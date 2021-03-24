@@ -442,10 +442,9 @@ void task_worker(Datum main_arg) {
     MemSet(&task, 0, sizeof(task));
     task_init(&work, &task);
     while (!ShutdownRequestPending) {
-        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
+        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, 0, PG_WAIT_EXTENSION);
         if (rc & WL_TIMEOUT) if (task_timeout(&task)) proc_exit(0);
         if (rc & WL_LATCH_SET) task_latch();
-        if (rc & WL_POSTMASTER_DEATH) proc_exit(0);
     }
     proc_exit(0);
 }

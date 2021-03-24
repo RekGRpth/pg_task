@@ -217,7 +217,7 @@ void conf_worker(Datum main_arg) {
         events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
         set = CreateWaitEventSet(TopMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
-        AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
+        AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
         queue_each(&work.queue, queue) {
             Task *task = queue_data(queue, Task, queue);
             if (task->events & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
@@ -232,7 +232,6 @@ void conf_worker(Datum main_arg) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) conf_latch(&work);
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
-            if (event->events & WL_POSTMASTER_DEATH) proc_exit(0);
         }
         if (work.timeout >= 0) {
             INSTR_TIME_SET_CURRENT(cur_time);
