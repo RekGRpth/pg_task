@@ -467,7 +467,6 @@ static void work_conf(Work *work) {
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
-    pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
     on_proc_exit(work_exit, PointerGetDatum(work));
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
@@ -755,5 +754,5 @@ void work_worker(Datum main_arg) {
         FreeWaitEventSet(set);
         pfree(events);
     }
-    proc_exit(0);
+    proc_exit(1);
 }
