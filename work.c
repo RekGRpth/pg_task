@@ -247,6 +247,7 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     task->id = id;
     task->max = max;
     task->work = work;
+    if (!DatumGetBool(DirectFunctionCall2(pg_try_advisory_lock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id)))) { W("!pg_try_advisory_lock_int4(%i, %li)", work->oid, task->id); return; }
     D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->oid);
     if (!opts) { work_error(task, "!PQconninfoParse", err, false); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {

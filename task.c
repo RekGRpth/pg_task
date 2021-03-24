@@ -117,10 +117,6 @@ bool task_work(Task *task) {
     StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
     task->count++;
     D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work->oid, task->count, task->pid);
-    if (!DatumGetBool(DirectFunctionCall2(pg_try_advisory_lock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id)))) {
-        W("!pg_try_advisory_lock_int4(%i, %li)", work->oid, task->id);
-        return true;
-    }
     if (!task->conn) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
@@ -353,6 +349,8 @@ static void task_success(Task *task) {
 }
 
 static bool task_timeout(Task *task) {
+    Work *work = task->work;
+    if (!DatumGetBool(DirectFunctionCall2(pg_try_advisory_lock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id)))) { W("!pg_try_advisory_lock_int4(%i, %li)", work->oid, task->id); return true; }
     if (task_work(task)) return true;
     D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
     PG_TRY();
