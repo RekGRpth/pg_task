@@ -131,9 +131,6 @@ void work_socket(Task *task);
 void work_timeout(Work *work);
 void work_worker(Datum main_arg);
 
-#define Q(name) #name
-#define S(macro) Q(macro)
-
 #define FORMAT_0(fmt, ...) "%s(%s:%d): %s", __func__, __FILE__, __LINE__, fmt
 #define FORMAT_1(fmt, ...) "%s(%s:%d): " fmt,  __func__, __FILE__, __LINE__
 #define GET_FORMAT(fmt, ...) GET_FORMAT_PRIVATE(fmt, 0, ##__VA_ARGS__, 1, \
