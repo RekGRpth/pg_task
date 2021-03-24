@@ -157,12 +157,6 @@ static void conf_check(Work *work) {
     SPI_finish_my();
 }
 
-static void conf_exit(int code, Datum arg) {
-    Work *work = (Work *)DatumGetPointer(arg);
-    D1("code = %i", code);
-    work_fini(work);
-}
-
 static void conf_init(Work *work) {
     if (!MyProcPort && !(MyProcPort = (Port *)calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->user_name) MyProcPort->user_name = "postgres";
@@ -170,7 +164,7 @@ static void conf_init(Work *work) {
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
-    on_proc_exit(conf_exit, PointerGetDatum(work));
+    pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
@@ -199,7 +193,7 @@ void conf_worker(Datum main_arg) {
     Work work;
     MemSet(&work, 0, sizeof(work));
     conf_init(&work);
-    for (;;) {
+    while (!ShutdownRequestPending) {
         int nevents = 2;
         WaitEvent *events;
         WaitEventSet *set;
@@ -216,7 +210,7 @@ void conf_worker(Datum main_arg) {
         events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
         set = CreateWaitEventSet(TopMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
-        AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
+        AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
         queue_each(&work.queue, queue) {
             Task *task = queue_data(queue, Task, queue);
             if (task->events & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
@@ -231,6 +225,7 @@ void conf_worker(Datum main_arg) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) conf_latch(&work);
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
+            if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
         }
         if (work.timeout >= 0) {
             INSTR_TIME_SET_CURRENT(cur_time);
@@ -241,5 +236,5 @@ void conf_worker(Datum main_arg) {
         FreeWaitEventSet(set);
         pfree(events);
     }
-    proc_exit(1);
+    work_fini(&work);
 }

@@ -447,12 +447,6 @@ static bool work_check(void) {
     return exit;
 }
 
-static void work_exit(int code, Datum arg) {
-    Work *work = (Work *)DatumGetPointer(arg);
-    D1("code = %i", code);
-    work_fini(work);
-}
-
 static void work_conf(Work *work) {
     char *p = MyBgworkerEntry->bgw_extra;
     work->user = p;
@@ -474,7 +468,7 @@ static void work_conf(Work *work) {
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
-    on_proc_exit(work_exit, PointerGetDatum(work));
+    pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
@@ -718,8 +712,8 @@ void work_worker(Datum main_arg) {
     Work work;
     MemSet(&work, 0, sizeof(work));
     work_conf(&work);
-    if (work_init(&work)) proc_exit(1);
-    for (;;) {
+    ShutdownRequestPending = ShutdownRequestPending || work_init(&work);
+    while (!ShutdownRequestPending) {
         int nevents = 2;
         WaitEvent *events;
         WaitEventSet *set;
@@ -736,7 +730,7 @@ void work_worker(Datum main_arg) {
         events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
         set = CreateWaitEventSet(TopMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
-        AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
+        AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
         queue_each(&work.queue, queue) {
             Task *task = queue_data(queue, Task, queue);
             if (task->events & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
@@ -749,8 +743,9 @@ void work_worker(Datum main_arg) {
         nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) if (work_latch()) proc_exit(0);
+            if (event->events & WL_LATCH_SET) ShutdownRequestPending = ShutdownRequestPending || work_latch();
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
+            if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
         }
         if (work.timeout >= 0) {
             INSTR_TIME_SET_CURRENT(cur_time);
@@ -761,5 +756,5 @@ void work_worker(Datum main_arg) {
         FreeWaitEventSet(set);
         pfree(events);
     }
-    proc_exit(1);
+    work_fini(&work);
 }
