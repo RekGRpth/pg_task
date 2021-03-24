@@ -89,7 +89,7 @@ bool task_done(Task *task) {
     pfree((void *)values[GROUP - 1]);
     #undef GROUP
     #undef SGROUP
-    pg_advisory_unlock_int4_my(work->oid, task->id);
+    DirectFunctionCall2(pg_advisory_unlock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id));
     if (task->null) pfree(task->null);
     task->null = NULL;
     return exit;
@@ -166,8 +166,8 @@ bool task_work(Task *task) {
     StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
     task->count++;
     D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work->oid, task->count, task->pid);
-    if (!pg_try_advisory_lock_int4_my(work->oid, task->id)) {
-        W("!pg_try_advisory_lock_int4_my(%i, %li)", work->oid, task->id);
+    if (!DatumGetBool(DirectFunctionCall2(pg_try_advisory_lock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id)))) {
+        W("!pg_try_advisory_lock_int4(%i, %li)", work->oid, task->id);
         return true;
     }
     if (!task->conn) {

@@ -44,7 +44,7 @@ static void work_table(Work *work) {
     List *names;
     const RangeVar *rangevar;
     D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->schema_table, work->schema_type);
-    if (work->oid) pg_advisory_unlock_int8_my(work->oid);
+    if (work->oid) DirectFunctionCall1(pg_advisory_unlock_int8, Int64GetDatum(work->oid));
     set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf,
@@ -507,7 +507,7 @@ bool work_init(Work *work) {
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     queue_init(&work->queue);
-    return !pg_try_advisory_lock_int8_my(work->oid);
+    return !DatumGetBool(DirectFunctionCall1(pg_try_advisory_lock_int8, Int64GetDatum(work->oid)));
 }
 
 static bool work_reload(void) {
