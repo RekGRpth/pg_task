@@ -67,7 +67,7 @@ static void work_table(Work *work) {
     List *names;
     const RangeVar *rangevar;
     D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->schema_table, work->schema_type);
-    if (work->oid) DirectFunctionCall1(pg_advisory_unlock_int8, Int64GetDatum(work->oid));
+    if (work->oid && !DatumGetBool(DirectFunctionCall1(pg_advisory_unlock_int8, Int64GetDatum(work->oid)))) W("!pg_advisory_unlock_int8(%i)", work->oid);
     set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf,
