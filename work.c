@@ -39,7 +39,7 @@ static void work_type(Work *work) {
     pfree(buf.data);
 }
 
-static bool work_table(Work *work) {
+static void work_table(Work *work) {
     StringInfoData buf;
     List *names;
     const RangeVar *rangevar;
@@ -91,8 +91,6 @@ static bool work_table(Work *work) {
     appendStringInfo(&buf, "%i", work->oid);
     set_config_option("pg_task.oid", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
-    if (!pg_try_advisory_lock_int8_my(work->oid)) { W("!pg_try_advisory_lock_int8_my(%i)", work->oid); return true; }
-    return false;
 }
 
 static void work_index(Work *work, const char *index) {
@@ -478,7 +476,6 @@ static void work_conf(Work *work) {
 }
 
 bool work_init(Work *work) {
-    bool exit = false;
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     const char *table_quote = quote_identifier(work->table);
     StringInfoData buf;
@@ -497,7 +494,7 @@ bool work_init(Work *work) {
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, schema_table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->schema_table, work->schema_type);
     if (work->schema) work_schema(work);
     work_type(work);
-    if (work_table(work)) return true;
+    work_table(work);
     work_index(work, "dt");
     work_index(work, "state");
     set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
@@ -510,7 +507,7 @@ bool work_init(Work *work) {
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     queue_init(&work->queue);
-    return exit;
+    return !pg_try_advisory_lock_int8_my(work->oid);
 }
 
 static bool work_reload(void) {
