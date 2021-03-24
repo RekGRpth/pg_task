@@ -442,6 +442,12 @@ static bool work_check(void) {
     return exit;
 }
 
+static void work_exit(int code, Datum arg) {
+    Work *work = (Work *)DatumGetPointer(arg);
+    D1("code = %i", code);
+    work_fini(work);
+}
+
 static void work_conf(Work *work) {
     char *p = MyBgworkerEntry->bgw_extra;
     work->user = p;
@@ -464,6 +470,7 @@ static void work_conf(Work *work) {
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
+    on_proc_exit(work_exit, PointerGetDatum(work));
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
@@ -741,7 +748,7 @@ void work_worker(Datum main_arg) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) ShutdownRequestPending = ShutdownRequestPending || work_latch();
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
-            if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
+            if (event->events & WL_POSTMASTER_DEATH) proc_exit(0);
         }
         if (work.timeout >= 0) {
             INSTR_TIME_SET_CURRENT(cur_time);
@@ -752,5 +759,5 @@ void work_worker(Datum main_arg) {
         FreeWaitEventSet(set);
         pfree(events);
     }
-    work_fini(&work);
+    proc_exit(0);
 }

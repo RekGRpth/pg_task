@@ -157,6 +157,12 @@ static void conf_check(Work *work) {
     SPI_finish_my();
 }
 
+static void conf_exit(int code, Datum arg) {
+    Work *work = (Work *)DatumGetPointer(arg);
+    D1("code = %i", code);
+    work_fini(work);
+}
+
 static void conf_init(Work *work) {
     if (!MyProcPort && !(MyProcPort = (Port *)calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->user_name) MyProcPort->user_name = "postgres";
@@ -165,6 +171,7 @@ static void conf_init(Work *work) {
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
+    on_proc_exit(conf_exit, PointerGetDatum(work));
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
@@ -225,7 +232,7 @@ void conf_worker(Datum main_arg) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) conf_latch(&work);
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
-            if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
+            if (event->events & WL_POSTMASTER_DEATH) proc_exit(0);
         }
         if (work.timeout >= 0) {
             INSTR_TIME_SET_CURRENT(cur_time);
@@ -236,5 +243,5 @@ void conf_worker(Datum main_arg) {
         FreeWaitEventSet(set);
         pfree(events);
     }
-    work_fini(&work);
+    proc_exit(0);
 }

@@ -328,6 +328,11 @@ static void task_fail(Task *task) {
     RESUME_INTERRUPTS();
 }
 
+static void task_exit(int code, Datum arg) {
+    Task *task = (Task *)DatumGetPointer(arg);
+    D1("code = %i, id = %li", code, task->id);
+}
+
 static void task_init(Work *work, Task *task) {
     StringInfoData buf;
     const char *schema_quote;
@@ -382,6 +387,7 @@ static void task_init(Work *work, Task *task) {
     task->max = *(typeof(task->max) *)p;
     D1("id = %li, group = %s, max = %i", task->id, task->group, task->max);
     pqsignal(SIGTERM, die);
+    on_proc_exit(task_exit, PointerGetDatum(task));
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
@@ -437,8 +443,9 @@ void task_worker(Datum main_arg) {
     task_init(&work, &task);
     while (!ShutdownRequestPending) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
-        if (rc & WL_TIMEOUT) if (task_timeout(&task)) ShutdownRequestPending = true;
+        if (rc & WL_TIMEOUT) if (task_timeout(&task)) proc_exit(0);
         if (rc & WL_LATCH_SET) task_latch();
-        if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
+        if (rc & WL_POSTMASTER_DEATH) proc_exit(0);
     }
+    proc_exit(0);
 }
