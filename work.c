@@ -447,7 +447,7 @@ static bool work_check(void) {
     return exit;
 }
 
-static void work_conf(Work *work) {
+static void work_init(Work *work) {
     char *p = MyBgworkerEntry->bgw_extra;
     work->user = p;
     p += strlen(work->user) + 1;
@@ -475,7 +475,7 @@ static void work_conf(Work *work) {
     process_session_preload_libraries();
 }
 
-bool work_init(Work *work) {
+bool work_conf(Work *work) {
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     const char *table_quote = quote_identifier(work->table);
     StringInfoData buf;
@@ -711,8 +711,8 @@ void work_worker(Datum main_arg) {
     long cur_timeout = -1;
     Work work;
     MemSet(&work, 0, sizeof(work));
-    work_conf(&work);
-    ShutdownRequestPending = ShutdownRequestPending || work_init(&work);
+    work_init(&work);
+    ShutdownRequestPending = ShutdownRequestPending || work_conf(&work);
     while (!ShutdownRequestPending) {
         int nevents = 2;
         WaitEvent *events;

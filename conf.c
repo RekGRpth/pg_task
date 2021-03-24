@@ -142,7 +142,7 @@ static void conf_check(Work *work) {
             work->table = "task";
             work->reset = reset;
             work->timeout = timeout;
-            if (work_init(work)) work->timeout = -1;
+            if (work_conf(work)) work->timeout = -1;
         } else {
             if (!user_exists) conf_user(user);
             if (!data_exists) conf_data(user, data);

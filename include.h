@@ -94,7 +94,7 @@ bool pg_try_advisory_lock_int8_my(int64 key);
 bool task_done(Task *task);
 bool task_live(Task *task);
 bool task_work(Task *task);
-bool work_init(Work *work);
+bool work_conf(Work *work);
 char *TextDatumGetCStringMy(MemoryContext memoryContext, Datum datum);
 const char *PQftypeMy(Oid oid);
 const char *PQftypeMy(Oid oid);
