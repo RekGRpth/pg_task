@@ -270,7 +270,7 @@ static void work_finish(Task *task) {
 
 void work_fini(Work *work) {
     StringInfoData buf;
-    if (work->oid) DirectFunctionCall1(pg_advisory_unlock_int8, Int64GetDatum(work->oid));
+    if (work->oid && !DatumGetBool(DirectFunctionCall1(pg_advisory_unlock_int8, Int64GetDatum(work->oid)))) W("!pg_advisory_unlock_int8(%i)", work->oid);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
     queue_each(&work->queue, queue) {
