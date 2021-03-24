@@ -263,6 +263,14 @@ static void task_fail(Task *task) {
     RESUME_INTERRUPTS();
 }
 
+static void SignalHandlerForShutdownRequestMy(SIGNAL_ARGS) {
+    int save_errno = errno;
+    ShutdownRequestPending = true;
+    SetLatch(MyLatch);
+    DirectFunctionCall1(pg_cancel_backend, Int32GetDatum(MyProcPid));
+    errno = save_errno;
+}
+
 static void task_init(Work *work, Task *task) {
     StringInfoData buf;
     const char *schema_quote;
@@ -316,6 +324,7 @@ static void task_init(Work *work, Task *task) {
     p += strlen(task->group) + 1;
     task->max = *(typeof(task->max) *)p;
     D1("id = %li, group = %s, max = %i", task->id, task->group, task->max);
+    pqsignal(SIGTERM, SignalHandlerForShutdownRequestMy);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
