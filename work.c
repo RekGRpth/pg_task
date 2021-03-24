@@ -166,7 +166,8 @@ bool work_conf(Work *work) {
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     queue_init(&work->queue);
-    return !DatumGetBool(DirectFunctionCall1(pg_try_advisory_lock_int8, Int64GetDatum(work->oid)));
+    if (!DatumGetBool(DirectFunctionCall1(pg_try_advisory_lock_int8, Int64GetDatum(work->oid)))) { W("!pg_try_advisory_lock_int8(%i)", work->oid); return true; }
+    return false;
 }
 
 static bool work_check(void) {
