@@ -170,7 +170,6 @@ static void conf_init(Work *work) {
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
-    pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
     on_proc_exit(conf_exit, PointerGetDatum(work));
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
@@ -200,7 +199,7 @@ void conf_worker(Datum main_arg) {
     Work work;
     MemSet(&work, 0, sizeof(work));
     conf_init(&work);
-    while (!ShutdownRequestPending) {
+    for (;;) {
         int nevents = 2;
         WaitEvent *events;
         WaitEventSet *set;
@@ -242,5 +241,5 @@ void conf_worker(Datum main_arg) {
         FreeWaitEventSet(set);
         pfree(events);
     }
-    proc_exit(0);
+    proc_exit(1);
 }
