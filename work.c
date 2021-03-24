@@ -2,6 +2,47 @@
 
 extern char *default_null;
 
+static void work_index(Work *work, const char *index) {
+    StringInfoData buf, name, idx;
+    List *names;
+    Relation relation;
+    const RangeVar *rangevar;
+    const char *name_quote;
+    const char *index_quote = quote_identifier(index);
+    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
+    D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, index, work->schema_table);
+    initStringInfoMy(TopMemoryContext, &name);
+    appendStringInfo(&name, "%s_%s_idx", work->table, index);
+    name_quote = quote_identifier(name.data);
+    initStringInfoMy(TopMemoryContext, &buf);
+    appendStringInfo(&buf, "CREATE INDEX %s ON %s USING btree (%s)", name_quote, work->schema_table, index_quote);
+    initStringInfoMy(TopMemoryContext, &idx);
+    if (work->schema) appendStringInfo(&idx, "%s.", schema_quote);
+    appendStringInfoString(&idx, name_quote);
+    names = stringToQualifiedNameList(idx.data);
+    rangevar = makeRangeVarFromNameList(names);
+    SPI_connect_my(buf.data);
+    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
+        SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+    } else if ((relation = relation_openrv_extended(rangevar, NoLock, true))) {
+        if (relation->rd_index && relation->rd_index->indrelid != work->oid) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+        else D1("index %s already exists", idx.data);
+        relation_close(relation, NoLock);
+    } else {
+        D1("index %s already exists", idx.data);
+    }
+    SPI_commit_my();
+    SPI_finish_my();
+    pfree((void *)rangevar);
+    list_free_deep(names);
+    pfree(buf.data);
+    pfree(name.data);
+    pfree(idx.data);
+    if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
+    if (name_quote != name.data) pfree((void *)name_quote);
+    if (index_quote != index) pfree((void *)index_quote);
+}
+
 static void work_schema(Work *work) {
     StringInfoData buf;
     List *names;
@@ -19,24 +60,6 @@ static void work_schema(Work *work) {
     if (schema_quote != work->schema) pfree((void *)schema_quote);
     pfree(buf.data);
     set_config_option("pg_task.schema", work->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-}
-
-static void work_type(Work *work) {
-    StringInfoData buf;
-    Oid type = InvalidOid;
-    int32 typmod;
-    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
-    D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table);
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')", work->schema_type);
-    SPI_connect_my(buf.data);
-    parseTypeString(work->schema_type, &type, &typmod, true);
-    if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
-    else D1("type %s already exists", work->schema_type);
-    SPI_commit_my();
-    SPI_finish_my();
-    if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
-    pfree(buf.data);
 }
 
 static void work_table(Work *work) {
@@ -93,45 +116,119 @@ static void work_table(Work *work) {
     pfree(buf.data);
 }
 
-static void work_index(Work *work, const char *index) {
-    StringInfoData buf, name, idx;
-    List *names;
-    Relation relation;
-    const RangeVar *rangevar;
-    const char *name_quote;
-    const char *index_quote = quote_identifier(index);
+static void work_type(Work *work) {
+    StringInfoData buf;
+    Oid type = InvalidOid;
+    int32 typmod;
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
-    D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, index, work->schema_table);
-    initStringInfoMy(TopMemoryContext, &name);
-    appendStringInfo(&name, "%s_%s_idx", work->table, index);
-    name_quote = quote_identifier(name.data);
+    D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table);
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "CREATE INDEX %s ON %s USING btree (%s)", name_quote, work->schema_table, index_quote);
-    initStringInfoMy(TopMemoryContext, &idx);
-    if (work->schema) appendStringInfo(&idx, "%s.", schema_quote);
-    appendStringInfoString(&idx, name_quote);
-    names = stringToQualifiedNameList(idx.data);
-    rangevar = makeRangeVarFromNameList(names);
+    appendStringInfo(&buf, "CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')", work->schema_type);
     SPI_connect_my(buf.data);
-    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
-        SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
-    } else if ((relation = relation_openrv_extended(rangevar, NoLock, true))) {
-        if (relation->rd_index && relation->rd_index->indrelid != work->oid) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
-        else D1("index %s already exists", idx.data);
-        relation_close(relation, NoLock);
-    } else {
-        D1("index %s already exists", idx.data);
-    }
+    parseTypeString(work->schema_type, &type, &typmod, true);
+    if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+    else D1("type %s already exists", work->schema_type);
     SPI_commit_my();
     SPI_finish_my();
-    pfree((void *)rangevar);
-    list_free_deep(names);
-    pfree(buf.data);
-    pfree(name.data);
-    pfree(idx.data);
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
-    if (name_quote != name.data) pfree((void *)name_quote);
-    if (index_quote != index) pfree((void *)index_quote);
+    pfree(buf.data);
+}
+
+bool work_conf(Work *work) {
+    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
+    const char *table_quote = quote_identifier(work->table);
+    StringInfoData buf;
+    initStringInfoMy(TopMemoryContext, &buf);
+    if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
+    appendStringInfoString(&buf, table_quote);
+    if (work->schema_table) pfree(work->schema_table);
+    work->schema_table = buf.data;
+    initStringInfoMy(TopMemoryContext, &buf);
+    if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
+    appendStringInfoString(&buf, "state");
+    if (work->schema_type) pfree(work->schema_type);
+    work->schema_type = buf.data;
+    if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
+    if (work->table != table_quote) pfree((void *)table_quote);
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, schema_table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->schema_table, work->schema_type);
+    if (work->schema) work_schema(work);
+    work_type(work);
+    work_table(work);
+    work_index(work, "dt");
+    work_index(work, "state");
+    set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    initStringInfoMy(TopMemoryContext, &buf);
+    appendStringInfo(&buf, "%i", work->reset);
+    set_config_option("pg_task.reset", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    resetStringInfo(&buf);
+    appendStringInfo(&buf, "%i", work->timeout);
+    set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    pfree(buf.data);
+    queue_init(&work->queue);
+    return !DatumGetBool(DirectFunctionCall1(pg_try_advisory_lock_int8, Int64GetDatum(work->oid)));
+}
+
+static bool work_check(void) {
+    bool exit = false;
+    static SPI_plan *plan = NULL;
+    static const char *command =
+        "WITH s AS ("
+        "SELECT      COALESCE(COALESCE(usename, \"user\"), data)::text AS user,\n"
+        "            COALESCE(datname, data)::text AS data,\n"
+        "            schema,\n"
+        "            COALESCE(\"table\", current_setting('pg_task.default_table', false)) AS table,\n"
+        "            COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,\n"
+        "            COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout\n"
+        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, reset int4, timeout int4)\n"
+        "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
+        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
+        ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM current_setting('pg_task.schema', true) AND \"table\" = current_setting('pg_task.table', false) AND reset = current_setting('pg_task.reset', false)::int4 AND timeout = current_setting('pg_task.timeout', false)::int4";
+    SPI_connect_my(command);
+    if (!plan) plan = SPI_prepare_my(command, 0, NULL);
+    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
+    if (!SPI_processed) exit = true;
+    SPI_finish_my();
+    return exit;
+}
+
+static bool work_reload(void) {
+    ConfigReloadPending = false;
+    ProcessConfigFile(PGC_SIGHUP);
+    return work_check();
+}
+
+static bool work_latch(void) {
+    ResetLatch(MyLatch);
+    CHECK_FOR_INTERRUPTS();
+    if (ConfigReloadPending) return work_reload();
+    return false;
+}
+
+static bool work_is_log_level_output(int elevel, int log_min_level) {
+    if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
+        if (log_min_level == LOG || log_min_level <= ERROR) return true;
+    } else if (log_min_level == LOG) { /* elevel != LOG */
+        if (elevel >= FATAL) return true;
+    } /* Neither is LOG */ else if (elevel >= log_min_level) return true;
+    return false;
+}
+
+static void work_edata(Task *task, const char *filename, int lineno, const char *funcname, const char *message) {
+    ErrorData edata;
+    MemSet(&edata, 0, sizeof(edata));
+    edata.elevel = FATAL;
+    edata.output_to_server = work_is_log_level_output(edata.elevel, log_min_messages);
+    edata.filename = filename;
+    edata.lineno = lineno;
+    edata.funcname = funcname;
+    edata.domain = TEXTDOMAIN ? TEXTDOMAIN : PG_TEXTDOMAIN("postgres");
+    edata.context_domain = edata.domain;
+    edata.sqlerrcode = ERRCODE_ADMIN_SHUTDOWN;
+    edata.message = (char *)message;
+    edata.message_id = edata.message;
+    task_error(task, &edata);
+    task_done(task);
 }
 
 static void work_free(Task *task) {
@@ -171,48 +268,6 @@ static void work_finish(Task *task) {
     work_free(task);
 }
 
-void work_error(Task *task, const char *msg, const char *err, bool finish) {
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-    if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
-    appendStringInfo(&task->error, "%s%s", task->error.len ? "\n" : "", msg);
-    if (err) {
-        int len = strlen(err);
-        if (len) appendStringInfo(&task->error, " and %.*s", len - 1, err);
-    }
-    W(task->error.data);
-    appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
-    task->fail = true;
-    task->skip++;
-    task_done(task);
-    finish ? work_finish(task) : work_free(task);
-}
-
-static bool is_log_level_output(int elevel, int log_min_level) {
-    if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
-        if (log_min_level == LOG || log_min_level <= ERROR) return true;
-    } else if (log_min_level == LOG) { /* elevel != LOG */
-        if (elevel >= FATAL) return true;
-    } /* Neither is LOG */ else if (elevel >= log_min_level) return true;
-    return false;
-}
-
-static void work_edata(Task *task, const char *filename, int lineno, const char *funcname, const char *message) {
-    ErrorData edata;
-    MemSet(&edata, 0, sizeof(edata));
-    edata.elevel = FATAL;
-    edata.output_to_server = is_log_level_output(edata.elevel, log_min_messages);
-    edata.filename = filename;
-    edata.lineno = lineno;
-    edata.funcname = funcname;
-    edata.domain = TEXTDOMAIN ? TEXTDOMAIN : PG_TEXTDOMAIN("postgres");
-    edata.context_domain = edata.domain;
-    edata.sqlerrcode = ERRCODE_ADMIN_SHUTDOWN;
-    edata.message = (char *)message;
-    edata.message_id = edata.message;
-    task_error(task, &edata);
-    task_done(task);
-}
-
 void work_fini(Work *work) {
     StringInfoData buf;
     initStringInfoMy(TopMemoryContext, &buf);
@@ -230,6 +285,22 @@ void work_fini(Work *work) {
         }
     }
     pfree(buf.data);
+}
+
+void work_error(Task *task, const char *msg, const char *err, bool finish) {
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
+    appendStringInfo(&task->error, "%s%s", task->error.len ? "\n" : "", msg);
+    if (err) {
+        int len = strlen(err);
+        if (len) appendStringInfo(&task->error, " and %.*s", len - 1, err);
+    }
+    W(task->error.data);
+    appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
+    task->fail = true;
+    task->skip++;
+    task_done(task);
+    finish ? work_finish(task) : work_free(task);
 }
 
 static void work_remote(Work *work, const int64 id, char *group, char *remote, const int max) {
@@ -424,29 +495,6 @@ void work_timeout(Work *work) {
     SPI_finish_my();
 }
 
-static bool work_check(void) {
-    bool exit = false;
-    static SPI_plan *plan = NULL;
-    static const char *command =
-        "WITH s AS ("
-        "SELECT      COALESCE(COALESCE(usename, \"user\"), data)::text AS user,\n"
-        "            COALESCE(datname, data)::text AS data,\n"
-        "            schema,\n"
-        "            COALESCE(\"table\", current_setting('pg_task.default_table', false)) AS table,\n"
-        "            COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,\n"
-        "            COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout\n"
-        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, reset int4, timeout int4)\n"
-        "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
-        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM current_setting('pg_task.schema', true) AND \"table\" = current_setting('pg_task.table', false) AND reset = current_setting('pg_task.reset', false)::int4 AND timeout = current_setting('pg_task.timeout', false)::int4";
-    SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, 0, NULL);
-    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
-    if (!SPI_processed) exit = true;
-    SPI_finish_my();
-    return exit;
-}
-
 static void work_init(Work *work) {
     char *p = MyBgworkerEntry->bgw_extra;
     work->user = p;
@@ -473,54 +521,6 @@ static void work_init(Work *work) {
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
     process_session_preload_libraries();
-}
-
-bool work_conf(Work *work) {
-    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
-    const char *table_quote = quote_identifier(work->table);
-    StringInfoData buf;
-    initStringInfoMy(TopMemoryContext, &buf);
-    if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
-    appendStringInfoString(&buf, table_quote);
-    if (work->schema_table) pfree(work->schema_table);
-    work->schema_table = buf.data;
-    initStringInfoMy(TopMemoryContext, &buf);
-    if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
-    appendStringInfoString(&buf, "state");
-    if (work->schema_type) pfree(work->schema_type);
-    work->schema_type = buf.data;
-    if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
-    if (work->table != table_quote) pfree((void *)table_quote);
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, schema_table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->schema_table, work->schema_type);
-    if (work->schema) work_schema(work);
-    work_type(work);
-    work_table(work);
-    work_index(work, "dt");
-    work_index(work, "state");
-    set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "%i", work->reset);
-    set_config_option("pg_task.reset", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    resetStringInfo(&buf);
-    appendStringInfo(&buf, "%i", work->timeout);
-    set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pfree(buf.data);
-    queue_init(&work->queue);
-    return !DatumGetBool(DirectFunctionCall1(pg_try_advisory_lock_int8, Int64GetDatum(work->oid)));
-}
-
-static bool work_reload(void) {
-    ConfigReloadPending = false;
-    ProcessConfigFile(PGC_SIGHUP);
-    return work_check();
-}
-
-static bool work_latch(void) {
-    ResetLatch(MyLatch);
-    CHECK_FOR_INTERRUPTS();
-    if (ConfigReloadPending) return work_reload();
-    return false;
 }
 
 static void work_command(Task *task, PGresult *result) {
