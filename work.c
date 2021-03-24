@@ -196,7 +196,7 @@ static bool is_log_level_output(int elevel, int log_min_level) {
     return false;
 }
 
-static void work_edata(ErrorData *edata, const char *filename, int lineno, const char *funcname) {
+static void work_edata(ErrorData *edata, const char *filename, int lineno, const char *funcname, const char *message) {
     edata->elevel = FATAL;
     edata->output_to_server = is_log_level_output(edata->elevel, log_min_messages);
     edata->filename = filename;
@@ -205,19 +205,22 @@ static void work_edata(ErrorData *edata, const char *filename, int lineno, const
     edata->domain = TEXTDOMAIN ? TEXTDOMAIN : PG_TEXTDOMAIN("postgres");
     edata->context_domain = edata->domain;
     edata->sqlerrcode = ERRCODE_ADMIN_SHUTDOWN;
-    edata->message = MemoryContextStrdup(TopMemoryContext, "terminating connection due to administrator command");
+    edata->message = MemoryContextStrdup(TopMemoryContext, message);
     edata->message_id = edata->message;
 }
 
 void work_fini(Work *work) {
+    StringInfoData buf;
+    initStringInfoMy(TopMemoryContext, &buf);
+    appendStringInfo(&buf, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
     queue_each(&work->queue, queue) {
         Task *task = queue_data(queue, Task, queue);
         PGcancel *cancel = PQgetCancel(task->conn);
-        if (!cancel) work_error(task, "ShutdownRequestPending", "!PQgetCancel\n", true); else {
+        if (!cancel) work_error(task, buf.data, "!PQgetCancel\n", true); else {
             char err[256];
-            if (!PQcancel(cancel, err, sizeof(err))) work_error(task, "ShutdownRequestPending", err, true); else {
+            if (!PQcancel(cancel, err, sizeof(err))) work_error(task, buf.data, err, true); else {
                 ErrorData *edata = MemoryContextAllocZero(TopMemoryContext, sizeof(*edata));
-                work_edata(edata, __FILE__, __LINE__, __func__);
+                work_edata(edata, __FILE__, __LINE__, __func__, buf.data);
                 task_error(task, edata);
                 FreeErrorData(edata);
                 task_done(task);
@@ -226,6 +229,7 @@ void work_fini(Work *work) {
             PQfreeCancel(cancel);
         }
     }
+    pfree(buf.data);
 }
 
 static void work_remote(Work *work, const int64 id, char *group, char *remote, const int max) {
