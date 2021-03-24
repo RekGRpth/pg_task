@@ -196,7 +196,8 @@ static bool is_log_level_output(int elevel, int log_min_level) {
     return false;
 }
 
-static void work_edata(ErrorData *edata, const char *filename, int lineno, const char *funcname, const char *message) {
+static void work_edata(Task *task, const char *filename, int lineno, const char *funcname, const char *message) {
+    ErrorData *edata = MemoryContextAllocZero(TopMemoryContext, sizeof(*edata));
     edata->elevel = FATAL;
     edata->output_to_server = is_log_level_output(edata->elevel, log_min_messages);
     edata->filename = filename;
@@ -207,6 +208,9 @@ static void work_edata(ErrorData *edata, const char *filename, int lineno, const
     edata->sqlerrcode = ERRCODE_ADMIN_SHUTDOWN;
     edata->message = MemoryContextStrdup(TopMemoryContext, message);
     edata->message_id = edata->message;
+    task_error(task, edata);
+    FreeErrorData(edata);
+    task_done(task);
 }
 
 void work_fini(Work *work) {
@@ -219,11 +223,7 @@ void work_fini(Work *work) {
         if (!cancel) work_error(task, buf.data, "!PQgetCancel\n", true); else {
             char err[256];
             if (!PQcancel(cancel, err, sizeof(err))) work_error(task, buf.data, err, true); else {
-                ErrorData *edata = MemoryContextAllocZero(TopMemoryContext, sizeof(*edata));
-                work_edata(edata, __FILE__, __LINE__, __func__, buf.data);
-                task_error(task, edata);
-                FreeErrorData(edata);
-                task_done(task);
+                work_edata(task, __FILE__, __LINE__, __func__, buf.data);
                 work_finish(task);
             }
             PQfreeCancel(cancel);
