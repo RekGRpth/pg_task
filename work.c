@@ -711,8 +711,8 @@ void work_worker(Datum main_arg) {
     Work work;
     MemSet(&work, 0, sizeof(work));
     work_conf(&work);
-    ShutdownRequestPending = ShutdownRequestPending || work_init(&work);
-    while (!ShutdownRequestPending) {
+    if (!work_init(&work)) proc_exit(1);
+    for (;;) {
         int nevents = 2;
         WaitEvent *events;
         WaitEventSet *set;
@@ -742,7 +742,7 @@ void work_worker(Datum main_arg) {
         nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) ShutdownRequestPending = ShutdownRequestPending || work_latch();
+            if (event->events & WL_LATCH_SET) if (work_latch()) proc_exit(0);
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
         }
         if (work.timeout >= 0) {
