@@ -66,7 +66,6 @@ bool task_done(Task *task) {
     if (task->error.data) pfree((void *)values[3]);
     if (task->null) pfree(task->null);
     task->null = NULL;
-    if (!DatumGetBool(DirectFunctionCall2(pg_advisory_unlock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id)))) { W("!pg_advisory_unlock_int4(%i, %li)", work->oid, task->id); return true; }
     return exit;
 }
 
@@ -352,8 +351,6 @@ static void task_success(Task *task) {
 }
 
 static bool task_timeout(Task *task) {
-    Work *work = task->work;
-    if (!DatumGetBool(DirectFunctionCall2(pg_try_advisory_lock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id)))) { W("!pg_try_advisory_lock_int4(%i, %li)", work->oid, task->id); return true; }
     if (task_work(task)) return true;
     D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
     PG_TRY();

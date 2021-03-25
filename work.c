@@ -67,7 +67,6 @@ static void work_table(Work *work) {
     List *names;
     const RangeVar *rangevar;
     D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->schema_table, work->schema_type);
-    if (work->oid && !DatumGetBool(DirectFunctionCall1(pg_advisory_unlock_int8, Int64GetDatum(work->oid)))) W("!pg_advisory_unlock_int8(%i)", work->oid);
     set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf,
@@ -134,7 +133,7 @@ static void work_type(Work *work) {
     pfree(buf.data);
 }
 
-bool work_conf(Work *work) {
+void work_conf(Work *work) {
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     const char *table_quote = quote_identifier(work->table);
     StringInfoData buf;
@@ -166,8 +165,6 @@ bool work_conf(Work *work) {
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     queue_init(&work->queue);
-    if (!DatumGetBool(DirectFunctionCall1(pg_try_advisory_lock_int8, Int64GetDatum(work->oid)))) { W("!pg_try_advisory_lock_int8(%i)", work->oid); return true; }
-    return false;
 }
 
 static bool work_check(void) {
@@ -271,7 +268,6 @@ static void work_finish(Task *task) {
 
 void work_fini(Work *work) {
     StringInfoData buf;
-    if (work->oid && !DatumGetBool(DirectFunctionCall1(pg_advisory_unlock_int8, Int64GetDatum(work->oid)))) W("!pg_advisory_unlock_int8(%i)", work->oid);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
     queue_each(&work->queue, queue) {
@@ -315,7 +311,6 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     bool password = false;
     PQconninfoOption *opts;
     Task *task;
-    if (!DatumGetBool(DirectFunctionCall2(pg_try_advisory_lock_int4, Int32GetDatum(work->oid), Int32GetDatum(id)))) { W("!pg_try_advisory_lock_int4(%i, %li)", work->oid, id); return; }
     opts = PQconninfoParse(remote, &err);
     task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
     task->group = MemoryContextStrdup(TopMemoryContext, group);
@@ -705,6 +700,7 @@ static void work_init(Work *work) {
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
     process_session_preload_libraries();
+    work_conf(work);
 }
 
 void work_worker(Datum main_arg) {
@@ -714,12 +710,11 @@ void work_worker(Datum main_arg) {
     Work work;
     MemSet(&work, 0, sizeof(work));
     work_init(&work);
-    ShutdownRequestPending = ShutdownRequestPending || work_conf(&work);
     while (!ShutdownRequestPending) {
         int nevents = 2;
         WaitEvent *events;
         WaitEventSet *set;
-        if (work.timeout >= 0 && cur_timeout <= 0) {
+        if (cur_timeout <= 0) {
             INSTR_TIME_SET_CURRENT(start_time);
             cur_timeout = work.timeout;
         }

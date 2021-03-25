@@ -118,7 +118,6 @@ static void conf_check(Work *work) {
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
         ") SELECT DISTINCT s.*, u.usesysid IS NOT NULL AS user_exists, d.oid IS NOT NULL AS data_exists, a.pid IS NULL AS pid_isnull FROM s\n"
         "LEFT JOIN   pg_stat_activity AS a ON a.usename = \"user\" AND a.datname = data AND application_name = concat_ws(' ', 'pg_task', schema, \"table\", reset::text, timeout::text) AND pid != pg_backend_pid()\n"
-        "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
         "LEFT JOIN   pg_database AS d ON d.datname = data AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON u.usename = \"user\"";
     bool conf = false;
@@ -135,7 +134,7 @@ static void conf_check(Work *work) {
         bool user_exists = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user_exists", false));
         bool data_exists = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data_exists", false));
         bool pid_isnull = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "pid_isnull", false));
-        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, user_exists = %s, data_exists = %s", row, user, data, schema ? schema : default_null, table, reset, timeout, user_exists ? "true" : "false", data_exists ? "true" : "false");
+        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, user_exists = %s, data_exists = %s, pid_isnull = %s", row, user, data, schema ? schema : default_null, table, reset, timeout, user_exists ? "true" : "false", data_exists ? "true" : "false", pid_isnull ? "true" : "false");
         if (!strcmp(user, "postgres") && !strcmp(data, "postgres") && !schema && !strcmp(table, "task")) {
             work->user = "postgres";
             work->data = "postgres";
@@ -143,8 +142,10 @@ static void conf_check(Work *work) {
             work->table = "task";
             work->reset = reset;
             work->timeout = timeout;
-            if (!pid_isnull) conf = true;
-            else if (!work_conf(work)) conf = true;
+            if (!pid_isnull) {
+                conf = true;
+                work_conf(work);
+            }
         } else {
             if (!user_exists) conf_user(user);
             if (!data_exists) conf_data(user, data);
