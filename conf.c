@@ -118,7 +118,7 @@ static void conf_check(Work *work) {
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
         ") SELECT DISTINCT s.*, u.usesysid IS NOT NULL AS user_exists, d.oid IS NOT NULL AS data_exists, a.pid IS NULL AS pid_isnull FROM s\n"
         "LEFT JOIN   pg_stat_activity AS a ON a.usename = \"user\" AND a.datname = data AND application_name = concat_ws(' ', 'pg_task', schema, \"table\", reset::text, timeout::text) AND pid != pg_backend_pid()\n"
-        "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted\n"
+        "LEFT JOIN   pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted AND objsubid = 1 AND classid = 0\n"
         "LEFT JOIN   pg_database AS d ON d.datname = data AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON u.usename = \"user\"";
     bool conf = false;
