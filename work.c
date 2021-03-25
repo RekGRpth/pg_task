@@ -2,39 +2,6 @@
 
 extern char *default_null;
 
-static void work_check(Work *work) {
-    static SPI_plan *plan = NULL;
-    static const char *command =
-        "WITH s AS ("
-        "SELECT      COALESCE(COALESCE(usename, \"user\"), data)::text AS user,\n"
-        "            COALESCE(datname, data)::text AS data,\n"
-        "            schema,\n"
-        "            COALESCE(\"table\", current_setting('pg_task.default_table', false)) AS table,\n"
-        "            COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,\n"
-        "            COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout\n"
-        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, reset int4, timeout int4)\n"
-        "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
-        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM current_setting('pg_task.schema', true) AND \"table\" = current_setting('pg_task.table', false) AND reset = current_setting('pg_task.reset', false)::int4 AND timeout = current_setting('pg_task.timeout', false)::int4";
-    SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, 0, NULL);
-    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
-    if (!SPI_processed) ShutdownRequestPending = true;
-    SPI_finish_my();
-}
-
-static void work_reload(Work *work) {
-    ConfigReloadPending = false;
-    ProcessConfigFile(PGC_SIGHUP);
-    work_check(work);
-}
-
-static void work_latch(Work *work) {
-    ResetLatch(MyLatch);
-    CHECK_FOR_INTERRUPTS();
-    if (ConfigReloadPending) work_reload(work);
-}
-
 static bool work_is_log_level_output(int elevel, int log_min_level) {
     if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
         if (log_min_level == LOG || log_min_level <= ERROR) return true;
@@ -671,6 +638,27 @@ void work_socket(Task *task) {
     }
 }
 
+static void work_check(Work *work) {
+    static SPI_plan *plan = NULL;
+    static const char *command =
+        "WITH s AS ("
+        "SELECT      COALESCE(COALESCE(usename, \"user\"), data)::text AS user,\n"
+        "            COALESCE(datname, data)::text AS data,\n"
+        "            schema,\n"
+        "            COALESCE(\"table\", current_setting('pg_task.default_table', false)) AS table,\n"
+        "            COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,\n"
+        "            COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout\n"
+        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, reset int4, timeout int4)\n"
+        "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
+        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
+        ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM current_setting('pg_task.schema', true) AND \"table\" = current_setting('pg_task.table', false) AND reset = current_setting('pg_task.reset', false)::int4 AND timeout = current_setting('pg_task.timeout', false)::int4";
+    SPI_connect_my(command);
+    if (!plan) plan = SPI_prepare_my(command, 0, NULL);
+    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
+    if (!SPI_processed) ShutdownRequestPending = true;
+    SPI_finish_my();
+}
+
 static void work_init(Work *work) {
     char *p = MyBgworkerEntry->bgw_extra;
     work->user = p;
@@ -698,6 +686,18 @@ static void work_init(Work *work) {
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
     process_session_preload_libraries();
     work_conf(work);
+}
+
+static void work_reload(Work *work) {
+    ConfigReloadPending = false;
+    ProcessConfigFile(PGC_SIGHUP);
+    work_check(work);
+}
+
+static void work_latch(Work *work) {
+    ResetLatch(MyLatch);
+    CHECK_FOR_INTERRUPTS();
+    if (ConfigReloadPending) work_reload(work);
 }
 
 void work_worker(Datum main_arg) {
