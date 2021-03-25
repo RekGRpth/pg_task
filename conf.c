@@ -143,7 +143,7 @@ static void conf_check(Work *work) {
             work->table = "task";
             work->reset = reset;
             work->timeout = timeout;
-            work_conf(work);
+            if (!work->oid) work_conf(work);
             conf = true;
         } else if (pid_isnull) {
             if (!user_exists) conf_user(user);
