@@ -2,8 +2,7 @@
 
 extern char *default_null;
 
-static bool work_check(void) {
-    bool exit = false;
+static void work_check(Work *work) {
     static SPI_plan *plan = NULL;
     static const char *command =
         "WITH s AS ("
@@ -20,22 +19,20 @@ static bool work_check(void) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
-    if (!SPI_processed) exit = true;
+    if (!SPI_processed) ShutdownRequestPending = true;
     SPI_finish_my();
-    return exit;
 }
 
-static bool work_reload(void) {
+static void work_reload(Work *work) {
     ConfigReloadPending = false;
     ProcessConfigFile(PGC_SIGHUP);
-    return work_check();
+    work_check(work);
 }
 
-static bool work_latch(void) {
+static void work_latch(Work *work) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
-    if (ConfigReloadPending) return work_reload();
-    return false;
+    if (ConfigReloadPending) work_reload(work);
 }
 
 static bool work_is_log_level_output(int elevel, int log_min_level) {
@@ -740,7 +737,7 @@ void work_worker(Datum main_arg) {
         nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) ShutdownRequestPending = ShutdownRequestPending || work_latch();
+            if (event->events & WL_LATCH_SET) work_latch(&work);
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
             if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
         }
