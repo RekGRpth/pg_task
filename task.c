@@ -66,6 +66,7 @@ bool task_done(Task *task) {
     if (task->error.data) pfree((void *)values[3]);
     if (task->null) pfree(task->null);
     task->null = NULL;
+    if (!DatumGetBool(DirectFunctionCall2(pg_advisory_unlock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id)))) { W("!pg_advisory_unlock_int4(%i, %li)", work->oid, task->id); return true; }
     return exit;
 }
 
@@ -114,6 +115,7 @@ bool task_work(Task *task) {
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
+    if (!DatumGetBool(DirectFunctionCall2(pg_try_advisory_lock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id)))) { W("!pg_try_advisory_lock_int4(%i, %li)", work->oid, task->id); return true; }
     task->count++;
     D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work->oid, task->count, task->pid);
     if (!task->conn) {
@@ -128,11 +130,8 @@ bool task_work(Task *task) {
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %1$s WHERE id = $1 AND state = 'TAKE'::%2$s FOR UPDATE)\n"
-            "UPDATE  %1$s AS u\n"
-            "SET     state = 'WORK'::%2$s,\n"
-            "        start = current_timestamp,\n"
-            "        pid = $2\n"
-            "FROM s WHERE u.id = s.id RETURNING input, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout, append, header, string, \"null\", delimiter, quote, escape", work->schema_table, work->schema_type);
+            "UPDATE %1$s AS u SET state = 'WORK'::%2$s, start = current_timestamp, pid = $2 FROM s WHERE u.id = s.id\n"
+            "RETURNING input, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout, append, header, string, \"null\", delimiter, quote, escape", work->schema_table, work->schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
