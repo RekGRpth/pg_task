@@ -316,7 +316,7 @@ static void task_init(Work *work, Task *task) {
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     if (work->table != table_quote) pfree((void *)table_quote);
     task->pid = MyProcPid;
-    task->id = MyBgworkerEntry->bgw_main_arg;
+    task->id = DatumGetInt64(MyBgworkerEntry->bgw_main_arg);
     task->start = GetCurrentTimestamp();
     task->count = 0;
     task->group = p;
