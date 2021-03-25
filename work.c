@@ -68,7 +68,7 @@ static void work_finish(Task *task) {
 static void work_index(Work *work, const char *index) {
     StringInfoData buf, name, idx;
     List *names;
-    Relation relation;
+    RelationData *relation;
     const RangeVar *rangevar;
     const char *name_quote;
     const char *index_quote = quote_identifier(index);
