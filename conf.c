@@ -142,14 +142,12 @@ static void conf_check(Work *work) {
             work->table = "task";
             work->reset = reset;
             work->timeout = timeout;
-            if (pid_isnull) {
-                conf = true;
-                work_conf(work);
-            }
-        } else {
+            work_conf(work);
+            conf = true;
+        } else if (pid_isnull) {
             if (!user_exists) conf_user(user);
             if (!data_exists) conf_data(user, data);
-            if (pid_isnull) conf_work(user, data, schema, table, reset, timeout);
+            conf_work(user, data, schema, table, reset, timeout);
         }
         pfree(user);
         pfree(data);
