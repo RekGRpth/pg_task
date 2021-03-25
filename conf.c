@@ -143,8 +143,12 @@ static void conf_check(Work *work) {
             work->table = "task";
             work->reset = reset;
             work->timeout = timeout;
-            if (!active) work_conf(work);
             conf = true;
+            if (!work->oid) {
+                work_conf(work);
+                if (!ShutdownRequestPending && !DatumGetBool(DirectFunctionCall1(pg_advisory_unlock_int8, Int64GetDatum(GetUserId())))) { W("!pg_advisory_unlock_int8(%i)", GetUserId()); ShutdownRequestPending = true; }
+                if (!ShutdownRequestPending && !DatumGetBool(DirectFunctionCall1(pg_try_advisory_lock_int8, Int64GetDatum(work->oid)))) { W("!pg_try_advisory_lock_int8(%i)", work->oid); ShutdownRequestPending = true; }
+            }
         } else if (!active) {
             if (!user_exists) conf_user(user);
             if (!data_exists) conf_data(user, data);
@@ -195,7 +199,7 @@ void conf_worker(Datum main_arg) {
     Work work;
     MemSet(&work, 0, sizeof(work));
     conf_init(&work);
-    if (!ShutdownRequestPending && !DatumGetBool(DirectFunctionCall1(pg_try_advisory_lock_int8, Int64GetDatum(GetUserId())))) { W("!pg_try_advisory_lock_int8(%i)", GetUserId()); return; }
+    if (!ShutdownRequestPending && !DatumGetBool(DirectFunctionCall1(pg_try_advisory_lock_int8, Int64GetDatum(work.oid ? work.oid : GetUserId())))) { W("!pg_try_advisory_lock_int8(%i)", work.oid ? work.oid : GetUserId()); return; }
     while (!ShutdownRequestPending) {
         int nevents = 2;
         WaitEvent *events;
@@ -240,5 +244,5 @@ void conf_worker(Datum main_arg) {
         pfree(events);
     }
     work_fini(&work);
-    if (!DatumGetBool(DirectFunctionCall1(pg_advisory_unlock_int8, Int64GetDatum(GetUserId())))) W("!pg_advisory_unlock_int8(%i)", GetUserId());
+    if (!DatumGetBool(DirectFunctionCall1(pg_advisory_unlock_int8, Int64GetDatum(work.oid ? work.oid : GetUserId())))) W("!pg_advisory_unlock_int8(%i)", work.oid ? work.oid : GetUserId());
 }
