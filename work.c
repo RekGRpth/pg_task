@@ -395,9 +395,10 @@ static void work_update(Work *work) {
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %1$s AS t WHERE dt < current_timestamp - concat_ws(' ', (current_setting('pg_task.reset', false)::int4 * current_setting('pg_task.timeout', false)::int4)::text, 'msec')::interval AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND pid NOT IN (\n"
-            "    SELECT  pid FROM pg_stat_activity\n"
-            "    WHERE   datname = current_catalog AND usename = current_user AND application_name = concat_ws(' ', 'pg_task', current_setting('pg_task.schema', true), current_setting('pg_task.table', false), \"group\")\n"
-            "    UNION   SELECT unnest($1::int4[]) AS pid\n"
+            "    SELECT      a.pid FROM pg_stat_activity AS a\n"
+            "    INNER JOIN  pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted AND objsubid = 2\n"
+            "    WHERE       datname = current_catalog AND usename = current_user AND application_name = concat_ws(' ', 'pg_task', current_setting('pg_task.schema', true), current_setting('pg_task.table', false), \"group\")\n"
+            "    UNION       SELECT unnest($1::int4[]) AS pid\n"
             ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::%2$s FROM s WHERE u.id = s.id", work->schema_table, work->schema_type);
         command = buf.data;
     }
