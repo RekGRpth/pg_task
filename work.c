@@ -44,16 +44,16 @@ static void work_remotes(Work *work) {
     work->remotes.data = NULL;
     if (!nelems) return;
     initStringInfoMy(TopMemoryContext, &work->remotes);
-    appendStringInfoString(&work->remotes, "{");
+    appendStringInfoString(&work->remotes, "[");
     nelems = 0;
     queue_each(&work->queue, queue) {
         Task *task = queue_data(queue, Task, queue);
         if (!task->pid) continue;
         if (nelems) appendStringInfoString(&work->remotes, ",");
-        appendStringInfo(&work->remotes, "%i", task->pid);
+        appendStringInfo(&work->remotes, "{\"pid\":%i,\"oid\":%i,\"id\":%li}", task->pid, work->oid, task->id);
         nelems++;
     }
-    appendStringInfoString(&work->remotes, "}");
+    appendStringInfoString(&work->remotes, "]");
     D1("remotes = %s", work->remotes.data);
 }
 
@@ -394,11 +394,11 @@ static void work_update(Work *work) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %1$s AS t WHERE dt < current_timestamp - concat_ws(' ', (current_setting('pg_task.reset', false)::int4 * current_setting('pg_task.timeout', false)::int4)::text, 'msec')::interval AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND pid NOT IN (\n"
-            "    SELECT      a.pid FROM pg_stat_activity AS a\n"
+            "WITH s AS (SELECT id FROM %1$s AS t WHERE dt < current_timestamp - concat_ws(' ', (current_setting('pg_task.reset', false)::int4 * current_setting('pg_task.timeout', false)::int4)::text, 'msec')::interval AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND (pid, tableoid, id) NOT IN (\n"
+            "    SELECT      a.pid, classid, objid FROM pg_stat_activity AS a\n"
             "    INNER JOIN  pg_locks AS l ON l.pid = a.pid AND locktype = 'advisory' AND mode = 'ExclusiveLock' AND granted AND objsubid = 2\n"
             "    WHERE       datname = current_catalog AND usename = current_user AND application_name = concat_ws(' ', 'pg_task', current_setting('pg_task.schema', true), current_setting('pg_task.table', false), \"group\")\n"
-            "    UNION       SELECT unnest($1::int4[]) AS pid\n"
+            "    UNION       SELECT * FROM json_populate_recordset(NULL::record, $1::json) AS s (pid int4, oid oid, id int8)\n"
             ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::%2$s FROM s WHERE u.id = s.id", work->schema_table, work->schema_type);
         command = buf.data;
     }
