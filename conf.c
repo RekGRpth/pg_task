@@ -195,6 +195,7 @@ void conf_worker(Datum main_arg) {
     Work work;
     MemSet(&work, 0, sizeof(work));
     conf_init(&work);
+    if (!ShutdownRequestPending && !DatumGetBool(DirectFunctionCall1(pg_try_advisory_lock_int8, Int64GetDatum(GetUserId())))) { W("!pg_try_advisory_lock_int8(%i)", GetUserId()); return; }
     while (!ShutdownRequestPending) {
         int nevents = 2;
         WaitEvent *events;
@@ -239,4 +240,5 @@ void conf_worker(Datum main_arg) {
         pfree(events);
     }
     work_fini(&work);
+    if (!DatumGetBool(DirectFunctionCall1(pg_advisory_unlock_int8, Int64GetDatum(GetUserId())))) W("!pg_advisory_unlock_int8(%i)", GetUserId());
 }
