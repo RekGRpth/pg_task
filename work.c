@@ -2,6 +2,105 @@
 
 extern char *default_null;
 
+static bool work_check(void) {
+    bool exit = false;
+    static SPI_plan *plan = NULL;
+    static const char *command =
+        "WITH s AS ("
+        "SELECT      COALESCE(COALESCE(usename, \"user\"), data)::text AS user,\n"
+        "            COALESCE(datname, data)::text AS data,\n"
+        "            schema,\n"
+        "            COALESCE(\"table\", current_setting('pg_task.default_table', false)) AS table,\n"
+        "            COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,\n"
+        "            COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout\n"
+        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, reset int4, timeout int4)\n"
+        "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
+        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
+        ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM current_setting('pg_task.schema', true) AND \"table\" = current_setting('pg_task.table', false) AND reset = current_setting('pg_task.reset', false)::int4 AND timeout = current_setting('pg_task.timeout', false)::int4";
+    SPI_connect_my(command);
+    if (!plan) plan = SPI_prepare_my(command, 0, NULL);
+    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
+    if (!SPI_processed) exit = true;
+    SPI_finish_my();
+    return exit;
+}
+
+static bool work_reload(void) {
+    ConfigReloadPending = false;
+    ProcessConfigFile(PGC_SIGHUP);
+    return work_check();
+}
+
+static bool work_latch(void) {
+    ResetLatch(MyLatch);
+    CHECK_FOR_INTERRUPTS();
+    if (ConfigReloadPending) return work_reload();
+    return false;
+}
+
+static bool work_is_log_level_output(int elevel, int log_min_level) {
+    if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
+        if (log_min_level == LOG || log_min_level <= ERROR) return true;
+    } else if (log_min_level == LOG) { /* elevel != LOG */
+        if (elevel >= FATAL) return true;
+    } /* Neither is LOG */ else if (elevel >= log_min_level) return true;
+    return false;
+}
+
+static void work_edata(Task *task, const char *filename, int lineno, const char *funcname, const char *message) {
+    ErrorData edata;
+    MemSet(&edata, 0, sizeof(edata));
+    edata.elevel = FATAL;
+    edata.output_to_server = work_is_log_level_output(edata.elevel, log_min_messages);
+    edata.filename = filename;
+    edata.lineno = lineno;
+    edata.funcname = funcname;
+    edata.domain = TEXTDOMAIN ? TEXTDOMAIN : PG_TEXTDOMAIN("postgres");
+    edata.context_domain = edata.domain;
+    edata.sqlerrcode = ERRCODE_ADMIN_SHUTDOWN;
+    edata.message = (char *)message;
+    edata.message_id = edata.message;
+    task_error(task, &edata);
+    task_done(task);
+}
+
+static void work_free(Task *task) {
+    if (task->group) pfree(task->group);
+    if (task->null) pfree(task->null);
+    if (task->remote) pfree(task->remote);
+    if (task->input) pfree(task->input);
+    if (task->output.data) pfree(task->output.data);
+    if (task->error.data) pfree(task->error.data);
+    pfree(task);
+}
+
+static void work_pid(Work *work) {
+    int nelems = queue_size(&work->queue);
+    if (work->pids.data) pfree(work->pids.data);
+    work->pids.data = NULL;
+    if (!nelems) return;
+    initStringInfoMy(TopMemoryContext, &work->pids);
+    appendStringInfoString(&work->pids, "{");
+    nelems = 0;
+    queue_each(&work->queue, queue) {
+        Task *task = queue_data(queue, Task, queue);
+        if (!task->pid) continue;
+        if (nelems) appendStringInfoString(&work->pids, ",");
+        appendStringInfo(&work->pids, "%i", task->pid);
+        nelems++;
+    }
+    appendStringInfoString(&work->pids, "}");
+    D1("pids = %s", work->pids.data);
+}
+
+static void work_finish(Task *task) {
+    Work *work = task->work;
+    queue_remove(&task->queue);
+    PQfinish(task->conn);
+    work_pid(work);
+    work_free(task);
+}
+
 static void work_index(Work *work, const char *index) {
     StringInfoData buf, name, idx;
     List *names;
@@ -165,105 +264,6 @@ void work_conf(Work *work) {
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     queue_init(&work->queue);
-}
-
-static bool work_check(void) {
-    bool exit = false;
-    static SPI_plan *plan = NULL;
-    static const char *command =
-        "WITH s AS ("
-        "SELECT      COALESCE(COALESCE(usename, \"user\"), data)::text AS user,\n"
-        "            COALESCE(datname, data)::text AS data,\n"
-        "            schema,\n"
-        "            COALESCE(\"table\", current_setting('pg_task.default_table', false)) AS table,\n"
-        "            COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,\n"
-        "            COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout\n"
-        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, reset int4, timeout int4)\n"
-        "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
-        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT DISTINCT * FROM s WHERE \"user\" = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM current_setting('pg_task.schema', true) AND \"table\" = current_setting('pg_task.table', false) AND reset = current_setting('pg_task.reset', false)::int4 AND timeout = current_setting('pg_task.timeout', false)::int4";
-    SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, 0, NULL);
-    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
-    if (!SPI_processed) exit = true;
-    SPI_finish_my();
-    return exit;
-}
-
-static bool work_reload(void) {
-    ConfigReloadPending = false;
-    ProcessConfigFile(PGC_SIGHUP);
-    return work_check();
-}
-
-static bool work_latch(void) {
-    ResetLatch(MyLatch);
-    CHECK_FOR_INTERRUPTS();
-    if (ConfigReloadPending) return work_reload();
-    return false;
-}
-
-static bool work_is_log_level_output(int elevel, int log_min_level) {
-    if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
-        if (log_min_level == LOG || log_min_level <= ERROR) return true;
-    } else if (log_min_level == LOG) { /* elevel != LOG */
-        if (elevel >= FATAL) return true;
-    } /* Neither is LOG */ else if (elevel >= log_min_level) return true;
-    return false;
-}
-
-static void work_edata(Task *task, const char *filename, int lineno, const char *funcname, const char *message) {
-    ErrorData edata;
-    MemSet(&edata, 0, sizeof(edata));
-    edata.elevel = FATAL;
-    edata.output_to_server = work_is_log_level_output(edata.elevel, log_min_messages);
-    edata.filename = filename;
-    edata.lineno = lineno;
-    edata.funcname = funcname;
-    edata.domain = TEXTDOMAIN ? TEXTDOMAIN : PG_TEXTDOMAIN("postgres");
-    edata.context_domain = edata.domain;
-    edata.sqlerrcode = ERRCODE_ADMIN_SHUTDOWN;
-    edata.message = (char *)message;
-    edata.message_id = edata.message;
-    task_error(task, &edata);
-    task_done(task);
-}
-
-static void work_free(Task *task) {
-    if (task->group) pfree(task->group);
-    if (task->null) pfree(task->null);
-    if (task->remote) pfree(task->remote);
-    if (task->input) pfree(task->input);
-    if (task->output.data) pfree(task->output.data);
-    if (task->error.data) pfree(task->error.data);
-    pfree(task);
-}
-
-static void work_pid(Work *work) {
-    int nelems = queue_size(&work->queue);
-    if (work->pids.data) pfree(work->pids.data);
-    work->pids.data = NULL;
-    if (!nelems) return;
-    initStringInfoMy(TopMemoryContext, &work->pids);
-    appendStringInfoString(&work->pids, "{");
-    nelems = 0;
-    queue_each(&work->queue, queue) {
-        Task *task = queue_data(queue, Task, queue);
-        if (!task->pid) continue;
-        if (nelems) appendStringInfoString(&work->pids, ",");
-        appendStringInfo(&work->pids, "%i", task->pid);
-        nelems++;
-    }
-    appendStringInfoString(&work->pids, "}");
-    D1("pids = %s", work->pids.data);
-}
-
-static void work_finish(Task *task) {
-    Work *work = task->work;
-    queue_remove(&task->queue);
-    PQfinish(task->conn);
-    work_pid(work);
-    work_free(task);
 }
 
 void work_fini(Work *work) {
