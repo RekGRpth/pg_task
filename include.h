@@ -52,7 +52,7 @@ typedef struct Work {
     int timeout;
     Oid oid;
     queue_t queue;
-    StringInfoData pids;
+    StringInfoData remotes;
 } Work;
 
 typedef struct Task {
