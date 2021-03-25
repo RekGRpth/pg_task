@@ -142,7 +142,7 @@ static void conf_check(Work *work) {
             work->table = "task";
             work->reset = reset;
             work->timeout = timeout;
-            if (!pid_isnull) {
+            if (pid_isnull) {
                 conf = true;
                 work_conf(work);
             }
