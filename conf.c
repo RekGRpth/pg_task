@@ -22,7 +22,7 @@ static void conf_data(const char *user, const char *data) {
         list_free_deep(stmt->options);
         free_parsestate(pstate);
         pfree(stmt);
-    } else D1("database %s already exists", data_quote);
+    };
     SPI_commit_my();
     list_free_deep(names);
     if (user_quote != user) pfree((void *)user_quote);
@@ -49,7 +49,7 @@ static void conf_user(const char *user) {
         list_free_deep(stmt->options);
         free_parsestate(pstate);
         pfree(stmt);
-    } else D1("user %s already exists", user_quote);
+    };
     SPI_commit_my();
     list_free_deep(names);
     if (user_quote != user) pfree((void *)user_quote);
