@@ -417,13 +417,9 @@ void work_timeout(Work *work) {
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf,
             "WITH s AS (WITH s AS (WITH s AS (WITH s AS (WITH s AS (\n"
-            "SELECT      t.id, t.group, COALESCE(t.max, ~(1<<31)) AS max, a.pid\n"
-            "FROM        %1$s AS t\n"
-            "LEFT JOIN   %1$s AS a\n"
-            "ON          a.state = 'WORK'::%2$s\n"
-            "AND         t.group = a.group\n"
-            "WHERE       t.state = 'PLAN'::%2$s\n"
-            "AND         t.dt + concat_ws(' ', (CASE WHEN t.max < 0 THEN -t.max ELSE 0 END)::text, 'msec')::interval <= current_timestamp\n"
+            "    SELECT      t.id, t.group, COALESCE(t.max, ~(1<<31)) AS max, a.pid FROM %1$s AS t\n"
+            "    LEFT JOIN   %1$s AS a ON a.state = 'WORK'::%2$s AND t.group = a.group\n"
+            "    WHERE       t.state = 'PLAN'::%2$s AND t.dt + concat_ws(' ', (CASE WHEN t.max < 0 THEN -t.max ELSE 0 END)::text, 'msec')::interval <= current_timestamp\n"
             ") SELECT id, \"group\", CASE WHEN max > 0 THEN max ELSE 1 END - count(pid) AS count FROM s GROUP BY id, \"group\", max\n"
             ") SELECT array_agg(id ORDER BY id) AS id, \"group\", count FROM s WHERE count > 0 GROUP BY \"group\", count\n"
             ") SELECT unnest(id[:count]) AS id, \"group\", count FROM s ORDER BY count DESC\n"
