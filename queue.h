@@ -4,11 +4,13 @@
 typedef struct queue_t {
     struct queue_t *prev;
     union {
-        struct queue_t *head;
+        struct queue_t *parent;
         size_t size;
     };
     struct queue_t *next;
 } queue_t;
+
+#define queue_parent(q) (q)->parent
 
 #define queue_size(q) (q)->size
 
@@ -27,7 +29,7 @@ typedef struct queue_t {
         (x)->next->prev = x; \
         (x)->prev = h; \
         (h)->next = x; \
-        (x)->head = h; \
+        (x)->parent = h; \
         (h)->size++; \
     } while (0)
 
@@ -39,7 +41,7 @@ typedef struct queue_t {
         (x)->prev->next = x; \
         (x)->next = h; \
         (h)->prev = x; \
-        (x)->head = h; \
+        (x)->parent = h; \
         (h)->size++; \
     } while (0)
 
@@ -59,8 +61,8 @@ typedef struct queue_t {
         (x)->prev->next = (x)->next; \
         (x)->prev = NULL; \
         (x)->next = NULL; \
-        (x)->head->size--; \
-        (x)->head = NULL; \
+        (x)->parent->size--; \
+        (x)->parent = NULL; \
     } while (0)
 
 #define queue_data(q, t, o) (t *)((char *)q - offsetof(t, o))
