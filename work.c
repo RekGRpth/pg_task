@@ -431,7 +431,7 @@ void work_timeout(Work *work) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING, true);
-    for (uint64 row = 0; row < SPI_processed; row++) {
+    for (uint64 row = 0; row < SPI_tuptable->numvals; row++) {
         int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
         int max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "max", false));
         char *group = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
@@ -643,7 +643,7 @@ static void work_check(Work *work) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
-    if (!SPI_processed) ShutdownRequestPending = true;
+    if (!SPI_tuptable->numvals) ShutdownRequestPending = true;
     SPI_finish_my();
 }
 

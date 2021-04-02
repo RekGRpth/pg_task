@@ -53,8 +53,8 @@ bool task_done(Task *task) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
-    if (SPI_processed != 1) {
-        W("SPI_processed != 1");
+    if (SPI_tuptable->numvals != 1) {
+        W("SPI_tuptable->numvals != 1");
         exit = true;
     } else {
         task->delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
@@ -100,7 +100,7 @@ bool task_live(Task *task) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
-    if (!SPI_processed) exit = true; else task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false));
+    if (!SPI_tuptable->numvals) exit = true; else task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false));
     SPI_finish_my();
     pfree((void *)values[0]);
     if (task->remote) pfree((void *)values[1]);
@@ -137,8 +137,8 @@ bool task_work(Task *task) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
-    if (SPI_processed != 1) {
-        W("SPI_processed != 1");
+    if (SPI_tuptable->numvals != 1) {
+        W("SPI_tuptable->numvals != 1");
         exit = true;
     } else {
         task->input = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "input", false));
