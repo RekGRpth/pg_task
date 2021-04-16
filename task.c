@@ -263,7 +263,7 @@ static void SignalHandlerForShutdownRequestMy(SIGNAL_ARGS) {
     int save_errno = errno;
     ShutdownRequestPending = true;
     SetLatch(MyLatch);
-    DirectFunctionCall1(pg_cancel_backend, Int32GetDatum(MyProcPid));
+    if (!DatumGetBool(DirectFunctionCall1(pg_cancel_backend, Int32GetDatum(MyProcPid)))) E("!pg_cancel_backend(%i)", MyProcPid);
     errno = save_errno;
 }
 
