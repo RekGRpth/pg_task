@@ -40,15 +40,15 @@ static void work_free(Task *task) {
 
 static void work_remotes(Work *work) {
     int nelems = 0;
-    Task *task, *tvar;
-    LIST_FOREACH_SAFE(task, &work->tasks, item, tvar) nelems++;
+    Task *task, *_;
+    LIST_FOREACH_SAFE(task, &work->tasks, item, _) nelems++;
     if (work->remotes.data) pfree(work->remotes.data);
     work->remotes.data = NULL;
     if (!nelems) return;
     initStringInfoMy(TopMemoryContext, &work->remotes);
     appendStringInfoString(&work->remotes, "{");
     nelems = 0;
-    LIST_FOREACH_SAFE(task, &work->tasks, item, tvar) {
+    LIST_FOREACH_SAFE(task, &work->tasks, item, _) {
         if (!task->pid) continue;
         if (nelems) appendStringInfoString(&work->remotes, ",");
         appendStringInfo(&work->remotes, "%i", task->pid);
@@ -226,11 +226,11 @@ void work_conf(Work *work) {
 }
 
 void work_fini(Work *work) {
-    Task *task, *tvar;
+    Task *task, *_;
     StringInfoData buf;
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
-    LIST_FOREACH_SAFE(task, &work->tasks, item, tvar) {
+    LIST_FOREACH_SAFE(task, &work->tasks, item, _) {
         PGcancel *cancel = PQgetCancel(task->conn);
         if (!cancel) work_error(task, buf.data, "!PQgetCancel\n", true); else {
             char err[256];
@@ -696,7 +696,7 @@ void work_worker(Datum main_arg) {
     MemSet(&work, 0, sizeof(work));
     work_init(&work);
     while (!ShutdownRequestPending) {
-        Task *task, *tvar;
+        Task *task, *_;
         int nevents = 2;
         WaitEvent *events;
         WaitEventSet *set;
@@ -704,7 +704,7 @@ void work_worker(Datum main_arg) {
             INSTR_TIME_SET_CURRENT(start_time);
             cur_timeout = work.timeout;
         }
-        LIST_FOREACH_SAFE(task, &work.tasks, item, tvar) {
+        LIST_FOREACH_SAFE(task, &work.tasks, item, _) {
             if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); continue; }
             if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0", PQerrorMessage(task->conn), true); continue; }
             nevents++;
@@ -713,7 +713,7 @@ void work_worker(Datum main_arg) {
         set = CreateWaitEventSet(TopMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
-        LIST_FOREACH_SAFE(task, &work.tasks, item, tvar) {
+        LIST_FOREACH_SAFE(task, &work.tasks, item, _) {
             if (task->events & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
                 case 0: /*D1("PQflush = 0");*/ break;
                 case 1: D1("PQflush = 1"); break;

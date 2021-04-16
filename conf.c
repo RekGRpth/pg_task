@@ -195,7 +195,7 @@ void conf_worker(Datum main_arg) {
     MemSet(&work, 0, sizeof(work));
     conf_init(&work);
     while (!ShutdownRequestPending) {
-        Task *task, *tvar;
+        Task *task, *_;
         int nevents = 2;
         WaitEvent *events;
         WaitEventSet *set;
@@ -203,7 +203,7 @@ void conf_worker(Datum main_arg) {
             INSTR_TIME_SET_CURRENT(start_time);
             cur_timeout = work.timeout;
         }
-        LIST_FOREACH_SAFE(task, &work.tasks, item, tvar) {
+        LIST_FOREACH_SAFE(task, &work.tasks, item, _) {
             if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); continue; }
             if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0", PQerrorMessage(task->conn), true); continue; }
             nevents++;
@@ -212,7 +212,7 @@ void conf_worker(Datum main_arg) {
         set = CreateWaitEventSet(TopMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
-        LIST_FOREACH_SAFE(task, &work.tasks, item, tvar) {
+        LIST_FOREACH_SAFE(task, &work.tasks, item, _) {
             if (task->events & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
                 case 0: /*D1("PQflush = 0");*/ break;
                 case 1: D1("PQflush = 1"); break;
