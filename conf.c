@@ -171,7 +171,7 @@ static void conf_init(Work *work) {
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
     process_session_preload_libraries();
     work->timeout = -1;
-    queue_init(&work->queue);
+    LIST_INIT(&work->queue);
     conf_check(work);
 }
 
@@ -195,6 +195,7 @@ void conf_worker(Datum main_arg) {
     MemSet(&work, 0, sizeof(work));
     conf_init(&work);
     while (!ShutdownRequestPending) {
+        Task *task, *tvar;
         int nevents = 2;
         WaitEvent *events;
         WaitEventSet *set;
@@ -202,8 +203,7 @@ void conf_worker(Datum main_arg) {
             INSTR_TIME_SET_CURRENT(start_time);
             cur_timeout = work.timeout;
         }
-        queue_each(&work.queue, queue) {
-            Task *task = queue_data(queue, Task, queue);
+        LIST_FOREACH_SAFE(task, &work.queue, queue, tvar) {
             if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); continue; }
             if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0", PQerrorMessage(task->conn), true); continue; }
             nevents++;
@@ -212,8 +212,7 @@ void conf_worker(Datum main_arg) {
         set = CreateWaitEventSet(TopMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
-        queue_each(&work.queue, queue) {
-            Task *task = queue_data(queue, Task, queue);
+        LIST_FOREACH_SAFE(task, &work.queue, queue, tvar) {
             if (task->events & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
                 case 0: /*D1("PQflush = 0");*/ break;
                 case 1: D1("PQflush = 1"); break;

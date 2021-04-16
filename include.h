@@ -60,6 +60,7 @@
 #include <postmaster/interrupt.h>
 #include <replication/slot.h>
 #include <storage/ipc.h>
+#include <sys/queue.h>
 #include <tcop/pquery.h>
 #include <tcop/utility.h>
 #include <utils/acl.h>
@@ -71,9 +72,9 @@
 #include <utils/snapmgr.h>
 #include <utils/timeout.h>
 
-#include "queue.h"
-
 typedef struct _SPI_plan SPI_plan;
+
+typedef struct Task Task;
 
 typedef struct Work {
     char *data;
@@ -85,7 +86,7 @@ typedef struct Work {
     int reset;
     int timeout;
     Oid oid;
-    queue_t queue;
+    LIST_HEAD(, Task) queue;
     StringInfoData remotes;
 } Work;
 
@@ -113,7 +114,7 @@ typedef struct Task {
     int skip;
     int timeout;
     PGconn *conn;
-    queue_t queue;
+    LIST_ENTRY(Task) queue;
     StringInfoData error;
     StringInfoData output;
     TimestampTz start;
