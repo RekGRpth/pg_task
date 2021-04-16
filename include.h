@@ -114,7 +114,7 @@ typedef struct Task {
     int skip;
     int timeout;
     PGconn *conn;
-    LIST_ENTRY(Task) queue;
+    LIST_ENTRY(Task) item;
     StringInfoData error;
     StringInfoData output;
     TimestampTz start;
