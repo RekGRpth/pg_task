@@ -66,7 +66,6 @@ bool task_done(Task *task) {
     if (task->error.data) pfree((void *)values[3]);
     if (task->null) pfree(task->null);
     task->null = NULL;
-    if (!DatumGetBool(DirectFunctionCall2(pg_advisory_unlock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id)))) { W("!pg_advisory_unlock_int4(%i, %li)", work->oid, task->id); return true; }
     return exit;
 }
 
@@ -115,7 +114,6 @@ bool task_work(Task *task) {
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
-    if (!DatumGetBool(DirectFunctionCall2(pg_try_advisory_lock_int4, Int32GetDatum(work->oid), Int32GetDatum(task->id)))) { W("!pg_try_advisory_lock_int4(%i, %li)", work->oid, task->id); return true; }
     task->count++;
     D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work->oid, task->count, task->pid);
     if (!task->conn) {
