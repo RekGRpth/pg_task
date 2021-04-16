@@ -86,7 +86,7 @@ typedef struct Work {
     int reset;
     int timeout;
     Oid oid;
-    LIST_HEAD(, Task) queue;
+    LIST_HEAD(, Task) tasks;
     StringInfoData remotes;
 } Work;
 
