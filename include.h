@@ -144,6 +144,7 @@ void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_
 void exec_simple_query_my(Task *task);
 void init_escape(StringInfoData *buf, const char *data, int len, char escape);
 void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf);
+void init_work(BackgroundWorker *worker);
 void NullCommandMy(Task *task);
 void _PG_init(void);
 void ReadyForQueryMy(Task *task);

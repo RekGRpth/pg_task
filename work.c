@@ -224,6 +224,7 @@ void work_conf(Work *work) {
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     LIST_INIT(&work->tasks);
+    work_count = 0;
 }
 
 void work_fini(Work *work) {
@@ -442,7 +443,7 @@ void work_timeout(Work *work) {
         pfree(group);
         if (remote) pfree(remote);
     }
-    if (!work->conf && (work_count += SPI_tuptable->numvals) >= work->count) proc_exit(0);
+    if ((work_count += SPI_tuptable->numvals) >= work->count) proc_exit(0);
     SPI_finish_my();
 }
 

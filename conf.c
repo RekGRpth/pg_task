@@ -162,9 +162,27 @@ static void conf_check(Work *work) {
     if (!work->conf) work->timeout = -1;
 }
 
+static void conf_run(void) {
+    BackgroundWorkerHandle *handle;
+    BackgroundWorker worker;
+    pid_t pid;
+    MemSet(&worker, 0, sizeof(worker));
+    init_work(&worker);
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) E("!RegisterDynamicBackgroundWorker");
+    switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
+        case BGWH_NOT_YET_STARTED: E("WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED"); break;
+        case BGWH_POSTMASTER_DIED: E("WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED"); break;
+        case BGWH_STARTED: break;
+        case BGWH_STOPPED: E("WaitForBackgroundWorkerStartup == BGWH_STOPPED"); break;
+    }
+    pfree(handle);
+}
+
 static void conf_exit(int code, Datum arg) {
     Work *work = (Work *)DatumGetPointer(arg);
     D1("code = %i, oid = %i", code, work->oid);
+    if (ShutdownRequestPending) return;
+    if (work->conf) conf_run();
 }
 
 static void conf_init(Work *work) {
