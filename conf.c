@@ -182,7 +182,7 @@ static void conf_run(void) {
 static void conf_exit(int code, Datum arg) {
     Work *work = (Work *)DatumGetPointer(arg);
     D1("code = %i, oid = %i", code, work->oid);
-    if (ShutdownRequestPending) return;
+    if (code || ShutdownRequestPending) return;
     if (work->conf) conf_run();
 }
 

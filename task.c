@@ -231,6 +231,7 @@ void task_repeat(Task *task) {
 static void task_exit(int code, Datum arg) {
     Task *task = (Task *)DatumGetPointer(arg);
     D1("code = %i, id = %li", code, task->id);
+    if (code || ShutdownRequestPending) return;
 }
 
 static void task_fail(Task *task) {

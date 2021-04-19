@@ -650,7 +650,7 @@ static void work_check(Work *work) {
 static void work_exit(int code, Datum arg) {
     Work *work = (Work *)DatumGetPointer(arg);
     D1("code = %i, oid = %i", code, work->oid);
-    if (ShutdownRequestPending) return;
+    if (code || ShutdownRequestPending) return;
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count);
     conf_work(work->user, work->data, work->schema, work->table, work->reset, work->timeout, work->count);
 }
