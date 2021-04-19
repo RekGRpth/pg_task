@@ -441,6 +441,7 @@ void work_timeout(Work *work) {
         pfree(group);
         if (remote) pfree(remote);
     }
+    if (!work->conf && (work->count -= SPI_tuptable->numvals) <= 0) ShutdownRequestPending = true;
     SPI_finish_my();
 }
 
@@ -645,6 +646,11 @@ static void work_check(Work *work) {
     SPI_finish_my();
 }
 
+static void work_exit(int code, Datum arg) {
+    Work *work = (Work *)DatumGetPointer(arg);
+    D1("code = %i", code);
+}
+
 static void work_init(Work *work) {
     char *p = MyBgworkerEntry->bgw_extra;
     work->user = p;
@@ -669,6 +675,7 @@ static void work_init(Work *work) {
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
+    on_proc_exit(work_exit, PointerGetDatum(work));
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
