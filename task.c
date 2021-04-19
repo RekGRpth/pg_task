@@ -229,8 +229,8 @@ void task_repeat(Task *task) {
 }
 
 static void task_exit(int code, Datum arg) {
-    Task *work = (Task *)DatumGetPointer(arg);
-    D1("code = %i", code);
+    Task *task = (Task *)DatumGetPointer(arg);
+    D1("code = %i, id = %li", code, task->id);
 }
 
 static void task_fail(Task *task) {
@@ -367,15 +367,15 @@ static bool task_timeout(Task *task) {
 }
 
 void task_worker(Datum main_arg) {
-    Work work;
-    Task task;
-    MemSet(&work, 0, sizeof(work));
-    MemSet(&task, 0, sizeof(task));
-    task_init(&work, &task);
+    Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
+    Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
+    task_init(work, task);
     while (!ShutdownRequestPending) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
-        if (rc & WL_TIMEOUT) if (task_timeout(&task)) ShutdownRequestPending = true;
+        if (rc & WL_TIMEOUT) if (task_timeout(task)) ShutdownRequestPending = true;
         if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
     }
+    pfree(task);
+    pfree(work);
 }
