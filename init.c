@@ -36,54 +36,45 @@ void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
     }
 }
 
-static void init_work(BackgroundWorker *worker) {
+static void init_work(void) {
+    BackgroundWorker worker;
     StringInfoData buf;
-    MemSet(worker, 0, sizeof(*worker));
-    worker->bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    worker->bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
-    worker->bgw_start_time = BgWorkerStart_RecoveryFinished;
+    MemSet(&worker, 0, sizeof(worker));
+    worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
+    worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
+    worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfoString(&buf, "pg_task");
     if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
-    memcpy(worker->bgw_library_name, buf.data, buf.len);
+    memcpy(worker.bgw_library_name, buf.data, buf.len);
     resetStringInfo(&buf);
     appendStringInfoString(&buf, "conf_worker");
     if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
-    memcpy(worker->bgw_function_name, buf.data, buf.len);
+    memcpy(worker.bgw_function_name, buf.data, buf.len);
     resetStringInfo(&buf);
     appendStringInfoString(&buf, "pg_task conf");
     if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
-    memcpy(worker->bgw_type, buf.data, buf.len);
+    memcpy(worker.bgw_type, buf.data, buf.len);
     resetStringInfo(&buf);
     appendStringInfoString(&buf, "postgres postgres pg_task conf");
     if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
-    memcpy(worker->bgw_name, buf.data, buf.len);
+    memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
+    RegisterBackgroundWorker(&worker);
 }
 
 static void init_assign(const char *newval, void *extra) {
-    BackgroundWorkerHandle *handle;
-    BackgroundWorker worker;
-    pid_t pid;
     const char *oldval = GetConfigOption("pg_task.json", false, true);
     if (PostmasterPid != MyProcPid) return;
     if (process_shared_preload_libraries_in_progress) return;
     if (!strcmp(oldval, newval)) return;
     D1("oldval = %s, newval = %s", oldval, newval);
-    init_work(&worker);
-    worker.bgw_notify_pid = MyProcPid;
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) E("!RegisterDynamicBackgroundWorker");
-    switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
-        case BGWH_NOT_YET_STARTED: E("WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED"); break;
-        case BGWH_POSTMASTER_DIED: E("WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED"); break;
-        case BGWH_STARTED: break;
-        case BGWH_STOPPED: E("WaitForBackgroundWorkerStartup == BGWH_STOPPED"); break;
-    }
-    pfree(handle);
+    process_shared_preload_libraries_in_progress = true;
+    init_work();
+    process_shared_preload_libraries_in_progress = false;
 }
 
 static void init_conf(void) {
-    BackgroundWorker worker;
     DefineCustomIntVariable("pg_task.default_count", "pg_task default count", NULL, &default_count, 1000, 0, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.default_reset", "pg_task default reset", NULL, &default_reset, 60, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.default_timeout", "pg_task default timeout", NULL, &default_timeout, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
@@ -92,12 +83,11 @@ static void init_conf(void) {
     DefineCustomStringVariable("pg_task.default_table", "pg_task default table", NULL, &default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.json", "pg_task json", NULL, &default_json, "[{\"data\":\"postgres\"}]", PGC_SIGHUP, 0, NULL, init_assign, NULL);
     D1("json = %s, table = %s, null = %s, reset = %i, timeout = %i, count = %i, live = %s", default_json, default_table, default_null, default_reset, default_timeout, default_count, default_live);
-    init_work(&worker);
-    RegisterBackgroundWorker(&worker);
 }
 
 void _PG_init(void) {
     if (IsBinaryUpgrade) { W("IsBinaryUpgrade"); return; }
     if (!process_shared_preload_libraries_in_progress) F("!process_shared_preload_libraries_in_progress");
     init_conf();
+    init_work();
 }
