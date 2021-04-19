@@ -76,7 +76,9 @@ static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
 
 static void rShutdown(DestReceiver *self) { }
 
-static void rDestroy(DestReceiver *self) { }
+static void rDestroy(DestReceiver *self) {
+    pfree(self);
+}
 
 DestReceiver *CreateDestReceiverMy(Task *task) {
     DestReceiverMy *self = (DestReceiverMy *)MemoryContextAllocZero(TopMemoryContext, sizeof(*self));
