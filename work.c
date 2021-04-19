@@ -649,6 +649,7 @@ static void work_check(Work *work) {
 static void work_exit(int code, Datum arg) {
     Work *work = (Work *)DatumGetPointer(arg);
     D1("code = %i, oid = %i", code, work->oid);
+    if (!code && kill(PostmasterPid, SIGHUP)) W("kill(%i, %i)", PostmasterPid, SIGHUP);
 }
 
 static void work_init(Work *work) {
