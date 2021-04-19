@@ -164,7 +164,7 @@ static void conf_check(Work *work) {
 
 static void conf_exit(int code, Datum arg) {
     Work *work = (Work *)DatumGetPointer(arg);
-    D1("code = %i", code);
+    D1("code = %i, oid = %i", code, work->oid);
 }
 
 static void conf_init(Work *work) {
@@ -201,9 +201,8 @@ void conf_worker(Datum main_arg) {
     instr_time cur_time;
     instr_time start_time;
     long cur_timeout = -1;
-    Work work;
-    MemSet(&work, 0, sizeof(work));
-    conf_init(&work);
+    Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
+    conf_init(work);
     while (!ShutdownRequestPending) {
         Task *task, *_;
         int nevents = 2;
@@ -211,9 +210,9 @@ void conf_worker(Datum main_arg) {
         WaitEventSet *set;
         if (cur_timeout <= 0) {
             INSTR_TIME_SET_CURRENT(start_time);
-            cur_timeout = work.timeout;
+            cur_timeout = work->timeout;
         }
-        LIST_FOREACH_SAFE(task, &work.tasks, item, _) {
+        LIST_FOREACH_SAFE(task, &work->tasks, item, _) {
             if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); continue; }
             if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0", PQerrorMessage(task->conn), true); continue; }
             nevents++;
@@ -222,7 +221,7 @@ void conf_worker(Datum main_arg) {
         set = CreateWaitEventSet(TopMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
-        LIST_FOREACH_SAFE(task, &work.tasks, item, _) {
+        LIST_FOREACH_SAFE(task, &work->tasks, item, _) {
             if (task->events & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
                 case 0: /*D1("PQflush = 0");*/ break;
                 case 1: D1("PQflush = 1"); break;
@@ -233,18 +232,19 @@ void conf_worker(Datum main_arg) {
         nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) conf_latch(&work);
+            if (event->events & WL_LATCH_SET) conf_latch(work);
             if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
             if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
         }
-        if (work.timeout >= 0) {
+        if (work->timeout >= 0) {
             INSTR_TIME_SET_CURRENT(cur_time);
             INSTR_TIME_SUBTRACT(cur_time, start_time);
-            cur_timeout = work.timeout - (long)INSTR_TIME_GET_MILLISEC(cur_time);
-            if (cur_timeout <= 0) work_timeout(&work);
+            cur_timeout = work->timeout - (long)INSTR_TIME_GET_MILLISEC(cur_time);
+            if (cur_timeout <= 0) work_timeout(work);
         }
         FreeWaitEventSet(set);
         pfree(events);
     }
-    work_fini(&work);
+    work_fini(work);
+    pfree(work);
 }
