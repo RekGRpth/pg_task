@@ -207,7 +207,7 @@ void work_conf(Work *work) {
     work->schema_type = buf.data;
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     if (work->table != table_quote) pfree((void *)table_quote);
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, schema_table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count, work->live, work->schema_table, work->schema_type);
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i, schema_table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count, work->live, work->schema_table, work->schema_type);
     if (work->schema) work_schema(work);
     work_type(work);
     work_table(work);
@@ -650,7 +650,7 @@ static void work_exit(int code, Datum arg) {
     Work *work = (Work *)DatumGetPointer(arg);
     D1("code = %i, oid = %i", code, work->oid);
     if (code || ShutdownRequestPending) return;
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count, work->live);
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count, work->live);
     conf_work(work->user, work->data, work->schema, work->table, work->reset, work->timeout, work->count, work->live);
 }
 
@@ -677,7 +677,7 @@ static void work_init(Work *work) {
     if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count, work->live);
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count, work->live);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
     on_proc_exit(work_exit, PointerGetDatum(work));
@@ -748,6 +748,7 @@ void work_worker(Datum main_arg) {
         FreeWaitEventSet(set);
         pfree(events);
         if (work->count && work->_count >= work->count) break;
+        if (work->live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), work->live * 1000)) break;
     }
     work_fini(work);
     pfree(work);

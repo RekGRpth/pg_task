@@ -56,14 +56,14 @@ static void conf_user(const char *user) {
     pfree(buf.data);
 }
 
-void conf_work(const char *user, const char *data, const char *schema, const char *table, const int reset, const int timeout, const int count, int64 live) {
+void conf_work(const char *user, const char *data, const char *schema, const char *table, const int reset, const int timeout, const int count, const int live) {
     BackgroundWorkerHandle *handle;
     pid_t pid;
     StringInfoData buf;
     int user_len = strlen(user), data_len = strlen(data), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), reset_len = sizeof(reset), timeout_len = sizeof(timeout), count_len = sizeof(count), live_len = sizeof(live);
     BackgroundWorker worker;
     char *p = worker.bgw_extra;
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li", user, data, schema ? schema : default_null, table, reset, timeout, count, live);
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i", user, data, schema ? schema : default_null, table, reset, timeout, count, live);
     MemSet(&worker, 0, sizeof(worker));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = MyProcPid;
@@ -116,7 +116,7 @@ static void conf_check(Work *work) {
         "            COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,\n"
         "            COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout,\n"
         "            COALESCE(count, current_setting('pg_task.default_count', false)::int4) AS count,\n"
-        "            EXTRACT(epoch FROM COALESCE(live, current_setting('pg_task.default_live', false)::interval))::int8 AS live\n"
+        "            EXTRACT(epoch FROM COALESCE(live, current_setting('pg_task.default_live', false)::interval))::int4 AS live\n"
         "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, reset int4, timeout int4, count int4, live interval)\n"
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
@@ -136,11 +136,11 @@ static void conf_check(Work *work) {
         char *schema = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schema", true));
         char *table = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", false));
         char *user = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", false));
-        int64 live = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "live", false));
         int count = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "count", false));
+        int live = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "live", false));
         int reset = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "reset", false));
         int timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "timeout", false));
-        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, user_exists = %s, data_exists = %s, active = %s", row, user, data, schema ? schema : default_null, table, reset, timeout, count, live, user_exists ? "true" : "false", data_exists ? "true" : "false", active ? "true" : "false");
+        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i, user_exists = %s, data_exists = %s, active = %s", row, user, data, schema ? schema : default_null, table, reset, timeout, count, live, user_exists ? "true" : "false", data_exists ? "true" : "false", active ? "true" : "false");
         if (!strcmp(user, "postgres") && !strcmp(data, "postgres") && !schema && !strcmp(table, "task")) {
             work->conf = true;
             work->count = count;
@@ -268,6 +268,7 @@ void conf_worker(Datum main_arg) {
         FreeWaitEventSet(set);
         pfree(events);
         if (work->count && work->_count >= work->count) break;
+        if (work->live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), work->live * 1000)) break;
     }
     work_fini(work);
     pfree(work);
