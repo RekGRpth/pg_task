@@ -223,7 +223,6 @@ void work_conf(Work *work) {
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     LIST_INIT(&work->tasks);
-    work->_count = 0;
 }
 
 void work_fini(Work *work) {
