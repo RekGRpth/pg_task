@@ -91,19 +91,12 @@ DestReceiver *CreateDestReceiverMy(Task *task) {
 
 void ReadyForQueryMy(Task *task) { }
 
-#if (PG_VERSION_NUM >= 130000)
 void BeginCommandMy(CommandTag commandTag, Task *task) {
     D1(GetCommandTagName(commandTag));
 }
-#else
-void BeginCommandMy(const char *commandTag, Task *task) {
-    D1(commandTag);
-}
-#endif
 
 void NullCommandMy(Task *task) { }
 
-#if (PG_VERSION_NUM >= 130000)
 void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_output) {
     char completionTag[COMPLETION_TAG_BUFSIZE];
     CommandTag tag = qc->commandTag;
@@ -117,13 +110,3 @@ void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_
         appendStringInfoString(&task->output, completionTag);
     }
 }
-#else
-void EndCommandMy(const char *commandTag, Task *task) {
-    D1(commandTag);
-    if (task->skip) task->skip = 0; else {
-        if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-        if (task->output.len) appendStringInfoString(&task->output, "\n");
-        appendStringInfoString(&task->output, commandTag);
-    }
-}
-#endif

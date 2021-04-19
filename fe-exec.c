@@ -85,10 +85,6 @@ const char *PQftypeMy(Oid oid) {
         case EVTTRIGGEROID: return "evttrigger";
         case LANGUAGE_HANDLEROID: return "language_handler";
         case INTERNALOID: return "internal";
-#if (PG_VERSION_NUM >= 130000)
-#else
-        case OPAQUEOID: return "opaque";
-#endif
         case ANYELEMENTOID: return "anyelement";
         case ANYNONARRAYOID: return "anynonarray";
         case ANYENUMOID: return "anyenum";

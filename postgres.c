@@ -12,14 +12,6 @@ static int stderr_fd;
  */
 bool xact_started = false;
 
-#if (PG_VERSION_NUM >= 130000)
-#else
-/*
- * Flag to keep track of whether statement timeout timer is active.
- */
-bool stmt_timeout_active = false;
-#endif
-
 static bool check_log_statement(List *stmt_list);
 static int	errdetail_execute(List *raw_parsetree_list);
 static int	errdetail_abort(void);
@@ -139,14 +131,9 @@ exec_simple_query_my(Task *task)
 	{
 		RawStmt    *parsetree = lfirst_node(RawStmt, parsetree_item);
 		bool		snapshot_set = false;
-#if (PG_VERSION_NUM >= 130000)
 		CommandTag	commandTag;
 		QueryCompletion qc;
 		MemoryContext per_parsetree_context = NULL;
-#else
-		const char *commandTag;
-		char		completionTag[COMPLETION_TAG_BUFSIZE];
-#endif
 		List	   *querytree_list,
 				   *plantree_list;
 		Portal		portal;
@@ -161,11 +148,7 @@ exec_simple_query_my(Task *task)
 		 */
 		commandTag = CreateCommandTag(parsetree->stmt);
 
-#if (PG_VERSION_NUM >= 130000)
 		set_ps_display(GetCommandTagName(commandTag));
-#else
-		set_ps_display(commandTag, false);
-#endif
 
 		BeginCommandMy(commandTag, task);
 
@@ -210,7 +193,6 @@ exec_simple_query_my(Task *task)
 			snapshot_set = true;
 		}
 
-#if (PG_VERSION_NUM >= 130000)
 		/*
 		 * OK to analyze, rewrite, and plan this query.
 		 *
@@ -250,23 +232,6 @@ exec_simple_query_my(Task *task)
 		 * visible anomalies, so refrain.  Refer to
 		 * https://postgr.es/m/flat/5075D8DF.6050500@fuzzy.cz for details.
 		 */
-#else
-		/*
-		 * OK to analyze, rewrite, and plan this query.
-		 *
-		 * Switch to appropriate context for constructing querytrees (again,
-		 * these must outlive the execution context).
-		 */
-		oldcontext = MemoryContextSwitchTo(MessageContext);
-
-		querytree_list = pg_analyze_and_rewrite(parsetree, query_string,
-												NULL, 0, NULL);
-
-		plantree_list = pg_plan_queries(querytree_list,
-										CURSOR_OPT_PARALLEL_OK, NULL);
-
-		/* Done with the snapshot used for parsing/planning */
-#endif
 		if (snapshot_set)
 			PopActiveSnapshot();
 
@@ -281,19 +246,11 @@ exec_simple_query_my(Task *task)
 		/* Don't display the portal in pg_cursors */
 		portal->visible = false;
 
-#if (PG_VERSION_NUM >= 130000)
 		/*
 		 * We don't have to copy anything into the portal, because everything
 		 * we are passing here is in MessageContext or the
 		 * per_parsetree_context, and so will outlive the portal anyway.
 		 */
-#else
-		/*
-		 * We don't have to copy anything into the portal, because everything
-		 * we are passing here is in MessageContext, which will outlive the
-		 * portal anyway.
-		 */
-#endif
 		PortalDefineQuery(portal,
 						  NULL,
 						  query_string,
@@ -345,7 +302,6 @@ exec_simple_query_my(Task *task)
 		/*
 		 * Run the portal to completion, and then drop it (and the receiver).
 		 */
-#if (PG_VERSION_NUM >= 130000)
 		(void) PortalRun(portal,
 						 FETCH_ALL,
 						 true,	/* always top level */
@@ -353,15 +309,6 @@ exec_simple_query_my(Task *task)
 						 receiver,
 						 receiver,
 						 &qc);
-#else
-		(void) PortalRun(portal,
-						 FETCH_ALL,
-						 true,	/* always top level */
-						 true,
-						 receiver,
-						 receiver,
-						 completionTag);
-#endif
 
 		capture_stderr_stop(task);
 
@@ -369,11 +316,7 @@ exec_simple_query_my(Task *task)
 
 		PortalDrop(portal, false);
 
-#if (PG_VERSION_NUM >= 130000)
 		if (lnext(parsetree_list, parsetree_item) == NULL)
-#else
-		if (lnext(parsetree_item) == NULL)
-#endif
 		{
 			/*
 			 * If this is the last parsetree of the query string, close down
@@ -403,7 +346,6 @@ exec_simple_query_my(Task *task)
 			 * those that start or end a transaction block.
 			 */
 			CommandCounterIncrement();
-#if (PG_VERSION_NUM >= 130000)
 
 			/*
 			 * Disable statement timeout between queries of a multi-query
@@ -411,7 +353,6 @@ exec_simple_query_my(Task *task)
 			 * (Our next loop iteration will start a fresh timeout.)
 			 */
 			disable_statement_timeout();
-#endif
 		}
 
 		/*
@@ -420,15 +361,11 @@ exec_simple_query_my(Task *task)
 		 * command the client sent, regardless of rewriting. (But a command
 		 * aborted by error will not send an EndCommand report at all.)
 		 */
-#if (PG_VERSION_NUM >= 130000)
 		EndCommandMy(&qc, task, false);
 
 		/* Now we may drop the per-parsetree context, if one was created. */
 		if (per_parsetree_context)
 			MemoryContextDelete(per_parsetree_context);
-#else
-		EndCommandMy(completionTag, task);
-#endif
 	}							/* end loop over parsetrees */
 
 	/*
@@ -616,7 +553,6 @@ IsTransactionExitStmt(Node *parsetree)
 	return false;
 }
 
-#if (PG_VERSION_NUM >= 130000)
 
 /*
  * Start statement timeout timer, if enabled.
@@ -652,45 +588,3 @@ disable_statement_timeout(void)
 	if (get_timeout_active(STATEMENT_TIMEOUT))
 		disable_timeout(STATEMENT_TIMEOUT, false);
 }
-#else
-
-/*
- * Start statement timeout timer, if enabled.
- *
- * If there's already a timeout running, don't restart the timer.  That
- * enables compromises between accuracy of timeouts and cost of starting a
- * timeout.
- */
-static void
-enable_statement_timeout(void)
-{
-	/* must be within an xact */
-	Assert(xact_started);
-
-	if (StatementTimeoutMy > 0)
-	{
-		if (!stmt_timeout_active)
-		{
-			enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeoutMy);
-			stmt_timeout_active = true;
-		}
-	}
-	else
-		disable_timeout(STATEMENT_TIMEOUT, false);
-}
-
-/*
- * Disable statement timeout, if active.
- */
-static void
-disable_statement_timeout(void)
-{
-	if (stmt_timeout_active)
-	{
-		disable_timeout(STATEMENT_TIMEOUT, false);
-
-		stmt_timeout_active = false;
-	}
-}
-#endif
-

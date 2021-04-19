@@ -135,14 +135,9 @@ const char *PQftypeMy(Oid oid);
 Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
 DestReceiver *CreateDestReceiverMy(Task *task);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
-#if (PG_VERSION_NUM >= 130000)
 void BeginCommandMy(CommandTag commandTag, Task *task);
-void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_output);
-#else
-void BeginCommandMy(const char *commandTag, Task *task);
-void EndCommandMy(const char *commandTag, Task *task);
-#endif
 void conf_worker(Datum main_arg);
+void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_output);
 void exec_simple_query_my(Task *task);
 void init_escape(StringInfoData *buf, const char *data, int len, char escape);
 void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf);

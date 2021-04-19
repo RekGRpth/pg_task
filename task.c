@@ -1,9 +1,5 @@
 #include "include.h"
 
-#if (PG_VERSION_NUM >= 130000)
-#else
-extern bool stmt_timeout_active;
-#endif
 extern bool xact_started;
 extern char *default_null;
 
@@ -241,10 +237,6 @@ static void task_fail(Task *task) {
     HOLD_INTERRUPTS();
     disable_all_timeouts(false);
     QueryCancelPending = false;
-#if (PG_VERSION_NUM >= 130000)
-#else
-    stmt_timeout_active = false;
-#endif
     EmitErrorReport();
     debug_query_string = NULL;
     AbortOutOfAnyTransaction();
