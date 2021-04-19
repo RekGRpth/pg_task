@@ -84,6 +84,7 @@ typedef struct Work {
     char *schema_type;
     char *table;
     char *user;
+    int64 live;
     int _count;
     int count;
     int reset;
@@ -139,7 +140,7 @@ Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bo
 DestReceiver *CreateDestReceiverMy(Task *task);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void BeginCommandMy(CommandTag commandTag, Task *task);
-void conf_work(const char *user, const char *data, const char *schema, const char *table, const int reset, const int timeout, const int count);
+void conf_work(const char *user, const char *data, const char *schema, const char *table, const int reset, const int timeout, const int count, int64 live);
 void conf_worker(Datum main_arg);
 void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_output);
 void exec_simple_query_my(Task *task);
