@@ -159,8 +159,6 @@ void conf_worker(Datum main_arg) {
     if (!MyProcPort->database_name) MyProcPort->database_name = "postgres";
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pqsignal(SIGHUP, SignalHandlerForConfigReload);
-    pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
