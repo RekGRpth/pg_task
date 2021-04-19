@@ -1,7 +1,6 @@
 #include "include.h"
 
 extern char *default_null;
-static int work_count = 0;
 
 static bool work_is_log_level_output(int elevel, int log_min_level) {
     if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
@@ -224,7 +223,7 @@ void work_conf(Work *work) {
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     LIST_INIT(&work->tasks);
-    work_count = 0;
+    work->_count = 0;
 }
 
 void work_fini(Work *work) {
@@ -443,7 +442,7 @@ void work_timeout(Work *work) {
         pfree(group);
         if (remote) pfree(remote);
     }
-    if ((work_count += SPI_tuptable->numvals) >= work->count) proc_exit(0);
+    if (work->count) work->_count += SPI_tuptable->numvals;
     SPI_finish_my();
 }
 
@@ -747,6 +746,7 @@ void work_worker(Datum main_arg) {
         }
         FreeWaitEventSet(set);
         pfree(events);
+        if (work->count && work->_count >= work->count) break;
     }
     work_fini(work);
     pfree(work);

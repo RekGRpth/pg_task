@@ -84,6 +84,7 @@ typedef struct Work {
     char *schema_type;
     char *table;
     char *user;
+    int _count;
     int count;
     int reset;
     int timeout;

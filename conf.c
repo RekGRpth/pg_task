@@ -263,6 +263,7 @@ void conf_worker(Datum main_arg) {
         }
         FreeWaitEventSet(set);
         pfree(events);
+        if (work->count && work->_count >= work->count) break;
     }
     work_fini(work);
     pfree(work);
