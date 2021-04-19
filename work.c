@@ -1,6 +1,7 @@
 #include "include.h"
 
 extern char *default_null;
+static int work_count = 0;
 
 static bool work_is_log_level_output(int elevel, int log_min_level) {
     if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
@@ -441,7 +442,7 @@ void work_timeout(Work *work) {
         pfree(group);
         if (remote) pfree(remote);
     }
-    if (!work->conf && (work->count -= SPI_tuptable->numvals) <= 0) ShutdownRequestPending = true;
+    if (!work->conf && (work_count += SPI_tuptable->numvals) >= work->count) proc_exit(0);
     SPI_finish_my();
 }
 
@@ -649,7 +650,9 @@ static void work_check(Work *work) {
 static void work_exit(int code, Datum arg) {
     Work *work = (Work *)DatumGetPointer(arg);
     D1("code = %i, oid = %i", code, work->oid);
-    if (!code && kill(PostmasterPid, SIGHUP)) W("kill(%i, %i)", PostmasterPid, SIGHUP);
+    if (ShutdownRequestPending) return;
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count);
+    conf_work(work->user, work->data, work->schema, work->table, work->reset, work->timeout, work->count);
 }
 
 static void work_init(Work *work) {

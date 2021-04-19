@@ -56,7 +56,7 @@ static void conf_user(const char *user) {
     pfree(buf.data);
 }
 
-static void conf_work(const char *user, const char *data, const char *schema, const char *table, const int reset, const int timeout, const int count) {
+void conf_work(const char *user, const char *data, const char *schema, const char *table, const int reset, const int timeout, const int count) {
     BackgroundWorkerHandle *handle;
     pid_t pid;
     StringInfoData buf;
