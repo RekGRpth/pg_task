@@ -36,7 +36,7 @@ void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
     }
 }
 
-static void init_work(void) {
+static void init_work(bool dynamic) {
     BackgroundWorker worker;
     StringInfoData buf;
     MemSet(&worker, 0, sizeof(worker));
@@ -60,7 +60,11 @@ static void init_work(void) {
     if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
     memcpy(worker.bgw_name, buf.data, buf.len);
     pfree(buf.data);
-    RegisterBackgroundWorker(&worker);
+    if (dynamic) {
+        IsUnderPostmaster = true;
+        if (!RegisterDynamicBackgroundWorker(&worker, NULL)) E("!RegisterDynamicBackgroundWorker");
+        IsUnderPostmaster = false;
+    } else RegisterBackgroundWorker(&worker);
 }
 
 static void init_assign(const char *newval, void *extra) {
@@ -69,9 +73,7 @@ static void init_assign(const char *newval, void *extra) {
     if (process_shared_preload_libraries_in_progress) return;
     if (!strcmp(oldval, newval)) return;
     D1("oldval = %s, newval = %s", oldval, newval);
-    process_shared_preload_libraries_in_progress = true;
-    init_work();
-    process_shared_preload_libraries_in_progress = false;
+    init_work(true);
 }
 
 static void init_conf(void) {
@@ -89,5 +91,5 @@ void _PG_init(void) {
     if (IsBinaryUpgrade) { W("IsBinaryUpgrade"); return; }
     if (!process_shared_preload_libraries_in_progress) F("!process_shared_preload_libraries_in_progress");
     init_conf();
-    init_work();
+    init_work(false);
 }
