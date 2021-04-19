@@ -162,6 +162,11 @@ static void conf_check(Work *work) {
     if (!work->conf) work->timeout = -1;
 }
 
+static void conf_exit(int code, Datum arg) {
+    Work *work = (Work *)DatumGetPointer(arg);
+    D1("code = %i", code);
+}
+
 static void conf_init(Work *work) {
     if (!MyProcPort && !(MyProcPort = (Port *)calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->user_name) MyProcPort->user_name = "postgres";
@@ -170,6 +175,7 @@ static void conf_init(Work *work) {
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
+    on_proc_exit(conf_exit, PointerGetDatum(work));
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
