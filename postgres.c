@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <utils/probes.h>
 #include "include.h"
 
 enum PIPES {READ, WRITE};
@@ -70,6 +71,8 @@ exec_simple_query_my(Task *task)
 	debug_query_string = query_string;
 
 	pgstat_report_activity(STATE_RUNNING, query_string);
+
+	TRACE_POSTGRESQL_QUERY_START(query_string);
 
 	/*
 	 * We use save_log_statement_stats so ShowUsage doesn't report incorrect
@@ -402,6 +405,8 @@ exec_simple_query_my(Task *task)
 
 	if (save_log_statement_stats)
 		ShowUsage("QUERY STATISTICS");
+
+	TRACE_POSTGRESQL_QUERY_DONE(query_string);
 
 	debug_query_string = NULL;
 }
