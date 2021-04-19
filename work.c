@@ -191,7 +191,7 @@ static void work_type(Work *work) {
     pfree(buf.data);
 }
 
-void work_conf(Work *work) {
+static void work_conf(Work *work) {
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     const char *table_quote = quote_identifier(work->table);
     StringInfoData buf;
@@ -225,7 +225,23 @@ void work_conf(Work *work) {
     LIST_INIT(&work->tasks);
 }
 
-void work_fini(Work *work) {
+static void work_error(Task *task, const char *msg, const char *err, bool finish) {
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
+    appendStringInfo(&task->error, "%s%s", task->error.len ? "\n" : "", msg);
+    if (err) {
+        int len = strlen(err);
+        if (len) appendStringInfo(&task->error, " and %.*s", len - 1, err);
+    }
+    W(task->error.data);
+    appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
+    task->fail = true;
+    task->skip++;
+    task_done(task);
+    finish ? work_finish(task) : work_free(task);
+}
+
+static void work_fini(Work *work) {
     Task *task, *_;
     StringInfoData buf;
     initStringInfoMy(TopMemoryContext, &buf);
@@ -242,22 +258,6 @@ void work_fini(Work *work) {
         }
     }
     pfree(buf.data);
-}
-
-void work_error(Task *task, const char *msg, const char *err, bool finish) {
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-    if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
-    appendStringInfo(&task->error, "%s%s", task->error.len ? "\n" : "", msg);
-    if (err) {
-        int len = strlen(err);
-        if (len) appendStringInfo(&task->error, " and %.*s", len - 1, err);
-    }
-    W(task->error.data);
-    appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
-    task->fail = true;
-    task->skip++;
-    task_done(task);
-    finish ? work_finish(task) : work_free(task);
 }
 
 static void work_remote(Work *work, const int64 id, char *group, char *remote, const int max) {
@@ -409,7 +409,7 @@ static void work_update(Work *work) {
     if (work->remotes.data) pfree((void *)values[0]);
 }
 
-void work_timeout(Work *work) {
+static void work_timeout(Work *work) {
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     work_update(work);
@@ -617,7 +617,7 @@ static void work_result(Task *task) {
     work_repeat(task);
 }
 
-void work_socket(Task *task) {
+static void work_socket(Task *task) {
     if (PQstatus(task->conn) != CONNECTION_OK) work_connect(task); else {
         if (!PQconsumeInput(task->conn)) work_error(task, "!PQconsumeInput", PQerrorMessage(task->conn), true);
         else if (PQisBusy(task->conn)) task->events = WL_SOCKET_READABLE;

@@ -77,7 +77,6 @@ typedef struct _SPI_plan SPI_plan;
 typedef struct Task Task;
 
 typedef struct Work {
-    bool conf;
     char *data;
     char *schema;
     char *schema_table;
@@ -146,7 +145,6 @@ void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_
 void exec_simple_query_my(Task *task);
 void init_escape(StringInfoData *buf, const char *data, int len, char escape);
 void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf);
-void init_work(BackgroundWorker *worker);
 void NullCommandMy(Task *task);
 void _PG_init(void);
 void ReadyForQueryMy(Task *task);
@@ -160,11 +158,6 @@ void task_delete(Task *task);
 void task_error(Task *task, ErrorData *edata);
 void task_repeat(Task *task);
 void task_worker(Datum main_arg);
-void work_conf(Work *work);
-void work_error(Task *task, const char *msg, const char *err, bool finish);
-void work_fini(Work *work);
-void work_socket(Task *task);
-void work_timeout(Work *work);
 void work_worker(Datum main_arg);
 
 #endif // _INCLUDE_H_

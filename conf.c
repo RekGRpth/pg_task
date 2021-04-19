@@ -105,7 +105,7 @@ void conf_work(const char *user, const char *data, const char *schema, const cha
     pfree(handle);
 }
 
-static void conf_check(Work *work) {
+static void conf_check(void) {
     static SPI_plan *plan = NULL;
     static const char *command =
         "WITH s AS (\n"
@@ -127,7 +127,6 @@ static void conf_check(Work *work) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
-    work->conf = false;
     for (uint64 row = 0; row < SPI_tuptable->numvals; row++) {
         bool active = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "active", false));
         bool data_exists = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data_exists", false));
@@ -141,18 +140,7 @@ static void conf_check(Work *work) {
         int reset = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "reset", false));
         int timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "timeout", false));
         D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i, user_exists = %s, data_exists = %s, active = %s", row, user, data, schema ? schema : default_null, table, reset, timeout, count, live, user_exists ? "true" : "false", data_exists ? "true" : "false", active ? "true" : "false");
-        if (!strcmp(user, "postgres") && !strcmp(data, "postgres") && !schema && !strcmp(table, "task")) {
-            work->conf = true;
-            work->count = count;
-            work->data = "postgres";
-            work->live = live;
-            work->reset = reset;
-            work->schema = NULL;
-            work->table = "task";
-            work->timeout = timeout;
-            work->user = "postgres";
-            if (!work->oid) work_conf(work);
-        } else if (!active) {
+        if (!active) {
             if (!user_exists) conf_user(user);
             if (!data_exists) conf_data(user, data);
             conf_work(user, data, schema, table, reset, timeout, count, live);
@@ -163,34 +151,9 @@ static void conf_check(Work *work) {
         pfree(table);
     }
     SPI_finish_my();
-    if (!work->conf) work->timeout = -1;
 }
 
-static void conf_run(void) {
-    BackgroundWorkerHandle *handle;
-    BackgroundWorker worker;
-    pid_t pid;
-    MemSet(&worker, 0, sizeof(worker));
-    init_work(&worker);
-    worker.bgw_notify_pid = MyProcPid;
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) E("!RegisterDynamicBackgroundWorker");
-    switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
-        case BGWH_NOT_YET_STARTED: E("WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED"); break;
-        case BGWH_POSTMASTER_DIED: E("WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED"); break;
-        case BGWH_STARTED: break;
-        case BGWH_STOPPED: E("WaitForBackgroundWorkerStartup == BGWH_STOPPED"); break;
-    }
-    pfree(handle);
-}
-
-static void conf_exit(int code, Datum arg) {
-    Work *work = (Work *)DatumGetPointer(arg);
-    D1("code = %i, oid = %i", code, work->oid);
-    if (code || ShutdownRequestPending) return;
-    if (work->conf) conf_run();
-}
-
-static void conf_init(Work *work) {
+void conf_worker(Datum main_arg) {
     if (!MyProcPort && !(MyProcPort = (Port *)calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->user_name) MyProcPort->user_name = "postgres";
     if (!MyProcPort->database_name) MyProcPort->database_name = "postgres";
@@ -198,78 +161,9 @@ static void conf_init(Work *work) {
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
-    on_proc_exit(conf_exit, PointerGetDatum(work));
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
     process_session_preload_libraries();
-    work->timeout = -1;
-    LIST_INIT(&work->tasks);
-    conf_check(work);
-}
-
-static void conf_reload(Work *work) {
-    ConfigReloadPending = false;
-    ProcessConfigFile(PGC_SIGHUP);
-    conf_check(work);
-}
-
-static void conf_latch(Work *work) {
-    ResetLatch(MyLatch);
-    CHECK_FOR_INTERRUPTS();
-    if (ConfigReloadPending) conf_reload(work);
-}
-
-void conf_worker(Datum main_arg) {
-    instr_time cur_time;
-    instr_time start_time;
-    long cur_timeout = -1;
-    Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
-    conf_init(work);
-    while (!ShutdownRequestPending) {
-        Task *task, *_;
-        int nevents = 2;
-        WaitEvent *events;
-        WaitEventSet *set;
-        if (cur_timeout <= 0) {
-            INSTR_TIME_SET_CURRENT(start_time);
-            cur_timeout = work->timeout;
-        }
-        LIST_FOREACH_SAFE(task, &work->tasks, item, _) {
-            if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); continue; }
-            if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0", PQerrorMessage(task->conn), true); continue; }
-            nevents++;
-        }
-        events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
-        set = CreateWaitEventSet(TopMemoryContext, nevents);
-        AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
-        AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
-        LIST_FOREACH_SAFE(task, &work->tasks, item, _) {
-            if (task->events & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
-                case 0: /*D1("PQflush = 0");*/ break;
-                case 1: D1("PQflush = 1"); break;
-                default: D1("PQflush = default"); break;
-            }
-            AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, PQsocket(task->conn), NULL, task);
-        }
-        nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
-        for (int i = 0; i < nevents; i++) {
-            WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) conf_latch(work);
-            if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
-            if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
-        }
-        if (work->timeout >= 0) {
-            INSTR_TIME_SET_CURRENT(cur_time);
-            INSTR_TIME_SUBTRACT(cur_time, start_time);
-            cur_timeout = work->timeout - (long)INSTR_TIME_GET_MILLISEC(cur_time);
-            if (cur_timeout <= 0) work_timeout(work);
-        }
-        FreeWaitEventSet(set);
-        pfree(events);
-        if (work->count && work->_count >= work->count) break;
-        if (work->live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), work->live * 1000)) break;
-    }
-    work_fini(work);
-    pfree(work);
+    conf_check();
 }
