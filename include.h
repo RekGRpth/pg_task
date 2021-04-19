@@ -83,10 +83,11 @@ typedef struct Work {
     char *schema_type;
     char *table;
     char *user;
+    int count;
     int reset;
     int timeout;
-    Oid oid;
     LIST_HEAD(, Task) tasks;
+    Oid oid;
     StringInfoData remotes;
 } Work;
 
