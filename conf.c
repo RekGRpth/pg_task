@@ -122,10 +122,10 @@ static void conf_check(Work *work) {
         "LEFT JOIN   pg_stat_activity AS a ON a.usename = \"user\" AND a.datname = data AND ((application_name = concat_ws(' ', 'pg_task', schema, \"table\", reset::text, timeout::text) AND pid != pg_backend_pid()) OR (application_name = 'pg_task conf' AND pid = pg_backend_pid()))\n"
         "LEFT JOIN   pg_database AS d ON d.datname = data AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON u.usename = \"user\"";
-    bool conf = false;
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
+    work->conf = false;
     for (uint64 row = 0; row < SPI_tuptable->numvals; row++) {
         char *user = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", false));
         char *data = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", false));
@@ -139,6 +139,7 @@ static void conf_check(Work *work) {
         bool active = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "active", false));
         D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, user_exists = %s, data_exists = %s, active = %s", row, user, data, schema ? schema : default_null, table, reset, timeout, count, user_exists ? "true" : "false", data_exists ? "true" : "false", active ? "true" : "false");
         if (!strcmp(user, "postgres") && !strcmp(data, "postgres") && !schema && !strcmp(table, "task")) {
+            work->conf = true;
             work->count = count;
             work->data = "postgres";
             work->reset = reset;
@@ -146,7 +147,6 @@ static void conf_check(Work *work) {
             work->table = "task";
             work->timeout = timeout;
             work->user = "postgres";
-            conf = true;
             if (!work->oid) work_conf(work);
         } else if (!active) {
             if (!user_exists) conf_user(user);
@@ -159,7 +159,7 @@ static void conf_check(Work *work) {
         pfree(table);
     }
     SPI_finish_my();
-    if (!conf) work->timeout = -1;
+    if (!work->conf) work->timeout = -1;
 }
 
 static void conf_init(Work *work) {

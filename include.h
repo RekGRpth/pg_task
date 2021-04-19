@@ -77,6 +77,7 @@ typedef struct _SPI_plan SPI_plan;
 typedef struct Task Task;
 
 typedef struct Work {
+    bool conf;
     char *data;
     char *schema;
     char *schema_table;
