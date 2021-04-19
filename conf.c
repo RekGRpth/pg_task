@@ -168,6 +168,7 @@ static void conf_run(void) {
     pid_t pid;
     MemSet(&worker, 0, sizeof(worker));
     init_work(&worker);
+    worker.bgw_notify_pid = MyProcPid;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) E("!RegisterDynamicBackgroundWorker");
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_NOT_YET_STARTED: E("WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED"); break;
