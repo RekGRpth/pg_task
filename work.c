@@ -213,6 +213,7 @@ static void work_conf(Work *work) {
     work_type(work);
     work_table(work);
     work_index(work, "dt");
+    work_index(work, "parent");
     work_index(work, "state");
     set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
