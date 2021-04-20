@@ -6,7 +6,7 @@ typedef struct DestReceiverMy {
     uint64 row;
 } DestReceiverMy;
 
-static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
+static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDescData *tupdesc, int fnumber) {
     Oid foutoid, oid = TupleDescAttr(tupdesc, fnumber - 1)->atttypid;
     bool isnull, typisvarlena;
     Datum val = slot_getattr(slot, fnumber, &isnull);
@@ -15,7 +15,7 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
     return OidOutputFunctionCall(foutoid, val);
 }
 
-static void headers(TupleDesc typeinfo, Task *task) {
+static void headers(TupleDescData *typeinfo, Task *task) {
     if (task->output.len) appendStringInfoString(&task->output, "\n");
     for (int col = 1; col <= typeinfo->natts; col++) {
         const char *value = SPI_fname(typeinfo, col);
@@ -35,7 +35,7 @@ static void headers(TupleDesc typeinfo, Task *task) {
 }
 
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
-    TupleDesc typeinfo = slot->tts_tupleDescriptor;
+    TupleDescData *typeinfo = slot->tts_tupleDescriptor;
     DestReceiverMy *my = (DestReceiverMy *)self;
     Task *task = my->task;
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
@@ -63,7 +63,7 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     return true;
 }
 
-static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
+static void rStartup(DestReceiver *self, int operation, TupleDescData *typeinfo) {
     DestReceiverMy *my = (DestReceiverMy *)self;
     Task *task = my->task;
     if (task->header && task->length > 1) {
