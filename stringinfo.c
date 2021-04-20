@@ -1,7 +1,7 @@
 #include "include.h"
 
-void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(memoryContext);
+void initStringInfoMy(MemoryContextData *memoryContext, StringInfoData *buf) {
+    MemoryContextData *oldMemoryContext = MemoryContextSwitchTo(memoryContext);
     initStringInfo(buf);
     MemoryContextSwitchTo(oldMemoryContext);
 }

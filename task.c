@@ -237,7 +237,7 @@ static void task_exit(int code, Datum arg) {
 }
 
 static void task_fail(Task *task) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+    MemoryContextData *oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
     MemoryContextSwitchTo(oldMemoryContext);
     task_error(task, edata);
@@ -335,7 +335,7 @@ static void task_latch(void) {
 }
 
 static void task_success(Task *task) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
+    MemoryContextData *oldMemoryContext = MemoryContextSwitchTo(MessageContext);
     MemoryContextResetAndDeleteChildren(MessageContext);
     InvalidateCatalogSnapshotConditionally();
     MemoryContextSwitchTo(oldMemoryContext);
