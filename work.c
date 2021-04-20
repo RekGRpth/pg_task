@@ -708,7 +708,7 @@ void work_worker(Datum main_arg) {
     long cur_timeout = -1;
     Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
     work_init(work);
-    while (!ShutdownRequestPending) {
+    if (!init_data_user_table_lock(MyDatabaseId, GetUserId(), work->oid)) W("!init_data_user_table_lock(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid); else while (!ShutdownRequestPending) {
         dlist_mutable_iter iter;
         int nevents = 2;
         WaitEvent *events;
@@ -754,6 +754,7 @@ void work_worker(Datum main_arg) {
         if (work->count && work->_count >= work->count) break;
         if (work->live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), work->live * 1000)) break;
     }
+    if (!init_data_user_table_unlock(MyDatabaseId, GetUserId(), work->oid)) W("!init_data_user_table_unlock(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid);
     work_fini(work);
     pfree(work);
 }

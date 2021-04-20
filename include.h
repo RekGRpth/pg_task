@@ -121,11 +121,11 @@ typedef struct Task {
     Work *work;
 } Task;
 
+bool init_data_user_table_lock(Oid data, Oid user, Oid table);
+bool init_data_user_table_unlock(Oid data, Oid user, Oid table);
 bool init_oid_is_string(Oid oid);
-bool pg_advisory_unlock_int4_my(int32 key1, int32 key2);
-bool pg_advisory_unlock_int8_my(int64 key);
-bool pg_try_advisory_lock_int4_my(int32 key1, int32 key2);
-bool pg_try_advisory_lock_int8_my(int64 key);
+bool init_table_id_lock(Oid table, int64 id);
+bool init_table_id_unlock(Oid table, int64 id);
 bool task_done(Task *task);
 bool task_live(Task *task);
 bool task_work(Task *task);
