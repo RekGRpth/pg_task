@@ -12,12 +12,12 @@ static int default_timeout;
 
 bool init_data_user_table_lock(Oid data, Oid user, Oid table) {
     LOCKTAG tag = {data, user, table, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    return LockAcquire(&tag, ExclusiveLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
+    return LockAcquire(&tag, AccessExclusiveLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
 }
 
 bool init_data_user_table_unlock(Oid data, Oid user, Oid table) {
     LOCKTAG tag = {data, user, table, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    return LockRelease(&tag, ExclusiveLock, true);
+    return LockRelease(&tag, AccessExclusiveLock, true);
 }
 
 bool init_oid_is_string(Oid oid) {
@@ -41,12 +41,12 @@ bool init_oid_is_string(Oid oid) {
 
 bool init_table_id_lock(Oid table, int64 id) {
     LOCKTAG tag = {table, (uint32)(id >> 32), (uint32)id, 4, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    return LockAcquire(&tag, ExclusiveLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
+    return LockAcquire(&tag, AccessExclusiveLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
 }
 
 bool init_table_id_unlock(Oid table, int64 id) {
     LOCKTAG tag = {table, (uint32)(id >> 32), (uint32)id, 4, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    return LockRelease(&tag, ExclusiveLock, true);
+    return LockRelease(&tag, AccessExclusiveLock, true);
 }
 
 void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
