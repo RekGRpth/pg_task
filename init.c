@@ -11,14 +11,12 @@ static int default_reset;
 static int default_timeout;
 
 bool init_data_user_table_lock(Oid data, Oid user, Oid table) {
-    LOCKTAG tag;
-    SET_LOCKTAG_ADVISORY(tag, data, user, table, 3);
+    LOCKTAG tag = {data, user, table, 3, LOCKTAG_ADVISORY, USER_LOCKMETHOD};
     return LockAcquire(&tag, ExclusiveLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
 }
 
 bool init_data_user_table_unlock(Oid data, Oid user, Oid table) {
-    LOCKTAG tag;
-    SET_LOCKTAG_ADVISORY(tag, data, user, table, 3);
+    LOCKTAG tag = {data, user, table, 3, LOCKTAG_ADVISORY, USER_LOCKMETHOD};
     return LockRelease(&tag, ExclusiveLock, true);
 }
 
@@ -42,14 +40,12 @@ bool init_oid_is_string(Oid oid) {
 }
 
 bool init_table_id_lock(Oid table, int64 id) {
-    LOCKTAG tag;
-    SET_LOCKTAG_ADVISORY(tag, table, (uint32)(id >> 32), (uint32)id, 4);
+    LOCKTAG tag = {table, (uint32)(id >> 32), (uint32)id, 4, LOCKTAG_ADVISORY, USER_LOCKMETHOD};
     return LockAcquire(&tag, ExclusiveLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
 }
 
 bool init_table_id_unlock(Oid table, int64 id) {
-    LOCKTAG tag;
-    SET_LOCKTAG_ADVISORY(tag, table, (uint32)(id >> 32), (uint32)id, 4);
+    LOCKTAG tag = {table, (uint32)(id >> 32), (uint32)id, 4, LOCKTAG_ADVISORY, USER_LOCKMETHOD};
     return LockRelease(&tag, ExclusiveLock, true);
 }
 
