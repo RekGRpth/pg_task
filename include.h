@@ -132,7 +132,7 @@ bool task_work(Task *task);
 char *TextDatumGetCStringMy(MemoryContextData *memoryContext, Datum datum);
 const char *PQftypeMy(Oid oid);
 const char *PQftypeMy(Oid oid);
-Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
+Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
 DestReceiver *CreateDestReceiverMy(Task *task);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void BeginCommandMy(CommandTag commandTag, Task *task);
