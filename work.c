@@ -427,7 +427,7 @@ static void work_timeout(Work *work) {
             ") SELECT id, s.group, CASE WHEN max > 0 THEN max ELSE 1 END - count(pid) AS count FROM s GROUP BY id, s.group, max\n"
             ") SELECT array_agg(id ORDER BY id) AS id, s.group, count FROM s WHERE count > 0 GROUP BY s.group, count\n"
             ") SELECT unnest(id[:count]) AS id, s.group, count FROM s ORDER BY count DESC\n"
-            ") SELECT s.* FROM s INNER JOIN %1$s USING (id) FOR UPDATE SKIP LOCKED\n"
+            ") SELECT id FROM s INNER JOIN %1$s USING (id) FOR UPDATE SKIP LOCKED\n"
             ") UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id, u.group, u.remote, COALESCE(u.max, ~(1<<31)) AS max", work->schema_table, work->schema_type);
         command = buf.data;
     }
