@@ -14,7 +14,7 @@ static void task_update(Task *task) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %1$s WHERE max < 0 AND dt < current_timestamp AND \"group\" = $1 AND state = 'PLAN'::%2$s FOR UPDATE SKIP LOCKED\n)\n"
+            "WITH s AS (SELECT id FROM %1$s AS t WHERE max < 0 AND dt < current_timestamp AND t.group = $1 AND state = 'PLAN'::%2$s FOR UPDATE SKIP LOCKED\n)\n"
             "UPDATE %1$s AS u SET dt = current_timestamp FROM s WHERE u.id = s.id", work->schema_table, work->schema_type);
         command = buf.data;
     }
@@ -82,10 +82,10 @@ bool task_live(Task *task) {
         appendStringInfo(&buf,
             "WITH s AS (\n"
             "SELECT  id\n"
-            "FROM    %1$s\n"
+            "FROM    %1$s AS t\n"
             "WHERE   state = 'PLAN'::%2$s\n"
             "AND     dt <= current_timestamp\n"
-            "AND     \"group\" = $1\n"
+            "AND     t.group = $1\n"
             "AND     remote IS NOT DISTINCT FROM $2\n"
             "AND     COALESCE(max, ~(1<<31)) >= $3\n"
             "AND     CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $4 AND $5 + live > current_timestamp ELSE COALESCE(count, 0) > $4 OR $5 + COALESCE(live, '0 sec'::interval) > current_timestamp END\n"
@@ -127,7 +127,7 @@ bool task_work(Task *task) {
         appendStringInfo(&buf,
             "WITH s AS (SELECT id FROM %1$s WHERE id = $1 AND state = 'TAKE'::%2$s FOR UPDATE)\n"
             "UPDATE %1$s AS u SET state = 'WORK'::%2$s, start = current_timestamp, pid = $2 FROM s WHERE u.id = s.id\n"
-            "RETURNING input, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout, append, header, string, \"null\", delimiter, quote, escape", work->schema_table, work->schema_type);
+            "RETURNING input, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout, append, header, string, u.null, delimiter, quote, escape", work->schema_table, work->schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -220,8 +220,8 @@ void task_repeat(Task *task) {
             "INSERT INTO %1$s (parent, dt, \"group\", max, input, timeout, delete, repeat, drift, count, live)\n"
             "SELECT $1, CASE WHEN drift THEN current_timestamp + repeat\n"
             "ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)\n"
-            "END AS dt, \"group\", max, input, timeout, delete, repeat, drift, count, live\n"
-            "FROM %1$s WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) LIMIT 1", work->schema_table, work->schema_type);
+            "END AS dt, t.group, max, input, timeout, delete, repeat, drift, count, live\n"
+            "FROM %1$s AS t WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) LIMIT 1", work->schema_table, work->schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);

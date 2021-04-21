@@ -109,21 +109,21 @@ static void conf_check(void) {
     static SPI_plan *plan = NULL;
     static const char *command =
         "WITH s AS (\n"
-        "SELECT      COALESCE(COALESCE(usename, \"user\"), data)::TEXT AS user,\n"
+        "SELECT      COALESCE(COALESCE(usename, s.user), data)::TEXT AS user,\n"
         "            COALESCE(datname, data)::text AS data,\n"
         "            schema,\n"
-        "            COALESCE(\"table\", current_setting('pg_task.default_table', false)) AS table,\n"
+        "            COALESCE(s.table, current_setting('pg_task.default_table', false)) AS table,\n"
         "            COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,\n"
         "            COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout,\n"
         "            COALESCE(count, current_setting('pg_task.default_count', false)::int4) AS count,\n"
         "            EXTRACT(epoch FROM COALESCE(live, current_setting('pg_task.default_live', false)::interval))::int4 AS live\n"
         "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, reset int4, timeout int4, count int4, live interval)\n"
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
-        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(\"user\", (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
+        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(s.user, (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
         ") SELECT DISTINCT s.*, u.usesysid IS NOT NULL AS user_exists, d.oid IS NOT NULL AS data_exists, pid IS NOT NULL AS active FROM s\n"
-        "LEFT JOIN   pg_stat_activity AS a ON a.usename = \"user\" AND a.datname = data AND application_name = concat_ws(' ', 'pg_task', schema, \"table\", reset::text, timeout::text) AND pid != pg_backend_pid()\n"
+        "LEFT JOIN   pg_stat_activity AS a ON a.usename = s.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_task', schema, s.table, reset::text, timeout::text) AND pid != pg_backend_pid()\n"
         "LEFT JOIN   pg_database AS d ON d.datname = data AND NOT datistemplate AND datallowconn\n"
-        "LEFT JOIN   pg_user AS u ON u.usename = \"user\"";
+        "LEFT JOIN   pg_user AS u ON u.usename = s.user";
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
