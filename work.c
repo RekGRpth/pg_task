@@ -40,15 +40,15 @@ static void work_free(Task *task) {
 
 static void work_remotes(Work *work) {
     int nelems = 0;
-    dlist_iter iter;
-    dlist_foreach(iter, &work->head) nelems++;
+    dlist_mutable_iter iter;
+    dlist_foreach_modify(iter, &work->head) nelems++;
     if (work->remotes.data) pfree(work->remotes.data);
     work->remotes.data = NULL;
     if (!nelems) return;
     initStringInfoMy(TopMemoryContext, &work->remotes);
     appendStringInfoString(&work->remotes, "{");
     nelems = 0;
-    dlist_foreach(iter, &work->head) {
+    dlist_foreach_modify(iter, &work->head) {
         Task *task = dlist_container(Task, node, iter.cur);
         if (!task->pid) continue;
         if (nelems) appendStringInfoString(&work->remotes, ",");
