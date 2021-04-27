@@ -38,32 +38,34 @@ static void work_free(Task *task) {
     pfree(task);
 }
 
-static void work_remotes(Work *work) {
-    int nelems = 0;
+static void work_pids(Work *work) {
     dlist_mutable_iter iter;
+    int nelems = 0;
+    StringInfoData buf;
     dlist_foreach_modify(iter, &work->head) nelems++;
-    if (work->remotes.data) pfree(work->remotes.data);
-    work->remotes.data = NULL;
+    if (work->pids) pfree(work->pids);
+    work->pids = NULL;
     if (!nelems) return;
-    initStringInfoMy(TopMemoryContext, &work->remotes);
-    appendStringInfoString(&work->remotes, "{");
+    initStringInfoMy(TopMemoryContext, &buf);
+    appendStringInfoString(&buf, "{");
     nelems = 0;
     dlist_foreach_modify(iter, &work->head) {
         Task *task = dlist_container(Task, node, iter.cur);
         if (!task->pid) continue;
-        if (nelems) appendStringInfoString(&work->remotes, ",");
-        appendStringInfo(&work->remotes, "%i", task->pid);
+        if (nelems) appendStringInfoString(&buf, ",");
+        appendStringInfo(&buf, "%i", task->pid);
         nelems++;
     }
-    appendStringInfoString(&work->remotes, "}");
-    D1("remotes = %s", work->remotes.data);
+    appendStringInfoString(&buf, "}");
+    work->pids = buf.data;
+    D1("pids = %s", work->pids);
 }
 
 static void work_finish(Task *task) {
     Work *work = task->work;
     dlist_delete(&task->node);
     PQfinish(task->conn);
-    work_remotes(work);
+    work_pids(work);
     work_free(task);
 }
 
@@ -388,8 +390,8 @@ static void work_task(const Work *work, const int64 id, char *group, const int m
 
 static void work_update(Work *work) {
     static Oid argtypes[] = {TEXTOID};
-    Datum values[] = {work->remotes.data ? CStringGetTextDatum(work->remotes.data) : (Datum)NULL};
-    char nulls[] = {work->remotes.data ? ' ' : 'n'};
+    Datum values[] = {work->pids ? CStringGetTextDatum(work->pids) : (Datum)NULL};
+    char nulls[] = {work->pids ? ' ' : 'n'};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
@@ -409,7 +411,7 @@ static void work_update(Work *work) {
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE, true);
     SPI_finish_my();
-    if (work->remotes.data) pfree((void *)values[0]);
+    if (work->pids) pfree((void *)values[0]);
 }
 
 static void work_timeout(Work *work) {
@@ -542,7 +544,7 @@ static void work_connect(Task *task) {
     if (connected) {
         Work *work = task->work;
         if(!(task->pid = PQbackendPID(task->conn))) { work_error(task, "!PQbackendPID", PQerrorMessage(task->conn), true); return; }
-        work_remotes(work);
+        work_pids(work);
         work_query(task);
     }
 }

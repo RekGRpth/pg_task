@@ -75,6 +75,7 @@ typedef struct _SPI_plan SPI_plan;
 
 typedef struct Work {
     char *data;
+    char *pids;
     char *schema;
     char *schema_table;
     char *schema_type;
@@ -87,7 +88,6 @@ typedef struct Work {
     int reset;
     int timeout;
     Oid oid;
-    StringInfoData remotes;
 } Work;
 
 typedef struct Task {
