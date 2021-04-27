@@ -177,6 +177,23 @@ static void work_index(Work *work, const char *index) {
     if (index_quote != index) pfree((void *)index_quote);
 }
 
+static void work_repeat(Task *task) {
+    if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
+        if (!PQsendQuery(task->conn, "COMMIT")) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false);
+        else task->event = WL_SOCKET_WRITEABLE;
+        return;
+    }
+    if (task_done(task)) { work_finish(task); return; }
+    D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
+    if (task->repeat) task_repeat(task);
+    if (task->delete && !task->output.data) task_delete(task);
+    if (task->output.data) pfree(task->output.data);
+    task->output.data = NULL;
+    if (task->error.data) pfree(task->error.data);
+    task->error.data = NULL;
+    (PQstatus(task->conn) != CONNECTION_OK || !task->live || task_live(task)) ? work_finish(task) : work_query(task);
+}
+
 static void work_schema(Work *work) {
     StringInfoData buf;
     List *names;
@@ -297,23 +314,6 @@ static void work_conf(Work *work) {
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     dlist_init(&work->head);
-}
-
-static void work_repeat(Task *task) {
-    if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
-        if (!PQsendQuery(task->conn, "COMMIT")) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false);
-        else task->event = WL_SOCKET_WRITEABLE;
-        return;
-    }
-    if (task_done(task)) { work_finish(task); return; }
-    D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
-    if (task->repeat) task_repeat(task);
-    if (task->delete && !task->output.data) task_delete(task);
-    if (task->output.data) pfree(task->output.data);
-    task->output.data = NULL;
-    if (task->error.data) pfree(task->error.data);
-    task->error.data = NULL;
-    (PQstatus(task->conn) != CONNECTION_OK || !task->live || task_live(task)) ? work_finish(task) : work_query(task);
 }
 
 static void work_success(Task *task, PGresult *result) {
