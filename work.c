@@ -403,7 +403,7 @@ static void work_query(Task *task) {
     task->socket = work_result;
 }
 
-static void work_remote_socket(Task *task) {
+static void work_connect(Task *task) {
     bool connected = false;
     switch (PQstatus(task->conn)) {
         case CONNECTION_BAD: D1("PQstatus == CONNECTION_BAD"); work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); return;
@@ -485,7 +485,7 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     keywords[arg] = NULL;
     values[arg] = NULL;
     task->event = WL_SOCKET_WRITEABLE;
-    task->socket = work_remote_socket;
+    task->socket = work_connect;
     task->start = GetCurrentTimestamp();
     dlist_push_head(&work->head, &task->node);
     if (!(task->conn = PQconnectStartParams(keywords, values, false))) work_error(task, "!PQconnectStartParams", PQerrorMessage(task->conn), true);
