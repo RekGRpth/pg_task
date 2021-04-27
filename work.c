@@ -473,6 +473,55 @@ static void work_table(Work *work) {
     pfree(buf.data);
 }
 
+static void work_task(const Work *work, const int64 id, char *group, const int max) {
+    BackgroundWorkerHandle *handle;
+    pid_t pid;
+    StringInfoData buf;
+    int user_len = strlen(work->user), data_len = strlen(work->data), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), group_len = strlen(group), max_len = sizeof(max), oid_len = sizeof(work->oid);
+    BackgroundWorker worker;
+    char *p = worker.bgw_extra;
+    D1("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, id, group, max, work->oid);
+    MemSet(&worker, 0, sizeof(worker));
+    worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
+    worker.bgw_main_arg = Int64GetDatum(id);
+    worker.bgw_notify_pid = MyProcPid;
+    worker.bgw_restart_time = BGW_NEVER_RESTART;
+    worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
+    initStringInfoMy(TopMemoryContext, &buf);
+    appendStringInfoString(&buf, "pg_task");
+    if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
+    memcpy(worker.bgw_library_name, buf.data, buf.len);
+    resetStringInfo(&buf);
+    appendStringInfoString(&buf, "task_worker");
+    if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
+    memcpy(worker.bgw_function_name, buf.data, buf.len);
+    resetStringInfo(&buf);
+    appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, group);
+    if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
+    memcpy(worker.bgw_type, buf.data, buf.len);
+    resetStringInfo(&buf);
+    appendStringInfo(&buf, "%s %s %s", work->user, work->data, worker.bgw_type);
+    if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
+    memcpy(worker.bgw_name, buf.data, buf.len);
+    pfree(buf.data);
+    if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + oid_len + group_len + 1 + max_len > BGW_EXTRALEN) E("%i > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + oid_len + group_len + 1 + max_len);
+    p = (char *)memcpy(p, work->user, user_len) + user_len + 1;
+    p = (char *)memcpy(p, work->data, data_len) + data_len + 1;
+    p = (char *)memcpy(p, work->schema, schema_len) + schema_len + 1;
+    p = (char *)memcpy(p, work->table, table_len) + table_len + 1;
+    p = (char *)memcpy(p, &work->oid, oid_len) + oid_len;
+    p = (char *)memcpy(p, group, group_len) + group_len + 1;
+    p = (char *)memcpy(p, &max, max_len) + max_len;
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) E("!RegisterDynamicBackgroundWorker");
+    switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
+        case BGWH_NOT_YET_STARTED: E("WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED"); break;
+        case BGWH_POSTMASTER_DIED: E("WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED"); break;
+        case BGWH_STARTED: break;
+        case BGWH_STOPPED: E("WaitForBackgroundWorkerStartup == BGWH_STOPPED"); break;
+    }
+    pfree(handle);
+}
+
 static void work_type(Work *work) {
     StringInfoData buf;
     Oid type = InvalidOid;
@@ -523,55 +572,6 @@ static void work_conf(Work *work) {
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     dlist_init(&work->head);
-}
-
-static void work_task(const Work *work, const int64 id, char *group, const int max) {
-    BackgroundWorkerHandle *handle;
-    pid_t pid;
-    StringInfoData buf;
-    int user_len = strlen(work->user), data_len = strlen(work->data), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), group_len = strlen(group), max_len = sizeof(max), oid_len = sizeof(work->oid);
-    BackgroundWorker worker;
-    char *p = worker.bgw_extra;
-    D1("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, id, group, max, work->oid);
-    MemSet(&worker, 0, sizeof(worker));
-    worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    worker.bgw_main_arg = Int64GetDatum(id);
-    worker.bgw_notify_pid = MyProcPid;
-    worker.bgw_restart_time = BGW_NEVER_RESTART;
-    worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfoString(&buf, "pg_task");
-    if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
-    memcpy(worker.bgw_library_name, buf.data, buf.len);
-    resetStringInfo(&buf);
-    appendStringInfoString(&buf, "task_worker");
-    if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
-    memcpy(worker.bgw_function_name, buf.data, buf.len);
-    resetStringInfo(&buf);
-    appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, group);
-    if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
-    memcpy(worker.bgw_type, buf.data, buf.len);
-    resetStringInfo(&buf);
-    appendStringInfo(&buf, "%s %s %s", work->user, work->data, worker.bgw_type);
-    if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
-    memcpy(worker.bgw_name, buf.data, buf.len);
-    pfree(buf.data);
-    if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + oid_len + group_len + 1 + max_len > BGW_EXTRALEN) E("%i > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + oid_len + group_len + 1 + max_len);
-    p = (char *)memcpy(p, work->user, user_len) + user_len + 1;
-    p = (char *)memcpy(p, work->data, data_len) + data_len + 1;
-    p = (char *)memcpy(p, work->schema, schema_len) + schema_len + 1;
-    p = (char *)memcpy(p, work->table, table_len) + table_len + 1;
-    p = (char *)memcpy(p, &work->oid, oid_len) + oid_len;
-    p = (char *)memcpy(p, group, group_len) + group_len + 1;
-    p = (char *)memcpy(p, &max, max_len) + max_len;
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) E("!RegisterDynamicBackgroundWorker");
-    switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
-        case BGWH_NOT_YET_STARTED: E("WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED"); break;
-        case BGWH_POSTMASTER_DIED: E("WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED"); break;
-        case BGWH_STARTED: break;
-        case BGWH_STOPPED: E("WaitForBackgroundWorkerStartup == BGWH_STOPPED"); break;
-    }
-    pfree(handle);
 }
 
 static void work_update(Work *work) {
