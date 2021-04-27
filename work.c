@@ -12,6 +12,27 @@ static bool work_is_log_level_output(int elevel, int log_min_level) {
     return false;
 }
 
+static const char *work_status(Task *task) {
+    switch (PQstatus(task->conn)) {
+        case CONNECTION_AUTH_OK: return "CONNECTION_AUTH_OK";
+        case CONNECTION_AWAITING_RESPONSE: return "CONNECTION_AWAITING_RESPONSE";
+        case CONNECTION_BAD: return "CONNECTION_BAD";
+#if (PG_VERSION_NUM >= 130000)
+        case CONNECTION_CHECK_TARGET: return "CONNECTION_CHECK_TARGET";
+#endif
+        case CONNECTION_CHECK_WRITABLE: return "CONNECTION_CHECK_WRITABLE";
+        case CONNECTION_CONSUME: return "CONNECTION_CONSUME";
+        case CONNECTION_GSS_STARTUP: return "CONNECTION_GSS_STARTUP";
+        case CONNECTION_MADE: return "CONNECTION_MADE";
+        case CONNECTION_NEEDED: return "CONNECTION_NEEDED";
+        case CONNECTION_OK: return "CONNECTION_OK";
+        case CONNECTION_SETENV: return "CONNECTION_SETENV";
+        case CONNECTION_SSL_STARTUP: return "CONNECTION_SSL_STARTUP";
+        case CONNECTION_STARTED: return "CONNECTION_STARTED";
+    }
+    return "";
+}
+
 static void work_command(Task *task, PGresult *result) {
     if (task->skip) { task->skip--; return; }
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
@@ -301,27 +322,6 @@ static void work_query(Task *task) {
         task->event = WL_SOCKET_WRITEABLE;
         task->socket = work_query_socket;
     }
-}
-
-static const char *work_status(Task *task) {
-    switch (PQstatus(task->conn)) {
-        case CONNECTION_AUTH_OK: return "CONNECTION_AUTH_OK";
-        case CONNECTION_AWAITING_RESPONSE: return "CONNECTION_AWAITING_RESPONSE";
-        case CONNECTION_BAD: return "CONNECTION_BAD";
-#if (PG_VERSION_NUM >= 130000)
-        case CONNECTION_CHECK_TARGET: return "CONNECTION_CHECK_TARGET";
-#endif
-        case CONNECTION_CHECK_WRITABLE: return "CONNECTION_CHECK_WRITABLE";
-        case CONNECTION_CONSUME: return "CONNECTION_CONSUME";
-        case CONNECTION_GSS_STARTUP: return "CONNECTION_GSS_STARTUP";
-        case CONNECTION_MADE: return "CONNECTION_MADE";
-        case CONNECTION_NEEDED: return "CONNECTION_NEEDED";
-        case CONNECTION_OK: return "CONNECTION_OK";
-        case CONNECTION_SETENV: return "CONNECTION_SETENV";
-        case CONNECTION_SSL_STARTUP: return "CONNECTION_SSL_STARTUP";
-        case CONNECTION_STARTED: return "CONNECTION_STARTED";
-    }
-    return "";
 }
 
 static void work_remote_socket(Task *task) {
