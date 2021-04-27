@@ -276,6 +276,7 @@ static void work_readable(Task *task) {
 
 static void work_repeat(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
+        if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; return; }
         if (!PQsendQuery(task->conn, "COMMIT")) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
         if (PQflush(task->conn) < 0) { work_error(task, "PQflush < 0", PQerrorMessage(task->conn), false); return; }
         task->event = WL_SOCKET_WRITEABLE;
@@ -356,7 +357,7 @@ static void work_success(Task *task, PGresult *result) {
     }
 }
 
-static void work_query_socket(Task *task) {
+static void work_result(Task *task) {
     for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
         case PGRES_COMMAND_OK: work_command(task, result); break;
         case PGRES_FATAL_ERROR: W("PQresultStatus == PGRES_FATAL_ERROR and %.*s", (int)strlen(PQresultErrorMessage(result)) - 1, PQresultErrorMessage(result)); work_fail(task, result); break;
@@ -369,6 +370,7 @@ static void work_query_socket(Task *task) {
 static void work_query(Task *task) {
     StringInfoData buf;
     List *list;
+    if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; return; }
     if (task_work(task)) { work_finish(task); return; }
     D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
     PG_TRY();
@@ -398,7 +400,7 @@ static void work_query(Task *task) {
     pfree(task->input);
     task->input = NULL;
     task->event = WL_SOCKET_WRITEABLE;
-    task->socket = work_query_socket;
+    task->socket = work_result;
 }
 
 static void work_remote_socket(Task *task) {
