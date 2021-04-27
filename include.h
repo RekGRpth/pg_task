@@ -108,7 +108,7 @@ typedef struct Task {
     dlist_node node;
     int64 id;
     int count;
-    int events;
+    int event;
     int length;
     int max;
     int pid;

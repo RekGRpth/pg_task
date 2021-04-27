@@ -324,7 +324,7 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     arg++;
     keywords[arg] = NULL;
     values[arg] = NULL;
-    task->events = WL_SOCKET_WRITEABLE;
+    task->event = WL_SOCKET_WRITEABLE;
     task->start = GetCurrentTimestamp();
     dlist_push_head(&work->head, &task->node);
     if (!(task->conn = PQconnectStartParams(keywords, values, false))) work_error(task, "!PQconnectStartParams", PQerrorMessage(task->conn), true);
@@ -513,7 +513,7 @@ static void work_query(Task *task) {
     if (!PQsendQuery(task->conn, task->input)) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); else {
         pfree(task->input);
         task->input = NULL;
-        task->events = WL_SOCKET_WRITEABLE;
+        task->event = WL_SOCKET_WRITEABLE;
     }
 }
 
@@ -538,8 +538,8 @@ static void work_connect(Task *task) {
         case PGRES_POLLING_ACTIVE: D1("PQconnectPoll == PGRES_POLLING_ACTIVE"); break;
         case PGRES_POLLING_FAILED: D1("PQconnectPoll == PGRES_POLLING_FAILED"); work_error(task, "PQconnectPoll == PGRES_POLLING_FAILED", PQerrorMessage(task->conn), true); return;
         case PGRES_POLLING_OK: D1("PQconnectPoll == PGRES_POLLING_OK"); connected = true; break;
-        case PGRES_POLLING_READING: D1("PQconnectPoll == PGRES_POLLING_READING"); task->events = WL_SOCKET_READABLE; break;
-        case PGRES_POLLING_WRITING: D1("PQconnectPoll == PGRES_POLLING_WRITING"); task->events = WL_SOCKET_WRITEABLE; break;
+        case PGRES_POLLING_READING: D1("PQconnectPoll == PGRES_POLLING_READING"); task->event = WL_SOCKET_READABLE; break;
+        case PGRES_POLLING_WRITING: D1("PQconnectPoll == PGRES_POLLING_WRITING"); task->event = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
         Work *work = task->work;
@@ -552,7 +552,7 @@ static void work_connect(Task *task) {
 static void work_repeat(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
         if (!PQsendQuery(task->conn, "COMMIT")) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false);
-        else task->events = WL_SOCKET_WRITEABLE;
+        else task->event = WL_SOCKET_WRITEABLE;
         return;
     }
     if (task_done(task)) { work_finish(task); return; }
@@ -625,7 +625,7 @@ static void work_result(Task *task) {
 static void work_socket(Task *task) {
     if (PQstatus(task->conn) != CONNECTION_OK) work_connect(task); else {
         if (!PQconsumeInput(task->conn)) work_error(task, "!PQconsumeInput", PQerrorMessage(task->conn), true);
-        else if (PQisBusy(task->conn)) task->events = WL_SOCKET_READABLE;
+        else if (PQisBusy(task->conn)) task->event = WL_SOCKET_READABLE;
         else work_result(task);
     }
 }
@@ -649,6 +649,19 @@ static void work_check(Work *work) {
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
     if (!SPI_tuptable->numvals) ShutdownRequestPending = true;
     SPI_finish_my();
+}
+
+static void work_event(Work *work, WaitEventSet *set) {
+    dlist_mutable_iter iter;
+    dlist_foreach_modify(iter, &work->head) {
+        Task *task = dlist_container(Task, node, iter.cur);
+        /*if (task->event & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
+            case 0: break;
+            case 1: D1("PQflush = 1"); break;
+            default: D1("PQflush = default"); break;
+        }*/
+        AddWaitEventToSet(set, task->event, PQsocket(task->conn), NULL, task);
+    }
 }
 
 static void work_exit(int code, Datum arg) {
@@ -705,6 +718,18 @@ static void work_latch(Work *work) {
     if (ConfigReloadPending) work_reload(work);
 }
 
+static int work_nevents(Work *work) {
+    dlist_mutable_iter iter;
+    int nevents = 0;
+    dlist_foreach_modify(iter, &work->head) {
+        Task *task = dlist_container(Task, node, iter.cur);
+        if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); continue; }
+        if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0", PQerrorMessage(task->conn), true); continue; }
+        nevents++;
+    }
+    return nevents;
+}
+
 void work_worker(Datum main_arg) {
     instr_time cur_time;
     instr_time start_time;
@@ -712,33 +737,16 @@ void work_worker(Datum main_arg) {
     Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
     work_init(work);
     if (!init_data_user_table_lock(MyDatabaseId, GetUserId(), work->oid)) W("!init_data_user_table_lock(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid); else while (!ShutdownRequestPending) {
-        dlist_mutable_iter iter;
-        int nevents = 2;
-        WaitEvent *events;
-        WaitEventSet *set;
+        int nevents = 2 + work_nevents(work);
+        WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
+        WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
         if (cur_timeout <= 0) {
             INSTR_TIME_SET_CURRENT(start_time);
             cur_timeout = work->timeout;
         }
-        dlist_foreach_modify(iter, &work->head) {
-            Task *task = dlist_container(Task, node, iter.cur);
-            if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); continue; }
-            if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0", PQerrorMessage(task->conn), true); continue; }
-            nevents++;
-        }
-        events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
-        set = CreateWaitEventSet(TopMemoryContext, nevents);
         AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
         AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
-        dlist_foreach_modify(iter, &work->head) {
-            Task *task = dlist_container(Task, node, iter.cur);
-            if (task->events & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
-                case 0: /*D1("PQflush = 0");*/ break;
-                case 1: D1("PQflush = 1"); break;
-                default: D1("PQflush = default"); break;
-            }
-            AddWaitEventToSet(set, task->events & WL_SOCKET_MASK, PQsocket(task->conn), NULL, task);
-        }
+        work_event(work, set);
         nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
