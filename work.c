@@ -198,6 +198,13 @@ static void work_index(Work *work, const char *index) {
     if (index_quote != index) pfree((void *)index_quote);
 }
 
+static void work_readable(Task *task) {
+    if (PQstatus(task->conn) == CONNECTION_OK) {
+        if (!PQconsumeInput(task->conn)) { work_error(task, "!PQconsumeInput", PQerrorMessage(task->conn), true); return; }
+    }
+    task->socket(task);
+}
+
 static void work_repeat(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
         if (!PQsendQuery(task->conn, "COMMIT")) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false);
@@ -634,13 +641,6 @@ static void work_timeout(Work *work) {
     }
     if (work->count) work->_count += SPI_tuptable->numvals;
     SPI_finish_my();
-}
-
-static void work_readable(Task *task) {
-    if (PQstatus(task->conn) == CONNECTION_OK) {
-        if (!PQconsumeInput(task->conn)) { work_error(task, "!PQconsumeInput", PQerrorMessage(task->conn), true); return; }
-    }
-    task->socket(task);
 }
 
 static void work_writeable(Task *task) {
