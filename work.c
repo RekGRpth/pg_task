@@ -748,9 +748,10 @@ static void work_timeout(Work *work) {
 }
 
 static void work_writeable(Task *task) {
-//    if (PQstatus(task->conn) == CONNECTION_OK) {
+    if (PQstatus(task->conn) == CONNECTION_OK) {
 //        if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; return; }
-//    }
+        if (PQflush(task->conn) < 0) { work_error(task, "PQflush < 0", PQerrorMessage(task->conn), true); return; }
+    }
     task->socket(task);
 }
 
