@@ -268,6 +268,41 @@ static void work_query_socket(Task *task) {
     work_repeat(task);
 }
 
+static void work_query(Task *task) {
+    StringInfoData buf;
+    List *list;
+    if (task_work(task)) { work_finish(task); return; }
+    D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
+    PG_TRY();
+        list = pg_parse_query(task->input);
+        task->length = list_length(list);
+        list_free_deep(list);
+    PG_CATCH();
+        FlushErrorState();
+    PG_END_TRY();
+    initStringInfoMy(TopMemoryContext, &buf);
+    task->skip = 0;
+    appendStringInfo(&buf, "SET \"pg_task.id\" = %li;\n", task->id);
+    task->skip++;
+    if (task->timeout) {
+        appendStringInfo(&buf, "SET \"statement_timeout\" = %i;\n", task->timeout);
+        task->skip++;
+    }
+    if (task->append) {
+        appendStringInfoString(&buf, "SET \"config.append_type_to_column_name\" = true;\n");
+        task->skip++;
+    }
+    appendStringInfoString(&buf, task->input);
+    pfree(task->input);
+    task->input = buf.data;
+    if (!PQsendQuery(task->conn, task->input)) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); else {
+        pfree(task->input);
+        task->input = NULL;
+        task->event = WL_SOCKET_WRITEABLE;
+        task->socket = work_query_socket;
+    }
+}
+
 static void work_table(Work *work) {
     StringInfoData buf;
     List *names;
@@ -370,41 +405,6 @@ static void work_conf(Work *work) {
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     dlist_init(&work->head);
-}
-
-static void work_query(Task *task) {
-    StringInfoData buf;
-    List *list;
-    if (task_work(task)) { work_finish(task); return; }
-    D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
-    PG_TRY();
-        list = pg_parse_query(task->input);
-        task->length = list_length(list);
-        list_free_deep(list);
-    PG_CATCH();
-        FlushErrorState();
-    PG_END_TRY();
-    initStringInfoMy(TopMemoryContext, &buf);
-    task->skip = 0;
-    appendStringInfo(&buf, "SET \"pg_task.id\" = %li;\n", task->id);
-    task->skip++;
-    if (task->timeout) {
-        appendStringInfo(&buf, "SET \"statement_timeout\" = %i;\n", task->timeout);
-        task->skip++;
-    }
-    if (task->append) {
-        appendStringInfoString(&buf, "SET \"config.append_type_to_column_name\" = true;\n");
-        task->skip++;
-    }
-    appendStringInfoString(&buf, task->input);
-    pfree(task->input);
-    task->input = buf.data;
-    if (!PQsendQuery(task->conn, task->input)) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); else {
-        pfree(task->input);
-        task->input = NULL;
-        task->event = WL_SOCKET_WRITEABLE;
-        task->socket = work_query_socket;
-    }
 }
 
 static const char *work_status(Task *task) {
