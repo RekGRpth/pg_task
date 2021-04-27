@@ -252,6 +252,18 @@ static void work_index(Work *work, const char *index) {
     if (index_quote != index) pfree((void *)index_quote);
 }
 
+static void work_reload(Work *work) {
+    ConfigReloadPending = false;
+    ProcessConfigFile(PGC_SIGHUP);
+    work_check(work);
+}
+
+static void work_latch(Work *work) {
+    ResetLatch(MyLatch);
+    CHECK_FOR_INTERRUPTS();
+    if (ConfigReloadPending) work_reload(work);
+}
+
 static void work_readable(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK) {
         if (!PQconsumeInput(task->conn)) { work_error(task, "!PQconsumeInput", PQerrorMessage(task->conn), true); return; }
@@ -736,18 +748,6 @@ static void work_writeable(Task *task) {
 //        if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; return; }
 //    }
     task->socket(task);
-}
-
-static void work_reload(Work *work) {
-    ConfigReloadPending = false;
-    ProcessConfigFile(PGC_SIGHUP);
-    work_check(work);
-}
-
-static void work_latch(Work *work) {
-    ResetLatch(MyLatch);
-    CHECK_FOR_INTERRUPTS();
-    if (ConfigReloadPending) work_reload(work);
 }
 
 void work_worker(Datum main_arg) {
