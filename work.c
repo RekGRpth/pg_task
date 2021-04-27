@@ -77,6 +77,19 @@ static void work_edata(Task *task, const char *filename, int lineno, const char 
     task_done(task);
 }
 
+static void work_event(Work *work, WaitEventSet *set) {
+    dlist_mutable_iter iter;
+    dlist_foreach_modify(iter, &work->head) {
+        Task *task = dlist_container(Task, node, iter.cur);
+        /*if (task->event & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
+            case 0: break;
+            case 1: D1("PQflush = 1"); break;
+            default: D1("PQflush = default"); break;
+        }*/
+        AddWaitEventToSet(set, task->event, PQsocket(task->conn), NULL, task);
+    }
+}
+
 static void work_fail(Task *task, PGresult *result) {
     char *value = NULL;
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
@@ -669,19 +682,6 @@ static void work_writeable(Task *task) {
 //        if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; return; }
 //    }
     task->socket(task);
-}
-
-static void work_event(Work *work, WaitEventSet *set) {
-    dlist_mutable_iter iter;
-    dlist_foreach_modify(iter, &work->head) {
-        Task *task = dlist_container(Task, node, iter.cur);
-        /*if (task->event & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
-            case 0: break;
-            case 1: D1("PQflush = 1"); break;
-            default: D1("PQflush = default"); break;
-        }*/
-        AddWaitEventToSet(set, task->event, PQsocket(task->conn), NULL, task);
-    }
 }
 
 static void work_exit(int code, Datum arg) {
