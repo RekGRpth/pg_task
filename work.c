@@ -119,6 +119,26 @@ static void work_error(Task *task, const char *msg, const char *err, bool finish
     finish ? work_finish(task) : work_free(task);
 }
 
+static void work_fini(Work *work) {
+    dlist_mutable_iter iter;
+    StringInfoData buf;
+    initStringInfoMy(TopMemoryContext, &buf);
+    appendStringInfo(&buf, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
+    dlist_foreach_modify(iter, &work->head) {
+        Task *task = dlist_container(Task, node, iter.cur);
+        PGcancel *cancel = PQgetCancel(task->conn);
+        if (!cancel) work_error(task, buf.data, "!PQgetCancel\n", true); else {
+            char err[256];
+            if (!PQcancel(cancel, err, sizeof(err))) work_error(task, buf.data, err, true); else {
+                work_edata(task, __FILE__, __LINE__, __func__, buf.data);
+                work_finish(task);
+            }
+            PQfreeCancel(cancel);
+        }
+    }
+    pfree(buf.data);
+}
+
 static void work_index(Work *work, const char *index) {
     StringInfoData buf, name, idx;
     List *names;
@@ -277,26 +297,6 @@ static void work_conf(Work *work) {
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     dlist_init(&work->head);
-}
-
-static void work_fini(Work *work) {
-    dlist_mutable_iter iter;
-    StringInfoData buf;
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
-    dlist_foreach_modify(iter, &work->head) {
-        Task *task = dlist_container(Task, node, iter.cur);
-        PGcancel *cancel = PQgetCancel(task->conn);
-        if (!cancel) work_error(task, buf.data, "!PQgetCancel\n", true); else {
-            char err[256];
-            if (!PQcancel(cancel, err, sizeof(err))) work_error(task, buf.data, err, true); else {
-                work_edata(task, __FILE__, __LINE__, __func__, buf.data);
-                work_finish(task);
-            }
-            PQfreeCancel(cancel);
-        }
-    }
-    pfree(buf.data);
 }
 
 static void work_repeat(Task *task) {
