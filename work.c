@@ -1,6 +1,7 @@
 #include "include.h"
 
 extern char *default_null;
+static void work_query(Task *task);
 
 static bool work_is_log_level_output(int elevel, int log_min_level) {
     if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
@@ -194,6 +195,12 @@ static void work_type(Work *work) {
     pfree(buf.data);
 }
 
+static void work_command(Task *task, PGresult *result) {
+    if (task->skip) { task->skip--; return; }
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    appendStringInfo(&task->output, "%s%s", task->output.len ? "\n" : "", PQcmdStatus(result));
+}
+
 static void work_conf(Work *work) {
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     const char *table_quote = quote_identifier(work->table);
@@ -245,6 +252,33 @@ static void work_error(Task *task, const char *msg, const char *err, bool finish
     finish ? work_finish(task) : work_free(task);
 }
 
+static void work_fail(Task *task, PGresult *result) {
+    char *value = NULL;
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
+    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->error, "%sseverity%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY_NONLOCALIZED))) appendStringInfo(&task->error, "%sseverity_nonlocalized%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&task->error, "%ssqlstate%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY))) appendStringInfo(&task->error, "%smessage_primary%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL))) appendStringInfo(&task->error, "%smessage_detail%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))) appendStringInfo(&task->error, "%smessage_hint%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_STATEMENT_POSITION))) appendStringInfo(&task->error, "%sstatement_position%s%c%s", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_POSITION))) appendStringInfo(&task->error, "%sinternal_position%s%c%s", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_QUERY))) appendStringInfo(&task->error, "%sinternal_query%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_CONTEXT))) appendStringInfo(&task->error, "%scontext%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SCHEMA_NAME))) appendStringInfo(&task->error, "%sschema_name%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_TABLE_NAME))) appendStringInfo(&task->error, "%stable_name%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_COLUMN_NAME))) appendStringInfo(&task->error, "%scolumn_name%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_DATATYPE_NAME))) appendStringInfo(&task->error, "%sdatatype_name%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_CONSTRAINT_NAME))) appendStringInfo(&task->error, "%sconstraint_name%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FILE))) appendStringInfo(&task->error, "%ssource_file%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_LINE))) appendStringInfo(&task->error, "%ssource_line%s%c%s", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
+    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->error, "%ssource_function%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
+    if (value) appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
+    task->skip++;
+    task->fail = true;
+}
+
 static void work_fini(Work *work) {
     dlist_mutable_iter iter;
     StringInfoData buf;
@@ -263,6 +297,157 @@ static void work_fini(Work *work) {
         }
     }
     pfree(buf.data);
+}
+
+static void work_repeat(Task *task) {
+    if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
+        if (!PQsendQuery(task->conn, "COMMIT")) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false);
+        else task->event = WL_SOCKET_WRITEABLE;
+        return;
+    }
+    if (task_done(task)) { work_finish(task); return; }
+    D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
+    if (task->repeat) task_repeat(task);
+    if (task->delete && !task->output.data) task_delete(task);
+    if (task->output.data) pfree(task->output.data);
+    task->output.data = NULL;
+    if (task->error.data) pfree(task->error.data);
+    task->error.data = NULL;
+    (PQstatus(task->conn) != CONNECTION_OK || !task->live || task_live(task)) ? work_finish(task) : work_query(task);
+}
+
+static void work_success(Task *task, PGresult *result) {
+    if (task->length == 1 && !PQntuples(result)) return;
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    if (task->header && (task->length > 1 || PQnfields(result) > 1)) {
+        if (task->output.len) appendStringInfoString(&task->output, "\n");
+        for (int col = 0; col < PQnfields(result); col++) {
+            const char *value = PQfname(result, col);
+            if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
+            if (task->quote) appendStringInfoChar(&task->output, task->quote);
+            if (task->escape) init_escape(&task->output, value, strlen(value), task->escape);
+            else appendStringInfoString(&task->output, value);
+            if (task->append && !strstr(value, "::")) {
+                Oid oid = PQftype(result, col);
+                const char *type = PQftypeMy(oid);
+                if (task->escape) init_escape(&task->output, "::", sizeof("::") - 1, task->escape);
+                else appendStringInfoString(&task->output, "::");
+                if (type) {
+                    if (task->escape) init_escape(&task->output, type, strlen(type), task->escape);
+                    else appendStringInfoString(&task->output, type);
+                } else appendStringInfo(&task->output, "%i", oid);
+            }
+            if (task->quote) appendStringInfoChar(&task->output, task->quote);
+        }
+    }
+    for (int row = 0; row < PQntuples(result); row++) {
+        if (task->output.len) appendStringInfoString(&task->output, "\n");
+        for (int col = 0; col < PQnfields(result); col++) {
+            const char *value = PQgetvalue(result, row, col);
+            int len = PQgetlength(result, row, col);
+            if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
+            if (PQgetisnull(result, row, col)) appendStringInfoString(&task->output, task->null); else {
+                if (!init_oid_is_string(PQftype(result, col)) && task->string) {
+                    if (len) appendStringInfoString(&task->output, value);
+                } else {
+                    if (task->quote) appendStringInfoChar(&task->output, task->quote);
+                    if (len) {
+                        if (task->escape) init_escape(&task->output, value, len, task->escape);
+                        else appendStringInfoString(&task->output, value);
+                    }
+                    if (task->quote) appendStringInfoChar(&task->output, task->quote);
+                }
+            }
+        }
+    }
+}
+
+static void work_query_socket(Task *task) {
+    for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
+        case PGRES_COMMAND_OK: work_command(task, result); break;
+        case PGRES_FATAL_ERROR: W("PQresultStatus == PGRES_FATAL_ERROR and %.*s", (int)strlen(PQresultErrorMessage(result)) - 1, PQresultErrorMessage(result)); work_fail(task, result); break;
+        case PGRES_TUPLES_OK: work_success(task, result); break;
+        default: D1(PQresStatus(PQresultStatus(result))); break;
+    }
+    work_repeat(task);
+}
+
+static void work_query(Task *task) {
+    StringInfoData buf;
+    List *list;
+    if (task_work(task)) { work_finish(task); return; }
+    D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
+    PG_TRY();
+        list = pg_parse_query(task->input);
+        task->length = list_length(list);
+        list_free_deep(list);
+    PG_CATCH();
+        FlushErrorState();
+    PG_END_TRY();
+    initStringInfoMy(TopMemoryContext, &buf);
+    task->skip = 0;
+    appendStringInfo(&buf, "SET \"pg_task.id\" = %li;\n", task->id);
+    task->skip++;
+    if (task->timeout) {
+        appendStringInfo(&buf, "SET \"statement_timeout\" = %i;\n", task->timeout);
+        task->skip++;
+    }
+    if (task->append) {
+        appendStringInfoString(&buf, "SET \"config.append_type_to_column_name\" = true;\n");
+        task->skip++;
+    }
+    appendStringInfoString(&buf, task->input);
+    pfree(task->input);
+    task->input = buf.data;
+    if (!PQsendQuery(task->conn, task->input)) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); else {
+        pfree(task->input);
+        task->input = NULL;
+        task->event = WL_SOCKET_WRITEABLE;
+        task->socket = work_query_socket;
+    }
+}
+
+static const char *work_status(Task *task) {
+    switch (PQstatus(task->conn)) {
+        case CONNECTION_AUTH_OK: return "CONNECTION_AUTH_OK";
+        case CONNECTION_AWAITING_RESPONSE: return "CONNECTION_AWAITING_RESPONSE";
+        case CONNECTION_BAD: return "CONNECTION_BAD";
+#if (PG_VERSION_NUM >= 130000)
+        case CONNECTION_CHECK_TARGET: return "CONNECTION_CHECK_TARGET";
+#endif
+        case CONNECTION_CHECK_WRITABLE: return "CONNECTION_CHECK_WRITABLE";
+        case CONNECTION_CONSUME: return "CONNECTION_CONSUME";
+        case CONNECTION_GSS_STARTUP: return "CONNECTION_GSS_STARTUP";
+        case CONNECTION_MADE: return "CONNECTION_MADE";
+        case CONNECTION_NEEDED: return "CONNECTION_NEEDED";
+        case CONNECTION_OK: return "CONNECTION_OK";
+        case CONNECTION_SETENV: return "CONNECTION_SETENV";
+        case CONNECTION_SSL_STARTUP: return "CONNECTION_SSL_STARTUP";
+        case CONNECTION_STARTED: return "CONNECTION_STARTED";
+    }
+    return "";
+}
+
+static void work_remote_socket(Task *task) {
+    bool connected = false;
+    switch (PQstatus(task->conn)) {
+        case CONNECTION_BAD: D1("PQstatus == CONNECTION_BAD"); work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); return;
+        case CONNECTION_OK: D1("PQstatus == CONNECTION_OK"); connected = true; break;
+        default: break;
+    }
+    if (!connected) switch (PQconnectPoll(task->conn)) {
+        case PGRES_POLLING_ACTIVE: D1("PQconnectPoll == PGRES_POLLING_ACTIVE and %s", work_status(task)); break;
+        case PGRES_POLLING_FAILED: D1("PQconnectPoll == PGRES_POLLING_FAILED and %s", work_status(task)); work_error(task, "PQconnectPoll == PGRES_POLLING_FAILED", PQerrorMessage(task->conn), true); return;
+        case PGRES_POLLING_OK: D1("PQconnectPoll == PGRES_POLLING_OK and %s", work_status(task)); connected = true; break;
+        case PGRES_POLLING_READING: D1("PQconnectPoll == PGRES_POLLING_READING and %s", work_status(task)); task->event = WL_SOCKET_READABLE; break;
+        case PGRES_POLLING_WRITING: D1("PQconnectPoll == PGRES_POLLING_WRITING and %s", work_status(task)); task->event = WL_SOCKET_WRITEABLE; break;
+    }
+    if (connected) {
+        Work *work = task->work;
+        if(!(task->pid = PQbackendPID(task->conn))) { work_error(task, "!PQbackendPID", PQerrorMessage(task->conn), true); return; }
+        work_pids(work);
+        work_query(task);
+    }
 }
 
 static void work_remote(Work *work, const int64 id, char *group, char *remote, const int max) {
@@ -325,6 +510,7 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     keywords[arg] = NULL;
     values[arg] = NULL;
     task->event = WL_SOCKET_WRITEABLE;
+    task->socket = work_remote_socket;
     task->start = GetCurrentTimestamp();
     dlist_push_head(&work->head, &task->node);
     if (!(task->conn = PQconnectStartParams(keywords, values, false))) work_error(task, "!PQconnectStartParams", PQerrorMessage(task->conn), true);
@@ -450,184 +636,18 @@ static void work_timeout(Work *work) {
     SPI_finish_my();
 }
 
-static void work_command(Task *task, PGresult *result) {
-    if (task->skip) { task->skip--; return; }
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-    appendStringInfo(&task->output, "%s%s", task->output.len ? "\n" : "", PQcmdStatus(result));
+static void work_readable(Task *task) {
+    if (PQstatus(task->conn) == CONNECTION_OK) {
+        if (!PQconsumeInput(task->conn)) { work_error(task, "!PQconsumeInput", PQerrorMessage(task->conn), true); return; }
+    }
+    task->socket(task);
 }
 
-static void work_fail(Task *task, PGresult *result) {
-    char *value = NULL;
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-    if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
-    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->error, "%sseverity%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY_NONLOCALIZED))) appendStringInfo(&task->error, "%sseverity_nonlocalized%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&task->error, "%ssqlstate%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY))) appendStringInfo(&task->error, "%smessage_primary%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL))) appendStringInfo(&task->error, "%smessage_detail%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))) appendStringInfo(&task->error, "%smessage_hint%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_STATEMENT_POSITION))) appendStringInfo(&task->error, "%sstatement_position%s%c%s", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_POSITION))) appendStringInfo(&task->error, "%sinternal_position%s%c%s", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_QUERY))) appendStringInfo(&task->error, "%sinternal_query%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_CONTEXT))) appendStringInfo(&task->error, "%scontext%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SCHEMA_NAME))) appendStringInfo(&task->error, "%sschema_name%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_TABLE_NAME))) appendStringInfo(&task->error, "%stable_name%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_COLUMN_NAME))) appendStringInfo(&task->error, "%scolumn_name%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_DATATYPE_NAME))) appendStringInfo(&task->error, "%sdatatype_name%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_CONSTRAINT_NAME))) appendStringInfo(&task->error, "%sconstraint_name%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FILE))) appendStringInfo(&task->error, "%ssource_file%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_LINE))) appendStringInfo(&task->error, "%ssource_line%s%c%s", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->error, "%ssource_function%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if (value) appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
-    task->skip++;
-    task->fail = true;
-}
-
-static void work_query(Task *task) {
-    StringInfoData buf;
-    List *list;
-    if (task_work(task)) { work_finish(task); return; }
-    D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
-    PG_TRY();
-        list = pg_parse_query(task->input);
-        task->length = list_length(list);
-        list_free_deep(list);
-    PG_CATCH();
-        FlushErrorState();
-    PG_END_TRY();
-    initStringInfoMy(TopMemoryContext, &buf);
-    task->skip = 0;
-    appendStringInfo(&buf, "SET \"pg_task.id\" = %li;\n", task->id);
-    task->skip++;
-    if (task->timeout) {
-        appendStringInfo(&buf, "SET \"statement_timeout\" = %i;\n", task->timeout);
-        task->skip++;
-    }
-    if (task->append) {
-        appendStringInfoString(&buf, "SET \"config.append_type_to_column_name\" = true;\n");
-        task->skip++;
-    }
-    appendStringInfoString(&buf, task->input);
-    pfree(task->input);
-    task->input = buf.data;
-    if (!PQsendQuery(task->conn, task->input)) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); else {
-        pfree(task->input);
-        task->input = NULL;
-        task->event = WL_SOCKET_WRITEABLE;
-    }
-}
-
-static void work_connect(Task *task) {
-    bool connected = false;
-    switch (PQstatus(task->conn)) {
-        case CONNECTION_AUTH_OK: D1("PQstatus == CONNECTION_AUTH_OK"); break;
-        case CONNECTION_AWAITING_RESPONSE: D1("PQstatus == CONNECTION_AWAITING_RESPONSE"); break;
-        case CONNECTION_BAD: D1("PQstatus == CONNECTION_BAD"); work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); return;
-        case CONNECTION_CHECK_TARGET: D1("PQstatus == CONNECTION_CHECK_TARGET"); break;
-        case CONNECTION_CHECK_WRITABLE: D1("PQstatus == CONNECTION_CHECK_WRITABLE"); break;
-        case CONNECTION_CONSUME: D1("PQstatus == CONNECTION_CONSUME"); break;
-        case CONNECTION_GSS_STARTUP: D1("PQstatus == CONNECTION_GSS_STARTUP"); break;
-        case CONNECTION_MADE: D1("PQstatus == CONNECTION_MADE"); break;
-        case CONNECTION_NEEDED: D1("PQstatus == CONNECTION_NEEDED"); break;
-        case CONNECTION_OK: D1("PQstatus == CONNECTION_OK"); connected = true; break;
-        case CONNECTION_SETENV: D1("PQstatus == CONNECTION_SETENV"); break;
-        case CONNECTION_SSL_STARTUP: D1("PQstatus == CONNECTION_SSL_STARTUP"); break;
-        case CONNECTION_STARTED: D1("PQstatus == CONNECTION_STARTED"); break;
-    }
-    if (!connected) switch (PQconnectPoll(task->conn)) {
-        case PGRES_POLLING_ACTIVE: D1("PQconnectPoll == PGRES_POLLING_ACTIVE"); break;
-        case PGRES_POLLING_FAILED: D1("PQconnectPoll == PGRES_POLLING_FAILED"); work_error(task, "PQconnectPoll == PGRES_POLLING_FAILED", PQerrorMessage(task->conn), true); return;
-        case PGRES_POLLING_OK: D1("PQconnectPoll == PGRES_POLLING_OK"); connected = true; break;
-        case PGRES_POLLING_READING: D1("PQconnectPoll == PGRES_POLLING_READING"); task->event = WL_SOCKET_READABLE; break;
-        case PGRES_POLLING_WRITING: D1("PQconnectPoll == PGRES_POLLING_WRITING"); task->event = WL_SOCKET_WRITEABLE; break;
-    }
-    if (connected) {
-        Work *work = task->work;
-        if(!(task->pid = PQbackendPID(task->conn))) { work_error(task, "!PQbackendPID", PQerrorMessage(task->conn), true); return; }
-        work_pids(work);
-        work_query(task);
-    }
-}
-
-static void work_repeat(Task *task) {
-    if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
-        if (!PQsendQuery(task->conn, "COMMIT")) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false);
-        else task->event = WL_SOCKET_WRITEABLE;
-        return;
-    }
-    if (task_done(task)) { work_finish(task); return; }
-    D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
-    if (task->repeat) task_repeat(task);
-    if (task->delete && !task->output.data) task_delete(task);
-    if (task->output.data) pfree(task->output.data);
-    task->output.data = NULL;
-    if (task->error.data) pfree(task->error.data);
-    task->error.data = NULL;
-    (PQstatus(task->conn) != CONNECTION_OK || !task->live || task_live(task)) ? work_finish(task) : work_query(task);
-}
-
-static void work_success(Task *task, PGresult *result) {
-    if (task->length == 1 && !PQntuples(result)) return;
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-    if (task->header && (task->length > 1 || PQnfields(result) > 1)) {
-        if (task->output.len) appendStringInfoString(&task->output, "\n");
-        for (int col = 0; col < PQnfields(result); col++) {
-            const char *value = PQfname(result, col);
-            if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
-            if (task->quote) appendStringInfoChar(&task->output, task->quote);
-            if (task->escape) init_escape(&task->output, value, strlen(value), task->escape);
-            else appendStringInfoString(&task->output, value);
-            if (task->append && !strstr(value, "::")) {
-                Oid oid = PQftype(result, col);
-                const char *type = PQftypeMy(oid);
-                if (task->escape) init_escape(&task->output, "::", sizeof("::") - 1, task->escape);
-                else appendStringInfoString(&task->output, "::");
-                if (type) {
-                    if (task->escape) init_escape(&task->output, type, strlen(type), task->escape);
-                    else appendStringInfoString(&task->output, type);
-                } else appendStringInfo(&task->output, "%i", oid);
-            }
-            if (task->quote) appendStringInfoChar(&task->output, task->quote);
-        }
-    }
-    for (int row = 0; row < PQntuples(result); row++) {
-        if (task->output.len) appendStringInfoString(&task->output, "\n");
-        for (int col = 0; col < PQnfields(result); col++) {
-            const char *value = PQgetvalue(result, row, col);
-            int len = PQgetlength(result, row, col);
-            if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
-            if (PQgetisnull(result, row, col)) appendStringInfoString(&task->output, task->null); else {
-                if (!init_oid_is_string(PQftype(result, col)) && task->string) {
-                    if (len) appendStringInfoString(&task->output, value);
-                } else {
-                    if (task->quote) appendStringInfoChar(&task->output, task->quote);
-                    if (len) {
-                        if (task->escape) init_escape(&task->output, value, len, task->escape);
-                        else appendStringInfoString(&task->output, value);
-                    }
-                    if (task->quote) appendStringInfoChar(&task->output, task->quote);
-                }
-            }
-        }
-    }
-}
-
-static void work_result(Task *task) {
-    for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
-        case PGRES_COMMAND_OK: work_command(task, result); break;
-        case PGRES_FATAL_ERROR: W("PQresultStatus == PGRES_FATAL_ERROR and %.*s", (int)strlen(PQresultErrorMessage(result)) - 1, PQresultErrorMessage(result)); work_fail(task, result); break;
-        case PGRES_TUPLES_OK: work_success(task, result); break;
-        default: D1(PQresStatus(PQresultStatus(result))); break;
-    }
-    work_repeat(task);
-}
-
-static void work_socket(Task *task) {
-    if (PQstatus(task->conn) != CONNECTION_OK) work_connect(task); else {
-        if (!PQconsumeInput(task->conn)) work_error(task, "!PQconsumeInput", PQerrorMessage(task->conn), true);
-        else if (PQisBusy(task->conn)) task->event = WL_SOCKET_READABLE;
-        else work_result(task);
-    }
+static void work_writeable(Task *task) {
+//    if (PQstatus(task->conn) == CONNECTION_OK) {
+//        if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; return; }
+//    }
+    task->socket(task);
 }
 
 static void work_check(Work *work) {
@@ -751,8 +771,9 @@ void work_worker(Datum main_arg) {
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) work_latch(work);
-            if (event->events & WL_SOCKET_MASK) work_socket(event->user_data);
             if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
+            if (event->events & WL_SOCKET_READABLE) work_readable(event->user_data);
+            if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
         if (work->timeout >= 0) {
             INSTR_TIME_SET_CURRENT(cur_time);

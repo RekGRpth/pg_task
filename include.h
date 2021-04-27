@@ -118,6 +118,7 @@ typedef struct Task {
     StringInfoData error;
     StringInfoData output;
     TimestampTz start;
+    void (*socket) (struct Task *task);
     Work *work;
 } Task;
 
