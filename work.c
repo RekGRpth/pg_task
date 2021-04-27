@@ -269,6 +269,7 @@ static void work_latch(Work *work) {
 static void work_readable(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK) {
         if (!PQconsumeInput(task->conn)) { work_error(task, "!PQconsumeInput", PQerrorMessage(task->conn), true); return; }
+        if (PQflush(task->conn) < 0) { work_error(task, "PQflush < 0", PQerrorMessage(task->conn), true); return; }
     }
     task->socket(task);
 }
