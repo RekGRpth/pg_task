@@ -83,11 +83,6 @@ static void work_event(Work *work, WaitEventSet *set) {
     AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
     dlist_foreach_modify(iter, &work->head) {
         Task *task = dlist_container(Task, node, iter.cur);
-        /*if (task->event & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
-            case 0: break;
-            case 1: D1("PQflush = 1"); break;
-            default: D1("PQflush = default"); break;
-        }*/
         AddWaitEventToSet(set, task->event, PQsocket(task->conn), NULL, task);
     }
 }
@@ -269,17 +264,24 @@ static void work_latch(Work *work) {
 static void work_readable(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK) {
         if (!PQconsumeInput(task->conn)) { work_error(task, "!PQconsumeInput", PQerrorMessage(task->conn), true); return; }
-        if (PQflush(task->conn) < 0) { work_error(task, "PQflush < 0", PQerrorMessage(task->conn), true); return; }
+        switch (PQflush(task->conn)) {
+            case 0: break;
+            case 1: task->event = WL_SOCKET_MASK; return;
+            case -1: work_error(task, "PQflush == -1", PQerrorMessage(task->conn), true); return;
+        }
     }
     task->socket(task);
 }
 
 static void work_repeat(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
-        task->socket = work_repeat;
-        if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; return; }
+        if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; task->socket = work_repeat; return; }
         if (!PQsendQuery(task->conn, "COMMIT")) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
-        if (PQflush(task->conn) < 0) { work_error(task, "PQflush < 0", PQerrorMessage(task->conn), false); return; }
+        switch (PQflush(task->conn)) {
+            case 0: break;
+            case 1: task->event = WL_SOCKET_MASK; return;
+            case -1: work_error(task, "PQflush == -1", PQerrorMessage(task->conn), true); return;
+        }
         task->event = WL_SOCKET_WRITEABLE;
         return;
     }
@@ -368,12 +370,10 @@ static void work_result(Task *task) {
     work_repeat(task);
 }
 
-static void work_query(Task *task) {
+static bool work_input(Task *task) {
     StringInfoData buf;
     List *list;
-    task->socket = work_query;
-    if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; return; }
-    if (task_work(task)) { work_finish(task); return; }
+    if (task_work(task)) return true;
     D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
     PG_TRY();
         list = pg_parse_query(task->input);
@@ -397,12 +397,23 @@ static void work_query(Task *task) {
     appendStringInfoString(&buf, task->input);
     pfree(task->input);
     task->input = buf.data;
-    if (!PQsendQuery(task->conn, task->input)) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
-    if (PQflush(task->conn) < 0) { work_error(task, "PQflush < 0", PQerrorMessage(task->conn), false); return; }
-    pfree(task->input);
-    task->input = NULL;
+    return false;
+}
+
+static void work_query(Task *task) {
+    if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; task->socket = work_query; return; }
+    if (work_input(task)) { work_finish(task); return; }
+    if (!PQsendQuery(task->conn, task->input)) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); goto pfree; }
+    switch (PQflush(task->conn)) {
+        case 0: break;
+        case 1: task->event = WL_SOCKET_MASK; goto pfree;
+        case -1: work_error(task, "PQflush == -1", PQerrorMessage(task->conn), true); return;
+    }
     task->event = WL_SOCKET_WRITEABLE;
     task->socket = work_result;
+pfree:
+    pfree(task->input);
+    task->input = NULL;
 }
 
 static void work_connect(Task *task) {
@@ -753,8 +764,11 @@ static void work_timeout(Work *work) {
 
 static void work_writeable(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK) {
-//        if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; return; }
-        if (PQflush(task->conn) < 0) { work_error(task, "PQflush < 0", PQerrorMessage(task->conn), true); return; }
+        switch (PQflush(task->conn)) {
+            case 0: break;
+            case 1: task->event = WL_SOCKET_MASK; return;
+            case -1: work_error(task, "PQflush == -1", PQerrorMessage(task->conn), true); return;
+        }
     }
     task->socket(task);
 }
