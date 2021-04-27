@@ -258,6 +258,16 @@ static void work_success(Task *task, PGresult *result) {
     }
 }
 
+static void work_query_socket(Task *task) {
+    for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
+        case PGRES_COMMAND_OK: work_command(task, result); break;
+        case PGRES_FATAL_ERROR: W("PQresultStatus == PGRES_FATAL_ERROR and %.*s", (int)strlen(PQresultErrorMessage(result)) - 1, PQresultErrorMessage(result)); work_fail(task, result); break;
+        case PGRES_TUPLES_OK: work_success(task, result); break;
+        default: D1(PQresStatus(PQresultStatus(result))); break;
+    }
+    work_repeat(task);
+}
+
 static void work_table(Work *work) {
     StringInfoData buf;
     List *names;
@@ -360,16 +370,6 @@ static void work_conf(Work *work) {
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     dlist_init(&work->head);
-}
-
-static void work_query_socket(Task *task) {
-    for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
-        case PGRES_COMMAND_OK: work_command(task, result); break;
-        case PGRES_FATAL_ERROR: W("PQresultStatus == PGRES_FATAL_ERROR and %.*s", (int)strlen(PQresultErrorMessage(result)) - 1, PQresultErrorMessage(result)); work_fail(task, result); break;
-        case PGRES_TUPLES_OK: work_success(task, result); break;
-        default: D1(PQresStatus(PQresultStatus(result))); break;
-    }
-    work_repeat(task);
 }
 
 static void work_query(Task *task) {
