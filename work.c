@@ -182,6 +182,18 @@ static void work_error(Task *task, const char *msg, const char *err, bool finish
     finish ? work_finish(task) : work_free(task);
 }
 
+static int work_nevents(Work *work) {
+    dlist_mutable_iter iter;
+    int nevents = 0;
+    dlist_foreach_modify(iter, &work->head) {
+        Task *task = dlist_container(Task, node, iter.cur);
+        if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); continue; }
+        if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0", PQerrorMessage(task->conn), true); continue; }
+        nevents++;
+    }
+    return nevents;
+}
+
 static void work_fini(Work *work) {
     dlist_mutable_iter iter;
     StringInfoData buf;
@@ -736,18 +748,6 @@ static void work_latch(Work *work) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
     if (ConfigReloadPending) work_reload(work);
-}
-
-static int work_nevents(Work *work) {
-    dlist_mutable_iter iter;
-    int nevents = 0;
-    dlist_foreach_modify(iter, &work->head) {
-        Task *task = dlist_container(Task, node, iter.cur);
-        if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessage(task->conn), true); continue; }
-        if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0", PQerrorMessage(task->conn), true); continue; }
-        nevents++;
-    }
-    return nevents;
 }
 
 void work_worker(Datum main_arg) {
