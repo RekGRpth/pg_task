@@ -76,6 +76,22 @@ static void work_finish(Task *task) {
     work_free(task);
 }
 
+static void work_error(Task *task, const char *msg, const char *err, bool finish) {
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
+    appendStringInfo(&task->error, "%s%s", task->error.len ? "\n" : "", msg);
+    if (err) {
+        int len = strlen(err);
+        if (len) appendStringInfo(&task->error, " and %.*s", len - 1, err);
+    }
+    W(task->error.data);
+    appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
+    task->fail = true;
+    task->skip++;
+    task_done(task);
+    finish ? work_finish(task) : work_free(task);
+}
+
 static void work_index(Work *work, const char *index) {
     StringInfoData buf, name, idx;
     List *names;
@@ -234,22 +250,6 @@ static void work_conf(Work *work) {
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     dlist_init(&work->head);
-}
-
-static void work_error(Task *task, const char *msg, const char *err, bool finish) {
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-    if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
-    appendStringInfo(&task->error, "%s%s", task->error.len ? "\n" : "", msg);
-    if (err) {
-        int len = strlen(err);
-        if (len) appendStringInfo(&task->error, " and %.*s", len - 1, err);
-    }
-    W(task->error.data);
-    appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
-    task->fail = true;
-    task->skip++;
-    task_done(task);
-    finish ? work_finish(task) : work_free(task);
 }
 
 static void work_fail(Task *task, PGresult *result) {
