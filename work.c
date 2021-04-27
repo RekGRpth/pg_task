@@ -79,6 +79,8 @@ static void work_edata(Task *task, const char *filename, int lineno, const char 
 
 static void work_event(Work *work, WaitEventSet *set) {
     dlist_mutable_iter iter;
+    AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
+    AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
     dlist_foreach_modify(iter, &work->head) {
         Task *task = dlist_container(Task, node, iter.cur);
         /*if (task->event & WL_SOCKET_WRITEABLE) switch (PQflush(task->conn)) {
@@ -760,13 +762,11 @@ void work_worker(Datum main_arg) {
         int nevents = 2 + work_nevents(work);
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
+        work_event(work, set);
         if (cur_timeout <= 0) {
             INSTR_TIME_SET_CURRENT(start_time);
             cur_timeout = work->timeout;
         }
-        AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
-        AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
-        work_event(work, set);
         nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
