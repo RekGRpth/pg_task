@@ -12,6 +12,12 @@ static bool work_is_log_level_output(int elevel, int log_min_level) {
     return false;
 }
 
+static void work_command(Task *task, PGresult *result) {
+    if (task->skip) { task->skip--; return; }
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    appendStringInfo(&task->output, "%s%s", task->output.len ? "\n" : "", PQcmdStatus(result));
+}
+
 static void work_edata(Task *task, const char *filename, int lineno, const char *funcname, const char *message) {
     ErrorData edata;
     MemSet(&edata, 0, sizeof(edata));
@@ -193,12 +199,6 @@ static void work_type(Work *work) {
     SPI_finish_my();
     if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
     pfree(buf.data);
-}
-
-static void work_command(Task *task, PGresult *result) {
-    if (task->skip) { task->skip--; return; }
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-    appendStringInfo(&task->output, "%s%s", task->output.len ? "\n" : "", PQcmdStatus(result));
 }
 
 static void work_conf(Work *work) {
