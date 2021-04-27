@@ -276,8 +276,9 @@ static void work_readable(Task *task) {
 
 static void work_repeat(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
-        if (!PQsendQuery(task->conn, "COMMIT")) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false);
-        else task->event = WL_SOCKET_WRITEABLE;
+        if (!PQsendQuery(task->conn, "COMMIT")) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
+        if (PQflush(task->conn) < 0) { work_error(task, "PQflush < 0", PQerrorMessage(task->conn), false); return; }
+        task->event = WL_SOCKET_WRITEABLE;
         return;
     }
     if (task_done(task)) { work_finish(task); return; }
@@ -392,12 +393,12 @@ static void work_query(Task *task) {
     appendStringInfoString(&buf, task->input);
     pfree(task->input);
     task->input = buf.data;
-    if (!PQsendQuery(task->conn, task->input)) work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); else {
-        pfree(task->input);
-        task->input = NULL;
-        task->event = WL_SOCKET_WRITEABLE;
-        task->socket = work_query_socket;
-    }
+    if (!PQsendQuery(task->conn, task->input)) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
+    if (PQflush(task->conn) < 0) { work_error(task, "PQflush < 0", PQerrorMessage(task->conn), false); return; }
+    pfree(task->input);
+    task->input = NULL;
+    task->event = WL_SOCKET_WRITEABLE;
+    task->socket = work_query_socket;
 }
 
 static void work_remote_socket(Task *task) {
