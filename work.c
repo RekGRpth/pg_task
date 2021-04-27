@@ -303,110 +303,6 @@ static void work_query(Task *task) {
     }
 }
 
-static void work_table(Work *work) {
-    StringInfoData buf;
-    List *names;
-    const RangeVar *rangevar;
-    D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->schema_table, work->schema_type);
-    set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf,
-        "CREATE TABLE %1$s (\n"
-        "    id bigserial NOT NULL PRIMARY KEY,\n"
-        "    parent int8 DEFAULT current_setting('pg_task.id', true)::int8 REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL,\n"
-        "    dt timestamptz NOT NULL DEFAULT current_timestamp,\n"
-        "    start timestamptz,\n"
-        "    stop timestamptz,\n"
-        "    \"group\" text NOT NULL DEFAULT 'group',\n"
-        "    max int4,\n"
-        "    pid int4,\n"
-        "    input text NOT NULL,\n"
-        "    output text,\n"
-        "    error text,\n"
-        "    state %2$s NOT NULL DEFAULT 'PLAN'::%2$s,\n"
-        "    timeout interval,\n"
-        "    delete boolean NOT NULL DEFAULT false,\n"
-        "    repeat interval,\n"
-        "    drift boolean NOT NULL DEFAULT true,\n"
-        "    count int4,\n"
-        "    live interval,\n"
-        "    remote text,\n"
-        "    append boolean NOT NULL DEFAULT false,\n"
-        "    header boolean NOT NULL DEFAULT true,\n"
-        "    string boolean NOT NULL DEFAULT true,\n"
-        "    \"null\" text NOT NULL DEFAULT '\\N',\n"
-        "    delimiter \"char\" NOT NULL DEFAULT '\t',\n"
-        "    quote \"char\",\n"
-        "    escape \"char\"\n"
-        ")", work->schema_table, work->schema_type);
-    names = stringToQualifiedNameList(work->schema_table);
-    rangevar = makeRangeVarFromNameList(names);
-    SPI_connect_my(buf.data);
-    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
-    work->oid = RangeVarGetRelid(rangevar, NoLock, false);
-    SPI_commit_my();
-    SPI_finish_my();
-    pfree((void *)rangevar);
-    list_free_deep(names);
-    set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    resetStringInfo(&buf);
-    appendStringInfo(&buf, "%i", work->oid);
-    set_config_option("pg_task.oid", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pfree(buf.data);
-}
-
-static void work_type(Work *work) {
-    StringInfoData buf;
-    Oid type = InvalidOid;
-    int32 typmod;
-    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
-    D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table);
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')", work->schema_type);
-    SPI_connect_my(buf.data);
-    parseTypeString(work->schema_type, &type, &typmod, true);
-    if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
-    SPI_commit_my();
-    SPI_finish_my();
-    if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
-    pfree(buf.data);
-}
-
-static void work_conf(Work *work) {
-    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
-    const char *table_quote = quote_identifier(work->table);
-    StringInfoData buf;
-    initStringInfoMy(TopMemoryContext, &buf);
-    if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
-    appendStringInfoString(&buf, table_quote);
-    if (work->schema_table) pfree(work->schema_table);
-    work->schema_table = buf.data;
-    initStringInfoMy(TopMemoryContext, &buf);
-    if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
-    appendStringInfoString(&buf, "state");
-    if (work->schema_type) pfree(work->schema_type);
-    work->schema_type = buf.data;
-    if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
-    if (work->table != table_quote) pfree((void *)table_quote);
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i, schema_table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count, work->live, work->schema_table, work->schema_type);
-    if (work->schema) work_schema(work);
-    work_type(work);
-    work_table(work);
-    work_index(work, "dt");
-    work_index(work, "parent");
-    work_index(work, "state");
-    set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "%i", work->reset);
-    set_config_option("pg_task.reset", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    resetStringInfo(&buf);
-    appendStringInfo(&buf, "%i", work->timeout);
-    set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pfree(buf.data);
-    dlist_init(&work->head);
-}
-
 static const char *work_status(Task *task) {
     switch (PQstatus(task->conn)) {
         case CONNECTION_AUTH_OK: return "CONNECTION_AUTH_OK";
@@ -523,6 +419,110 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     pfree(keywords);
     pfree(values);
     PQconninfoFree(opts);
+}
+
+static void work_table(Work *work) {
+    StringInfoData buf;
+    List *names;
+    const RangeVar *rangevar;
+    D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->schema_table, work->schema_type);
+    set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    initStringInfoMy(TopMemoryContext, &buf);
+    appendStringInfo(&buf,
+        "CREATE TABLE %1$s (\n"
+        "    id bigserial NOT NULL PRIMARY KEY,\n"
+        "    parent int8 DEFAULT current_setting('pg_task.id', true)::int8 REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL,\n"
+        "    dt timestamptz NOT NULL DEFAULT current_timestamp,\n"
+        "    start timestamptz,\n"
+        "    stop timestamptz,\n"
+        "    \"group\" text NOT NULL DEFAULT 'group',\n"
+        "    max int4,\n"
+        "    pid int4,\n"
+        "    input text NOT NULL,\n"
+        "    output text,\n"
+        "    error text,\n"
+        "    state %2$s NOT NULL DEFAULT 'PLAN'::%2$s,\n"
+        "    timeout interval,\n"
+        "    delete boolean NOT NULL DEFAULT false,\n"
+        "    repeat interval,\n"
+        "    drift boolean NOT NULL DEFAULT true,\n"
+        "    count int4,\n"
+        "    live interval,\n"
+        "    remote text,\n"
+        "    append boolean NOT NULL DEFAULT false,\n"
+        "    header boolean NOT NULL DEFAULT true,\n"
+        "    string boolean NOT NULL DEFAULT true,\n"
+        "    \"null\" text NOT NULL DEFAULT '\\N',\n"
+        "    delimiter \"char\" NOT NULL DEFAULT '\t',\n"
+        "    quote \"char\",\n"
+        "    escape \"char\"\n"
+        ")", work->schema_table, work->schema_type);
+    names = stringToQualifiedNameList(work->schema_table);
+    rangevar = makeRangeVarFromNameList(names);
+    SPI_connect_my(buf.data);
+    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+    work->oid = RangeVarGetRelid(rangevar, NoLock, false);
+    SPI_commit_my();
+    SPI_finish_my();
+    pfree((void *)rangevar);
+    list_free_deep(names);
+    set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    resetStringInfo(&buf);
+    appendStringInfo(&buf, "%i", work->oid);
+    set_config_option("pg_task.oid", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    pfree(buf.data);
+}
+
+static void work_type(Work *work) {
+    StringInfoData buf;
+    Oid type = InvalidOid;
+    int32 typmod;
+    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
+    D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table);
+    initStringInfoMy(TopMemoryContext, &buf);
+    appendStringInfo(&buf, "CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')", work->schema_type);
+    SPI_connect_my(buf.data);
+    parseTypeString(work->schema_type, &type, &typmod, true);
+    if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+    SPI_commit_my();
+    SPI_finish_my();
+    if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
+    pfree(buf.data);
+}
+
+static void work_conf(Work *work) {
+    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
+    const char *table_quote = quote_identifier(work->table);
+    StringInfoData buf;
+    initStringInfoMy(TopMemoryContext, &buf);
+    if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
+    appendStringInfoString(&buf, table_quote);
+    if (work->schema_table) pfree(work->schema_table);
+    work->schema_table = buf.data;
+    initStringInfoMy(TopMemoryContext, &buf);
+    if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
+    appendStringInfoString(&buf, "state");
+    if (work->schema_type) pfree(work->schema_type);
+    work->schema_type = buf.data;
+    if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
+    if (work->table != table_quote) pfree((void *)table_quote);
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i, schema_table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count, work->live, work->schema_table, work->schema_type);
+    if (work->schema) work_schema(work);
+    work_type(work);
+    work_table(work);
+    work_index(work, "dt");
+    work_index(work, "parent");
+    work_index(work, "state");
+    set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    initStringInfoMy(TopMemoryContext, &buf);
+    appendStringInfo(&buf, "%i", work->reset);
+    set_config_option("pg_task.reset", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    resetStringInfo(&buf);
+    appendStringInfo(&buf, "%i", work->timeout);
+    set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    pfree(buf.data);
+    dlist_init(&work->head);
 }
 
 static void work_task(const Work *work, const int64 id, char *group, const int max) {
