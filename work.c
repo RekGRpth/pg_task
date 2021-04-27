@@ -403,17 +403,14 @@ static bool work_input(Task *task) {
 static void work_query(Task *task) {
     if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; task->socket = work_query; return; }
     if (work_input(task)) { work_finish(task); return; }
-    if (!PQsendQuery(task->conn, task->input)) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); goto pfree; }
+    if (!PQsendQuery(task->conn, task->input)) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
     switch (PQflush(task->conn)) {
         case 0: break;
-        case 1: task->event = WL_SOCKET_MASK; goto pfree;
+        case 1: task->event = WL_SOCKET_MASK; return;
         case -1: work_error(task, "PQflush == -1", PQerrorMessage(task->conn), true); return;
     }
     task->event = WL_SOCKET_WRITEABLE;
     task->socket = work_result;
-pfree:
-    pfree(task->input);
-    task->input = NULL;
 }
 
 static void work_connect(Task *task) {
