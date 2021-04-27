@@ -212,6 +212,52 @@ static void work_schema(Work *work) {
     set_config_option("pg_task.schema", work->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
 }
 
+static void work_success(Task *task, PGresult *result) {
+    if (task->length == 1 && !PQntuples(result)) return;
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    if (task->header && (task->length > 1 || PQnfields(result) > 1)) {
+        if (task->output.len) appendStringInfoString(&task->output, "\n");
+        for (int col = 0; col < PQnfields(result); col++) {
+            const char *value = PQfname(result, col);
+            if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
+            if (task->quote) appendStringInfoChar(&task->output, task->quote);
+            if (task->escape) init_escape(&task->output, value, strlen(value), task->escape);
+            else appendStringInfoString(&task->output, value);
+            if (task->append && !strstr(value, "::")) {
+                Oid oid = PQftype(result, col);
+                const char *type = PQftypeMy(oid);
+                if (task->escape) init_escape(&task->output, "::", sizeof("::") - 1, task->escape);
+                else appendStringInfoString(&task->output, "::");
+                if (type) {
+                    if (task->escape) init_escape(&task->output, type, strlen(type), task->escape);
+                    else appendStringInfoString(&task->output, type);
+                } else appendStringInfo(&task->output, "%i", oid);
+            }
+            if (task->quote) appendStringInfoChar(&task->output, task->quote);
+        }
+    }
+    for (int row = 0; row < PQntuples(result); row++) {
+        if (task->output.len) appendStringInfoString(&task->output, "\n");
+        for (int col = 0; col < PQnfields(result); col++) {
+            const char *value = PQgetvalue(result, row, col);
+            int len = PQgetlength(result, row, col);
+            if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
+            if (PQgetisnull(result, row, col)) appendStringInfoString(&task->output, task->null); else {
+                if (!init_oid_is_string(PQftype(result, col)) && task->string) {
+                    if (len) appendStringInfoString(&task->output, value);
+                } else {
+                    if (task->quote) appendStringInfoChar(&task->output, task->quote);
+                    if (len) {
+                        if (task->escape) init_escape(&task->output, value, len, task->escape);
+                        else appendStringInfoString(&task->output, value);
+                    }
+                    if (task->quote) appendStringInfoChar(&task->output, task->quote);
+                }
+            }
+        }
+    }
+}
+
 static void work_table(Work *work) {
     StringInfoData buf;
     List *names;
@@ -314,52 +360,6 @@ static void work_conf(Work *work) {
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     dlist_init(&work->head);
-}
-
-static void work_success(Task *task, PGresult *result) {
-    if (task->length == 1 && !PQntuples(result)) return;
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-    if (task->header && (task->length > 1 || PQnfields(result) > 1)) {
-        if (task->output.len) appendStringInfoString(&task->output, "\n");
-        for (int col = 0; col < PQnfields(result); col++) {
-            const char *value = PQfname(result, col);
-            if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
-            if (task->quote) appendStringInfoChar(&task->output, task->quote);
-            if (task->escape) init_escape(&task->output, value, strlen(value), task->escape);
-            else appendStringInfoString(&task->output, value);
-            if (task->append && !strstr(value, "::")) {
-                Oid oid = PQftype(result, col);
-                const char *type = PQftypeMy(oid);
-                if (task->escape) init_escape(&task->output, "::", sizeof("::") - 1, task->escape);
-                else appendStringInfoString(&task->output, "::");
-                if (type) {
-                    if (task->escape) init_escape(&task->output, type, strlen(type), task->escape);
-                    else appendStringInfoString(&task->output, type);
-                } else appendStringInfo(&task->output, "%i", oid);
-            }
-            if (task->quote) appendStringInfoChar(&task->output, task->quote);
-        }
-    }
-    for (int row = 0; row < PQntuples(result); row++) {
-        if (task->output.len) appendStringInfoString(&task->output, "\n");
-        for (int col = 0; col < PQnfields(result); col++) {
-            const char *value = PQgetvalue(result, row, col);
-            int len = PQgetlength(result, row, col);
-            if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
-            if (PQgetisnull(result, row, col)) appendStringInfoString(&task->output, task->null); else {
-                if (!init_oid_is_string(PQftype(result, col)) && task->string) {
-                    if (len) appendStringInfoString(&task->output, value);
-                } else {
-                    if (task->quote) appendStringInfoChar(&task->output, task->quote);
-                    if (len) {
-                        if (task->escape) init_escape(&task->output, value, len, task->escape);
-                        else appendStringInfoString(&task->output, value);
-                    }
-                    if (task->quote) appendStringInfoChar(&task->output, task->quote);
-                }
-            }
-        }
-    }
 }
 
 static void work_query_socket(Task *task) {
