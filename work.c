@@ -276,6 +276,7 @@ static void work_readable(Task *task) {
 
 static void work_repeat(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
+        task->socket = work_repeat;
         if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; return; }
         if (!PQsendQuery(task->conn, "COMMIT")) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
         if (PQflush(task->conn) < 0) { work_error(task, "PQflush < 0", PQerrorMessage(task->conn), false); return; }
@@ -370,6 +371,7 @@ static void work_result(Task *task) {
 static void work_query(Task *task) {
     StringInfoData buf;
     List *list;
+    task->socket = work_query;
     if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; return; }
     if (task_work(task)) { work_finish(task); return; }
     D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
