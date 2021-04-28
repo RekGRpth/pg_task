@@ -269,6 +269,7 @@ static void work_readable(Task *task) {
             case 1: D1("PQflush == 1"); task->event = WL_SOCKET_MASK; return;
             case -1: work_error(task, "PQflush == -1", PQerrorMessage(task->conn), true); return;
         }
+        if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; return; }
     }
     task->socket(task);
 }
