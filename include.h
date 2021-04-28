@@ -59,7 +59,6 @@
 #include <postmaster/bgworker.h>
 #include <postmaster/interrupt.h>
 #include <replication/slot.h>
-#include <storage/ipc.h>
 #include <tcop/pquery.h>
 #include <tcop/utility.h>
 #include <utils/acl.h>
