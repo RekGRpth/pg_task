@@ -47,6 +47,7 @@ static void work_check(Work *work) {
         "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
         "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(s.user, (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
         ") SELECT DISTINCT * FROM s WHERE s.user = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM current_setting('pg_task.schema', true) AND s.table = current_setting('pg_task.table', false) AND reset = current_setting('pg_task.reset', false)::int4 AND timeout = current_setting('pg_task.timeout', false)::int4";
+    if (ShutdownRequestPending) return;
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
@@ -269,9 +270,9 @@ static void work_readable(Task *task) {
     task->socket(task);
 }
 
-static void work_live(Task *task) {
+static void work_done(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
-        if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; task->socket = work_live; return; }
+        if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; task->socket = work_done; return; }
         if (!PQsendQuery(task->conn, "COMMIT")) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
         switch (PQflush(task->conn)) {
             case 0: break;
@@ -279,7 +280,7 @@ static void work_live(Task *task) {
             case -1: work_error(task, "PQflush == -1", PQerrorMessage(task->conn), true); return;
         }
         task->event = WL_SOCKET_WRITEABLE;
-        task->socket = work_live;
+        task->socket = work_done;
         return;
     }
     if (task_done(task)) { work_finish(task); return; }
@@ -365,7 +366,7 @@ static void work_result(Task *task) {
         case PGRES_TUPLES_OK: work_success(task, result); break;
         default: D1(PQresStatus(PQresultStatus(result))); break;
     }
-    work_live(task);
+    work_done(task);
 }
 
 static bool work_input(Task *task) {
@@ -787,10 +788,18 @@ void work_worker(Datum main_arg) {
         nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
+            if (event->events & WL_EXIT_ON_PM_DEATH) D1("WL_EXIT_ON_PM_DEATH, event->events = %i, ShutdownRequestPending = %s", event->events, ShutdownRequestPending ? "true" : "false");
+            if (event->events & WL_LATCH_SET) D1("WL_LATCH_SET, event->events = %i, ShutdownRequestPending = %s", event->events, ShutdownRequestPending ? "true" : "false");
             if (event->events & WL_LATCH_SET) work_latch(work);
+            if (event->events & WL_POSTMASTER_DEATH) D1("WL_POSTMASTER_DEATH, event->events = %i, ShutdownRequestPending = %s", event->events, ShutdownRequestPending ? "true" : "false");
             if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
+            if (event->events & WL_SOCKET_READABLE) D1("WL_SOCKET_READABLE, event->events = %i, ShutdownRequestPending = %s", event->events, ShutdownRequestPending ? "true" : "false");
             if (event->events & WL_SOCKET_READABLE) work_readable(event->user_data);
+            if (event->events & WL_SOCKET_WRITEABLE) D1("WL_SOCKET_WRITEABLE, event->events = %i, ShutdownRequestPending = %s", event->events, ShutdownRequestPending ? "true" : "false");
             if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
+            if (event->events & WL_TIMEOUT) D1("WL_TIMEOUT, event->events = %i, ShutdownRequestPending = %s", event->events, ShutdownRequestPending ? "true" : "false");
+//            if (!event->events) D1("!event->events");
+//            D1("event->events = %i, ShutdownRequestPending = %s", event->events, ShutdownRequestPending ? "true" : "false");
         }
         if (work->timeout >= 0) {
             INSTR_TIME_SET_CURRENT(cur_time);
