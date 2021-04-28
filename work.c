@@ -283,6 +283,7 @@ static void work_repeat(Task *task) {
             case -1: work_error(task, "PQflush == -1", PQerrorMessage(task->conn), true); return;
         }
         task->event = WL_SOCKET_WRITEABLE;
+        task->socket = work_repeat;
         return;
     }
     if (task_done(task)) { work_finish(task); return; }
