@@ -269,9 +269,9 @@ static void work_readable(Task *task) {
     task->socket(task);
 }
 
-static void work_repeat(Task *task) {
+static void work_live(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
-        if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; task->socket = work_repeat; return; }
+        if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; task->socket = work_live; return; }
         if (!PQsendQuery(task->conn, "COMMIT")) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
         switch (PQflush(task->conn)) {
             case 0: break;
@@ -279,7 +279,7 @@ static void work_repeat(Task *task) {
             case -1: work_error(task, "PQflush == -1", PQerrorMessage(task->conn), true); return;
         }
         task->event = WL_SOCKET_WRITEABLE;
-        task->socket = work_repeat;
+        task->socket = work_live;
         return;
     }
     if (task_done(task)) { work_finish(task); return; }
@@ -364,7 +364,7 @@ static void work_result(Task *task) {
         case PGRES_TUPLES_OK: work_success(task, result); break;
         default: D1(PQresStatus(PQresultStatus(result))); break;
     }
-    work_repeat(task);
+    work_live(task);
 }
 
 static bool work_input(Task *task) {
