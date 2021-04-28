@@ -495,7 +495,7 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     arg++;
     keywords[arg] = NULL;
     values[arg] = NULL;
-    task->event = WL_SOCKET_WRITEABLE;
+    task->event = WL_SOCKET_MASK;
     task->socket = work_connect;
     task->start = GetCurrentTimestamp();
     dlist_push_head(&work->head, &task->node);
