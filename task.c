@@ -63,6 +63,7 @@ bool task_done(Task *task) {
     if (task->null) pfree(task->null);
     task->null = NULL;
     if (!init_table_id_unlock(work->oid, task->id)) { W("!init_table_id_unlock(%i, %li)", work->oid, task->id); return true; }
+    if (ShutdownRequestPending) return true;
     return exit;
 }
 
@@ -111,6 +112,7 @@ bool task_work(Task *task) {
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
+    if (ShutdownRequestPending) return true;
     if (!init_table_id_lock(work->oid, task->id)) { W("!init_table_id_lock(%i, %li)", work->oid, task->id); return true; }
     task->count++;
     D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work->oid, task->count, task->pid);
@@ -359,6 +361,7 @@ static bool task_timeout(Task *task) {
     task->output.data = NULL;
     if (task->error.data) pfree(task->error.data);
     task->error.data = NULL;
+    if (ShutdownRequestPending) task->live = false;
     return !task->live || task_live(task);
 }
 

@@ -290,6 +290,7 @@ static void work_live(Task *task) {
     task->output.data = NULL;
     if (task->error.data) pfree(task->error.data);
     task->error.data = NULL;
+    if (ShutdownRequestPending) task->live = false;
     (PQstatus(task->conn) != CONNECTION_OK || !task->live || task_live(task)) ? work_finish(task) : work_query(task);
 }
 
@@ -370,6 +371,7 @@ static void work_result(Task *task) {
 static bool work_input(Task *task) {
     StringInfoData buf;
     List *list;
+    if (ShutdownRequestPending) return true;
     if (task_work(task)) return true;
     D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
     PG_TRY();
@@ -398,6 +400,7 @@ static bool work_input(Task *task) {
 }
 
 static void work_query(Task *task) {
+    if (ShutdownRequestPending) return;
     if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; task->socket = work_query; return; }
     if (work_input(task)) { work_finish(task); return; }
     if (!PQsendQuery(task->conn, task->input)) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
