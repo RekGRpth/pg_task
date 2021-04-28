@@ -230,11 +230,11 @@ void task_repeat(Task *task) {
     SPI_finish_my();
 }
 
-static void task_exit(int code, Datum arg) {
+/*static void task_exit(int code, Datum arg) {
     Task *task = (Task *)DatumGetPointer(arg);
     D1("code = %i, id = %li", code, task->id);
     if (code || ShutdownRequestPending) return;
-}
+}*/
 
 static void task_fail(Task *task) {
     MemoryContextData *oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
@@ -321,7 +321,7 @@ static void task_init(Work *work, Task *task) {
     task->max = *(typeof(task->max) *)p;
     D1("id = %li, group = %s, max = %i", task->id, task->group, task->max);
     pqsignal(SIGTERM, SignalHandlerForShutdownRequestMy);
-    on_proc_exit(task_exit, PointerGetDatum(task));
+//    on_proc_exit(task_exit, PointerGetDatum(task));
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
