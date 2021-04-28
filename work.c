@@ -87,14 +87,6 @@ static void work_event(Work *work, WaitEventSet *set) {
     }
 }
 
-/*static void work_exit(int code, Datum arg) {
-    Work *work = (Work *)DatumGetPointer(arg);
-    D1("code = %i, oid = %i", code, work->oid);
-    if (code || ShutdownRequestPending) return;
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count, work->live);
-    conf_work(work->user, work->data, work->schema, work->table, work->reset, work->timeout, work->count, work->live);
-}*/
-
 static void work_fail(Task *task, PGresult *result) {
     char *value = NULL;
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
@@ -694,7 +686,6 @@ static void work_init(Work *work) {
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count, work->live);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
-//    on_proc_exit(work_exit, PointerGetDatum(work));
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
