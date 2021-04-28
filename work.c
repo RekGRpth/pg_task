@@ -276,7 +276,7 @@ static void work_done(Task *task) {
         if (!PQsendQuery(task->conn, "COMMIT")) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
         switch (PQflush(task->conn)) {
             case 0: break;
-            case 1: D1("PQflush == 1"); task->event = WL_SOCKET_MASK; return;
+            case 1: D1("PQflush == 1"); task->event = WL_SOCKET_MASK; task->socket = work_done; return;
             case -1: work_error(task, "PQflush == -1", PQerrorMessage(task->conn), true); return;
         }
         task->event = WL_SOCKET_READABLE;
@@ -407,7 +407,7 @@ static void work_query(Task *task) {
     if (!PQsendQuery(task->conn, task->input)) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
     switch (PQflush(task->conn)) {
         case 0: break;
-        case 1: D1("PQflush == 1"); task->event = WL_SOCKET_MASK; return;
+        case 1: D1("PQflush == 1"); task->event = WL_SOCKET_MASK; task->socket = work_result; return;
         case -1: work_error(task, "PQflush == -1", PQerrorMessage(task->conn), true); return;
     }
     task->event = WL_SOCKET_READABLE;
