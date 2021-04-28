@@ -186,6 +186,7 @@ static int work_nevents(Work *work) {
 static void work_fini(Work *work) {
     dlist_mutable_iter iter;
     StringInfoData buf;
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count, work->live);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
     dlist_foreach_modify(iter, &work->head) {
@@ -202,7 +203,6 @@ static void work_fini(Work *work) {
     }
     pfree(buf.data);
     if (ShutdownRequestPending) return;
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count, work->live);
     conf_work(work->user, work->data, work->schema, work->table, work->reset, work->timeout, work->count, work->live);
 }
 
