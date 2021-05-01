@@ -9,7 +9,7 @@ static void conf_data(const char *user, const char *data) {
     List *names;
     D1("user = %s, data = %s", user, data);
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "CREATE DATABASE %s WITH OWNER = %s", data_quote, user_quote);
+    appendStringInfo(&buf, SQL(CREATE DATABASE %s WITH OWNER = %s), data_quote, user_quote);
     names = stringToQualifiedNameList(data_quote);
     SPI_start_transaction_my(buf.data);
     if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
@@ -36,7 +36,7 @@ static void conf_user(const char *user) {
     List *names;
     D1("user = %s", user);
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "CREATE ROLE %s WITH LOGIN", user_quote);
+    appendStringInfo(&buf, SQL(CREATE ROLE %s WITH LOGIN), user_quote);
     names = stringToQualifiedNameList(user_quote);
     SPI_start_transaction_my(buf.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
@@ -107,23 +107,24 @@ void conf_work(const char *user, const char *data, const char *schema, const cha
 
 static void conf_check(void) {
     static SPI_plan *plan = NULL;
-    static const char *command =
-        "WITH s AS (\n"
-        "SELECT      COALESCE(COALESCE(usename, s.user), data)::TEXT AS user,\n"
-        "            COALESCE(datname, data)::text AS data,\n"
-        "            schema,\n"
-        "            COALESCE(s.table, current_setting('pg_task.default_table', false)) AS table,\n"
-        "            COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,\n"
-        "            COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout,\n"
-        "            COALESCE(count, current_setting('pg_task.default_count', false)::int4) AS count,\n"
-        "            EXTRACT(epoch FROM COALESCE(live, current_setting('pg_task.default_live', false)::interval))::int4 AS live\n"
-        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, reset int4, timeout int4, count int4, live interval)\n"
-        "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
-        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(s.user, (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT DISTINCT s.*, u.usesysid IS NOT NULL AS user_exists, d.oid IS NOT NULL AS data_exists, pid IS NOT NULL AS active FROM s\n"
-        "LEFT JOIN   pg_stat_activity AS a ON a.usename = s.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_task', schema, s.table, reset::text, timeout::text) AND pid != pg_backend_pid()\n"
-        "LEFT JOIN   pg_database AS d ON d.datname = data AND NOT datistemplate AND datallowconn\n"
-        "LEFT JOIN   pg_user AS u ON u.usename = s.user";
+    static const char *command = SQL(
+        WITH s AS (
+            SELECT      COALESCE(COALESCE(usename, s.user), data)::TEXT AS user,
+                        COALESCE(datname, data)::text AS data,
+                        schema,
+                        COALESCE(s.table, current_setting('pg_task.default_table', false)) AS table,
+                        COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,
+                        COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout,
+                        COALESCE(count, current_setting('pg_task.default_count', false)::int4) AS count,
+                        EXTRACT(epoch FROM COALESCE(live, current_setting('pg_task.default_live', false)::interval))::int4 AS live
+            FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s ("user" text, data text, schema text, "table" text, reset int4, timeout int4, count int4, live interval)
+            LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn
+            LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(s.user, (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)
+        ) SELECT DISTINCT s.*, u.usesysid IS NOT NULL AS user_exists, d.oid IS NOT NULL AS data_exists, pid IS NOT NULL AS active FROM s
+        LEFT JOIN   pg_stat_activity AS a ON a.usename = s.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_task', schema, s.table, reset::text, timeout::text) AND pid != pg_backend_pid()
+        LEFT JOIN   pg_database AS d ON d.datname = data AND NOT datistemplate AND datallowconn
+        LEFT JOIN   pg_user AS u ON u.usename = s.user
+    );
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);

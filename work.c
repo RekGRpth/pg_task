@@ -35,18 +35,19 @@ static const char *work_status(Task *task) {
 
 static void work_check(Work *work) {
     static SPI_plan *plan = NULL;
-    static const char *command =
-        "WITH s AS ("
-        "SELECT      COALESCE(COALESCE(usename, s.user), data)::text AS user,\n"
-        "            COALESCE(datname, data)::text AS data,\n"
-        "            schema,\n"
-        "            COALESCE(s.table, current_setting('pg_task.default_table', false)) AS table,\n"
-        "            COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,\n"
-        "            COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout\n"
-        "FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s (\"user\" text, data text, schema text, \"table\" text, reset int4, timeout int4)\n"
-        "LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn\n"
-        "LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(s.user, (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)\n"
-        ") SELECT DISTINCT * FROM s WHERE s.user = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM current_setting('pg_task.schema', true) AND s.table = current_setting('pg_task.table', false) AND reset = current_setting('pg_task.reset', false)::int4 AND timeout = current_setting('pg_task.timeout', false)::int4";
+    static const char *command = SQL(
+        WITH s AS (
+            SELECT      COALESCE(COALESCE(usename, s.user), data)::text AS user,
+                        COALESCE(datname, data)::text AS data,
+                        schema,
+                        COALESCE(s.table, current_setting('pg_task.default_table', false)) AS table,
+                        COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,
+                        COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout
+            FROM        json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS s ("user" text, data text, schema text, "table" text, reset int4, timeout int4)
+            LEFT JOIN   pg_database AS d ON (data IS NULL OR datname = data) AND NOT datistemplate AND datallowconn
+            LEFT JOIN   pg_user AS u ON usename = COALESCE(COALESCE(s.user, (SELECT usename FROM pg_user WHERE usesysid = datdba)), data)
+        ) SELECT DISTINCT * FROM s WHERE s.user = current_user AND data = current_catalog AND schema IS NOT DISTINCT FROM current_setting('pg_task.schema', true) AND s.table = current_setting('pg_task.table', false) AND reset = current_setting('pg_task.reset', false)::int4 AND timeout = current_setting('pg_task.timeout', false)::int4
+    );
     if (ShutdownRequestPending) return;
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
@@ -110,7 +111,7 @@ static void work_fail(Task *task, PGresult *result) {
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FILE))) appendStringInfo(&task->error, "%ssource_file%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_LINE))) appendStringInfo(&task->error, "%ssource_line%s%c%s", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, value);
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->error, "%ssource_function%s%c%s", task->error.len ? "\n" : "", task->append ? "::text" : "", task->delimiter, value);
-    if (value) appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
+    if (value) appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
     task->skip++;
     task->fail = true;
 }
@@ -165,7 +166,7 @@ static void work_error(Task *task, const char *msg, const char *err, bool finish
         if (len) appendStringInfo(&task->error, " and %.*s", len - 1, err);
     }
     W("%li: %s", task->id, task->error.data);
-    appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
+    appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
     task->fail = true;
     task->skip++;
     task_done(task);
@@ -220,7 +221,7 @@ static void work_index(Work *work, const char *index) {
     appendStringInfo(&name, "%s_%s_idx", work->table, index);
     name_quote = quote_identifier(name.data);
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "CREATE INDEX %s ON %s USING btree (%s)", name_quote, work->schema_table, index_quote);
+    appendStringInfo(&buf, SQL(CREATE INDEX %s ON %s USING btree (%s)), name_quote, work->schema_table, index_quote);
     initStringInfoMy(TopMemoryContext, &idx);
     if (work->schema) appendStringInfo(&idx, "%s.", schema_quote);
     appendStringInfoString(&idx, name_quote);
@@ -273,7 +274,7 @@ static void work_readable(Task *task) {
 static void work_done(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
         if (PQisBusy(task->conn)) { W("%li: PQisBusy", task->id); task->event = WL_SOCKET_WRITEABLE; task->socket = work_done; return; }
-        if (!PQsendQuery(task->conn, "COMMIT")) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
+        if (!PQsendQuery(task->conn, SQL(COMMIT))) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
         switch (PQflush(task->conn)) {
             case 0: break;
             case 1: D1("%li: PQflush == 1", task->id); task->event = WL_SOCKET_MASK; task->socket = work_done; return;
@@ -301,7 +302,7 @@ static void work_schema(Work *work) {
     const char *schema_quote = quote_identifier(work->schema);
     D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema, work->table);
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "CREATE SCHEMA %s", schema_quote);
+    appendStringInfo(&buf, SQL(CREATE SCHEMA %s), schema_quote);
     names = stringToQualifiedNameList(schema_quote);
     SPI_connect_my(buf.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
@@ -384,14 +385,14 @@ static bool work_input(Task *task) {
     PG_END_TRY();
     initStringInfoMy(TopMemoryContext, &buf);
     task->skip = 0;
-    appendStringInfo(&buf, "SET \"pg_task.id\" = %li;\n", task->id);
+    appendStringInfo(&buf, SQL(SET "pg_task.id" = %li;), task->id);
     task->skip++;
     if (task->timeout) {
-        appendStringInfo(&buf, "SET \"statement_timeout\" = %i;\n", task->timeout);
+        appendStringInfo(&buf, SQL(SET "statement_timeout" = %i;), task->timeout);
         task->skip++;
     }
     if (task->append) {
-        appendStringInfoString(&buf, "SET \"config.append_type_to_column_name\" = true;\n");
+        appendStringInfoString(&buf, SQL(SET "config.append_type_to_column_name" = true;));
         task->skip++;
     }
     appendStringInfoString(&buf, task->input);
@@ -518,35 +519,36 @@ static void work_table(Work *work) {
     D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->schema_table, work->schema_type);
     set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf,
-        "CREATE TABLE %1$s (\n"
-        "    id bigserial NOT NULL PRIMARY KEY,\n"
-        "    parent int8 DEFAULT current_setting('pg_task.id', true)::int8 REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL,\n"
-        "    dt timestamptz NOT NULL DEFAULT current_timestamp,\n"
-        "    start timestamptz,\n"
-        "    stop timestamptz,\n"
-        "    \"group\" text NOT NULL DEFAULT 'group',\n"
-        "    max int4,\n"
-        "    pid int4,\n"
-        "    input text NOT NULL,\n"
-        "    output text,\n"
-        "    error text,\n"
-        "    state %2$s NOT NULL DEFAULT 'PLAN'::%2$s,\n"
-        "    timeout interval,\n"
-        "    delete boolean NOT NULL DEFAULT false,\n"
-        "    repeat interval,\n"
-        "    drift boolean NOT NULL DEFAULT true,\n"
-        "    count int4,\n"
-        "    live interval,\n"
-        "    remote text,\n"
-        "    append boolean NOT NULL DEFAULT false,\n"
-        "    header boolean NOT NULL DEFAULT true,\n"
-        "    string boolean NOT NULL DEFAULT true,\n"
-        "    \"null\" text NOT NULL DEFAULT '\\N',\n"
-        "    delimiter \"char\" NOT NULL DEFAULT '\t',\n"
-        "    quote \"char\",\n"
-        "    escape \"char\"\n"
-        ")", work->schema_table, work->schema_type);
+    appendStringInfo(&buf, SQL(
+        CREATE TABLE %1$s (
+            id bigserial NOT NULL PRIMARY KEY,
+            parent int8 DEFAULT current_setting('pg_task.id', true)::int8 REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL,
+            dt timestamptz NOT NULL DEFAULT current_timestamp,
+            start timestamptz,
+            stop timestamptz,
+            "group" text NOT NULL DEFAULT 'group',
+            max int4,
+            pid int4,
+            input text NOT NULL,
+            output text,
+            error text,
+            state %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
+            timeout interval,
+            delete boolean NOT NULL DEFAULT false,
+            repeat interval,
+            drift boolean NOT NULL DEFAULT true,
+            count int4,
+            live interval,
+            remote text,
+            append boolean NOT NULL DEFAULT false,
+            header boolean NOT NULL DEFAULT true,
+            string boolean NOT NULL DEFAULT true,
+            "null" text NOT NULL DEFAULT '\\N',
+            delimiter "char" NOT NULL DEFAULT '\t',
+            quote "char",
+            escape "char"
+        )
+    ), work->schema_table, work->schema_type);
     names = stringToQualifiedNameList(work->schema_table);
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
@@ -619,7 +621,7 @@ static void work_type(Work *work) {
     const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
     D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table);
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')", work->schema_type);
+    appendStringInfo(&buf, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')), work->schema_type);
     SPI_connect_my(buf.data);
     parseTypeString(work->schema_type, &type, &typmod, true);
     if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
@@ -708,12 +710,15 @@ static void work_update(Work *work) {
     if (!command) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
-        appendStringInfo(&buf,
-            "WITH s AS (SELECT id FROM %1$s AS t WHERE dt < current_timestamp - concat_ws(' ', (current_setting('pg_task.reset', false)::int4 * current_setting('pg_task.timeout', false)::int4)::text, 'msec')::interval AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND pid NOT IN (\n"
-            "    SELECT      pid FROM pg_stat_activity\n"
-            "    WHERE       datname = current_catalog AND usename = current_user AND application_name = concat_ws(' ', 'pg_task', current_setting('pg_task.schema', true), current_setting('pg_task.table', false), t.group)\n"
-            "    UNION       SELECT UNNEST($1::int4[])\n"
-            ") FOR UPDATE SKIP LOCKED) UPDATE %1$s AS u SET state = 'PLAN'::%2$s FROM s WHERE u.id = s.id", work->schema_table, work->schema_type);
+        appendStringInfo(&buf, SQL(
+            WITH s AS (
+                SELECT id FROM %1$s AS t WHERE dt < current_timestamp - concat_ws(' ', (current_setting('pg_task.reset', false)::int4 * current_setting('pg_task.timeout', false)::int4)::text, 'msec')::interval AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND pid NOT IN (
+                    SELECT      pid FROM pg_stat_activity
+                    WHERE       datname = current_catalog AND usename = current_user AND application_name = concat_ws(' ', 'pg_task', current_setting('pg_task.schema', true), current_setting('pg_task.table', false), t.group)
+                    UNION       SELECT UNNEST($1::int4[])
+                ) FOR UPDATE SKIP LOCKED
+            ) UPDATE %1$s AS u SET state = 'PLAN'::%2$s FROM s WHERE u.id = s.id
+        ), work->schema_table, work->schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -730,16 +735,17 @@ static void work_timeout(Work *work) {
     if (!command) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
-        appendStringInfo(&buf,
-            "WITH s AS (WITH s AS (WITH s AS (WITH s AS (WITH s AS (\n"
-            "    SELECT      t.id, t.group, COALESCE(t.max, ~(1<<31)) AS max, a.pid FROM %1$s AS t\n"
-            "    LEFT JOIN   %1$s AS a ON a.state = 'WORK'::%2$s AND t.group = a.group\n"
-            "    WHERE       t.state = 'PLAN'::%2$s AND t.dt + concat_ws(' ', (CASE WHEN t.max < 0 THEN -t.max ELSE 0 END)::text, 'msec')::interval <= current_timestamp\n"
-            ") SELECT id, s.group, CASE WHEN max > 0 THEN max ELSE 1 END - count(pid) AS count FROM s GROUP BY id, s.group, max\n"
-            ") SELECT array_agg(id ORDER BY id) AS id, s.group, count FROM s WHERE count > 0 GROUP BY s.group, count\n"
-            ") SELECT unnest(id[:count]) AS id, s.group, count FROM s ORDER BY count DESC\n"
-            ") SELECT id FROM s INNER JOIN %1$s USING (id) FOR UPDATE SKIP LOCKED\n"
-            ") UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id, u.group, u.remote, COALESCE(u.max, ~(1<<31)) AS max", work->schema_table, work->schema_type);
+        appendStringInfo(&buf, SQL(
+            WITH s AS (WITH s AS (WITH s AS (WITH s AS (WITH s AS (
+                SELECT      t.id, t.group, COALESCE(t.max, ~(1<<31)) AS max, a.pid FROM %1$s AS t
+                LEFT JOIN   %1$s AS a ON a.state = 'WORK'::%2$s AND t.group = a.group
+                WHERE       t.state = 'PLAN'::%2$s AND t.dt + concat_ws(' ', (CASE WHEN t.max < 0 THEN -t.max ELSE 0 END)::text, 'msec')::interval <= current_timestamp
+            ) SELECT id, s.group, CASE WHEN max > 0 THEN max ELSE 1 END - count(pid) AS count FROM s GROUP BY id, s.group, max
+            ) SELECT array_agg(id ORDER BY id) AS id, s.group, count FROM s WHERE count > 0 GROUP BY s.group, count
+            ) SELECT unnest(id[:count]) AS id, s.group, count FROM s ORDER BY count DESC
+            ) SELECT id FROM s INNER JOIN %1$s USING (id) FOR UPDATE SKIP LOCKED
+            ) UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id, u.group, u.remote, COALESCE(u.max, ~(1<<31)) AS max
+        ), work->schema_table, work->schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
