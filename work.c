@@ -164,7 +164,7 @@ static void work_error(Task *task, const char *msg, const char *err, bool finish
         int len = strlen(err);
         if (len) appendStringInfo(&task->error, " and %.*s", len - 1, err);
     }
-    W(task->error.data);
+    W("%li: %s", task->id, task->error.data);
     appendStringInfo(&task->output, "%sROLLBACK", task->output.len ? "\n" : "");
     task->fail = true;
     task->skip++;
@@ -265,14 +265,14 @@ static void work_readable(Task *task) {
             case 1: D1("PQflush == 1"); task->event = WL_SOCKET_MASK; return;
             case -1: work_error(task, "PQflush == -1", PQerrorMessage(task->conn), true); return;
         }
-        if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_READABLE; return; }
+        if (PQisBusy(task->conn)) { W("%li: PQisBusy", task->id); task->event = WL_SOCKET_READABLE; return; }
     }
     task->socket(task);
 }
 
 static void work_done(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
-        if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_WRITEABLE; task->socket = work_done; return; }
+        if (PQisBusy(task->conn)) { W("%li: PQisBusy", task->id); task->event = WL_SOCKET_WRITEABLE; task->socket = work_done; return; }
         if (!PQsendQuery(task->conn, "COMMIT")) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
         switch (PQflush(task->conn)) {
             case 0: break;
@@ -362,7 +362,7 @@ static void work_success(Task *task, PGresult *result) {
 static void work_result(Task *task) {
     for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
         case PGRES_COMMAND_OK: work_command(task, result); break;
-        case PGRES_FATAL_ERROR: W("PQresultStatus == PGRES_FATAL_ERROR and %.*s", (int)strlen(PQresultErrorMessage(result)) - 1, PQresultErrorMessage(result)); work_fail(task, result); break;
+        case PGRES_FATAL_ERROR: W("%li: PQresultStatus == PGRES_FATAL_ERROR and %.*s", task->id, (int)strlen(PQresultErrorMessage(result)) - 1, PQresultErrorMessage(result)); work_fail(task, result); break;
         case PGRES_TUPLES_OK: work_success(task, result); break;
         default: D1(PQresStatus(PQresultStatus(result))); break;
     }
@@ -402,7 +402,7 @@ static bool work_input(Task *task) {
 
 static void work_query(Task *task) {
     if (ShutdownRequestPending) return;
-    if (PQisBusy(task->conn)) { W("PQisBusy"); task->event = WL_SOCKET_WRITEABLE; task->socket = work_query; return; }
+    if (PQisBusy(task->conn)) { W("%li: PQisBusy", task->id); task->event = WL_SOCKET_WRITEABLE; task->socket = work_query; return; }
     if (work_input(task)) { work_finish(task); return; }
     if (!PQsendQuery(task->conn, task->input)) { work_error(task, "!PQsendQuery", PQerrorMessage(task->conn), false); return; }
     switch (PQflush(task->conn)) {
