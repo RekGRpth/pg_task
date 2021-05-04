@@ -65,9 +65,9 @@ void conf_work(const char *user, const char *data, const char *schema, const cha
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i", user, data, schema ? schema : default_null, table, reset, timeout, count, live);
     MemSet(&worker, 0, sizeof(worker));
     if (snprintf(worker.bgw_function_name, sizeof(worker.bgw_function_name) - 1, "work_worker") >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
-    if (snprintf(worker.bgw_library_name, sizeof(worker.bgw_library_name) - 1, "pg_task") >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
-    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task %s%s%s %i %i", schema ? schema : "", schema ? " " : "", table, reset, timeout) >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
-    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", user, data, worker.bgw_type) >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
+    if (snprintf(worker.bgw_library_name, sizeof(worker.bgw_library_name) - 1, "pg_task") >= sizeof(worker.bgw_library_name) - 1) E("snprintf");
+    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task %s%s%s %i %i", schema ? schema : "", schema ? " " : "", table, reset, timeout) >= sizeof(worker.bgw_type) - 1) E("snprintf");
+    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", user, data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) E("snprintf");
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;

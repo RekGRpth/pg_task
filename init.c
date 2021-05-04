@@ -60,9 +60,9 @@ static void init_work(bool dynamic) {
     BackgroundWorker worker;
     MemSet(&worker, 0, sizeof(worker));
     if (snprintf(worker.bgw_function_name, sizeof(worker.bgw_function_name) - 1, "conf_worker") >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
-    if (snprintf(worker.bgw_library_name, sizeof(worker.bgw_library_name) - 1, "pg_task") >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
-    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "postgres postgres pg_task conf") >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
-    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task conf") >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
+    if (snprintf(worker.bgw_library_name, sizeof(worker.bgw_library_name) - 1, "pg_task") >= sizeof(worker.bgw_library_name) - 1) E("snprintf");
+    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "postgres postgres pg_task conf") >= sizeof(worker.bgw_name) - 1) E("snprintf");
+    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task conf") >= sizeof(worker.bgw_type) - 1) E("snprintf");
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
