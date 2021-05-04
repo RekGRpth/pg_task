@@ -738,7 +738,7 @@ static void work_timeout(Work *work) {
         appendStringInfo(&buf, SQL(
             WITH s AS (WITH s AS (WITH s AS (WITH s AS (WITH s AS (
                 SELECT      t.id, t.group, COALESCE(t.max, ~(1<<31)) AS max, a.pid FROM %1$s AS t
-                LEFT JOIN   %1$s AS a ON a.state = 'WORK'::%2$s AND t.group = a.group
+                LEFT JOIN   %1$s AS a ON a.state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND t.group = a.group
                 WHERE       t.state = 'PLAN'::%2$s AND t.dt + concat_ws(' ', (CASE WHEN t.max < 0 THEN -t.max ELSE 0 END)::text, 'msec')::interval <= current_timestamp
             ) SELECT id, s.group, CASE WHEN max > 0 THEN max ELSE 1 END - count(pid) AS count FROM s GROUP BY id, s.group, max
             ) SELECT array_agg(id ORDER BY id) AS id, s.group, count FROM s WHERE count > 0 GROUP BY s.group, count

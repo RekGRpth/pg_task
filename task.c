@@ -44,7 +44,7 @@ bool task_done(Task *task) {
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf, SQL(
             WITH s AS (
-                SELECT id FROM %1$s WHERE id = $1 AND state IN ('WORK'::%2$s, 'TAKE'::%2$s) FOR UPDATE
+                SELECT id FROM %1$s WHERE id = $1 AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) FOR UPDATE
             ) UPDATE %1$s AS u SET state = CASE WHEN $2 THEN 'FAIL'::%2$s ELSE 'DONE'::%2$s END, stop = current_timestamp, output = $3, error = $4 FROM s WHERE u.id = s.id
             RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live
         ), work->schema_table, work->schema_type);
@@ -126,7 +126,7 @@ bool task_work(Task *task) {
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf, SQL(
             WITH s AS (
-                SELECT id FROM %1$s WHERE id = $1 AND state = 'TAKE'::%2$s FOR UPDATE
+                SELECT id FROM %1$s WHERE id = $1 AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) FOR UPDATE
             ) UPDATE %1$s AS u SET state = 'WORK'::%2$s, start = current_timestamp, pid = $2 FROM s WHERE u.id = s.id
             RETURNING input, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout, append, header, string, u.null, delimiter, quote, escape
         ), work->schema_table, work->schema_type);
