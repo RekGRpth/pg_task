@@ -9,7 +9,6 @@ static void task_update(Task *task) {
     Datum values[] = {CStringGetTextDatum(task->group)};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
-    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
     if (!command) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
@@ -35,8 +34,6 @@ bool task_done(Task *task) {
     char nulls[] = {' ', ' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n'};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
-    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
-    StaticAssertStmt(countof(argtypes) == countof(nulls), "countof(argtypes) == countof(values)");
     D1("id = %li, output = %s, error = %s, fail = %s", task->id, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null, task->fail ? "true" : "false");
     task_update(task);
     if (!command) {
@@ -78,8 +75,6 @@ bool task_live(Task *task) {
     char nulls[] = {' ', task->remote ? ' ' : 'n', ' ', ' ', ' '};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
-    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
-    StaticAssertStmt(countof(argtypes) == countof(nulls), "countof(argtypes) == countof(values)");
     if (!command) {
         Work *work = task->work;
         StringInfoData buf;
@@ -109,7 +104,6 @@ bool task_work(Task *task) {
     Datum values[] = {Int64GetDatum(task->id), Int32GetDatum(task->pid)};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
-    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
     if (ShutdownRequestPending) return true;
     if (!init_table_id_lock(work->oid, task->id)) { W("!init_table_id_lock(%i, %li)", work->oid, task->id); return true; }
     task->count++;
@@ -160,7 +154,6 @@ void task_delete(Task *task) {
     Datum values[] = {Int64GetDatum(task->id)};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
-    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
     if (!command) {
         Work *work = task->work;
         StringInfoData buf;
@@ -213,7 +206,6 @@ void task_repeat(Task *task) {
     Datum values[] = {Int64GetDatum(task->id)};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
-    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
     if (!command) {
         Work *work = task->work;
         StringInfoData buf;

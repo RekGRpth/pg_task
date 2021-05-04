@@ -705,8 +705,6 @@ static void work_update(Work *work) {
     char nulls[] = {work->pids ? ' ' : 'n'};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
-    StaticAssertStmt(countof(argtypes) == countof(values), "countof(argtypes) == countof(values)");
-    StaticAssertStmt(countof(argtypes) == countof(nulls), "countof(argtypes) == countof(values)");
     if (!command) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
