@@ -58,28 +58,14 @@ void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
 
 static void init_work(bool dynamic) {
     BackgroundWorker worker;
-    StringInfoData buf;
     MemSet(&worker, 0, sizeof(worker));
+    snprintf(worker.bgw_function_name, sizeof(worker.bgw_function_name) - 1, "conf_worker");
+    snprintf(worker.bgw_library_name, sizeof(worker.bgw_library_name) - 1, "pg_task");
+    snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "postgres postgres pg_task conf");
+    snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task conf");
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfoString(&buf, "pg_task");
-    if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
-    memcpy(worker.bgw_library_name, buf.data, buf.len);
-    resetStringInfo(&buf);
-    appendStringInfoString(&buf, "conf_worker");
-    if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
-    memcpy(worker.bgw_function_name, buf.data, buf.len);
-    resetStringInfo(&buf);
-    appendStringInfoString(&buf, "pg_task conf");
-    if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
-    memcpy(worker.bgw_type, buf.data, buf.len);
-    resetStringInfo(&buf);
-    appendStringInfoString(&buf, "postgres postgres pg_task conf");
-    if (buf.len + 1 > BGW_MAXLEN) E("%i > BGW_MAXLEN", buf.len + 1);
-    memcpy(worker.bgw_name, buf.data, buf.len);
-    pfree(buf.data);
     if (dynamic) {
         IsUnderPostmaster = true;
         if (!RegisterDynamicBackgroundWorker(&worker, NULL)) E("!RegisterDynamicBackgroundWorker");
