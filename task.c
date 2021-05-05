@@ -258,26 +258,25 @@ static void SignalHandlerForShutdownRequestMy(SIGNAL_ARGS) {
 }
 
 static void task_init(Work *work, Task *task) {
-    StringInfoData buf;
+    char *group;
+    char *p = MyBgworkerEntry->bgw_extra;
     const char *schema_quote;
     const char *table_quote;
-    char *p = MyBgworkerEntry->bgw_extra;
-    task->work = work;
-    work->conf.user = p;
-    p += strlen(work->conf.user) + 1;
-    work->conf.data = p;
-    p += strlen(work->conf.data) + 1;
-    work->conf.schema = p;
-    p += strlen(work->conf.schema) + 1;
-    work->conf.table = p;
-    p += strlen(work->conf.table) + 1;
-    task->group = p;
-    p += strlen(task->group) + 1;
-    work->oid = *(typeof(work->oid) *)p;
-    p += sizeof(work->oid);
-    task->max = *(typeof(task->max) *)p;
+    int32 max;
+    StringInfoData buf;
+#define deserialize_char(dst) (dst) = p; p += strlen(dst) + 1;
+#define deserialize_char_null(dst) deserialize_char(dst); if (p == (dst) + 1) (dst) = NULL;
+#define deserialize_int(dst) (dst) = *(typeof(dst) *)p; p += sizeof(dst);
+#define X(src, serialize, deserialize) deserialize(src);
+    WORK
+#undef X
+#undef deserialize_char
+#undef deserialize_char_null
+#undef deserialize_int
+    task->group = group;
     task->id = DatumGetInt64(MyBgworkerEntry->bgw_main_arg);
-    if (work->conf.table == work->conf.schema + 1) work->conf.schema = NULL;
+    task->max = max;
+    task->work = work;
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     if (!MyProcPort->user_name) MyProcPort->user_name = work->conf.user;

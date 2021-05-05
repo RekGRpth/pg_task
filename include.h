@@ -89,6 +89,15 @@ typedef struct Conf {
 #undef X
 } Conf;
 
+#define WORK \
+    X(work->conf.data, serialize_char, deserialize_char) \
+    X(work->conf.schema, serialize_char_null, deserialize_char_null) \
+    X(work->conf.table, serialize_char, deserialize_char) \
+    X(work->conf.user, serialize_char, deserialize_char) \
+    X(group, serialize_char, deserialize_char) \
+    X(work->oid, serialize_int, deserialize_int) \
+    X(max, serialize_int, deserialize_int)
+
 typedef struct Work {
     char *pids;
     char *schema_table;

@@ -73,6 +73,9 @@ void conf_work(const Conf *conf) {
 #define X(type, name, serialize, deserialize) serialize(conf->name);
     CONF
 #undef X
+#undef serialize_char
+#undef serialize_char_null
+#undef serialize_int
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
