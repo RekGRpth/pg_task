@@ -188,7 +188,7 @@ static int work_nevents(Work *work) {
 static void work_fini(Work *work) {
     dlist_mutable_iter iter;
     StringInfoData buf;
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count, work->live);
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li", work->conf.user, work->conf.data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, work->conf.reset, work->conf.timeout, work->conf.count, work->conf.live);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
     dlist_foreach_modify(iter, &work->head) {
@@ -205,7 +205,7 @@ static void work_fini(Work *work) {
     }
     pfree(buf.data);
     if (ShutdownRequestPending) return;
-    conf_work(work->user, work->data, work->schema, work->table, work->reset, work->timeout, work->count, work->live);
+    conf_work(&work->conf);
 }
 
 static void work_index(Work *work, const char *index) {
@@ -215,15 +215,15 @@ static void work_index(Work *work, const char *index) {
     const RangeVar *rangevar;
     const char *name_quote;
     const char *index_quote = quote_identifier(index);
-    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
-    D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, index, work->schema_table);
+    const char *schema_quote = work->conf.schema ? quote_identifier(work->conf.schema) : NULL;
+    D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work->conf.user, work->conf.data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, index, work->schema_table);
     initStringInfoMy(TopMemoryContext, &name);
-    appendStringInfo(&name, "%s_%s_idx", work->table, index);
+    appendStringInfo(&name, "%s_%s_idx", work->conf.table, index);
     name_quote = quote_identifier(name.data);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, SQL(CREATE INDEX %s ON %s USING btree (%s)), name_quote, work->schema_table, index_quote);
     initStringInfoMy(TopMemoryContext, &idx);
-    if (work->schema) appendStringInfo(&idx, "%s.", schema_quote);
+    if (work->conf.schema) appendStringInfo(&idx, "%s.", schema_quote);
     appendStringInfoString(&idx, name_quote);
     names = stringToQualifiedNameList(idx.data);
     rangevar = makeRangeVarFromNameList(names);
@@ -241,7 +241,7 @@ static void work_index(Work *work, const char *index) {
     pfree(buf.data);
     pfree(name.data);
     pfree(idx.data);
-    if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
+    if (work->conf.schema && schema_quote && work->conf.schema != schema_quote) pfree((void *)schema_quote);
     if (name_quote != name.data) pfree((void *)name_quote);
     if (index_quote != index) pfree((void *)index_quote);
 }
@@ -299,8 +299,8 @@ static void work_done(Task *task) {
 static void work_schema(Work *work) {
     StringInfoData buf;
     List *names;
-    const char *schema_quote = quote_identifier(work->schema);
-    D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema, work->table);
+    const char *schema_quote = quote_identifier(work->conf.schema);
+    D1("user = %s, data = %s, schema = %s, table = %s", work->conf.user, work->conf.data, work->conf.schema, work->conf.table);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, SQL(CREATE SCHEMA %s), schema_quote);
     names = stringToQualifiedNameList(schema_quote);
@@ -309,9 +309,9 @@ static void work_schema(Work *work) {
     SPI_commit_my();
     SPI_finish_my();
     list_free_deep(names);
-    if (schema_quote != work->schema) pfree((void *)schema_quote);
+    if (schema_quote != work->conf.schema) pfree((void *)schema_quote);
     pfree(buf.data);
-    set_config_option("pg_task.schema", work->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.schema", work->conf.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
 }
 
 static void work_success(Task *task, PGresult *result) {
@@ -469,16 +469,16 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, group);
+    appendStringInfo(&buf, "pg_task %s%s%s %s", work->conf.schema ? work->conf.schema : "", work->conf.schema ? " " : "", work->conf.table, group);
     arg = 0;
     keywords[arg] = "application_name";
     values[arg] = buf.data;
     initStringInfoMy(TopMemoryContext, &buf2);
     if (options) appendStringInfoString(&buf2, options);
-    appendStringInfo(&buf2, "%s-c pg_task.data=%s", buf2.len ? " " : "", work->data);
-    appendStringInfo(&buf2, " -c pg_task.user=%s", work->user);
-    if (work->schema) appendStringInfo(&buf2, " -c pg_task.schema=%s", work->schema);
-    appendStringInfo(&buf2, " -c pg_task.table=%s", work->table);
+    appendStringInfo(&buf2, "%s-c pg_task.data=%s", buf2.len ? " " : "", work->conf.data);
+    appendStringInfo(&buf2, " -c pg_task.user=%s", work->conf.user);
+    if (work->conf.schema) appendStringInfo(&buf2, " -c pg_task.schema=%s", work->conf.schema);
+    appendStringInfo(&buf2, " -c pg_task.table=%s", work->conf.table);
     appendStringInfo(&buf2, " -c pg_task.oid=%i", work->oid);
     appendStringInfo(&buf2, " -c pg_task.group=%s", group);
     arg++;
@@ -516,8 +516,8 @@ static void work_table(Work *work) {
     StringInfoData buf;
     List *names;
     const RangeVar *rangevar;
-    D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->schema_table, work->schema_type);
-    set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work->conf.user, work->conf.data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, work->schema_table, work->schema_type);
+    set_config_option("pg_task.table", work->conf.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, SQL(
         CREATE TABLE %1$s (
@@ -558,7 +558,7 @@ static void work_table(Work *work) {
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
-    set_config_option("pg_task.table", work->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.table", work->conf.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     resetStringInfo(&buf);
     appendStringInfo(&buf, "%i", work->oid);
     set_config_option("pg_task.oid", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
@@ -568,25 +568,25 @@ static void work_table(Work *work) {
 static void work_task(const Work *work, const int64 id, char *group, const int max) {
     BackgroundWorkerHandle *handle;
     pid_t pid;
-    int user_len = strlen(work->user), data_len = strlen(work->data), schema_len = work->schema ? strlen(work->schema) : 0, table_len = strlen(work->table), group_len = strlen(group), max_len = sizeof(max), oid_len = sizeof(work->oid);
+    int user_len = strlen(work->conf.user), data_len = strlen(work->conf.data), schema_len = work->conf.schema ? strlen(work->conf.schema) : 0, table_len = strlen(work->conf.table), group_len = strlen(group), max_len = sizeof(max), oid_len = sizeof(work->oid);
     BackgroundWorker worker;
     char *p = worker.bgw_extra;
-    D1("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, id, group, max, work->oid);
+    D1("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->conf.user, work->conf.data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, id, group, max, work->oid);
     MemSet(&worker, 0, sizeof(worker));
     if (snprintf(worker.bgw_function_name, sizeof(worker.bgw_function_name) - 1, "task_worker") >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
     if (snprintf(worker.bgw_library_name, sizeof(worker.bgw_library_name) - 1, "pg_task") >= sizeof(worker.bgw_library_name) - 1) E("snprintf");
-    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task %s%s%s %s", work->schema ? work->schema : "", work->schema ? " " : "", work->table, group) >= sizeof(worker.bgw_type) - 1) E("snprintf");
-    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", work->user, work->data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) E("snprintf");
+    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task %s%s%s %s", work->conf.schema ? work->conf.schema : "", work->conf.schema ? " " : "", work->conf.table, group) >= sizeof(worker.bgw_type) - 1) E("snprintf");
+    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", work->conf.user, work->conf.data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) E("snprintf");
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = Int64GetDatum(id);
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + oid_len + group_len + 1 + max_len > BGW_EXTRALEN) E("%i > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + oid_len + group_len + 1 + max_len);
-    p = (char *)memcpy(p, work->user, user_len) + user_len + 1;
-    p = (char *)memcpy(p, work->data, data_len) + data_len + 1;
-    p = (char *)memcpy(p, work->schema, schema_len) + schema_len + 1;
-    p = (char *)memcpy(p, work->table, table_len) + table_len + 1;
+    p = (char *)memcpy(p, work->conf.user, user_len) + user_len + 1;
+    p = (char *)memcpy(p, work->conf.data, data_len) + data_len + 1;
+    p = (char *)memcpy(p, work->conf.schema, schema_len) + schema_len + 1;
+    p = (char *)memcpy(p, work->conf.table, table_len) + table_len + 1;
     p = (char *)memcpy(p, &work->oid, oid_len) + oid_len;
     p = (char *)memcpy(p, group, group_len) + group_len + 1;
     p = (char *)memcpy(p, &max, max_len) + max_len;
@@ -604,8 +604,8 @@ static void work_type(Work *work) {
     StringInfoData buf;
     Oid type = InvalidOid;
     int32 typmod;
-    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
-    D1("user = %s, data = %s, schema = %s, table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table);
+    const char *schema_quote = work->conf.schema ? quote_identifier(work->conf.schema) : NULL;
+    D1("user = %s, data = %s, schema = %s, table = %s", work->conf.user, work->conf.data, work->conf.schema ? work->conf.schema : default_null, work->conf.table);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')), work->schema_type);
     SPI_connect_my(buf.data);
@@ -613,40 +613,40 @@ static void work_type(Work *work) {
     if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
     SPI_finish_my();
-    if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
+    if (work->conf.schema && schema_quote && work->conf.schema != schema_quote) pfree((void *)schema_quote);
     pfree(buf.data);
 }
 
 static void work_conf(Work *work) {
-    const char *schema_quote = work->schema ? quote_identifier(work->schema) : NULL;
-    const char *table_quote = quote_identifier(work->table);
+    const char *schema_quote = work->conf.schema ? quote_identifier(work->conf.schema) : NULL;
+    const char *table_quote = quote_identifier(work->conf.table);
     StringInfoData buf;
     initStringInfoMy(TopMemoryContext, &buf);
-    if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
+    if (work->conf.schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, table_quote);
     if (work->schema_table) pfree(work->schema_table);
     work->schema_table = buf.data;
     initStringInfoMy(TopMemoryContext, &buf);
-    if (work->schema) appendStringInfo(&buf, "%s.", schema_quote);
+    if (work->conf.schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, "state");
     if (work->schema_type) pfree(work->schema_type);
     work->schema_type = buf.data;
-    if (work->schema && schema_quote && work->schema != schema_quote) pfree((void *)schema_quote);
-    if (work->table != table_quote) pfree((void *)table_quote);
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i, schema_table = %s, schema_table = %s", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count, work->live, work->schema_table, work->schema_type);
-    if (work->schema) work_schema(work);
+    if (work->conf.schema && schema_quote && work->conf.schema != schema_quote) pfree((void *)schema_quote);
+    if (work->conf.table != table_quote) pfree((void *)table_quote);
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, schema_table = %s, schema_table = %s", work->conf.user, work->conf.data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, work->conf.reset, work->conf.timeout, work->conf.count, work->conf.live, work->schema_table, work->schema_type);
+    if (work->conf.schema) work_schema(work);
     work_type(work);
     work_table(work);
     work_index(work, "dt");
     work_index(work, "parent");
     work_index(work, "state");
-    set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.data", work->conf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.user", work->conf.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "%i", work->reset);
+    appendStringInfo(&buf, "%i", work->conf.reset);
     set_config_option("pg_task.reset", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%i", work->timeout);
+    appendStringInfo(&buf, "%i", work->conf.timeout);
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     dlist_init(&work->head);
@@ -654,32 +654,32 @@ static void work_conf(Work *work) {
 
 static void work_init(Work *work) {
     char *p = MyBgworkerEntry->bgw_extra;
-    work->user = p;
-    p += strlen(work->user) + 1;
-    work->data = p;
-    p += strlen(work->data) + 1;
-    work->schema = p;
-    p += strlen(work->schema) + 1;
-    work->table = p;
-    p += strlen(work->table) + 1;
-    work->reset = *(typeof(work->reset) *)p;
-    p += sizeof(work->reset);
-    work->timeout = *(typeof(work->timeout) *)p;
-    p += sizeof(work->timeout);
-    work->count = *(typeof(work->count) *)p;
-    p += sizeof(work->count);
-    work->live = *(typeof(work->live) *)p;
-    if (work->table == work->schema + 1) work->schema = NULL;
+    work->conf.user = p;
+    p += strlen(work->conf.user) + 1;
+    work->conf.data = p;
+    p += strlen(work->conf.data) + 1;
+    work->conf.schema = p;
+    p += strlen(work->conf.schema) + 1;
+    work->conf.table = p;
+    p += strlen(work->conf.table) + 1;
+    work->conf.reset = *(typeof(work->conf.reset) *)p;
+    p += sizeof(work->conf.reset);
+    work->conf.timeout = *(typeof(work->conf.timeout) *)p;
+    p += sizeof(work->conf.timeout);
+    work->conf.count = *(typeof(work->conf.count) *)p;
+    p += sizeof(work->conf.count);
+    work->conf.live = *(typeof(work->conf.live) *)p;
+    if (work->conf.table == work->conf.schema + 1) work->conf.schema = NULL;
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-    if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
-    if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
+    if (!MyProcPort->user_name) MyProcPort->user_name = work->conf.user;
+    if (!MyProcPort->database_name) MyProcPort->database_name = work->conf.data;
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i", work->user, work->data, work->schema ? work->schema : default_null, work->table, work->reset, work->timeout, work->count, work->live);
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li", work->conf.user, work->conf.data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, work->conf.reset, work->conf.timeout, work->conf.count, work->conf.live);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
     BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnection(work->data, work->user, 0);
+    BackgroundWorkerInitializeConnection(work->conf.data, work->conf.user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
     process_session_preload_libraries();
     work_conf(work);
@@ -745,7 +745,7 @@ static void work_timeout(Work *work) {
         pfree(group);
         if (remote) pfree(remote);
     }
-    if (work->count) work->_count += SPI_tuptable->numvals;
+    if (work->conf.count) work->count += SPI_tuptable->numvals;
     SPI_finish_my();
 }
 
@@ -773,7 +773,7 @@ void work_worker(Datum main_arg) {
         work_event(work, set);
         if (cur_timeout <= 0) {
             INSTR_TIME_SET_CURRENT(start_time);
-            cur_timeout = work->timeout;
+            cur_timeout = work->conf.timeout;
         }
         nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
@@ -783,16 +783,16 @@ void work_worker(Datum main_arg) {
             if (event->events & WL_SOCKET_READABLE) work_readable(event->user_data);
             if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
-        if (work->timeout >= 0) {
+        if (work->conf.timeout >= 0) {
             INSTR_TIME_SET_CURRENT(cur_time);
             INSTR_TIME_SUBTRACT(cur_time, start_time);
-            cur_timeout = work->timeout - (long)INSTR_TIME_GET_MILLISEC(cur_time);
+            cur_timeout = work->conf.timeout - (long)INSTR_TIME_GET_MILLISEC(cur_time);
             if (cur_timeout <= 0) work_timeout(work);
         }
         FreeWaitEventSet(set);
         pfree(events);
-        if (work->count && work->_count >= work->count) break;
-        if (work->live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), work->live * 1000)) break;
+        if (work->conf.count && work->count >= work->conf.count) break;
+        if (work->conf.live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), work->conf.live * 1000)) break;
     }
     if (!init_data_user_table_unlock(MyDatabaseId, GetUserId(), work->oid)) W("!init_data_user_table_unlock(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid);
     work_fini(work);

@@ -73,20 +73,24 @@
 
 typedef struct _SPI_plan SPI_plan;
 
-typedef struct Work {
+typedef struct Conf {
     char *data;
-    char *pids;
     char *schema;
-    char *schema_table;
-    char *schema_type;
     char *table;
     char *user;
+    int32 count;
+    int32 reset;
+    int32 timeout;
+    int64 live;
+} Conf;
+
+typedef struct Work {
+    char *pids;
+    char *schema_table;
+    char *schema_type;
+    Conf conf;
     dlist_head head;
-    int _count;
-    int count;
-    int live;
-    int reset;
-    int timeout;
+    int32 count;
     Oid oid;
 } Work;
 
@@ -137,7 +141,7 @@ Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDescData *tupdesc, const char 
 DestReceiver *CreateDestReceiverMy(Task *task);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void BeginCommandMy(CommandTag commandTag, Task *task);
-void conf_work(const char *user, const char *data, const char *schema, const char *table, const int reset, const int timeout, const int count, const int live);
+void conf_work(const Conf *conf);
 void conf_worker(Datum main_arg);
 void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_output);
 void exec_simple_query_my(Task *task);
