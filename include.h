@@ -73,6 +73,11 @@
 
 typedef struct _SPI_plan SPI_plan;
 
+#define get_char(name) TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, #name, false))
+#define get_char_null(name) TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, #name, true))
+#define get_int32(name) DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, #name, false))
+#define get_int64(name) DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, #name, false))
+
 #define serialize_char(src) if ((len += strlcpy(worker.bgw_extra + len, (src), sizeof(worker.bgw_extra)) + 1) >= sizeof(worker.bgw_extra)) E("strlcpy")
 #define serialize_char_null(src) serialize_char((src) ? (src) : "")
 #define serialize_int(src) if ((len += sizeof(src)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(src), &(src), sizeof(src));
@@ -82,17 +87,17 @@ typedef struct _SPI_plan SPI_plan;
 #define deserialize_int(dst) (dst) = *(typeof(dst) *)p; p += sizeof(dst);
 
 #define CONF \
-    X(char *, data, serialize_char, deserialize_char) \
-    X(char *, schema, serialize_char_null, deserialize_char_null) \
-    X(char *, table, serialize_char, deserialize_char) \
-    X(char *, user, serialize_char, deserialize_char) \
-    X(int32, count, serialize_int, deserialize_int) \
-    X(int32, reset, serialize_int, deserialize_int) \
-    X(int32, timeout, serialize_int, deserialize_int) \
-    X(int64, live, serialize_int, deserialize_int)
+    X(char *, data, get_char, serialize_char, deserialize_char) \
+    X(char *, schema, get_char_null, serialize_char_null, deserialize_char_null) \
+    X(char *, table, get_char, serialize_char, deserialize_char) \
+    X(char *, user, get_char, serialize_char, deserialize_char) \
+    X(int32, count, get_int32, serialize_int, deserialize_int) \
+    X(int32, reset, get_int32, serialize_int, deserialize_int) \
+    X(int32, timeout, get_int32, serialize_int, deserialize_int) \
+    X(int64, live, get_int64, serialize_int, deserialize_int)
 
 typedef struct Conf {
-#define X(type, name, serialize, deserialize) type name;
+#define X(type, name, get, serialize, deserialize) type name;
     CONF
 #undef X
 } Conf;

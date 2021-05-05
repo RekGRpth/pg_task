@@ -648,7 +648,7 @@ static void work_conf(Work *work) {
 
 static void work_init(Work *work) {
     char *p = MyBgworkerEntry->bgw_extra;
-#define X(type, name, serialize, deserialize) deserialize(work->conf.name);
+#define X(type, name, get, serialize, deserialize) deserialize(work->conf.name);
     CONF
 #undef X
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
