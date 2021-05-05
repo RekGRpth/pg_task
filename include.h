@@ -73,6 +73,14 @@
 
 typedef struct _SPI_plan SPI_plan;
 
+#define serialize_char(src) if ((len += strlcpy(worker.bgw_extra + len, (src), sizeof(worker.bgw_extra)) + 1) >= sizeof(worker.bgw_extra)) E("strlcpy")
+#define serialize_char_null(src) serialize_char((src) ? (src) : "")
+#define serialize_int(src) if ((len += sizeof(src)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(src), &(src), sizeof(src));
+
+#define deserialize_char(dst) (dst) = p; p += strlen(dst) + 1;
+#define deserialize_char_null(dst) deserialize_char(dst); if (p == (dst) + 1) (dst) = NULL;
+#define deserialize_int(dst) (dst) = *(typeof(dst) *)p; p += sizeof(dst);
+
 #define CONF \
     X(char *, data, serialize_char, deserialize_char) \
     X(char *, schema, serialize_char_null, deserialize_char_null) \

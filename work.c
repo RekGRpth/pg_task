@@ -576,15 +576,9 @@ static void work_task(const Work *work, const int64 id, const char *group, const
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
     if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task %s%s%s %s", work->conf.schema ? work->conf.schema : "", work->conf.schema ? " " : "", work->conf.table, group) >= sizeof(worker.bgw_type) - 1) E("snprintf");
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", work->conf.user, work->conf.data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) E("snprintf");
-#define serialize_char(src) if ((len += strlcpy(worker.bgw_extra + len, (src), sizeof(worker.bgw_extra)) + 1) >= sizeof(worker.bgw_extra)) E("strlcpy")
-#define serialize_char_null(src) serialize_char((src) ? (src) : "")
-#define serialize_int(src) if ((len += sizeof(src)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(src), &(src), sizeof(src));
 #define X(src, serialize, deserialize) serialize(src);
     WORK
 #undef X
-#undef serialize_char
-#undef serialize_char_null
-#undef serialize_int
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = Int64GetDatum(id);
     worker.bgw_notify_pid = MyProcPid;
@@ -654,15 +648,9 @@ static void work_conf(Work *work) {
 
 static void work_init(Work *work) {
     char *p = MyBgworkerEntry->bgw_extra;
-#define deserialize_char(dst) (dst) = p; p += strlen(dst) + 1;
-#define deserialize_char_null(dst) deserialize_char(dst); if (p == (dst) + 1) (dst) = NULL;
-#define deserialize_int(dst) (dst) = *(typeof(dst) *)p; p += sizeof(dst);
 #define X(type, name, serialize, deserialize) deserialize(work->conf.name);
     CONF
 #undef X
-#undef deserialize_char
-#undef deserialize_char_null
-#undef deserialize_int
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     if (!MyProcPort->user_name) MyProcPort->user_name = work->conf.user;

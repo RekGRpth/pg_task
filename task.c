@@ -264,15 +264,9 @@ static void task_init(Work *work, Task *task) {
     const char *table_quote;
     int32 max;
     StringInfoData buf;
-#define deserialize_char(dst) (dst) = p; p += strlen(dst) + 1;
-#define deserialize_char_null(dst) deserialize_char(dst); if (p == (dst) + 1) (dst) = NULL;
-#define deserialize_int(dst) (dst) = *(typeof(dst) *)p; p += sizeof(dst);
 #define X(src, serialize, deserialize) deserialize(src);
     WORK
 #undef X
-#undef deserialize_char
-#undef deserialize_char_null
-#undef deserialize_int
     task->group = group;
     task->id = DatumGetInt64(MyBgworkerEntry->bgw_main_arg);
     task->max = max;
