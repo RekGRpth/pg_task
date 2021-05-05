@@ -59,28 +59,26 @@ static void conf_user(const char *user) {
 void conf_work(const char *user, const char *data, const char *schema, const char *table, const int reset, const int timeout, const int count, const int live) {
     BackgroundWorkerHandle *handle;
     pid_t pid;
-    int user_len = strlen(user), data_len = strlen(data), schema_len = schema ? strlen(schema) : 0, table_len = strlen(table), reset_len = sizeof(reset), timeout_len = sizeof(timeout), count_len = sizeof(count), live_len = sizeof(live);
     BackgroundWorker worker;
-    char *p = worker.bgw_extra;
+    int len = 0;
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %i", user, data, schema ? schema : default_null, table, reset, timeout, count, live);
     MemSet(&worker, 0, sizeof(worker));
     if (snprintf(worker.bgw_function_name, sizeof(worker.bgw_function_name) - 1, "work_worker") >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
     if (snprintf(worker.bgw_library_name, sizeof(worker.bgw_library_name) - 1, "pg_task") >= sizeof(worker.bgw_library_name) - 1) E("snprintf");
     if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task %s%s%s %i %i", schema ? schema : "", schema ? " " : "", table, reset, timeout) >= sizeof(worker.bgw_type) - 1) E("snprintf");
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", user, data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) E("snprintf");
+    if ((len += snprintf(worker.bgw_extra + len, sizeof(worker.bgw_extra) - 1, user) + 1) >= sizeof(worker.bgw_extra)) E("snprintf");
+    if ((len += snprintf(worker.bgw_extra + len, sizeof(worker.bgw_extra) - 1, data) + 1) >= sizeof(worker.bgw_extra)) E("snprintf");
+    if ((len += snprintf(worker.bgw_extra + len, sizeof(worker.bgw_extra) - 1, schema ? schema : "") + 1) >= sizeof(worker.bgw_extra)) E("snprintf");
+    if ((len += snprintf(worker.bgw_extra + len, sizeof(worker.bgw_extra) - 1, table) + 1) >= sizeof(worker.bgw_extra)) E("snprintf");
+    if ((len += sizeof(reset)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(reset), &reset, sizeof(reset));
+    if ((len += sizeof(timeout)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(timeout), &timeout, sizeof(timeout));
+    if ((len += sizeof(count)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(count), &count, sizeof(count));
+    if ((len += sizeof(live)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(live), &live, sizeof(live));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    if (user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + reset_len + timeout_len + count_len + live_len > BGW_EXTRALEN) E("%i > BGW_EXTRALEN", user_len + 1 + data_len + 1 + schema_len + 1 + table_len + 1 + reset_len + timeout_len + count_len + live_len);
-    p = (char *)memcpy(p, user, user_len) + user_len + 1;
-    p = (char *)memcpy(p, data, data_len) + data_len + 1;
-    p = (char *)memcpy(p, schema, schema_len) + schema_len + 1;
-    p = (char *)memcpy(p, table, table_len) + table_len + 1;
-    p = (char *)memcpy(p, &reset, reset_len) + reset_len;
-    p = (char *)memcpy(p, &timeout, timeout_len) + timeout_len;
-    p = (char *)memcpy(p, &count, count_len) + count_len;
-    p = (char *)memcpy(p, &live, live_len) + live_len;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) E("!RegisterDynamicBackgroundWorker");
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_NOT_YET_STARTED: E("WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED"); break;
