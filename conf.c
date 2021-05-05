@@ -56,6 +56,18 @@ static void conf_user(const char *user) {
     pfree(buf.data);
 }
 
+static void conf_serialize(const Conf *conf, char *data, size_t size) {
+    size_t len = 0;
+    if ((len += strlcpy(data + len, conf->user, size) + 1) >= size) E("strlcpy");
+    if ((len += strlcpy(data + len, conf->data, size) + 1) >= size) E("strlcpy");
+    if ((len += strlcpy(data + len, conf->schema ? conf->schema : "", size) + 1) >= size) E("strlcpy");
+    if ((len += strlcpy(data + len, conf->table, size) + 1) >= size) E("strlcpy");
+    if ((len += sizeof(conf->reset)) >= size) E("sizeof"); else memcpy(data + len - sizeof(conf->reset), &conf->reset, sizeof(conf->reset));
+    if ((len += sizeof(conf->timeout)) >= size) E("sizeof"); else memcpy(data + len - sizeof(conf->timeout), &conf->timeout, sizeof(conf->timeout));
+    if ((len += sizeof(conf->count)) >= size) E("sizeof"); else memcpy(data + len - sizeof(conf->count), &conf->count, sizeof(conf->count));
+    if ((len += sizeof(conf->live)) >= size) E("sizeof"); else memcpy(data + len - sizeof(conf->live), &conf->live, sizeof(conf->live));
+}
+
 void conf_work(const Conf *conf) {
     BackgroundWorkerHandle *handle;
     pid_t pid;
@@ -67,14 +79,7 @@ void conf_work(const Conf *conf) {
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
     if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task %s%s%s %i %i", conf->schema ? conf->schema : "", conf->schema ? " " : "", conf->table, conf->reset, conf->timeout) >= sizeof(worker.bgw_type) - 1) E("snprintf");
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", conf->user, conf->data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) E("snprintf");
-    if ((len += strlcpy(worker.bgw_extra + len, conf->user, sizeof(worker.bgw_extra)) + 1) >= sizeof(worker.bgw_extra)) E("strlcpy");
-    if ((len += strlcpy(worker.bgw_extra + len, conf->data, sizeof(worker.bgw_extra)) + 1) >= sizeof(worker.bgw_extra)) E("strlcpy");
-    if ((len += strlcpy(worker.bgw_extra + len, conf->schema ? conf->schema : "", sizeof(worker.bgw_extra)) + 1) >= sizeof(worker.bgw_extra)) E("strlcpy");
-    if ((len += strlcpy(worker.bgw_extra + len, conf->table, sizeof(worker.bgw_extra)) + 1) >= sizeof(worker.bgw_extra)) E("strlcpy");
-    if ((len += sizeof(conf->reset)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(conf->reset), &conf->reset, sizeof(conf->reset));
-    if ((len += sizeof(conf->timeout)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(conf->timeout), &conf->timeout, sizeof(conf->timeout));
-    if ((len += sizeof(conf->count)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(conf->count), &conf->count, sizeof(conf->count));
-    if ((len += sizeof(conf->live)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(conf->live), &conf->live, sizeof(conf->live));
+    conf_serialize(conf, worker.bgw_extra, sizeof(worker.bgw_extra));
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
