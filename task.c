@@ -271,6 +271,8 @@ static void task_init(Work *work, Task *task) {
     p += strlen(work->conf.schema) + 1;
     work->conf.table = p;
     p += strlen(work->conf.table) + 1;
+    task->group = p;
+    p += strlen(task->group) + 1;
     if (work->conf.table == work->conf.schema + 1) work->conf.schema = NULL;
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
@@ -306,8 +308,6 @@ static void task_init(Work *work, Task *task) {
     task->id = DatumGetInt64(MyBgworkerEntry->bgw_main_arg);
     task->start = GetCurrentTimestamp();
     task->count = 0;
-    task->group = p;
-    p += strlen(task->group) + 1;
     task->max = *(typeof(task->max) *)p;
     D1("id = %li, group = %s, max = %i", task->id, task->group, task->max);
     pqsignal(SIGTERM, SignalHandlerForShutdownRequestMy);
