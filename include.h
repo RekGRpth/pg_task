@@ -74,17 +74,17 @@
 typedef struct _SPI_plan SPI_plan;
 
 #define CONF \
-    X(char *, data, conf_serialize_char) \
-    X(char *, schema, conf_serialize_char_null) \
-    X(char *, table, conf_serialize_char) \
-    X(char *, user, conf_serialize_char) \
-    X(int32, count, conf_serialize_int32) \
-    X(int32, reset, conf_serialize_int32) \
-    X(int32, timeout, conf_serialize_int32) \
-    X(int64, live, conf_serialize_int64)
+    X(char *, data, serialize_char, deserialize_char) \
+    X(char *, schema, serialize_char_null, deserialize_char_null) \
+    X(char *, table, serialize_char, deserialize_char) \
+    X(char *, user, serialize_char, deserialize_char) \
+    X(int32, count, serialize_int, deserialize_int) \
+    X(int32, reset, serialize_int, deserialize_int) \
+    X(int32, timeout, serialize_int, deserialize_int) \
+    X(int64, live, serialize_int, deserialize_int)
 
 typedef struct Conf {
-#define X(type, name, serialize) type name;
+#define X(type, name, serialize, deserialize) type name;
     CONF
 #undef X
 } Conf;
