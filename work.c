@@ -652,22 +652,12 @@ static void work_conf(Work *work) {
 
 static void work_init(Work *work) {
     char *p = MyBgworkerEntry->bgw_extra;
-    work->conf.data = p;
-    p += strlen(work->conf.data) + 1;
-    work->conf.schema = p;
-    p += strlen(work->conf.schema) + 1;
-    work->conf.table = p;
-    p += strlen(work->conf.table) + 1;
-    work->conf.user = p;
-    p += strlen(work->conf.user) + 1;
-    work->conf.count = *(typeof(work->conf.count) *)p;
-    p += sizeof(work->conf.count);
-    work->conf.reset = *(typeof(work->conf.reset) *)p;
-    p += sizeof(work->conf.reset);
-    work->conf.timeout = *(typeof(work->conf.timeout) *)p;
-    p += sizeof(work->conf.timeout);
-    work->conf.live = *(typeof(work->conf.live) *)p;
-    if (work->conf.table == work->conf.schema + 1) work->conf.schema = NULL;
+#define deserialize_char(dst) (dst) = p; p += strlen(dst) + 1;
+#define deserialize_char_null(dst) deserialize_char(dst); if (p == (dst) + 1) (dst) = NULL;
+#define deserialize_int(dst) (dst) = *(typeof(dst) *)p; p += sizeof(dst);
+#define X(type, name, serialize, deserialize) deserialize( work->conf.name);
+    CONF
+#undef X
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     if (!MyProcPort->user_name) MyProcPort->user_name = work->conf.user;
