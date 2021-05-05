@@ -73,15 +73,20 @@
 
 typedef struct _SPI_plan SPI_plan;
 
+#define CONF \
+    X(char *, data, conf_serialize_char) \
+    X(char *, schema, conf_serialize_char_null) \
+    X(char *, table, conf_serialize_char) \
+    X(char *, user, conf_serialize_char) \
+    X(int32, count, conf_serialize_int32) \
+    X(int32, reset, conf_serialize_int32) \
+    X(int32, timeout, conf_serialize_int32) \
+    X(int64, live, conf_serialize_int64)
+
 typedef struct Conf {
-    char *data;
-    char *schema;
-    char *table;
-    char *user;
-    int32 count;
-    int32 reset;
-    int32 timeout;
-    int64 live;
+#define X(type, name, serialize) type name;
+    CONF
+#undef X
 } Conf;
 
 typedef struct Work {

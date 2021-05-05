@@ -652,20 +652,20 @@ static void work_conf(Work *work) {
 
 static void work_init(Work *work) {
     char *p = MyBgworkerEntry->bgw_extra;
-    work->conf.user = p;
-    p += strlen(work->conf.user) + 1;
     work->conf.data = p;
     p += strlen(work->conf.data) + 1;
     work->conf.schema = p;
     p += strlen(work->conf.schema) + 1;
     work->conf.table = p;
     p += strlen(work->conf.table) + 1;
+    work->conf.user = p;
+    p += strlen(work->conf.user) + 1;
+    work->conf.count = *(typeof(work->conf.count) *)p;
+    p += sizeof(work->conf.count);
     work->conf.reset = *(typeof(work->conf.reset) *)p;
     p += sizeof(work->conf.reset);
     work->conf.timeout = *(typeof(work->conf.timeout) *)p;
     p += sizeof(work->conf.timeout);
-    work->conf.count = *(typeof(work->conf.count) *)p;
-    p += sizeof(work->conf.count);
     work->conf.live = *(typeof(work->conf.live) *)p;
     if (work->conf.table == work->conf.schema + 1) work->conf.schema = NULL;
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
