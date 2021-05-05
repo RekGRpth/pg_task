@@ -56,26 +56,6 @@ static void conf_user(const char *user) {
     pfree(buf.data);
 }
 
-//static size_t conf_serialize_char(size_t len, const char *src, char *data, size_t size) {
-#define conf_serialize_char(len, src, data, size) if ((len += strlcpy(data + len, src, size) + 1) >= size) E("strlcpy")
-//    return len;
-//}
-
-//static size_t conf_serialize_char_null(size_t len, const char *src, char *data, size_t size) {
-#define conf_serialize_char_null(len, src, data, size) conf_serialize_char(len, src ? src : "", data, size)
-//    return conf_serialize_char(len, src ? src : "", data, size);
-//}
-
-//static size_t conf_serialize_int32(size_t len, int32 src, char *data, size_t size) {
-#define conf_serialize_int32(len, src, data, size) if ((len += sizeof(src)) >= size) E("sizeof"); else memcpy(data + len - sizeof(src), &src, sizeof(src));
-//    return len;
-//}
-
-//static size_t conf_serialize_int64(size_t len, int64 src, char *data, size_t size) {
-#define conf_serialize_int64(len, src, data, size) if ((len += sizeof(src)) >= size) E("sizeof"); else memcpy(data + len - sizeof(src), &src, sizeof(src));
-//    return len;
-//}
-
 void conf_work(const Conf *conf) {
     BackgroundWorkerHandle *handle;
     pid_t pid;
@@ -87,7 +67,11 @@ void conf_work(const Conf *conf) {
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
     if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task %s%s%s %i %i", conf->schema ? conf->schema : "", conf->schema ? " " : "", conf->table, conf->reset, conf->timeout) >= sizeof(worker.bgw_type) - 1) E("snprintf");
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", conf->user, conf->data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) E("snprintf");
-#define X(type, name, serialize) serialize(len, conf->name, worker.bgw_extra, sizeof(worker.bgw_extra));
+#define conf_serialize_char(len, src) if ((len += strlcpy(worker.bgw_extra + len, src, sizeof(worker.bgw_extra)) + 1) >= sizeof(worker.bgw_extra)) E("strlcpy")
+#define conf_serialize_char_null(len, src) conf_serialize_char(len, src ? src : "")
+#define conf_serialize_int32(len, src) if ((len += sizeof(src)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(src), &src, sizeof(src));
+#define conf_serialize_int64(len, src) if ((len += sizeof(src)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(src), &src, sizeof(src));
+#define X(type, name, serialize) serialize(len, conf->name);
     CONF
 #undef X
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
