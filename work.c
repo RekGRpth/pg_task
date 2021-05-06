@@ -361,11 +361,20 @@ static void work_success(Task *task, PGresult *result) {
 }
 
 static void work_result(Task *task) {
-    for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
-        case PGRES_COMMAND_OK: work_command(task, result); break;
-        case PGRES_FATAL_ERROR: W("%li: PQresultStatus == PGRES_FATAL_ERROR and %.*s", task->id, (int)strlen(PQresultErrorMessage(result)) - 1, PQresultErrorMessage(result)); work_fail(task, result); break;
-        case PGRES_TUPLES_OK: work_success(task, result); break;
-        default: D1("%li: %s", task->id, PQresStatus(PQresultStatus(result))); break;
+    for (PGresult *result; (result = PQgetResult(task->conn)); PQclear(result)) {
+        switch (PQresultStatus(result)) {
+            case PGRES_COMMAND_OK: work_command(task, result); break;
+            case PGRES_FATAL_ERROR: W("%li: PQresultStatus == PGRES_FATAL_ERROR and %.*s", task->id, (int)strlen(PQresultErrorMessage(result)) - 1, PQresultErrorMessage(result)); work_fail(task, result); break;
+            case PGRES_TUPLES_OK: work_success(task, result); break;
+            default: D1("%li: %s", task->id, PQresStatus(PQresultStatus(result))); break;
+        }
+        if (!PQconsumeInput(task->conn)) { work_error(task, "!PQconsumeInput", PQerrorMessage(task->conn), true); return; }
+        switch (PQflush(task->conn)) {
+            case 0: break;
+            case 1: D1("%li: PQflush == 1", task->id); task->event = WL_SOCKET_MASK; return;
+            case -1: work_error(task, "PQflush == -1", PQerrorMessage(task->conn), true); return;
+        }
+        if (PQisBusy(task->conn)) { W("%li: PQisBusy", task->id); task->event = WL_SOCKET_READABLE; return; }
     }
     work_done(task);
 }
