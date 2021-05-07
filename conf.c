@@ -3,10 +3,10 @@
 extern char *default_null;
 
 static void conf_data(const char *user, const char *data) {
-    StringInfoData buf;
-    const char *user_quote = quote_identifier(user);
     const char *data_quote = quote_identifier(data);
+    const char *user_quote = quote_identifier(user);
     List *names;
+    StringInfoData buf;
     D1("user = %s, data = %s", user, data);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, SQL(CREATE DATABASE %s WITH OWNER = %s), data_quote, user_quote);
@@ -31,9 +31,9 @@ static void conf_data(const char *user, const char *data) {
 }
 
 static void conf_user(const char *user) {
-    StringInfoData buf;
     const char *user_quote = quote_identifier(user);
     List *names;
+    StringInfoData buf;
     D1("user = %s", user);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, SQL(CREATE ROLE %s WITH LOGIN), user_quote);
@@ -58,8 +58,8 @@ static void conf_user(const char *user) {
 
 void conf_work(const Conf *conf) {
     BackgroundWorkerHandle *handle;
-    pid_t pid;
     BackgroundWorker worker;
+    pid_t pid;
     size_t len = 0;
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li", conf->user, conf->data, conf->schema ? conf->schema : default_null, conf->table, conf->reset, conf->timeout, conf->count, conf->live);
     MemSet(&worker, 0, sizeof(worker));
