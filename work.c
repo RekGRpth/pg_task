@@ -231,7 +231,7 @@ static void work_index(Work *work, const char *index) {
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     } else if ((relation = relation_openrv_extended(rangevar, NoLock, true))) {
-        if (relation->rd_index && relation->rd_index->indrelid != work->oid) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+        if (relation->rd_index && relation->rd_index->indrelid != work->table) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
         relation_close(relation, NoLock);
     }
     SPI_commit_my();
@@ -471,7 +471,7 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     task->id = id;
     task->max = max;
     task->work = work;
-    D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->oid);
+    D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->table);
     if (!opts) { work_error(task, "!PQconninfoParse", err, false); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
@@ -496,7 +496,7 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     appendStringInfo(&buf2, " -c pg_task.user=%s", work->user);
     if (work->conf.schema) appendStringInfo(&buf2, " -c pg_task.schema=%s", work->conf.schema);
     appendStringInfo(&buf2, " -c pg_task.table=%s", work->conf.table);
-    appendStringInfo(&buf2, " -c pg_task.oid=%i", work->oid);
+    appendStringInfo(&buf2, " -c pg_task.oid=%i", work->table);
     appendStringInfo(&buf2, " -c pg_task.group=%s", group);
     arg++;
     keywords[arg] = "options";
@@ -570,14 +570,14 @@ static void work_table(Work *work) {
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
-    work->oid = RangeVarGetRelid(rangevar, NoLock, false);
+    work->table = RangeVarGetRelid(rangevar, NoLock, false);
     SPI_commit_my();
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
     set_config_option("pg_task.table", work->conf.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     resetStringInfo(&buf);
-    appendStringInfo(&buf, "%i", work->oid);
+    appendStringInfo(&buf, "%i", work->table);
     set_config_option("pg_task.oid", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
 }
@@ -587,7 +587,7 @@ static void work_task(const Work *work, const int64 id, const char *group, const
     pid_t pid;
     BackgroundWorker worker;
     size_t len = 0;
-    D1("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, id, group, max, work->oid);
+    D1("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, id, group, max, work->table);
     MemSet(&worker, 0, sizeof(worker));
     if (strlcpy(worker.bgw_function_name, "task", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
@@ -775,7 +775,7 @@ void work(Datum main_arg) {
     long cur_timeout = -1;
     Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
     work_init(work);
-    if (!init_data_user_table_lock(MyDatabaseId, GetUserId(), work->oid)) W("!init_data_user_table_lock(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid); else while (!ShutdownRequestPending) {
+    if (!init_data_user_table_lock(MyDatabaseId, GetUserId(), work->table)) W("!init_data_user_table_lock(%i, %i, %i)", MyDatabaseId, GetUserId(), work->table); else while (!ShutdownRequestPending) {
         int nevents = 2 + work_nevents(work);
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
@@ -803,7 +803,7 @@ void work(Datum main_arg) {
         if (work->conf.count && work->count >= work->conf.count) break;
         if (work->conf.live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), work->conf.live * 1000)) break;
     }
-    if (!init_data_user_table_unlock(MyDatabaseId, GetUserId(), work->oid)) W("!init_data_user_table_unlock(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid);
+    if (!init_data_user_table_unlock(MyDatabaseId, GetUserId(), work->table)) W("!init_data_user_table_unlock(%i, %i, %i)", MyDatabaseId, GetUserId(), work->table);
     work_fini(work);
     pfree(work);
 }

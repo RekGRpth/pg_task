@@ -63,7 +63,7 @@ bool task_done(Task *task) {
     if (task->error.data) pfree((void *)values[3]);
     if (task->null) pfree(task->null);
     task->null = NULL;
-    if (!init_table_id_unlock(work->oid, task->id)) { W("!init_table_id_unlock(%i, %li)", work->oid, task->id); return true; }
+    if (!init_table_id_unlock(work->table, task->id)) { W("!init_table_id_unlock(%i, %li)", work->table, task->id); return true; }
     if (ShutdownRequestPending) return true;
     return exit;
 }
@@ -105,9 +105,9 @@ bool task_work(Task *task) {
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     if (ShutdownRequestPending) return true;
-    if (!init_table_id_lock(work->oid, task->id)) { W("!init_table_id_lock(%i, %li)", work->oid, task->id); return true; }
+    if (!init_table_id_lock(work->table, task->id)) { W("!init_table_id_lock(%i, %li)", work->table, task->id); return true; }
     task->count++;
-    D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work->oid, task->count, task->pid);
+    D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work->table, task->count, task->pid);
     if (!task->conn) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
@@ -277,7 +277,7 @@ static void task_init(Work *work, Task *task) {
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
-    D1("user = %s, data = %s, schema = %s, table = %s, oid = %i, id = %li, group = %s, max = %i", work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, work->oid, task->id, task->group, task->max);
+    D1("user = %s, data = %s, schema = %s, table = %s, oid = %i, id = %li, group = %s, max = %i", work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, work->table, task->id, task->group, task->max);
     set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (work->conf.schema) set_config_option("pg_task.schema", work->conf.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
@@ -293,7 +293,7 @@ static void task_init(Work *work, Task *task) {
     appendStringInfoString(&buf, "state");
     work->schema_type = buf.data;
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "%i", work->oid);
+    appendStringInfo(&buf, "%i", work->table);
     set_config_option("pg_task.oid", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
     if (work->conf.schema && schema_quote && work->conf.schema != schema_quote) pfree((void *)schema_quote);

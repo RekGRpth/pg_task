@@ -110,7 +110,7 @@ typedef struct Conf {
     X(work->data, serialize_char, deserialize_char) \
     X(work->user, serialize_char, deserialize_char) \
     X(group, serialize_char, deserialize_char) \
-    X(work->oid, serialize_int, deserialize_int) \
+    X(work->table, serialize_int, deserialize_int) \
     X(max, serialize_int, deserialize_int)
 
 typedef struct Work {
@@ -122,7 +122,7 @@ typedef struct Work {
     Conf conf;
     dlist_head head;
     int32 count;
-    Oid oid;
+    Oid table;
 } Work;
 
 typedef struct Task {
