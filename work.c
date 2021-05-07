@@ -679,7 +679,6 @@ static void work_init(Work *work) {
 #define X(type, name, get, serialize, deserialize) deserialize(work->conf.name);
     CONF
 #undef X
-    D1("user_oid = %i, data_oid = %i", work->conf.user, work->conf.data);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
     BackgroundWorkerUnblockSignals();
@@ -697,7 +696,7 @@ static void work_init(Work *work) {
     if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li", work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, work->conf.reset, work->conf.timeout, work->conf.count, work->conf.live);
+    D1("user_oid = %i, data_oid = %i, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li", work->conf.user, work->conf.data, work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, work->conf.reset, work->conf.timeout, work->conf.count, work->conf.live);
     work_conf(work);
 }
 
