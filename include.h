@@ -43,7 +43,6 @@
 #include <access/xact.h>
 #include <catalog/heap.h>
 #include <catalog/namespace.h>
-#include <catalog/pg_authid.h>
 #include <catalog/pg_type.h>
 #include <commands/async.h>
 #include <commands/dbcommands.h>
@@ -70,7 +69,6 @@
 #include <utils/regproc.h>
 #include <utils/rel.h>
 #include <utils/snapmgr.h>
-#include <utils/syscache.h>
 #include <utils/timeout.h>
 
 typedef struct _SPI_plan SPI_plan;
@@ -105,11 +103,10 @@ typedef struct Conf {
 } Conf;
 
 #define WORK \
-    X(work->conf.schema, serialize_char_null, deserialize_char_null) \
-    X(work->conf.table, serialize_char, deserialize_char) \
-    X(work->data, serialize_char, deserialize_char) \
-    X(work->user, serialize_char, deserialize_char) \
     X(group, serialize_char, deserialize_char) \
+    X(work->conf.data, serialize_int, deserialize_int) \
+    X(work->conf.user, serialize_int, deserialize_int) \
+    X(work->schema, serialize_int, deserialize_int) \
     X(work->table, serialize_int, deserialize_int) \
     X(max, serialize_int, deserialize_int)
 
@@ -122,6 +119,7 @@ typedef struct Work {
     Conf conf;
     dlist_head head;
     int32 count;
+    Oid schema;
     Oid table;
 } Work;
 
@@ -172,8 +170,8 @@ Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDescData *tupdesc, const char 
 DestReceiver *CreateDestReceiverMy(Task *task);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void BeginCommandMy(CommandTag commandTag, Task *task);
-void conf_work(const Conf *conf, const char *data, const char *user);
 void conf(Datum main_arg);
+void conf_work(const Conf *conf, const char *data, const char *user);
 void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_output);
 void exec_simple_query_my(Task *task);
 void init_escape(StringInfoData *buf, const char *data, int len, char escape);
@@ -187,10 +185,10 @@ void SPI_execute_plan_my(SPI_plan *plan, Datum *values, const char *nulls, int r
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res, bool commit);
 void SPI_finish_my(void);
 void SPI_start_transaction_my(const char *src);
+void task(Datum main_arg);
 void task_delete(Task *task);
 void task_error(Task *task, ErrorData *edata);
 void task_repeat(Task *task);
-void task(Datum main_arg);
 void work(Datum main_arg);
 
 #endif // _INCLUDE_H_

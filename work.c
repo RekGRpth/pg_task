@@ -320,6 +320,7 @@ static void work_schema(Work *work) {
     names = stringToQualifiedNameList(schema_quote);
     SPI_connect_my(buf.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+    work->schema = get_namespace_oid(strVal(linitial(names)), false);
     SPI_commit_my();
     SPI_finish_my();
     list_free_deep(names);
@@ -663,16 +664,6 @@ static void work_conf(Work *work) {
     dlist_init(&work->head);
 }
 
-static char *get_role_name(Oid oid) {
-    char *result = NULL;
-    HeapTupleData *tuple = SearchSysCache1(AUTHOID, ObjectIdGetDatum(oid));
-    if (HeapTupleIsValid(tuple)) {
-        result = pstrdup(NameStr(((Form_pg_authid) GETSTRUCT(tuple))->rolname));
-        ReleaseSysCache(tuple);
-    }
-    return result;
-}
-
 static void work_init(Work *work) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContextData *oldcontext = CurrentMemoryContext;
@@ -688,7 +679,7 @@ static void work_init(Work *work) {
     StartTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
     work->data = get_database_name(work->conf.data);
-    work->user = get_role_name(work->conf.user);
+    work->user = GetUserNameFromId(work->conf.user, false);
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");

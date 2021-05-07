@@ -263,10 +263,24 @@ static void task_init(Work *work, Task *task) {
     const char *schema_quote;
     const char *table_quote;
     int32 max;
+    MemoryContextData *oldcontext = CurrentMemoryContext;
     StringInfoData buf;
 #define X(src, serialize, deserialize) deserialize(src);
     WORK
 #undef X
+    pqsignal(SIGTERM, SignalHandlerForShutdownRequestMy);
+    BackgroundWorkerUnblockSignals();
+    BackgroundWorkerInitializeConnectionByOid(work->conf.data, work->conf.user, 0);
+    pgstat_report_appname(MyBgworkerEntry->bgw_type);
+    process_session_preload_libraries();
+    StartTransactionCommand();
+    MemoryContextSwitchTo(oldcontext);
+    work->conf.schema = get_namespace_name(work->schema);
+    work->conf.table = get_rel_name(work->table);
+    work->data = get_database_name(work->conf.data);
+    work->user = GetUserNameFromId(work->conf.user, false);
+    CommitTransactionCommand();
+    MemoryContextSwitchTo(oldcontext);
     task->group = group;
     task->id = DatumGetInt64(MyBgworkerEntry->bgw_main_arg);
     task->max = max;
@@ -276,12 +290,13 @@ static void task_init(Work *work, Task *task) {
     if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
-    D1("user = %s, data = %s, schema = %s, table = %s, oid = %i, id = %li, group = %s, max = %i", work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, work->table, task->id, task->group, task->max);
     set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.group", task->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (work->conf.schema) set_config_option("pg_task.schema", work->conf.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.table", work->conf.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
+    D1("user = %s, data = %s, schema = %s, table = %s, oid = %i, id = %li, group = %s, max = %i", work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, work->table, task->id, task->group, task->max);
     schema_quote = work->conf.schema ? quote_identifier(work->conf.schema) : NULL;
     table_quote = quote_identifier(work->conf.table);
     initStringInfoMy(TopMemoryContext, &buf);
@@ -301,12 +316,6 @@ static void task_init(Work *work, Task *task) {
     task->pid = MyProcPid;
     task->start = GetCurrentTimestamp();
     task->count = 0;
-    pqsignal(SIGTERM, SignalHandlerForShutdownRequestMy);
-    BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnection(work->data, work->user, 0);
-    pgstat_report_appname(MyBgworkerEntry->bgw_type);
-    process_session_preload_libraries();
-    set_config_option("pg_task.group", task->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
 }
 
 static void task_latch(void) {
