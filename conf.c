@@ -120,8 +120,8 @@ static void conf_check(void) {
         Oid user_oid = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user_oid", false));
         D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, user_oid = %i, data_oid = %i, pid = %i", row, conf.user, conf.data, conf.schema ? conf.schema : default_null, conf.table, conf.reset, conf.timeout, conf.count, conf.live, user_oid, data_oid, pid);
         if (!pid) {
-            if (!user_oid) conf_user(conf.user);
-            if (!data_oid) conf_data(conf.user, conf.data);
+            if (!user_oid) user_oid = conf_user(conf.user);
+            if (!data_oid) data_oid = conf_data(conf.user, conf.data);
             conf_work(&conf);
         }
         pfree(conf.user);
