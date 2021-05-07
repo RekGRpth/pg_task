@@ -43,6 +43,7 @@
 #include <access/xact.h>
 #include <catalog/heap.h>
 #include <catalog/namespace.h>
+#include <catalog/pg_authid.h>
 #include <catalog/pg_type.h>
 #include <commands/async.h>
 #include <commands/dbcommands.h>
@@ -69,6 +70,7 @@
 #include <utils/regproc.h>
 #include <utils/rel.h>
 #include <utils/snapmgr.h>
+#include <utils/syscache.h>
 #include <utils/timeout.h>
 
 typedef struct _SPI_plan SPI_plan;
@@ -87,14 +89,14 @@ typedef struct _SPI_plan SPI_plan;
 #define deserialize_int(dst) (dst) = *(typeof(dst) *)p; p += sizeof(dst);
 
 #define CONF \
-    X(char *, data, get_char, serialize_char, deserialize_char) \
     X(char *, schema, get_char_null, serialize_char_null, deserialize_char_null) \
     X(char *, table, get_char, serialize_char, deserialize_char) \
-    X(char *, user, get_char, serialize_char, deserialize_char) \
     X(int32, count, get_int32, serialize_int, deserialize_int) \
     X(int32, reset, get_int32, serialize_int, deserialize_int) \
     X(int32, timeout, get_int32, serialize_int, deserialize_int) \
-    X(int64, live, get_int64, serialize_int, deserialize_int)
+    X(int64, live, get_int64, serialize_int, deserialize_int) \
+    X(Oid, data, get_int32, serialize_int, deserialize_int) \
+    X(Oid, user, get_int32, serialize_int, deserialize_int)
 
 typedef struct Conf {
 #define X(type, name, get, serialize, deserialize) type name;
@@ -103,18 +105,20 @@ typedef struct Conf {
 } Conf;
 
 #define WORK \
-    X(work->conf.data, serialize_char, deserialize_char) \
     X(work->conf.schema, serialize_char_null, deserialize_char_null) \
     X(work->conf.table, serialize_char, deserialize_char) \
-    X(work->conf.user, serialize_char, deserialize_char) \
+    X(work->data, serialize_char, deserialize_char) \
+    X(work->user, serialize_char, deserialize_char) \
     X(group, serialize_char, deserialize_char) \
     X(work->oid, serialize_int, deserialize_int) \
     X(max, serialize_int, deserialize_int)
 
 typedef struct Work {
+    char *data;
     char *pids;
     char *schema_table;
     char *schema_type;
+    char *user;
     Conf conf;
     dlist_head head;
     int32 count;
@@ -168,7 +172,7 @@ Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDescData *tupdesc, const char 
 DestReceiver *CreateDestReceiverMy(Task *task);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void BeginCommandMy(CommandTag commandTag, Task *task);
-void conf_work(const Conf *conf);
+void conf_work(const Conf *conf, const char *data, const char *user);
 void conf(Datum main_arg);
 void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_output);
 void exec_simple_query_my(Task *task);

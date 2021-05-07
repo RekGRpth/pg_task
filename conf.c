@@ -60,17 +60,17 @@ static Oid conf_user(const char *user) {
     return oid;
 }
 
-void conf_work(const Conf *conf) {
+void conf_work(const Conf *conf, const char *data, const char *user) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker;
     pid_t pid;
     size_t len = 0;
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li", conf->user, conf->data, conf->schema ? conf->schema : default_null, conf->table, conf->reset, conf->timeout, conf->count, conf->live);
+    D1("user_oid = %i, data_oid = %i, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li", conf->user, conf->data, user, data, conf->schema ? conf->schema : default_null, conf->table, conf->reset, conf->timeout, conf->count, conf->live);
     MemSet(&worker, 0, sizeof(worker));
     if (strlcpy(worker.bgw_function_name, "work", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
     if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task %s%s%s %i %i", conf->schema ? conf->schema : "", conf->schema ? " " : "", conf->table, conf->reset, conf->timeout) >= sizeof(worker.bgw_type) - 1) E("snprintf");
-    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", conf->user, conf->data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) E("snprintf");
+    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", user, data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) E("snprintf");
 #define X(type, name, get, serialize, deserialize) serialize(conf->name);
     CONF
 #undef X
@@ -115,17 +115,19 @@ static void conf_check(void) {
     CONF
 #undef X
         };
+        char *data = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", false));
+        char *user = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", false));
         int32 pid = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "pid", false));
-        Oid data_oid = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data_oid", false));
-        Oid user_oid = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user_oid", false));
-        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, user_oid = %i, data_oid = %i, pid = %i", row, conf.user, conf.data, conf.schema ? conf.schema : default_null, conf.table, conf.reset, conf.timeout, conf.count, conf.live, user_oid, data_oid, pid);
+        conf.data = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data_oid", false));
+        conf.user = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user_oid", false));
+        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, user_oid = %i, data_oid = %i, pid = %i", row, user, data, conf.schema ? conf.schema : default_null, conf.table, conf.reset, conf.timeout, conf.count, conf.live, conf.user, conf.data, pid);
         if (!pid) {
-            if (!user_oid) user_oid = conf_user(conf.user);
-            if (!data_oid) data_oid = conf_data(conf.user, conf.data);
-            conf_work(&conf);
+            if (!conf.user) conf.user = conf_user(user);
+            if (!conf.data) conf.data = conf_data(user, data);
+            conf_work(&conf, data, user);
         }
-        pfree(conf.user);
-        pfree(conf.data);
+        pfree(user);
+        pfree(data);
         if (conf.schema) pfree(conf.schema);
         pfree(conf.table);
     }

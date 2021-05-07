@@ -273,13 +273,13 @@ static void task_init(Work *work, Task *task) {
     task->work = work;
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-    if (!MyProcPort->user_name) MyProcPort->user_name = work->conf.user;
-    if (!MyProcPort->database_name) MyProcPort->database_name = work->conf.data;
+    if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
+    if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
-    D1("user = %s, data = %s, schema = %s, table = %s, oid = %i, id = %li, group = %s, max = %i", work->conf.user, work->conf.data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, work->oid, task->id, task->group, task->max);
-    set_config_option("pg_task.data", work->conf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option("pg_task.user", work->conf.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    D1("user = %s, data = %s, schema = %s, table = %s, oid = %i, id = %li, group = %s, max = %i", work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, work->oid, task->id, task->group, task->max);
+    set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (work->conf.schema) set_config_option("pg_task.schema", work->conf.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.table", work->conf.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     schema_quote = work->conf.schema ? quote_identifier(work->conf.schema) : NULL;
@@ -303,7 +303,7 @@ static void task_init(Work *work, Task *task) {
     task->count = 0;
     pqsignal(SIGTERM, SignalHandlerForShutdownRequestMy);
     BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnection(work->conf.data, work->conf.user, 0);
+    BackgroundWorkerInitializeConnection(work->data, work->user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
     process_session_preload_libraries();
     set_config_option("pg_task.group", task->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
