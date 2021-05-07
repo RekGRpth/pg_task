@@ -589,7 +589,7 @@ static void work_task(const Work *work, const int64 id, const char *group, const
     size_t len = 0;
     D1("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->conf.user, work->conf.data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, id, group, max, work->oid);
     MemSet(&worker, 0, sizeof(worker));
-    if (strlcpy(worker.bgw_function_name, "task_worker", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
+    if (strlcpy(worker.bgw_function_name, "task", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
     if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task %s%s%s %s", work->conf.schema ? work->conf.schema : "", work->conf.schema ? " " : "", work->conf.table, group) >= sizeof(worker.bgw_type) - 1) E("snprintf");
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", work->conf.user, work->conf.data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) E("snprintf");
@@ -752,7 +752,7 @@ static void work_writeable(Task *task) {
     task->socket(task);
 }
 
-void work_worker(Datum main_arg) {
+void work(Datum main_arg) {
     instr_time cur_time;
     instr_time start_time;
     long cur_timeout = -1;

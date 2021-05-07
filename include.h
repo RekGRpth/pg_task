@@ -169,7 +169,7 @@ DestReceiver *CreateDestReceiverMy(Task *task);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void BeginCommandMy(CommandTag commandTag, Task *task);
 void conf_work(const Conf *conf);
-void conf_worker(Datum main_arg);
+void conf(Datum main_arg);
 void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_output);
 void exec_simple_query_my(Task *task);
 void init_escape(StringInfoData *buf, const char *data, int len, char escape);
@@ -186,7 +186,7 @@ void SPI_start_transaction_my(const char *src);
 void task_delete(Task *task);
 void task_error(Task *task, ErrorData *edata);
 void task_repeat(Task *task);
-void task_worker(Datum main_arg);
-void work_worker(Datum main_arg);
+void task(Datum main_arg);
+void work(Datum main_arg);
 
 #endif // _INCLUDE_H_

@@ -350,7 +350,7 @@ static bool task_timeout(Task *task) {
     return !task->live || task_live(task);
 }
 
-void task_worker(Datum main_arg) {
+void task(Datum main_arg) {
     Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
     Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
     task_init(work, task);
