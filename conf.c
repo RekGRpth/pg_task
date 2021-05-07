@@ -2,23 +2,24 @@
 
 extern char *default_null;
 
-static void conf_data(const char *user, const char *data) {
+static Oid conf_data(const char *user, const char *data) {
     const char *data_quote = quote_identifier(data);
     const char *user_quote = quote_identifier(user);
     List *names;
+    Oid oid;
     StringInfoData buf;
     D1("user = %s, data = %s", user, data);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, SQL(CREATE DATABASE %s WITH OWNER = %s), data_quote, user_quote);
     names = stringToQualifiedNameList(data_quote);
     SPI_start_transaction_my(buf.data);
-    if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
+    if (!OidIsValid(oid = get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
         stmt->dbname = (char *)data;
         stmt->options = list_make1(makeDefElem("owner", (Node *)makeString((char *)user), -1));
         pstate->p_sourcetext = buf.data;
-        createdb(pstate, stmt);
+        oid = createdb(pstate, stmt);
         list_free_deep(stmt->options);
         free_parsestate(pstate);
         pfree(stmt);
@@ -28,24 +29,26 @@ static void conf_data(const char *user, const char *data) {
     if (user_quote != user) pfree((void *)user_quote);
     if (data_quote != data) pfree((void *)data_quote);
     pfree(buf.data);
+    return oid;
 }
 
-static void conf_user(const char *user) {
+static Oid conf_user(const char *user) {
     const char *user_quote = quote_identifier(user);
     List *names;
+    Oid oid;
     StringInfoData buf;
     D1("user = %s", user);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, SQL(CREATE ROLE %s WITH LOGIN), user_quote);
     names = stringToQualifiedNameList(user_quote);
     SPI_start_transaction_my(buf.data);
-    if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
+    if (!OidIsValid(oid = get_role_oid(strVal(linitial(names)), true))) {
         CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
         ParseState *pstate = make_parsestate(NULL);
         stmt->role = (char *)user;
         stmt->options = list_make1(makeDefElem("canlogin", (Node *)makeInteger(1), -1));
         pstate->p_sourcetext = buf.data;
-        CreateRole(pstate, stmt);
+        oid = CreateRole(pstate, stmt);
         list_free_deep(stmt->options);
         free_parsestate(pstate);
         pfree(stmt);
@@ -54,6 +57,7 @@ static void conf_user(const char *user) {
     list_free_deep(names);
     if (user_quote != user) pfree((void *)user_quote);
     pfree(buf.data);
+    return oid;
 }
 
 void conf_work(const Conf *conf) {
