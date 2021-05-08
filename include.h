@@ -155,6 +155,7 @@ typedef struct Task {
     Work *work;
 } Task;
 
+bool init_check_ascii_all(BackgroundWorker *worker);
 bool init_data_user_table_lock(Oid data, Oid user, Oid table);
 bool init_data_user_table_unlock(Oid data, Oid user, Oid table);
 bool init_oid_is_string(Oid oid);

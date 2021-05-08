@@ -12,6 +12,21 @@ static int default_count;
 static int default_reset;
 static int default_timeout;
 
+static bool init_check_ascii(char *data) {
+    for (char *ch = data; *ch; ch++) {
+        if (32 <= *ch && *ch <= 127) continue;
+        if (*ch == '\n' || *ch == '\r' || *ch == '\t') continue;
+        return true;
+    }
+    return false;
+}
+
+bool init_check_ascii_all(BackgroundWorker *worker) {
+    if (init_check_ascii(worker->bgw_type)) return true;
+    if (init_check_ascii(worker->bgw_name)) return true;
+    return false;
+}
+
 bool init_data_user_table_lock(Oid data, Oid user, Oid table) {
     LOCKTAG tag = {data, user, table, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
     return LockAcquire(&tag, AccessExclusiveLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
@@ -68,6 +83,7 @@ static void init_work(bool dynamic) {
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
+    if (init_check_ascii_all(&worker)) E("init_check_ascii_all");
     if (dynamic) {
         IsUnderPostmaster = true;
         if (!RegisterDynamicBackgroundWorker(&worker, NULL)) E("!RegisterDynamicBackgroundWorker");

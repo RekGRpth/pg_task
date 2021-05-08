@@ -78,6 +78,7 @@ void conf_work(const Conf *conf, const char *data, const char *user) {
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
+    if (init_check_ascii_all(&worker)) E("init_check_ascii_all");
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) E("!RegisterDynamicBackgroundWorker");
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_NOT_YET_STARTED: E("WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED"); break;
