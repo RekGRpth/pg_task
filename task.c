@@ -63,8 +63,9 @@ bool task_done(Task *task) {
     if (task->error.data) pfree((void *)values[3]);
     if (task->null) pfree(task->null);
     task->null = NULL;
-    if (!init_table_id_unlock(work->table, task->id)) { W("!init_table_id_unlock(%i, %li)", work->table, task->id); return true; }
-    if (ShutdownRequestPending) return true;
+    if (task->lock && !init_table_id_unlock(work->table, task->id)) { W("!init_table_id_unlock(%i, %li)", work->table, task->id); exit = true; }
+    task->lock = false;
+    if (ShutdownRequestPending) exit = true;
     return exit;
 }
 
@@ -106,6 +107,7 @@ bool task_work(Task *task) {
     static char *command = NULL;
     if (ShutdownRequestPending) return true;
     if (!init_table_id_lock(work->table, task->id)) { W("!init_table_id_lock(%i, %li)", work->table, task->id); return true; }
+    task->lock = true;
     task->count++;
     D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work->table, task->count, task->pid);
     if (!task->conn) {
