@@ -103,12 +103,12 @@ typedef struct Conf {
 } Conf;
 
 #define WORK \
-    X(group, serialize_char, deserialize_char) \
+    X(task->group, serialize_char, deserialize_char) \
+    X(task->max, serialize_int, deserialize_int) \
     X(work->conf.data, serialize_int, deserialize_int) \
     X(work->conf.user, serialize_int, deserialize_int) \
     X(work->schema, serialize_int, deserialize_int) \
-    X(work->table, serialize_int, deserialize_int) \
-    X(max, serialize_int, deserialize_int)
+    X(work->table, serialize_int, deserialize_int)
 
 typedef struct Work {
     char *data;

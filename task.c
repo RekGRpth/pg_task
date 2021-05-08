@@ -258,11 +258,9 @@ static void SignalHandlerForShutdownRequestMy(SIGNAL_ARGS) {
 }
 
 static void task_init(Work *work, Task *task) {
-    char *group;
     char *p = MyBgworkerEntry->bgw_extra;
     const char *schema_quote;
     const char *table_quote;
-    int32 max;
     MemoryContextData *oldcontext = CurrentMemoryContext;
     StringInfoData buf;
 #define X(src, serialize, deserialize) deserialize(src);
@@ -281,9 +279,7 @@ static void task_init(Work *work, Task *task) {
     work->user = GetUserNameFromId(work->conf.user, false);
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
-    task->group = group;
     task->id = DatumGetInt64(MyBgworkerEntry->bgw_main_arg);
-    task->max = max;
     task->work = work;
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";

@@ -455,23 +455,16 @@ static void work_connect(Task *task) {
     }
 }
 
-static void work_remote(Work *work, const int64 id, char *group, char *remote, const int max) {
-    const char **keywords;
-    const char **values;
-    StringInfoData buf, buf2;
-    int arg = 3;
+static void work_remote(Task *task) {
+    bool password = false;
     char *err;
     char *options = NULL;
-    bool password = false;
-    PQconninfoOption *opts;
-    Task *task;
-    opts = PQconninfoParse(remote, &err);
-    task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
-    task->group = MemoryContextStrdup(TopMemoryContext, group);
-    task->remote = MemoryContextStrdup(TopMemoryContext, remote);
-    task->id = id;
-    task->max = max;
-    task->work = work;
+    const char **keywords;
+    const char **values;
+    int arg = 3;
+    PQconninfoOption *opts = PQconninfoParse(task->remote, &err);
+    StringInfoData buf, buf2;
+    Work *work = task->work;
     D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->table);
     if (!opts) { work_error(task, "!PQconninfoParse", err, false); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
@@ -487,7 +480,7 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "pg_task %s%s%s %s", work->conf.schema ? work->conf.schema : "", work->conf.schema ? " " : "", work->conf.table, group);
+    appendStringInfo(&buf, "pg_task %s%s%s %s", work->conf.schema ? work->conf.schema : "", work->conf.schema ? " " : "", work->conf.table, task->group);
     arg = 0;
     keywords[arg] = "application_name";
     values[arg] = buf.data;
@@ -498,7 +491,7 @@ static void work_remote(Work *work, const int64 id, char *group, char *remote, c
     if (work->conf.schema) appendStringInfo(&buf2, " -c pg_task.schema=%s", work->conf.schema);
     appendStringInfo(&buf2, " -c pg_task.table=%s", work->conf.table);
     appendStringInfo(&buf2, " -c pg_task.oid=%i", work->table);
-    appendStringInfo(&buf2, " -c pg_task.group=%s", group);
+    appendStringInfo(&buf2, " -c pg_task.group=%s", task->group);
     arg++;
     keywords[arg] = "options";
     values[arg] = buf2.data;
@@ -583,33 +576,35 @@ static void work_table(Work *work) {
     pfree(buf.data);
 }
 
-static void work_task(const Work *work, const int64 id, const char *group, const int32 max) {
-    BackgroundWorkerHandle *handle;
-    pid_t pid;
+static void work_task(Task *task) {
+    BackgroundWorkerHandle *handle = NULL;
     BackgroundWorker worker;
+    pid_t pid;
     size_t len = 0;
-    D1("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, id, group, max, work->table);
+    Work *work = task->work;
+    D1("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, task->id, task->group, task->max, work->table);
     MemSet(&worker, 0, sizeof(worker));
-    if (strlcpy(worker.bgw_function_name, "task", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
-    if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
-    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task %s%s%s %s", work->conf.schema ? work->conf.schema : "", work->conf.schema ? " " : "", work->conf.table, group) >= sizeof(worker.bgw_type) - 1) E("snprintf");
-    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", work->user, work->data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) E("snprintf");
+    if (strlcpy(worker.bgw_function_name, "task", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) { work_error(task, "strlcpy", NULL, false); return; }
+    if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) { work_error(task, "strlcpy", NULL, false); return; }
+    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task %s%s%s %s", work->conf.schema ? work->conf.schema : "", work->conf.schema ? " " : "", work->conf.table, task->group) >= sizeof(worker.bgw_type) - 1) { work_error(task, "snprintf", NULL, false); return; }
+    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", work->user, work->data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) { work_error(task, "snprintf", NULL, false); return; }
 #define X(src, serialize, deserialize) serialize(src);
     WORK
 #undef X
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    worker.bgw_main_arg = Int64GetDatum(id);
+    worker.bgw_main_arg = Int64GetDatum(task->id);
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) E("!RegisterDynamicBackgroundWorker");
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) { work_error(task, "RegisterDynamicBackgroundWorker", NULL, false); if (handle) pfree(handle); return; }
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
-        case BGWH_NOT_YET_STARTED: E("WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED"); break;
-        case BGWH_POSTMASTER_DIED: E("WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED"); break;
+        case BGWH_NOT_YET_STARTED: work_error(task, "WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED", NULL, false); pfree(handle); return;
+        case BGWH_POSTMASTER_DIED: work_error(task, "WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED", NULL, false); pfree(handle); return;
         case BGWH_STARTED: break;
-        case BGWH_STOPPED: E("WaitForBackgroundWorkerStartup == BGWH_STOPPED"); break;
+        case BGWH_STOPPED: work_error(task, "WaitForBackgroundWorkerStartup == BGWH_STOPPED", NULL, false); pfree(handle); return;
     }
     pfree(handle);
+    work_free(task);
 }
 
 static void work_type(Work *work) {
@@ -742,14 +737,14 @@ static void work_timeout(Work *work) {
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_tuptable->numvals; row++) {
-        int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
-        int32 max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "max", false));
-        char *group = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
-        char *remote = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
-        D1("row = %lu, id = %li, group = %s, remote = %s, max = %i", row, id, group, remote ? remote : default_null, max);
-        remote ? work_remote(work, id, group, remote, max) : work_task(work, id, group, max);
-        pfree(group);
-        if (remote) pfree(remote);
+        Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
+        task->group = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
+        task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
+        task->max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "max", false));
+        task->remote = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
+        task->work = work;
+        D1("row = %lu, id = %li, group = %s, remote = %s, max = %i", row, task->id, task->group, task->remote ? task->remote : default_null, task->max);
+        task->remote ? work_remote(task) : work_task(task);
     }
     if (work->conf.count) work->count += SPI_tuptable->numvals;
     SPI_finish_my();
