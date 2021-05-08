@@ -105,6 +105,7 @@ bool task_work(Task *task) {
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     if (ShutdownRequestPending) return true;
+    if (!init_table_id_lock(work->table, task->id)) { W("!init_table_id_lock(%i, %li)", work->table, task->id); return true; }
     task->count++;
     D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work->table, task->count, task->pid);
     if (!task->conn) {

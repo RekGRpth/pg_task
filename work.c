@@ -738,12 +738,9 @@ static void work_timeout(Work *work) {
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_tuptable->numvals; row++) {
-        Task *task;
-        int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
-        if (!init_table_id_lock(work->table, id)) { W("!init_table_id_lock(%i, %li)", work->table, id); continue; }
-        task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
+        Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
         task->group = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
-        task->id = id;
+        task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
         task->max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "max", false));
         task->remote = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
         task->work = work;
