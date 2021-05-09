@@ -92,11 +92,17 @@ static void init_work(bool dynamic) {
 }
 
 static void init_assign(const char *newval, void *extra) {
-    const char *oldval = GetConfigOption("pg_task.json", false, true);
+    const char *oldval;
+    bool old_isnull;
+    bool new_isnull;
     if (PostmasterPid != MyProcPid) return;
     if (process_shared_preload_libraries_in_progress) return;
-    if (!strcmp(oldval, newval)) return;
-    D1("oldval = %s, newval = %s", oldval, newval);
+    oldval = GetConfigOption("pg_task.json", true, true);
+    old_isnull = !oldval || oldval[0] == '\0';
+    new_isnull = !newval || newval[0] == '\0';
+    if (old_isnull && new_isnull) return;
+    if (!old_isnull && !new_isnull && !strcmp(oldval, newval)) return;
+    D1("oldval = %s, newval = %s", !old_isnull ? oldval : "(null)", !new_isnull ? newval : "(null)");
     init_work(true);
 }
 
