@@ -104,7 +104,7 @@ static void conf_check(void) {
             FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, reset int4, timeout int4, count int4, live interval)
         ) SELECT    DISTINCT COALESCE(u.usesysid, 0) AS user_oid, COALESCE(oid, 0) AS data_oid, COALESCE(pid, 0) AS pid, j.* FROM j
         LEFT JOIN   pg_user AS u ON usename = j.user
-        LEFT JOIN   pg_database AS d ON datname = data AND NOT datistemplate AND datallowconn and (usesysid is null or usesysid = datdba)
+        LEFT JOIN   pg_database AS d ON datname = data AND NOT datistemplate AND datallowconn AND (usesysid IS NULL OR usesysid = datdba)
         LEFT JOIN   pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_task', schema, j.table, reset::text, timeout::text) AND pid != pg_backend_pid()
     );
     SPI_connect_my(command);
