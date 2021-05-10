@@ -706,13 +706,17 @@ static void work_update(Work *work) {
                     WHERE       datname = current_catalog AND usename = current_user AND application_name = concat_ws(' ', 'pg_task', current_setting('pg_task.schema', true), current_setting('pg_task.table', false), t.group)
                     UNION       SELECT UNNEST($1::int4[])
                 ) FOR UPDATE SKIP LOCKED
-            ) UPDATE %1$s AS u SET state = 'PLAN'::%2$s FROM s WHERE u.id = s.id
+            ) UPDATE %1$s AS u SET state = 'PLAN'::%2$s FROM s WHERE u.id = s.id RETURNING u.id
         ), work->schema_table, work->schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE, true);
+    SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
+    for (uint64 row = 0; row < SPI_tuptable->numvals; row++) {
+        int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
+        W("row = %lu, id = %li", row, id);
+    }
     SPI_finish_my();
     if (work->pids) pfree((void *)values[0]);
 }
