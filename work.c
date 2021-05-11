@@ -381,7 +381,6 @@ static void work_success(Task *task, PGresult *result) {
 static void work_result(Task *task) {
     PGresult *result;
     while (PQstatus(task->conn) == CONNECTION_OK) {
-        if (!work_consume_flush_busy(task)) return;
         if (!(result = PQgetResult(task->conn))) break;
         switch (PQresultStatus(result)) {
             case PGRES_COMMAND_OK: work_command(task, result); break;
@@ -390,6 +389,7 @@ static void work_result(Task *task) {
             default: D1("%li: %s", task->id, PQresStatus(PQresultStatus(result))); break;
         }
         PQclear(result);
+        if (!work_consume_flush_busy(task)) return;
     }
     work_done(task);
 }
