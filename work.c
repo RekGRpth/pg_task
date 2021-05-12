@@ -199,7 +199,7 @@ static int work_nevents(Work *work) {
     dlist_foreach_modify(iter, &work->head) {
         Task *task = dlist_container(Task, node, iter.cur);
         if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessageMy(task->conn), true); continue; }
-        if (PQsocket(task->conn) < 0) { work_error(task, "PQsocket < 0", PQerrorMessageMy(task->conn), true); continue; }
+        if (PQsocket(task->conn) == PGINVALID_SOCKET) { work_error(task, "PQsocket == PGINVALID_SOCKET", PQerrorMessageMy(task->conn), true); continue; }
         nevents++;
     }
     return nevents;
