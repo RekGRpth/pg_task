@@ -213,14 +213,9 @@ static void work_fini(Work *work) {
     appendStringInfo(&buf, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
     dlist_foreach_modify(iter, &work->head) {
         Task *task = dlist_container(Task, node, iter.cur);
-        PGcancel *cancel = PQgetCancel(task->conn);
-        if (!cancel) work_error(task, buf.data, "!PQgetCancel", true); else {
-            char err[256];
-            if (!PQcancel(cancel, err, sizeof(err))) work_error(task, buf.data, err, true); else {
-                work_edata(task, __FILE__, __LINE__, __func__, buf.data);
-                work_finish(task);
-            }
-            PQfreeCancel(cancel);
+        if (!PQrequestCancel(task->conn)) work_error(task, buf.data, PQerrorMessageMy(task->conn), true); else {
+            work_edata(task, __FILE__, __LINE__, __func__, buf.data);
+            work_finish(task);
         }
     }
     pfree(buf.data);
