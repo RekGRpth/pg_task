@@ -391,8 +391,7 @@ static void work_success(Task *task, PGresult *result) {
 }
 
 static void work_result(Task *task) {
-    PGresult *result;
-    while (PQstatus(task->conn) == CONNECTION_OK && (result = PQgetResult(task->conn))) {
+    for (PGresult *result; PQstatus(task->conn) == CONNECTION_OK && (result = PQgetResult(task->conn)); ) {
         switch (PQresultStatus(result)) {
             case PGRES_COMMAND_OK: work_command(task, result); break;
             case PGRES_FATAL_ERROR: W("%li: PQresultStatus == PGRES_FATAL_ERROR and %s", task->id, PQresultErrorMessageMy(result)); work_fail(task, result); break;
