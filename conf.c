@@ -109,9 +109,7 @@ static void conf_check(void) {
     );
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
-    D1("hi");
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
-    D1("hi");
     for (uint64 row = 0; row < SPI_tuptable->numvals; row++) {
         Conf conf = {
 #define X(type, name, get, serialize, deserialize) .name = get(name),
