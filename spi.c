@@ -17,6 +17,7 @@ SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
 }
 
 void SPI_commit_my(void) {
+    PopActiveSnapshot();
     disable_timeout(STATEMENT_TIMEOUT, false);
     SPI_commit();
     pgstat_report_stat(false);
@@ -27,6 +28,7 @@ void SPI_connect_my(const char *src) {
     int rc;
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) E("SPI_connect_ext = %s", SPI_result_code_string(rc));
     SPI_start_transaction_my(src);
+    PushActiveSnapshot(GetTransactionSnapshot());
 }
 
 void SPI_execute_plan_my(SPI_plan *plan, Datum *values, const char *nulls, int res, bool commit) {
