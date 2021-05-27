@@ -245,9 +245,9 @@ static void work_index(Work *work, const char *index) {
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
-    } else if ((relation = relation_openrv_extended(rangevar, NoLock, true))) {
+    } else if ((relation = relation_openrv_extended(rangevar, AccessShareLock, true))) {
         if (relation->rd_index && relation->rd_index->indrelid != work->table) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
-        relation_close(relation, NoLock);
+        relation_close(relation, AccessShareLock);
     }
     SPI_commit_my();
     SPI_finish_my();
