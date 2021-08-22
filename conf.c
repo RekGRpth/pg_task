@@ -69,7 +69,7 @@ void conf_work(const Conf *conf, const char *data, const char *user) {
     MemSet(&worker, 0, sizeof(worker));
     if (strlcpy(worker.bgw_function_name, "work", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
-    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task %s%s%s %i %i", conf->schema ? conf->schema : "", conf->schema ? " " : "", conf->table, conf->reset, conf->timeout) >= sizeof(worker.bgw_type) - 1) E("snprintf");
+    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_work %s%s%s %i %i", conf->schema ? conf->schema : "", conf->schema ? " " : "", conf->table, conf->reset, conf->timeout) >= sizeof(worker.bgw_type) - 1) E("snprintf");
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", user, data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) E("snprintf");
 #define X(type, name, get, serialize, deserialize) serialize(conf->name);
     CONF
@@ -105,7 +105,7 @@ static void conf_check(void) {
         ) SELECT    DISTINCT COALESCE(u.usesysid, 0) AS user_oid, COALESCE(oid, 0) AS data_oid, COALESCE(pid, 0) AS pid, j.* FROM j
         LEFT JOIN   pg_user AS u ON usename = j.user
         LEFT JOIN   pg_database AS d ON datname = data AND NOT datistemplate AND datallowconn AND (usesysid IS NULL OR usesysid = datdba)
-        LEFT JOIN   pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_task', schema, j.table, reset::text, timeout::text) AND pid != pg_backend_pid()
+        LEFT JOIN   pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, reset::text, timeout::text) AND pid != pg_backend_pid()
     );
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);

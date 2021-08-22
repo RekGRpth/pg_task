@@ -36,7 +36,7 @@ id bigserial - primary key
 
 parent bigint - foreign key to parent task (if need)
 
-dt timestamp - planned time of start
+plan timestamp - planned time of start
 
 start timestamp - actial time of start
 
@@ -79,12 +79,12 @@ INSERT INTO task (input) VALUES ('SELECT now()')
 
 to run task after 5 minutes write plannded time
 ```sql
-INSERT INTO task (dt, input) VALUES (now() + '5 min':INTERVAL, 'SELECT now()')
+INSERT INTO task (plan, input) VALUES (now() + '5 min':INTERVAL, 'SELECT now()')
 ```
 
 to run task at specific time so write
 ```sql
-INSERT INTO task (dt, input) VALUES ('2029-07-01 12:51:00', 'SELECT now()')
+INSERT INTO task (plan, input) VALUES ('2029-07-01 12:51:00', 'SELECT now()')
 ```
 
 to repeat task every 5 minutes write

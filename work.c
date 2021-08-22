@@ -147,34 +147,11 @@ static void work_free(Task *task) {
     pfree(task);
 }
 
-static void work_pids(Work *work) {
-    dlist_mutable_iter iter;
-    int nelems = 0;
-    StringInfoData buf;
-    dlist_foreach_modify(iter, &work->head) nelems++;
-    if (work->pids) pfree(work->pids);
-    work->pids = NULL;
-    if (!nelems) return;
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfoString(&buf, "{");
-    nelems = 0;
-    dlist_foreach_modify(iter, &work->head) {
-        Task *task = dlist_container(Task, node, iter.cur);
-        if (!task->pid) continue;
-        if (nelems) appendStringInfoString(&buf, ",");
-        appendStringInfo(&buf, "%i", task->pid);
-        nelems++;
-    }
-    appendStringInfoString(&buf, "}");
-    work->pids = buf.data;
-    D1("pids = %s", work->pids);
-}
-
 static void work_finish(Task *task) {
     Work *work = task->work;
     dlist_delete(&task->node);
     PQfinish(task->conn);
-    work_pids(work);
+    if (!init_table_pid_hash_unlock(work->table, task->pid, task->hash)) W("!init_table_pid_hash_unlock(%i, %i, %i)", work->table, task->pid, task->hash);
     work_free(task);
 }
 
@@ -221,25 +198,39 @@ static void work_fini(Work *work) {
     conf_work(&work->conf, work->data, work->user);
 }
 
-static void work_index(Work *work, const char *index) {
+static void work_index(Work *work, int count, const char *const *indexes) {
     StringInfoData buf, name, idx;
     List *names;
     RelationData *relation;
     const RangeVar *rangevar;
     const char *name_quote;
-    const char *index_quote = quote_identifier(index);
     const char *schema_quote = work->conf.schema ? quote_identifier(work->conf.schema) : NULL;
-    D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, index, work->schema_table);
     initStringInfoMy(TopMemoryContext, &name);
-    appendStringInfo(&name, "%s_%s_idx", work->conf.table, index);
+    appendStringInfoString(&name, work->conf.table);
+    for (int i = 0; i < count; i++) {
+        const char *index = indexes[i];
+        appendStringInfoString(&name, "_");
+        appendStringInfoString(&name, index);
+    }
+    appendStringInfoString(&name, "_idx");
     name_quote = quote_identifier(name.data);
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, SQL(CREATE INDEX %s ON %s USING btree (%s)), name_quote, work->schema_table, index_quote);
+    appendStringInfo(&buf, SQL(CREATE INDEX %s ON %s USING btree ), name_quote, work->schema_table);
+    appendStringInfoString(&buf, "(");
+    for (int i = 0; i < count; i++) {
+        const char *index = indexes[i];
+        const char *index_quote = quote_identifier(index);
+        if (i) appendStringInfoString(&buf, ", ");
+        appendStringInfoString(&buf, index_quote);
+        if (index_quote != index) pfree((void *)index_quote);
+    }
+    appendStringInfoString(&buf, ")");
     initStringInfoMy(TopMemoryContext, &idx);
     if (work->conf.schema) appendStringInfo(&idx, "%s.", schema_quote);
     appendStringInfoString(&idx, name_quote);
     names = stringToQualifiedNameList(idx.data);
     rangevar = makeRangeVarFromNameList(names);
+    D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, idx.data, work->schema_table);
     SPI_connect_my(buf.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
@@ -256,7 +247,6 @@ static void work_index(Work *work, const char *index) {
     pfree(idx.data);
     if (work->conf.schema && schema_quote && work->conf.schema != schema_quote) pfree((void *)schema_quote);
     if (name_quote != name.data) pfree((void *)name_quote);
-    if (index_quote != index) pfree((void *)index_quote);
 }
 
 static void work_reload(Work *work) {
@@ -461,21 +451,23 @@ static void work_connect(Task *task) {
     if (connected) {
         Work *work = task->work;
         if(!(task->pid = PQbackendPID(task->conn))) { work_error(task, "!PQbackendPID", PQerrorMessageMy(task->conn), true); return; }
-        work_pids(work);
+        if (!init_table_pid_hash_lock(work->table, task->pid, task->hash)) { W("!init_table_pid_hash_lock(%i, %i, %i)", work->table, task->pid, task->hash); work_error(task, "!init_table_pid_hash_lock", NULL, true); return; }
         work_query(task);
     }
 }
 
-static void work_remote(Task *task) {
+static void work_remote(Task *task_) {
     bool password = false;
     char *err;
     char *options = NULL;
     const char **keywords;
     const char **values;
     int arg = 3;
-    PQconninfoOption *opts = PQconninfoParse(task->remote, &err);
+    PQconninfoOption *opts = PQconninfoParse(task_->remote, &err);
     StringInfoData buf, buf2;
-    Work *work = task->work;
+    Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
+    Work *work = task_->work;
+    *task = *task_;
     D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->table);
     if (!opts) { work_error(task, "!PQconninfoParse", err, false); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
@@ -545,14 +537,15 @@ static void work_table(Work *work) {
         CREATE TABLE %1$s (
             id bigserial NOT NULL PRIMARY KEY,
             parent int8 DEFAULT current_setting('pg_task.id', true)::int8 REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL,
-            dt timestamptz NOT NULL DEFAULT current_timestamp,
+            plan timestamptz NOT NULL DEFAULT current_timestamp,
             start timestamptz,
             stop timestamptz,
-            live interval,
-            timeout interval,
-            repeat interval,
-            count int4,
-            max int4,
+            live interval NOT NULL DEFAULT '0 sec',
+            timeout interval NOT NULL DEFAULT '0 sec',
+            repeat interval NOT NULL DEFAULT '0 sec',
+            hash int4 NOT NULL GENERATED ALWAYS AS (hashtext("group"||COALESCE(remote, '%3$s'))) STORED,
+            count int4 NOT NULL DEFAULT 0,
+            max int4 NOT NULL DEFAULT ~(1<<31),
             pid int4,
             state %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
             delete boolean NOT NULL DEFAULT false,
@@ -570,7 +563,7 @@ static void work_table(Work *work) {
             output text,
             remote text
         )
-    ), work->schema_table, work->schema_type);
+    ), work->schema_table, work->schema_type, "");
     names = stringToQualifiedNameList(work->schema_table);
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
@@ -616,7 +609,7 @@ static void work_task(Task *task) {
         case BGWH_STOPPED: work_error(task, "WaitForBackgroundWorkerStartup == BGWH_STOPPED", NULL, false); pfree(handle); return;
     }
     pfree(handle);
-    work_free(task);
+    pfree(task->group);
 }
 
 static void work_type(Work *work) {
@@ -637,6 +630,10 @@ static void work_type(Work *work) {
 }
 
 static void work_conf(Work *work) {
+    const char *index_input[] = {"input"};
+    const char *index_parent[] = {"parent"};
+    const char *index_plan[] = {"plan"};
+    const char *index_state[] = {"state"};
     const char *schema_quote = work->conf.schema ? quote_identifier(work->conf.schema) : NULL;
     const char *table_quote = quote_identifier(work->conf.table);
     StringInfoData buf;
@@ -656,9 +653,10 @@ static void work_conf(Work *work) {
     if (work->conf.schema) work_schema(work);
     work_type(work);
     work_table(work);
-    work_index(work, "dt");
-    work_index(work, "parent");
-    work_index(work, "state");
+    work_index(work, countof(index_input), index_input);
+    work_index(work, countof(index_parent), index_parent);
+    work_index(work, countof(index_plan), index_plan);
+    work_index(work, countof(index_state), index_state);
     set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &buf);
@@ -699,69 +697,69 @@ static void work_init(Work *work) {
 }
 
 static void work_update(Work *work) {
-    static Oid argtypes[] = {TEXTOID};
-    Datum values[] = {work->pids ? CStringGetTextDatum(work->pids) : (Datum)NULL};
-    char nulls[] = {work->pids ? ' ' : 'n'};
-    static SPI_plan *plan = NULL;
+    Datum values[] = {ObjectIdGetDatum(work->table)};
     static char *command = NULL;
+    static Oid argtypes[] = {OIDOID};
+    static SPI_plan *plan = NULL;
     if (!command) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf, SQL(
-            WITH s AS ( WITH s AS (
-                SELECT id FROM %1$s AS t WHERE dt < current_timestamp - concat_ws(' ', (current_setting('pg_task.reset', false)::int4 * current_setting('pg_task.timeout', false)::int4)::text, 'msec')::interval AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND pid NOT IN (
-                    SELECT      pid FROM pg_stat_activity
-                    WHERE       datname = current_catalog AND usename = current_user AND application_name = concat_ws(' ', 'pg_task', current_setting('pg_task.schema', true), current_setting('pg_task.table', false), t.group)
-                    UNION       SELECT UNNEST($1::int4[])
-                )
-            ) SELECT id FROM s INNER JOIN %1$s USING (id) FOR UPDATE SKIP LOCKED
+            WITH s AS (
+                SELECT id FROM %1$s AS t
+                LEFT JOIN pg_locks AS l ON l.locktype = 'userlock' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.objsubid = 4 AND l.database = $1 AND l.classid = t.id>>32 AND l.objid = t.id<<32>>32
+                WHERE plan < current_timestamp - concat_ws(' ', (current_setting('pg_task.reset', false)::int4 * current_setting('pg_task.timeout', false)::int4)::text, 'msec')::interval AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
+                FOR UPDATE OF t SKIP LOCKED
             ) UPDATE %1$s AS u SET state = 'PLAN'::%2$s FROM s WHERE u.id = s.id RETURNING u.id
         ), work->schema_table, work->schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_tuptable->numvals; row++) {
         int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
         W("row = %lu, id = %li", row, id);
     }
     SPI_finish_my();
-    if (work->pids) pfree((void *)values[0]);
 }
 
 static void work_timeout(Work *work) {
-    static SPI_plan *plan = NULL;
+    Datum values[] = {ObjectIdGetDatum(work->table)};
     static char *command = NULL;
+    static Oid argtypes[] = {OIDOID};
+    static SPI_plan *plan = NULL;
     work_update(work);
     if (!command) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf, SQL(
-            WITH s AS (WITH s AS (WITH s AS (WITH s AS (WITH s AS (
-                SELECT      t.id, t.group, COALESCE(t.max, ~(1<<31)) AS max, a.pid FROM %1$s AS t
-                LEFT JOIN   %1$s AS a ON a.state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND t.group = a.group
-                WHERE       t.state = 'PLAN'::%2$s AND t.dt + concat_ws(' ', (CASE WHEN t.max < 0 THEN -t.max ELSE 0 END)::text, 'msec')::interval <= current_timestamp AND t.start IS NULL AND t.stop IS NULL AND t.pid IS NULL
-            ) SELECT id, s.group, CASE WHEN max > 0 THEN max ELSE 1 END - count(pid) AS count FROM s GROUP BY id, s.group, max
-            ) SELECT array_agg(id ORDER BY id) AS id, s.group, count FROM s WHERE count > 0 GROUP BY s.group, count
-            ) SELECT unnest(id[:count]) AS id, s.group, count FROM s ORDER BY count DESC
-            ) SELECT id FROM s INNER JOIN %1$s USING (id) FOR UPDATE SKIP LOCKED
-            ) UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id, u.group, u.remote, COALESCE(u.max, ~(1<<31)) AS max
+            WITH s AS ( WITH s AS ( WITH s AS (
+                SELECT t.id, t.group, CASE WHEN t.max > 0 THEN t.max ELSE 1 END - (
+                    SELECT count(classid) FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 AND objid = t.hash
+                ) AS count FROM %1$s AS t
+                WHERE t.state = 'PLAN'::%2$s AND t.plan + concat_ws(' ', (CASE WHEN t.max < 0 THEN -t.max ELSE 0 END)::text, 'msec')::interval <= current_timestamp AND t.start IS NULL AND t.stop IS NULL AND t.pid IS NULL
+                FOR UPDATE OF t SKIP LOCKED
+            ) SELECT unnest((array_agg(id ORDER BY id))[:count]) AS id, s.group, count FROM s WHERE count > 0 GROUP BY s.group, count ORDER BY count DESC
+            ) SELECT id FROM s INNER JOIN %1$s AS t USING (id) FOR UPDATE OF t SKIP LOCKED
+            ) UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id, u.hash, u.group, u.remote, u.max
         ), work->schema_table, work->schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, 0, NULL);
-    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_UPDATE_RETURNING, true);
+    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_tuptable->numvals; row++) {
-        Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
-        task->group = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
-        task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
-        task->max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "max", false));
-        task->remote = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
-        task->work = work;
-        D1("row = %lu, id = %li, group = %s, remote = %s, max = %i", row, task->id, task->group, task->remote ? task->remote : default_null, task->max);
-        task->remote ? work_remote(task) : work_task(task);
+        Task task;
+        MemSet(&task, 0, sizeof(task));
+        task.group = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
+        task.hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "hash", false));
+        task.id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
+        task.max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "max", false));
+        task.remote = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
+        task.work = work;
+        D1("row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task.id, task.hash, task.group, task.remote ? task.remote : default_null, task.max);
+        task.remote ? work_remote(&task) : work_task(&task);
     }
     if (work->conf.count) work->count += SPI_tuptable->numvals;
     SPI_finish_my();
@@ -776,37 +774,37 @@ void work(Datum main_arg) {
     instr_time cur_time;
     instr_time start_time;
     long cur_timeout = -1;
-    Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
-    work_init(work);
-    if (!init_data_user_table_lock(MyDatabaseId, GetUserId(), work->table)) W("!init_data_user_table_lock(%i, %i, %i)", MyDatabaseId, GetUserId(), work->table); else while (!ShutdownRequestPending) {
-        int nevents = 2 + work_nevents(work);
+    Work work;
+    MemSet(&work, 0, sizeof(work));
+    work_init(&work);
+    if (!init_data_user_table_lock(MyDatabaseId, GetUserId(), work.table)) W("!init_data_user_table_lock(%i, %i, %i)", MyDatabaseId, GetUserId(), work.table); else while (!ShutdownRequestPending) {
+        int nevents = 2 + work_nevents(&work);
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
-        work_event(work, set);
+        work_event(&work, set);
         if (cur_timeout <= 0) {
             INSTR_TIME_SET_CURRENT(start_time);
-            cur_timeout = work->conf.timeout;
+            cur_timeout = work.conf.timeout;
         }
         nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) work_latch(work);
+            if (event->events & WL_LATCH_SET) work_latch(&work);
             if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
             if (event->events & WL_SOCKET_READABLE) work_readable(event->user_data);
             if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
-        if (work->conf.timeout >= 0) {
+        if (work.conf.timeout >= 0) {
             INSTR_TIME_SET_CURRENT(cur_time);
             INSTR_TIME_SUBTRACT(cur_time, start_time);
-            cur_timeout = work->conf.timeout - (long)INSTR_TIME_GET_MILLISEC(cur_time);
-            if (cur_timeout <= 0) work_timeout(work);
+            cur_timeout = work.conf.timeout - (long)INSTR_TIME_GET_MILLISEC(cur_time);
+            if (cur_timeout <= 0) work_timeout(&work);
         }
         FreeWaitEventSet(set);
         pfree(events);
-        if (work->conf.count && work->count >= work->conf.count) break;
-        if (work->conf.live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), work->conf.live * 1000)) break;
+        if (work.conf.count && work.count >= work.conf.count) break;
+        if (work.conf.live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), work.conf.live * 1000)) break;
     }
-    if (!init_data_user_table_unlock(MyDatabaseId, GetUserId(), work->table)) W("!init_data_user_table_unlock(%i, %i, %i)", MyDatabaseId, GetUserId(), work->table);
-    work_fini(work);
-    pfree(work);
+    if (!init_data_user_table_unlock(MyDatabaseId, GetUserId(), work.table)) W("!init_data_user_table_unlock(%i, %i, %i)", MyDatabaseId, GetUserId(), work.table);
+    work_fini(&work);
 }

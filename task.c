@@ -13,16 +13,19 @@ static void task_update(Task *task) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf, SQL(
-            WITH s AS ( WITH s AS (
-                SELECT id FROM %1$s AS t WHERE max < 0 AND dt < current_timestamp AND t.group = $1 AND state = 'PLAN'::%2$s
-            ) SELECT id FROM s INNER JOIN %1$s USING (id) FOR UPDATE SKIP LOCKED
-            ) UPDATE %1$s AS u SET dt = current_timestamp FROM s WHERE u.id = s.id
+            WITH s AS (
+                SELECT id FROM %1$s AS t WHERE max < 0 AND plan < current_timestamp AND t.group = $1 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
+            ) UPDATE %1$s AS u SET plan = current_timestamp FROM s WHERE u.id = s.id RETURNING u.id
         ), work->schema_table, work->schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE, true);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
+    for (uint64 row = 0; row < SPI_tuptable->numvals; row++) {
+        int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
+        W("row = %lu, id = %li", row, id);
+    }
     SPI_finish_my();
     pfree((void *)values[0]);
 }
@@ -42,10 +45,10 @@ bool task_done(Task *task) {
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf, SQL(
             WITH s AS (
-                SELECT id FROM %1$s WHERE id = $1 AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) FOR UPDATE
-            ) UPDATE %1$s AS u SET state = CASE WHEN $2 THEN 'FAIL'::%2$s ELSE 'DONE'::%2$s END, stop = current_timestamp, output = concat_ws('%3$s', NULLIF(output, ''), $3), error = concat_ws('%3$s', NULLIF(error, ''), $4) FROM s WHERE u.id = s.id
-            RETURNING delete, repeat IS NOT NULL AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) AS repeat, count IS NOT NULL OR live IS NOT NULL AS live
-        ), work->schema_table, work->schema_type, "\n");
+                SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
+            ) UPDATE %1$s AS u SET state = CASE WHEN $2 THEN 'FAIL'::%2$s ELSE 'DONE'::%2$s END, stop = current_timestamp, output = concat_ws('%3$s', NULLIF(output, '%4$s'), $3), error = concat_ws('%3$s', NULLIF(error, '%3$s'), $4) FROM s WHERE u.id = s.id
+            RETURNING delete, repeat > '0 sec' AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) AS repeat, count > 0 OR live > '0 sec' AS live
+        ), work->schema_table, work->schema_type, "\n", "");
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -82,10 +85,12 @@ bool task_live(Task *task) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf, SQL(
-            WITH s AS ( WITH s AS (
-                SELECT id FROM %1$s AS t WHERE state = 'PLAN'::%2$s AND dt <= current_timestamp AND t.group = $1 AND remote IS NOT DISTINCT FROM $2 AND COALESCE(max, ~(1<<31)) >= $3 AND CASE WHEN count IS NOT NULL AND live IS NOT NULL THEN count > $4 AND $5 + live > current_timestamp ELSE COALESCE(count, 0) > $4 OR $5 + COALESCE(live, '0 sec'::interval) > current_timestamp END AND t.start IS NULL AND t.stop IS NULL AND t.pid IS NULL
-                ORDER BY COALESCE(max, ~(1<<31)) DESC LIMIT 1
-            ) SELECT id FROM s INNER JOIN %1$s USING (id) FOR UPDATE SKIP LOCKED
+            WITH s AS (
+                SELECT id FROM %1$s AS t
+                WHERE state = 'PLAN'::%2$s AND plan <= current_timestamp AND t.group = $1 AND remote IS NOT DISTINCT FROM $2 AND max >= $3 AND CASE
+                    WHEN count > 0 AND live > '0 sec' THEN count > $4 AND $5 + live > current_timestamp ELSE count > $4 OR $5 + live > current_timestamp
+                END AND t.start IS NULL AND t.stop IS NULL AND t.pid IS NULL
+                ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t SKIP LOCKED
             ) UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id
         ), work->schema_table, work->schema_type);
         command = buf.data;
@@ -124,9 +129,9 @@ bool task_work(Task *task) {
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf, SQL(
             WITH s AS (
-                SELECT id FROM %1$s WHERE id = $1 AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) FOR UPDATE
+                SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
             ) UPDATE %1$s AS u SET state = 'WORK'::%2$s, start = current_timestamp, pid = $2 FROM s WHERE u.id = s.id
-            RETURNING input, COALESCE(EXTRACT(epoch FROM timeout), 0)::int4 * 1000 AS timeout, append, header, string, u.null, delimiter, quote, escape
+            RETURNING input, EXTRACT(epoch FROM timeout)::int4 * 1000 AS timeout, append, header, string, u.null, delimiter, quote, escape
         ), work->schema_table, work->schema_type);
         command = buf.data;
     }
@@ -162,12 +167,13 @@ void task_delete(Task *task) {
         Work *work = task->work;
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
-        appendStringInfo(&buf, SQL(DELETE FROM %1$s WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s)), work->schema_table, work->schema_type);
+        appendStringInfo(&buf, SQL(DELETE FROM %1$s WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) RETURNING id), work->schema_table, work->schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE, true);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE_RETURNING, true);
+    if (SPI_tuptable->numvals != 1) W("%li: SPI_tuptable->numvals != 1", task->id);
     SPI_finish_my();
 }
 
@@ -215,18 +221,19 @@ void task_repeat(Task *task) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf, SQL(
-            INSERT INTO %1$s (parent, dt, "group", max, input, timeout, delete, repeat, drift, count, live)
+            INSERT INTO %1$s (parent, plan, "group", max, input, timeout, delete, repeat, drift, count, live)
             SELECT $1, CASE
                 WHEN drift THEN current_timestamp + repeat
-                ELSE (WITH RECURSIVE s AS (SELECT dt AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)
-            END AS dt, t.group, max, input, timeout, delete, repeat, drift, count, live
-            FROM %1$s AS t WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) LIMIT 1
+                ELSE (WITH RECURSIVE s AS (SELECT plan AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)
+            END AS plan, t.group, max, input, timeout, delete, repeat, drift, count, live
+            FROM %1$s AS t WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) LIMIT 1 RETURNING id
         ), work->schema_table, work->schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT, true);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING, true);
+    if (SPI_tuptable->numvals != 1) W("%li: SPI_tuptable->numvals != 1", task->id);
     SPI_finish_my();
 }
 
@@ -296,7 +303,7 @@ static void task_init(Work *work, Task *task) {
     set_config_option("pg_task.table", work->conf.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
-    D1("user = %s, data = %s, schema = %s, table = %s, oid = %i, id = %li, group = %s, max = %i", work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, work->table, task->id, task->group, task->max);
+    D1("user = %s, data = %s, schema = %s, table = %s, oid = %i, id = %li, hash = %i, group = %s, max = %i", work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, work->table, task->id, task->hash, task->group, task->max);
     schema_quote = work->conf.schema ? quote_identifier(work->conf.schema) : NULL;
     table_quote = quote_identifier(work->conf.table);
     initStringInfoMy(TopMemoryContext, &buf);
@@ -360,15 +367,17 @@ static bool task_timeout(Task *task) {
 }
 
 void task(Datum main_arg) {
-    Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
-    Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
-    task_init(work, task);
+    Task task;
+    Work work;
+    MemSet(&task, 0, sizeof(task));
+    MemSet(&work, 0, sizeof(work));
+    task_init(&work, &task);
+    if (!init_table_pid_hash_lock(work.table, task.pid, task.hash)) { W("!init_table_pid_hash_lock(%i, %i, %i)", work.table, task.pid, task.hash); return; }
     while (!ShutdownRequestPending) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
-        if (rc & WL_TIMEOUT) if (task_timeout(task)) ShutdownRequestPending = true;
+        if (rc & WL_TIMEOUT) if (task_timeout(&task)) ShutdownRequestPending = true;
         if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
     }
-    pfree(task);
-    pfree(work);
+    if (!init_table_pid_hash_unlock(work.table, task.pid, task.hash)) W("!init_table_pid_hash_unlock(%i, %i, %i)", work.table, task.pid, task.hash);
 }

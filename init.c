@@ -66,6 +66,16 @@ bool init_table_id_unlock(Oid table, int64 id) {
     return LockRelease(&tag, AccessExclusiveLock, true);
 }
 
+bool init_table_pid_hash_lock(Oid table, int pid, int hash) {
+    LOCKTAG tag = {table, (uint32)pid, (uint32)hash, 5, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    return LockAcquire(&tag, AccessShareLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
+}
+
+bool init_table_pid_hash_unlock(Oid table, int pid, int hash) {
+    LOCKTAG tag = {table, (uint32)pid, (uint32)hash, 5, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    return LockRelease(&tag, AccessShareLock, true);
+}
+
 void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
     for (int i = 0; len-- > 0; i++) {
         if (escape == data[i]) appendStringInfoChar(buf, escape);
@@ -78,8 +88,8 @@ static void init_work(bool dynamic) {
     MemSet(&worker, 0, sizeof(worker));
     if (snprintf(worker.bgw_function_name, sizeof(worker.bgw_function_name) - 1, "conf") >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
     if (snprintf(worker.bgw_library_name, sizeof(worker.bgw_library_name) - 1, "pg_task") >= sizeof(worker.bgw_library_name) - 1) E("snprintf");
-    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "postgres postgres pg_task conf") >= sizeof(worker.bgw_name) - 1) E("snprintf");
-    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task conf") >= sizeof(worker.bgw_type) - 1) E("snprintf");
+    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "postgres postgres pg_conf") >= sizeof(worker.bgw_name) - 1) E("snprintf");
+    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_conf") >= sizeof(worker.bgw_type) - 1) E("snprintf");
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -102,7 +112,7 @@ static void init_assign(const char *newval, void *extra) {
     new_isnull = !newval || newval[0] == '\0';
     if (old_isnull && new_isnull) return;
     if (!old_isnull && !new_isnull && !strcmp(oldval, newval)) return;
-    D1("oldval = %s, newval = %s", !old_isnull ? oldval : "(null)", !new_isnull ? newval : "(null)");
+    D1("oldval = %s, newval = %s", !old_isnull ? oldval : default_null, !new_isnull ? newval : default_null);
     init_work(true);
 }
 
@@ -115,7 +125,7 @@ static void init_conf(void) {
     DefineCustomStringVariable("pg_task.default_null", "pg_task default null", NULL, &default_null, "\\N", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_table", "pg_task default table", NULL, &default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_user", "pg_task default user", NULL, &default_user, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.json", "pg_task json", NULL, &default_json, "[{\"data\":\"postgres\"}]", PGC_SIGHUP, 0, NULL, init_assign, NULL);
+    DefineCustomStringVariable("pg_task.json", "pg_task json", NULL, &default_json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign, NULL);
     D1("json = %s, table = %s, null = %s, reset = %i, timeout = %i, count = %i, live = %s", default_json, default_table, default_null, default_reset, default_timeout, default_count, default_live);
 }
 

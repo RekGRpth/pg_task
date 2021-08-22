@@ -104,6 +104,7 @@ typedef struct Conf {
 
 #define WORK \
     X(task->group, serialize_char, deserialize_char) \
+    X(task->hash, serialize_int, deserialize_int) \
     X(task->max, serialize_int, deserialize_int) \
     X(work->conf.data, serialize_int, deserialize_int) \
     X(work->conf.user, serialize_int, deserialize_int) \
@@ -112,7 +113,6 @@ typedef struct Conf {
 
 typedef struct Work {
     char *data;
-    char *pids;
     char *schema_table;
     char *schema_type;
     char *user;
@@ -143,6 +143,7 @@ typedef struct Task {
     int64 id;
     int count;
     int event;
+    int hash;
     int length;
     int max;
     int pid;
@@ -162,6 +163,8 @@ bool init_data_user_table_unlock(Oid data, Oid user, Oid table);
 bool init_oid_is_string(Oid oid);
 bool init_table_id_lock(Oid table, int64 id);
 bool init_table_id_unlock(Oid table, int64 id);
+bool init_table_pid_hash_lock(Oid table, int pid, int hash);
+bool init_table_pid_hash_unlock(Oid table, int pid, int hash);
 bool task_done(Task *task);
 bool task_live(Task *task);
 bool task_work(Task *task);
