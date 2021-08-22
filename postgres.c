@@ -159,6 +159,10 @@ exec_simple_query_my(Task *task)
 		DestReceiver *receiver;
 		int16		format;
 
+#if (PG_VERSION_NUM >= 140000)
+		pgstat_report_query_id(0, true);
+#endif
+
 		/*
 		 * Get the command name for use in status display (it also becomes the
 		 * default completion tag, down inside PortalRun).  Set ps_status and
@@ -523,6 +527,16 @@ start_xact_command(void)
 	 * not desired, the timeout has to be disabled explicitly.
 	 */
 	enable_statement_timeout();
+
+#if (PG_VERSION_NUM >= 140000)
+	/* Start timeout for checking if the client has gone away if necessary. */
+	if (client_connection_check_interval > 0 &&
+		IsUnderPostmaster &&
+		MyProcPort &&
+		!get_timeout_active(CLIENT_CONNECTION_CHECK_TIMEOUT))
+		enable_timeout_after(CLIENT_CONNECTION_CHECK_TIMEOUT,
+							 client_connection_check_interval);
+#endif
 }
 
 static void

@@ -60,6 +60,9 @@
 #include <postmaster/bgworker.h>
 #include <postmaster/interrupt.h>
 #include <replication/slot.h>
+#if (PG_VERSION_NUM >= 140000)
+#include <storage/proc.h>
+#endif
 #include <tcop/pquery.h>
 #include <tcop/utility.h>
 #include <utils/acl.h>
