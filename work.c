@@ -738,12 +738,11 @@ static void work_timeout(Work *work) {
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf, SQL(
             WITH s AS ( WITH s AS ( WITH l AS (
-                SELECT classid, objid FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1
+                SELECT count(classid) AS classid, objid FROM pg_locks AS l WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 GROUP BY objid
             ), s AS (
-                SELECT t.id, t.group, CASE WHEN t.max > 0 THEN t.max ELSE 1 END - (SELECT count(classid) FROM l WHERE objid = t.hash) AS count FROM %1$s AS t
+                SELECT t.id, t.group, CASE WHEN t.max > 0 THEN t.max ELSE 1 END - COALESCE(classid, 0) AS count FROM %1$s AS t LEFT JOIN l ON objid = t.hash
                 WHERE t.state = 'PLAN'::%2$s AND t.plan + concat_ws(' ', (CASE WHEN t.max < 0 THEN -t.max ELSE 0 END)::text, 'msec')::interval <= current_timestamp AND t.start IS NULL AND t.stop IS NULL AND t.pid IS NULL
-                AND CASE WHEN t.max > 0 THEN t.max ELSE 1 END > (SELECT count(classid) FROM l WHERE objid = t.hash)
-                FOR UPDATE OF t SKIP LOCKED
+                AND CASE WHEN t.max > 0 THEN t.max ELSE 1 END > COALESCE(classid, 0) FOR UPDATE OF t SKIP LOCKED
             ) SELECT unnest((array_agg(id ORDER BY id))[:count]) AS id, s.group, count FROM s WHERE count > 0 GROUP BY s.group, count ORDER BY count DESC
             ) SELECT id FROM s INNER JOIN %1$s AS t USING (id) FOR UPDATE OF t SKIP LOCKED
             ) UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id, u.hash, u.group, u.remote, u.max
