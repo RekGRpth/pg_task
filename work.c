@@ -742,6 +742,7 @@ static void work_timeout(Work *work) {
                     SELECT count(classid) FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 AND objid = t.hash
                 ) AS count FROM %1$s AS t
                 WHERE t.state = 'PLAN'::%2$s AND t.plan + concat_ws(' ', (CASE WHEN t.max < 0 THEN -t.max ELSE 0 END)::text, 'msec')::interval <= current_timestamp AND t.start IS NULL AND t.stop IS NULL AND t.pid IS NULL
+                AND CASE WHEN t.max > 0 THEN t.max ELSE 1 END > (SELECT count(classid) FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 AND objid = t.hash)
                 FOR UPDATE OF t SKIP LOCKED
             ) SELECT unnest((array_agg(id ORDER BY id))[:count]) AS id, s.group, count FROM s WHERE count > 0 GROUP BY s.group, count ORDER BY count DESC
             ) SELECT id FROM s INNER JOIN %1$s AS t USING (id) FOR UPDATE OF t SKIP LOCKED
