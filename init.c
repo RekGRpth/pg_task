@@ -86,7 +86,7 @@ void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
 static void init_work(bool dynamic) {
     BackgroundWorker worker;
     MemSet(&worker, 0, sizeof(worker));
-    if (snprintf(worker.bgw_function_name, sizeof(worker.bgw_function_name) - 1, "conf") >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
+    if (snprintf(worker.bgw_function_name, sizeof(worker.bgw_function_name) - 1, "conf_main") >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
     if (snprintf(worker.bgw_library_name, sizeof(worker.bgw_library_name) - 1, "pg_task") >= sizeof(worker.bgw_library_name) - 1) E("snprintf");
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "postgres postgres pg_conf") >= sizeof(worker.bgw_name) - 1) E("snprintf");
     if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_conf") >= sizeof(worker.bgw_type) - 1) E("snprintf");

@@ -2,9 +2,10 @@
 
 extern bool xact_started;
 extern char *default_null;
+extern Work work;
+static Task task;
 
 static void task_update(Task *task) {
-    Work *work = task->work;
     static Oid argtypes[] = {TEXTOID};
     Datum values[] = {CStringGetTextDatum(task->group)};
     static SPI_plan *plan = NULL;
@@ -16,7 +17,7 @@ static void task_update(Task *task) {
             WITH s AS (
                 SELECT id FROM %1$s AS t WHERE max < 0 AND plan < current_timestamp AND t.group = $1 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
             ) UPDATE %1$s AS u SET plan = current_timestamp FROM s WHERE u.id = s.id RETURNING u.id
-        ), work->schema_table, work->schema_type);
+        ), work.schema_table, work.schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -32,7 +33,6 @@ static void task_update(Task *task) {
 
 bool task_done(Task *task) {
     bool exit = false;
-    Work *work = task->work;
     static Oid argtypes[] = {INT8OID, BOOLOID, TEXTOID, TEXTOID};
     Datum values[] = {Int64GetDatum(task->id), BoolGetDatum(task->fail = task->output.data ? task->fail : false), task->output.data ? CStringGetTextDatum(task->output.data) : (Datum)NULL, task->error.data ? CStringGetTextDatum(task->error.data) : (Datum)NULL};
     char nulls[] = {' ', ' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n'};
@@ -48,7 +48,7 @@ bool task_done(Task *task) {
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
             ) UPDATE %1$s AS u SET state = CASE WHEN $2 THEN 'FAIL'::%2$s ELSE 'DONE'::%2$s END, stop = current_timestamp, output = concat_ws('%3$s', NULLIF(output, '%4$s'), $3), error = concat_ws('%3$s', NULLIF(error, '%3$s'), $4) FROM s WHERE u.id = s.id
             RETURNING delete, repeat > '0 sec' AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) AS repeat, count > 0 OR live > '0 sec' AS live
-        ), work->schema_table, work->schema_type, "\n", "");
+        ), work.schema_table, work.schema_type, "\n", "");
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -67,7 +67,7 @@ bool task_done(Task *task) {
     if (task->error.data) pfree((void *)values[3]);
     if (task->null) pfree(task->null);
     task->null = NULL;
-    if (task->lock && !init_table_id_unlock(work->table, task->id)) { W("!init_table_id_unlock(%i, %li)", work->table, task->id); exit = true; }
+    if (task->lock && !init_table_id_unlock(work.table, task->id)) { W("!init_table_id_unlock(%i, %li)", work.table, task->id); exit = true; }
     task->lock = false;
     if (ShutdownRequestPending) exit = true;
     return exit;
@@ -81,7 +81,6 @@ bool task_live(Task *task) {
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     if (!command) {
-        Work *work = task->work;
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf, SQL(
@@ -92,7 +91,7 @@ bool task_live(Task *task) {
                 END AND t.start IS NULL AND t.stop IS NULL AND t.pid IS NULL
                 ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t SKIP LOCKED
             ) UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id
-        ), work->schema_table, work->schema_type);
+        ), work.schema_table, work.schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -107,16 +106,15 @@ bool task_live(Task *task) {
 
 bool task_work(Task *task) {
     bool exit = false;
-    Work *work = task->work;
     static Oid argtypes[] = {INT8OID, INT4OID};
     Datum values[] = {Int64GetDatum(task->id), Int32GetDatum(task->pid)};
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     if (ShutdownRequestPending) return true;
-    if (!init_table_id_lock(work->table, task->id)) { W("!init_table_id_lock(%i, %li)", work->table, task->id); return true; }
+    if (!init_table_id_lock(work.table, task->id)) { W("!init_table_id_lock(%i, %li)", work.table, task->id); return true; }
     task->lock = true;
     task->count++;
-    D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work->table, task->count, task->pid);
+    D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work.table, task->count, task->pid);
     if (!task->conn) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
@@ -132,7 +130,7 @@ bool task_work(Task *task) {
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
             ) UPDATE %1$s AS u SET state = 'WORK'::%2$s, start = current_timestamp, pid = $2 FROM s WHERE u.id = s.id
             RETURNING input, EXTRACT(epoch FROM timeout)::int4 * 1000 AS timeout, append, header, string, u.null, delimiter, quote, escape
-        ), work->schema_table, work->schema_type);
+        ), work.schema_table, work.schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -164,10 +162,9 @@ void task_delete(Task *task) {
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     if (!command) {
-        Work *work = task->work;
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
-        appendStringInfo(&buf, SQL(DELETE FROM %1$s WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) RETURNING id), work->schema_table, work->schema_type);
+        appendStringInfo(&buf, SQL(DELETE FROM %1$s WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) RETURNING id), work.schema_table, work.schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -220,7 +217,6 @@ void task_repeat(Task *task) {
     static SPI_plan *plan = NULL;
     static char *command = NULL;
     if (!command) {
-        Work *work = task->work;
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
         appendStringInfo(&buf, SQL(
@@ -230,7 +226,7 @@ void task_repeat(Task *task) {
                 ELSE (WITH RECURSIVE s AS (SELECT plan AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)
             END AS plan, t.group, max, input, timeout, delete, repeat, drift, count, live
             FROM %1$s AS t WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) LIMIT 1 RETURNING id
-        ), work->schema_table, work->schema_type);
+        ), work.schema_table, work.schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -271,7 +267,7 @@ static void SignalHandlerForShutdownRequestMy(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
-static void task_init(Work *work, Task *task) {
+static void task_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     const char *schema_quote;
     const char *table_quote;
@@ -282,50 +278,49 @@ static void task_init(Work *work, Task *task) {
 #undef X
     pqsignal(SIGTERM, SignalHandlerForShutdownRequestMy);
     BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnectionByOid(work->conf.data, work->conf.user, 0);
+    BackgroundWorkerInitializeConnectionByOid(work.conf.data, work.conf.user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
     process_session_preload_libraries();
     StartTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
-    work->conf.schema = get_namespace_name(work->schema);
-    work->conf.table = get_rel_name(work->table);
-    work->data = get_database_name(work->conf.data);
-    work->user = GetUserNameFromId(work->conf.user, false);
+    work.conf.schema = get_namespace_name(work.schema);
+    work.conf.table = get_rel_name(work.table);
+    work.data = get_database_name(work.conf.data);
+    work.user = GetUserNameFromId(work.conf.user, false);
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
-    task->id = DatumGetInt64(MyBgworkerEntry->bgw_main_arg);
-    task->work = work;
+    task.id = DatumGetInt64(MyBgworkerEntry->bgw_main_arg);
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-    if (!MyProcPort->user_name) MyProcPort->user_name = work->user;
-    if (!MyProcPort->database_name) MyProcPort->database_name = work->data;
+    if (!MyProcPort->user_name) MyProcPort->user_name = work.user;
+    if (!MyProcPort->database_name) MyProcPort->database_name = work.data;
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option("pg_task.data", work->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option("pg_task.group", task->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    if (work->conf.schema) set_config_option("pg_task.schema", work->conf.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option("pg_task.table", work->conf.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option("pg_task.user", work->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.data", work.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.group", task.group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    if (work.conf.schema) set_config_option("pg_task.schema", work.conf.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.table", work.conf.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.user", work.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
-    D1("user = %s, data = %s, schema = %s, table = %s, oid = %i, id = %li, hash = %i, group = %s, max = %i", work->user, work->data, work->conf.schema ? work->conf.schema : default_null, work->conf.table, work->table, task->id, task->hash, task->group, task->max);
-    schema_quote = work->conf.schema ? quote_identifier(work->conf.schema) : NULL;
-    table_quote = quote_identifier(work->conf.table);
+    D1("user = %s, data = %s, schema = %s, table = %s, oid = %i, id = %li, hash = %i, group = %s, max = %i", work.user, work.data, work.conf.schema ? work.conf.schema : default_null, work.conf.table, work.table, task.id, task.hash, task.group, task.max);
+    schema_quote = work.conf.schema ? quote_identifier(work.conf.schema) : NULL;
+    table_quote = quote_identifier(work.conf.table);
     initStringInfoMy(TopMemoryContext, &buf);
-    if (work->conf.schema) appendStringInfo(&buf, "%s.", schema_quote);
+    if (work.conf.schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, table_quote);
-    work->schema_table = buf.data;
+    work.schema_table = buf.data;
     initStringInfoMy(TopMemoryContext, &buf);
-    if (work->conf.schema) appendStringInfo(&buf, "%s.", schema_quote);
+    if (work.conf.schema) appendStringInfo(&buf, "%s.", schema_quote);
     appendStringInfoString(&buf, "state");
-    work->schema_type = buf.data;
+    work.schema_type = buf.data;
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "%i", work->table);
+    appendStringInfo(&buf, "%i", work.table);
     set_config_option("pg_task.oid", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
-    if (work->conf.schema && schema_quote && work->conf.schema != schema_quote) pfree((void *)schema_quote);
-    if (work->conf.table != table_quote) pfree((void *)table_quote);
-    task->pid = MyProcPid;
-    task->start = GetCurrentTimestamp();
-    task->count = 0;
+    if (work.conf.schema && schema_quote && work.conf.schema != schema_quote) pfree((void *)schema_quote);
+    if (work.conf.table != table_quote) pfree((void *)table_quote);
+    task.pid = MyProcPid;
+    task.start = GetCurrentTimestamp();
+    task.count = 0;
 }
 
 static void task_latch(void) {
@@ -347,38 +342,36 @@ static void task_success(Task *task) {
     if (IsTransactionState()) E("IsTransactionState");
 }
 
-static bool task_timeout(Task *task) {
-    if (task_work(task)) return true;
-    D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
+static bool task_timeout(void) {
+    if (task_work(&task)) return true;
+    D1("id = %li, timeout = %i, input = %s, count = %i", task.id, task.timeout, task.input, task.count);
     PG_TRY();
-        task_success(task);
+        task_success(&task);
     PG_CATCH();
-        task_fail(task);
+        task_fail(&task);
     PG_END_TRY();
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
-    if (task_done(task)) return true;
-    D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
-    if (task->repeat) task_repeat(task);
-    if (task->delete && !task->output.data) task_delete(task);
-    if (task->output.data) pfree(task->output.data);
-    task->output.data = NULL;
-    if (task->error.data) pfree(task->error.data);
-    task->error.data = NULL;
-    if (ShutdownRequestPending) task->live = false;
-    return !task->live || task_live(task);
+    if (task_done(&task)) return true;
+    D1("repeat = %s, delete = %s, live = %s", task.repeat ? "true" : "false", task.delete ? "true" : "false", task.live ? "true" : "false");
+    if (task.repeat) task_repeat(&task);
+    if (task.delete && !task.output.data) task_delete(&task);
+    if (task.output.data) pfree(task.output.data);
+    task.output.data = NULL;
+    if (task.error.data) pfree(task.error.data);
+    task.error.data = NULL;
+    if (ShutdownRequestPending) task.live = false;
+    return !task.live || task_live(&task);
 }
 
-void task(Datum main_arg) {
-    Task task;
-    Work work;
+void task_main(Datum main_arg) {
     MemSet(&task, 0, sizeof(task));
     MemSet(&work, 0, sizeof(work));
-    task_init(&work, &task);
+    task_init();
     if (!init_table_pid_hash_lock(work.table, task.pid, task.hash)) { W("!init_table_pid_hash_lock(%i, %i, %i)", work.table, task.pid, task.hash); return; }
     while (!ShutdownRequestPending) {
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
-        if (rc & WL_TIMEOUT) if (task_timeout(&task)) ShutdownRequestPending = true;
+        if (rc & WL_TIMEOUT) if (task_timeout()) ShutdownRequestPending = true;
         if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
     }

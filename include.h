@@ -106,13 +106,13 @@ typedef struct Conf {
 } Conf;
 
 #define WORK \
-    X(task->group, serialize_char, deserialize_char) \
-    X(task->hash, serialize_int, deserialize_int) \
-    X(task->max, serialize_int, deserialize_int) \
-    X(work->conf.data, serialize_int, deserialize_int) \
-    X(work->conf.user, serialize_int, deserialize_int) \
-    X(work->schema, serialize_int, deserialize_int) \
-    X(work->table, serialize_int, deserialize_int)
+    X(task.group, serialize_char, deserialize_char) \
+    X(task.hash, serialize_int, deserialize_int) \
+    X(task.max, serialize_int, deserialize_int) \
+    X(work.conf.data, serialize_int, deserialize_int) \
+    X(work.conf.user, serialize_int, deserialize_int) \
+    X(work.schema, serialize_int, deserialize_int) \
+    X(work.table, serialize_int, deserialize_int)
 
 typedef struct Work {
     char *data;
@@ -157,7 +157,6 @@ typedef struct Task {
     StringInfoData output;
     TimestampTz start;
     void (*socket) (struct Task *task);
-    Work *work;
 } Task;
 
 bool init_check_ascii_all(BackgroundWorker *worker);
@@ -178,7 +177,7 @@ Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDescData *tupdesc, const char 
 DestReceiver *CreateDestReceiverMy(Task *task);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void BeginCommandMy(CommandTag commandTag, Task *task);
-void conf(Datum main_arg);
+void conf_main(Datum main_arg);
 void conf_work(const Conf *conf, const char *data, const char *user);
 void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_output);
 void exec_simple_query_my(Task *task);
@@ -193,10 +192,10 @@ void SPI_execute_plan_my(SPI_plan *plan, Datum *values, const char *nulls, int r
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res, bool commit);
 void SPI_finish_my(void);
 void SPI_start_transaction_my(const char *src);
-void task(Datum main_arg);
+void task_main(Datum main_arg);
 void task_delete(Task *task);
 void task_error(Task *task, ErrorData *edata);
 void task_repeat(Task *task);
-void work(Datum main_arg);
+void work_main(Datum main_arg);
 
 #endif // _INCLUDE_H_
