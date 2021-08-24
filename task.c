@@ -273,6 +273,8 @@ static void task_init(void) {
     const char *table_quote;
     MemoryContextData *oldcontext = CurrentMemoryContext;
     StringInfoData buf;
+    MemSet(&task, 0, sizeof(task));
+    MemSet(&work, 0, sizeof(work));
 #define X(name, serialize, deserialize) deserialize(task.name);
     TASK
 #undef X
@@ -368,8 +370,6 @@ static bool task_timeout(void) {
 }
 
 void task_main(Datum main_arg) {
-    MemSet(&task, 0, sizeof(task));
-    MemSet(&work, 0, sizeof(work));
     task_init();
     if (!init_table_pid_hash_lock(work.table, task.pid, task.hash)) { W("!init_table_pid_hash_lock(%i, %i, %i)", work.table, task.pid, task.hash); return; }
     while (!ShutdownRequestPending) {

@@ -675,6 +675,7 @@ static void work_conf(void) {
 static void work_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContextData *oldcontext = CurrentMemoryContext;
+    MemSet(&work, 0, sizeof(work));
 #define X(type, name, get, serialize, deserialize) deserialize(work.conf.name);
     CONF
 #undef X
@@ -775,7 +776,6 @@ void work_main(Datum main_arg) {
     instr_time cur_time;
     instr_time start_time;
     long cur_timeout = -1;
-    MemSet(&work, 0, sizeof(work));
     work_init();
     if (!init_data_user_table_lock(MyDatabaseId, GetUserId(), work.table)) W("!init_data_user_table_lock(%i, %i, %i)", MyDatabaseId, GetUserId(), work.table); else while (!ShutdownRequestPending) {
         int nevents = 2 + work_nevents();
