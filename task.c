@@ -273,7 +273,10 @@ static void task_init(void) {
     const char *table_quote;
     MemoryContextData *oldcontext = CurrentMemoryContext;
     StringInfoData buf;
-#define X(src, serialize, deserialize) deserialize(src);
+#define X(name, serialize, deserialize) deserialize(task.name);
+    TASK
+#undef X
+#define X(name, serialize, deserialize) deserialize(work.name);
     WORK
 #undef X
     pqsignal(SIGTERM, SignalHandlerForShutdownRequestMy);
