@@ -378,5 +378,5 @@ void task_main(Datum main_arg) {
         if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
     }
-    if (!init_table_pid_hash_unlock(work.table, task.pid, task.hash)) W("!init_table_pid_hash_unlock(%i, %i, %i)", work.table, task.pid, task.hash);
+    if (!init_table_pid_hash_unlock(work.table, task.pid ? task.pid : MyProcPid, task.hash)) W("!init_table_pid_hash_unlock(%i, %i, %i)", work.table, task.pid ? task.pid : MyProcPid, task.hash);
 }
