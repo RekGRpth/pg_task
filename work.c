@@ -41,7 +41,9 @@ static const char *work_status(Task *task) {
 #if (PG_VERSION_NUM >= 140000)
         case CONNECTION_CHECK_STANDBY: return "CONNECTION_CHECK_STANDBY";
 #endif
+#if (PG_VERSION_NUM >= 130000)
         case CONNECTION_CHECK_TARGET: return "CONNECTION_CHECK_TARGET";
+#endif
         case CONNECTION_CHECK_WRITABLE: return "CONNECTION_CHECK_WRITABLE";
         case CONNECTION_CONSUME: return "CONNECTION_CONSUME";
         case CONNECTION_GSS_STARTUP: return "CONNECTION_GSS_STARTUP";
