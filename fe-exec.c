@@ -159,6 +159,12 @@ const char *PQftypeMy(Oid oid) {
         case XIDARRAYOID: return "xidarray";
         case CIDARRAYOID: return "cidarray";
         case OIDVECTORARRAYOID: return "oidvectorarray";
+#if (PG_VERSION_NUM >= 140000)
+        case PG_TYPEARRAYOID: return "pg_typearray";
+        case PG_ATTRIBUTEARRAYOID: return "pg_attributearray";
+        case PG_PROCARRAYOID: return "pg_procarray";
+        case PG_CLASSARRAYOID: return "pg_classarray";
+#endif
         case JSONARRAYOID: return "jsonarray";
         case XMLARRAYOID: return "xmlarray";
 #if (PG_VERSION_NUM >= 130000)
