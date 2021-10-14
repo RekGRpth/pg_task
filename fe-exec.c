@@ -98,6 +98,14 @@ const char *PQftypeMy(Oid oid) {
         case TSTZRANGEOID: return "tstzrange";
         case DATERANGEOID: return "daterange";
         case INT8RANGEOID: return "int8range";
+#if (PG_VERSION_NUM >= 140000)
+        case INT4MULTIRANGEOID: return "int4multirange";
+        case NUMMULTIRANGEOID: return "nummultirange";
+        case TSMULTIRANGEOID: return "tsmultirange";
+        case TSTZMULTIRANGEOID: return "tstzmultirange";
+        case DATEMULTIRANGEOID: return "datemultirange";
+        case INT8MULTIRANGEOID: return "int8multirange";
+#endif
         case RECORDOID: return "record";
         case RECORDARRAYOID: return "recordarray";
         case CSTRINGOID: return "cstring";
