@@ -80,8 +80,9 @@ const char *PQftypeMy(Oid oid) {
         case UUIDOID: return "uuid";
 #if (PG_VERSION_NUM >= 140000)
         case PG_LSNOID: return "pg_lsn";
-#endif
+#else
         case LSNOID: return "lsn";
+#endif
         case TSVECTOROID: return "tsvector";
         case GTSVECTOROID: return "gtsvector";
         case TSQUERYOID: return "tsquery";
