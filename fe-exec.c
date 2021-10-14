@@ -47,8 +47,9 @@ const char *PQftypeMy(Oid oid) {
         case CIRCLEOID: return "circle";
 #if (PG_VERSION_NUM >= 140000)
         case MONEYOID: return "money";
-#endif
+#else
         case CASHOID: return "cash";
+#endif
         case MACADDROID: return "macaddr";
         case INETOID: return "inet";
         case CIDROID: return "cidr";
