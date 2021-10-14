@@ -138,6 +138,12 @@ const char *PQftypeMy(Oid oid) {
         case ANYCOMPATIBLENONARRAYOID: return "anycompatiblenonarray";
         case ANYCOMPATIBLERANGEOID: return "anycompatiblerange";
 #endif
+#if (PG_VERSION_NUM >= 140000)
+        case ANYMULTIRANGEOID: return "anymultirange";
+        case ANYCOMPATIBLEMULTIRANGEOID: return "anycompatiblemultirange";
+        case PG_BRIN_BLOOM_SUMMARYOID: return "pg_brin_bloom_summary";
+        case PG_BRIN_MINMAX_MULTI_SUMMARYOID: return "pg_brin_minmax_multi_summary";
+#endif
         case BOOLARRAYOID: return "boolarray";
         case BYTEAARRAYOID: return "byteaarray";
         case CHARARRAYOID: return "chararray";
