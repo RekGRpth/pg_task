@@ -226,6 +226,14 @@ const char *PQftypeMy(Oid oid) {
         case TSTZRANGEARRAYOID: return "tstzrangearray";
         case DATERANGEARRAYOID: return "daterangearray";
         case INT8RANGEARRAYOID: return "int8rangearray";
+#if (PG_VERSION_NUM >= 140000)
+        case INT4MULTIRANGEARRAYOID: return "int4multirangearray";
+        case NUMMULTIRANGEARRAYOID: return "nummultirangearray";
+        case TSMULTIRANGEARRAYOID: return "tsmultirangearray";
+        case TSTZMULTIRANGEARRAYOID: return "tstzmultirangearray";
+        case DATEMULTIRANGEARRAYOID: return "datemultirangearray";
+        case INT8MULTIRANGEARRAYOID: return "int8multirangearray";
+#endif
         case CSTRINGARRAYOID: return "cstringarray";
         default: return NULL;
     }
