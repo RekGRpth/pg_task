@@ -45,6 +45,9 @@ const char *PQftypeMy(Oid oid) {
         case FLOAT8OID: return "float8";
         case UNKNOWNOID: return "unknown";
         case CIRCLEOID: return "circle";
+#if (PG_VERSION_NUM >= 140000)
+        case MONEYOID: return "money";
+#endif
         case CASHOID: return "cash";
         case MACADDROID: return "macaddr";
         case INETOID: return "inet";
