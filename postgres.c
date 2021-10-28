@@ -2,10 +2,7 @@
 #include <utils/probes.h>
 #include "include.h"
 
-enum PIPES {READ, WRITE};
-static int pipes[2];
 static int StatementTimeoutMy;
-static int stderr_fd;
 
 /*
  * Flag to keep track of whether we have started a transaction.
@@ -30,27 +27,6 @@ static void drop_unnamed_stmt(void);
 static void enable_statement_timeout(void);
 static void disable_statement_timeout(void);
 
-static void capture_stderr_start(void) {
-	if (pipe(pipes) < 0) E("pipe < 0");
-	if ((stderr_fd = dup(STDERR_FILENO)) < 0) E("dup < 0");
-	if (dup2(pipes[WRITE], STDERR_FILENO) < 0) E("dup2 < 0");
-}
-
-static void capture_stderr_stop(Task *task) {
-	char buffer[1024 + 1];
-	int nread;
-	if (fflush(stderr)) E("fflush");
-	if (dup2(stderr_fd, STDERR_FILENO) < 0) E("dup2 < 0");
-	if (close(stderr_fd) < 0) E("close < 0");
-	if (close(pipes[WRITE]) < 0) E("close < 0");
-	while ((nread = read(pipes[READ], buffer, sizeof(buffer))) > 0) {
-		if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
-		buffer[nread] = '\0';
-		appendStringInfoString(&task->error, buffer);
-		if (fwrite(buffer, nread, 1, stderr) != 1) E("fwrite");
-	}
-	if (close(pipes[READ]) < 0) E("close < 0");
-}
 
 /*
  * exec_simple_query
@@ -320,8 +296,6 @@ exec_simple_query_my(Task *task)
 		 */
 		MemoryContextSwitchTo(oldcontext);
 
-		capture_stderr_start();
-
 		/*
 		 * Run the portal to completion, and then drop it (and the receiver).
 		 */
@@ -332,8 +306,6 @@ exec_simple_query_my(Task *task)
 						 receiver,
 						 receiver,
 						 &qc);
-
-		capture_stderr_stop(task);
 
 		receiver->rDestroy(receiver);
 
