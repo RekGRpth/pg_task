@@ -478,7 +478,7 @@ static void work_extension(const char *schema, const char *extension) {
     pfree(buf.data);
 }
 
-static void work_partman(void) {
+static void work_create_parent(void) {
     Datum values[] = {CStringGetTextDatum(work.schema_table), CStringGetTextDatum("plan"), CStringGetTextDatum("native"), CStringGetTextDatum("monthly")};
     static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID, TEXTOID};
     StringInfoData buf;
@@ -723,7 +723,7 @@ static void work_conf(void) {
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);
     work_index(countof(index_state), index_state);
-    if (work.conf.partman) work_partman();
+    if (work.conf.partman) work_create_parent();
     set_config_option("pg_task.data", work.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &buf);
