@@ -478,65 +478,61 @@ static void work_extension(const char *schema, const char *extension) {
     pfree(src.data);
 }
 
-static void work_create_parent(void) {
-    Datum values[] = {CStringGetTextDatum(work.schema_table), CStringGetTextDatum("plan"), CStringGetTextDatum("native"), CStringGetTextDatum("monthly")};
-    static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID, TEXTOID};
-    StringInfoData src;
-    const char *partman_quote = quote_identifier(work.conf.partman);
-    initStringInfoMy(TopMemoryContext, &src);
-    appendStringInfo(&src, SQL(
-        SELECT %1$s.create_parent(
-            p_parent_table := $1,
-            p_control := $2,
-            p_type := $3,
-            p_interval := $4
-        )
-    ), partman_quote);
-    SPI_connect_my(src.data);
-    SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT, true);
-    if (SPI_tuptable->numvals != 1) E("SPI_tuptable->numvals != 1");
-    if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) E("!create_parent");
-    SPI_finish_my();
-    pfree((void *)values[0]);
-    pfree((void *)values[1]);
-    pfree((void *)values[2]);
-    pfree((void *)values[3]);
-    if (partman_quote != work.conf.partman) pfree((void *)partman_quote);
-    pfree(src.data);
-}
-
-static void work_create_template(void) {
+static void work_partman(void) {
     const char *partman_quote = quote_identifier(work.conf.partman);
     const char *pkey_quote;
     const char *template_quote;
     const RangeVar *rangevar;
     List *names;
-    StringInfoData src, pkey, template, partman_template;
-    initStringInfoMy(TopMemoryContext, &src);
+    StringInfoData create_template, pkey, template, partman_template;
+    initStringInfoMy(TopMemoryContext, &create_template);
+    initStringInfoMy(TopMemoryContext, &partman_template);
     initStringInfoMy(TopMemoryContext, &pkey);
     initStringInfoMy(TopMemoryContext, &template);
-    initStringInfoMy(TopMemoryContext, &partman_template);
     appendStringInfo(&pkey, "%s_pkey", work.conf.table);
     appendStringInfo(&template, "template_%s_%s", work.conf.schema, work.conf.table);
     pkey_quote = quote_identifier(pkey.data);
     template_quote = quote_identifier(template.data);
     appendStringInfo(&partman_template, "%s.%s", partman_quote, template_quote);
-    appendStringInfo(&src, SQL(
+    appendStringInfo(&create_template, SQL(
         CREATE TABLE %1$s (LIKE %2$s, CONSTRAINT %3$s PRIMARY KEY (id))
     ), partman_template.data, work.schema_table, pkey_quote);
-    if (partman_quote != work.conf.partman) pfree((void *)partman_quote);
-    if (pkey_quote != pkey.data) pfree((void *)pkey_quote);
-    if (template_quote != template.data) pfree((void *)template_quote);
     names = stringToQualifiedNameList(partman_template.data);
     rangevar = makeRangeVarFromNameList(names);
-    SPI_connect_my(src.data);
-    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+    SPI_connect_my(create_template.data);
+    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
+        Datum values[] = {CStringGetTextDatum(work.schema_table), CStringGetTextDatum("plan"), CStringGetTextDatum("native"), CStringGetTextDatum("monthly"), CStringGetTextDatum(partman_template.data)};
+        static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID, TEXTOID, TEXTOID};
+        StringInfoData create_parent;
+        initStringInfoMy(TopMemoryContext, &create_parent);
+        appendStringInfo(&create_parent, SQL(
+            SELECT %1$s.create_parent(
+                p_parent_table := $1,
+                p_control := $2,
+                p_type := $3,
+                p_interval := $4,
+                p_template_table = $5
+            )
+        ), partman_quote);
+        SPI_execute_with_args_my(create_template.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+        SPI_execute_with_args_my(create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT, false);
+        if (SPI_tuptable->numvals != 1) E("SPI_tuptable->numvals != 1");
+        if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) E("!create_parent");
+        pfree((void *)values[0]);
+        pfree((void *)values[1]);
+        pfree((void *)values[2]);
+        pfree((void *)values[3]);
+    }
     SPI_commit_my();
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
+    if (partman_quote != work.conf.partman) pfree((void *)partman_quote);
+    if (pkey_quote != pkey.data) pfree((void *)pkey_quote);
+    if (template_quote != template.data) pfree((void *)template_quote);
+    pfree(create_template.data);
+    pfree(partman_template.data);
     pfree(pkey.data);
-    pfree(src.data);
     pfree(template.data);
 }
 
@@ -758,10 +754,7 @@ static void work_conf(void) {
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);
     work_index(countof(index_state), index_state);
-    if (work.conf.partman) {
-        work_create_template();
-        work_create_parent();
-    }
+    if (work.conf.partman) work_partman();
     set_config_option("pg_task.data", work.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &buf);
