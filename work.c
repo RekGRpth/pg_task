@@ -485,6 +485,10 @@ static void work_partman(void) {
     const RangeVar *rangevar;
     List *names;
     StringInfoData create_template, pkey, template, partman_template;
+    const char *index_id[] = {"id"};
+    work_index(countof(index_id), index_id);
+    work_schema(work.conf.partman);
+    work_extension(work.conf.partman, "pg_partman");
     initStringInfoMy(TopMemoryContext, &create_template);
     initStringInfoMy(TopMemoryContext, &partman_template);
     initStringInfoMy(TopMemoryContext, &pkey);
@@ -522,6 +526,7 @@ static void work_partman(void) {
         pfree((void *)values[1]);
         pfree((void *)values[2]);
         pfree((void *)values[3]);
+        pfree((void *)values[4]);
     }
     SPI_commit_my();
     SPI_finish_my();
@@ -730,18 +735,10 @@ static void work_conf(void) {
     if (work.conf.schema != schema_quote) pfree((void *)schema_quote);
     if (work.conf.table != table_quote) pfree((void *)table_quote);
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work.user, work.data, work.conf.schema, work.conf.table, work.conf.reset, work.conf.timeout, work.conf.count, work.conf.live, work.schema_table, work.schema_type, work.conf.partman ? work.conf.partman : default_null);
-    if (work.conf.partman) {
-        work_schema(work.conf.partman);
-        work_extension(work.conf.partman, "pg_partman");
-    }
     work_schema(work.conf.schema);
     set_config_option("pg_task.schema", work.conf.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
     work_table();
-    if (work.conf.partman) {
-        const char *index_id[] = {"id"};
-        work_index(countof(index_id), index_id);
-    }
     work_index(countof(index_input), index_input);
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);
