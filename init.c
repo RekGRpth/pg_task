@@ -3,6 +3,7 @@
 PG_MODULE_MAGIC;
 
 char *default_null;
+static bool default_partman = false;
 static char *default_data;
 static char *default_json;
 static char *default_live;
@@ -117,6 +118,7 @@ static void init_assign(const char *newval, void *extra) {
 }
 
 static void init_conf(void) {
+    if (extension_file_exists("pg_partman")) DefineCustomBoolVariable("pg_task.default_partman", "pg_task default partman", NULL, &default_partman, false, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.default_count", "pg_task default count", NULL, &default_count, 1000, 0, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.default_reset", "pg_task default reset", NULL, &default_reset, 60, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.default_timeout", "pg_task default timeout", NULL, &default_timeout, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
@@ -126,7 +128,7 @@ static void init_conf(void) {
     DefineCustomStringVariable("pg_task.default_table", "pg_task default table", NULL, &default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_user", "pg_task default user", NULL, &default_user, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.json", "pg_task json", NULL, &default_json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign, NULL);
-    D1("json = %s, table = %s, null = %s, reset = %i, timeout = %i, count = %i, live = %s", default_json, default_table, default_null, default_reset, default_timeout, default_count, default_live);
+    D1("json = %s, table = %s, null = %s, reset = %i, timeout = %i, count = %i, live = %s, partman = %s", default_json, default_table, default_null, default_reset, default_timeout, default_count, default_live, default_partman ? "true" : "false");
 }
 
 void _PG_init(void) {
