@@ -188,24 +188,24 @@ static int work_nevents(void) {
 
 static void work_fini(void) {
     dlist_mutable_iter iter;
-    StringInfoData buf;
+    StringInfoData error;
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li", work.user, work.data, work.conf.schema, work.conf.table, work.conf.reset, work.conf.timeout, work.conf.count, work.conf.live);
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
+    initStringInfoMy(TopMemoryContext, &error);
+    appendStringInfo(&error, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
     dlist_foreach_modify(iter, &work.head) {
         Task *task = dlist_container(Task, node, iter.cur);
-        if (!PQrequestCancel(task->conn)) work_error(task, buf.data, PQerrorMessageMy(task->conn), true); else {
-            work_edata(task, __FILE__, __LINE__, __func__, buf.data);
+        if (!PQrequestCancel(task->conn)) work_error(task, error.data, PQerrorMessageMy(task->conn), true); else {
+            work_edata(task, __FILE__, __LINE__, __func__, error.data);
             work_finish(task);
         }
     }
-    pfree(buf.data);
+    pfree(error.data);
     if (ShutdownRequestPending) return;
     conf_work(&work.conf, work.data, work.user);
 }
 
 static void work_index(int count, const char *const *indexes) {
-    StringInfoData buf, name, idx;
+    StringInfoData src, name, idx;
     List *names;
     RelationData *relation;
     const RangeVar *rangevar;
@@ -220,34 +220,34 @@ static void work_index(int count, const char *const *indexes) {
     }
     appendStringInfoString(&name, "_idx");
     name_quote = quote_identifier(name.data);
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, SQL(CREATE INDEX %s ON %s USING btree ), name_quote, work.schema_table);
-    appendStringInfoString(&buf, "(");
+    initStringInfoMy(TopMemoryContext, &src);
+    appendStringInfo(&src, SQL(CREATE INDEX %s ON %s USING btree ), name_quote, work.schema_table);
+    appendStringInfoString(&src, "(");
     for (int i = 0; i < count; i++) {
         const char *index = indexes[i];
         const char *index_quote = quote_identifier(index);
-        if (i) appendStringInfoString(&buf, ", ");
-        appendStringInfoString(&buf, index_quote);
+        if (i) appendStringInfoString(&src, ", ");
+        appendStringInfoString(&src, index_quote);
         if (index_quote != index) pfree((void *)index_quote);
     }
-    appendStringInfoString(&buf, ")");
+    appendStringInfoString(&src, ")");
     initStringInfoMy(TopMemoryContext, &idx);
     appendStringInfo(&idx, "%s.%s", schema_quote, name_quote);
     names = stringToQualifiedNameList(idx.data);
     rangevar = makeRangeVarFromNameList(names);
     D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work.user, work.data, work.conf.schema, work.conf.table, idx.data, work.schema_table);
-    SPI_connect_my(buf.data);
+    SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
-        SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     } else if ((relation = relation_openrv_extended(rangevar, AccessShareLock, true))) {
-        if (relation->rd_index && relation->rd_index->indrelid != work.table) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+        if (relation->rd_index && relation->rd_index->indrelid != work.table) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
         relation_close(relation, AccessShareLock);
     }
     SPI_commit_my();
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
-    pfree(buf.data);
+    pfree(src.data);
     pfree(name.data);
     pfree(idx.data);
     if (work.conf.schema != schema_quote) pfree((void *)schema_quote);
@@ -319,21 +319,21 @@ static void work_done(Task *task) {
 }
 
 static void work_schema(const char *schema) {
-    StringInfoData buf;
+    StringInfoData src;
     List *names;
     const char *schema_quote = quote_identifier(schema);
     D1("user = %s, data = %s, schema = %s", work.user, work.data, schema);
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, SQL(CREATE SCHEMA %s), schema_quote);
+    initStringInfoMy(TopMemoryContext, &src);
+    appendStringInfo(&src, SQL(CREATE SCHEMA %s), schema_quote);
     names = stringToQualifiedNameList(schema_quote);
-    SPI_connect_my(buf.data);
-    if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+    SPI_connect_my(src.data);
+    if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     work.schema = get_namespace_oid(strVal(linitial(names)), false);
     SPI_commit_my();
     SPI_finish_my();
     list_free_deep(names);
     if (schema_quote != schema) pfree((void *)schema_quote);
-    pfree(buf.data);
+    pfree(src.data);
 }
 
 static void work_success(Task *task, PGresult *result) {
@@ -397,7 +397,7 @@ static void work_result(Task *task) {
 }
 
 static bool work_input(Task *task) {
-    StringInfoData buf;
+    StringInfoData input;
     List *list;
     if (ShutdownRequestPending) return true;
     if (task_work(task)) return true;
@@ -409,21 +409,21 @@ static bool work_input(Task *task) {
     PG_CATCH();
         FlushErrorState();
     PG_END_TRY();
-    initStringInfoMy(TopMemoryContext, &buf);
+    initStringInfoMy(TopMemoryContext, &input);
     task->skip = 0;
-    appendStringInfo(&buf, SQL(SET "pg_task.id" = %li;), task->id);
+    appendStringInfo(&input, SQL(SET "pg_task.id" = %li;), task->id);
     task->skip++;
     if (task->timeout) {
-        appendStringInfo(&buf, SQL(SET "statement_timeout" = %i;), task->timeout);
+        appendStringInfo(&input, SQL(SET "statement_timeout" = %i;), task->timeout);
         task->skip++;
     }
     if (task->append) {
-        appendStringInfoString(&buf, SQL(SET "config.append_type_to_column_name" = true;));
+        appendStringInfoString(&input, SQL(SET "config.append_type_to_column_name" = true;));
         task->skip++;
     }
-    appendStringInfoString(&buf, task->input);
+    appendStringInfoString(&input, task->input);
     pfree(task->input);
-    task->input = buf.data;
+    task->input = input.data;
     return false;
 }
 
@@ -460,31 +460,31 @@ static void work_connect(Task *task) {
 }
 
 static void work_extension(const char *schema, const char *extension) {
-    StringInfoData buf;
+    StringInfoData src;
     List *names;
     const char *extension_quote = quote_identifier(extension);
     const char *schema_quote = quote_identifier(schema);
     D1("user = %s, data = %s, schema = %s, extension = %s", work.user, work.data, schema, extension);
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, schema_quote);
+    initStringInfoMy(TopMemoryContext, &src);
+    appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, schema_quote);
     names = stringToQualifiedNameList(extension_quote);
-    SPI_connect_my(buf.data);
-    if (!OidIsValid(get_extension_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+    SPI_connect_my(src.data);
+    if (!OidIsValid(get_extension_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
     SPI_finish_my();
     list_free_deep(names);
     if (extension_quote != extension) pfree((void *)extension_quote);
     if (schema_quote != schema) pfree((void *)schema_quote);
-    pfree(buf.data);
+    pfree(src.data);
 }
 
 static void work_create_parent(void) {
     Datum values[] = {CStringGetTextDatum(work.schema_table), CStringGetTextDatum("plan"), CStringGetTextDatum("native"), CStringGetTextDatum("monthly")};
     static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID, TEXTOID};
-    StringInfoData buf;
+    StringInfoData src;
     const char *partman_quote = quote_identifier(work.conf.partman);
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, SQL(
+    initStringInfoMy(TopMemoryContext, &src);
+    appendStringInfo(&src, SQL(
         SELECT %1$s.create_parent(
             p_parent_table := $1,
             p_control := $2,
@@ -492,8 +492,8 @@ static void work_create_parent(void) {
             p_interval := $4
         )
     ), partman_quote);
-    SPI_connect_my(buf.data);
-    SPI_execute_with_args_my(buf.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT, true);
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT, true);
     if (SPI_tuptable->numvals != 1) E("SPI_tuptable->numvals != 1");
     if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) E("!create_parent");
     SPI_finish_my();
@@ -502,7 +502,7 @@ static void work_create_parent(void) {
     pfree((void *)values[2]);
     pfree((void *)values[3]);
     if (partman_quote != work.conf.partman) pfree((void *)partman_quote);
-    pfree(buf.data);
+    pfree(src.data);
 }
 
 static void work_remote(Task *task_) {
