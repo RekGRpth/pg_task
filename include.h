@@ -94,7 +94,7 @@ typedef struct _SPI_plan SPI_plan;
 #define deserialize_int(dst) (dst) = *(typeof(dst) *)p; p += sizeof(dst);
 
 #define CONF \
-    X(bool, partman, get_bool, serialize_bool, deserialize_bool) \
+    X(char *, partman, get_char_null, serialize_char_null, deserialize_char_null) \
     X(char *, schema, get_char_null, serialize_char_null, deserialize_char_null) \
     X(char *, table, get_char, serialize_char, deserialize_char) \
     X(int32, count, get_int32, serialize_int, deserialize_int) \

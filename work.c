@@ -685,10 +685,10 @@ static void work_conf(void) {
     work.schema_type = buf.data;
     if (work.conf.schema && schema_quote && work.conf.schema != schema_quote) pfree((void *)schema_quote);
     if (work.conf.table != table_quote) pfree((void *)table_quote);
-    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, schema_table = %s, schema_table = %s", work.user, work.data, work.conf.schema ? work.conf.schema : default_null, work.conf.table, work.conf.reset, work.conf.timeout, work.conf.count, work.conf.live, work.schema_table, work.schema_type);
+    D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work.user, work.data, work.conf.schema ? work.conf.schema : default_null, work.conf.table, work.conf.reset, work.conf.timeout, work.conf.count, work.conf.live, work.schema_table, work.schema_type, work.conf.partman ? work.conf.partman : default_null);
     if (work.conf.partman) {
-        work_schema("partman");
-        work_extension("pg_partman", "partman");
+        work_schema(work.conf.partman);
+        work_extension("pg_partman", work.conf.partman);
     }
     if (work.conf.schema) {
         work_schema(work.conf.schema);
@@ -741,7 +741,7 @@ static void work_init(void) {
     if (!MyProcPort->user_name) MyProcPort->user_name = work.user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work.data;
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    D1("user_oid = %i, data_oid = %i, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li", work.conf.user, work.conf.data, work.user, work.data, work.conf.schema ? work.conf.schema : default_null, work.conf.table, work.conf.reset, work.conf.timeout, work.conf.count, work.conf.live);
+    D1("user_oid = %i, data_oid = %i, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, partman = %s", work.conf.user, work.conf.data, work.user, work.data, work.conf.schema ? work.conf.schema : default_null, work.conf.table, work.conf.reset, work.conf.timeout, work.conf.count, work.conf.live, work.conf.partman ? work.conf.partman : default_null);
     work_conf();
 }
 
