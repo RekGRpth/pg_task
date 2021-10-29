@@ -565,8 +565,8 @@ static void work_table(void) {
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, SQL(
         CREATE TABLE %1$s (
-            id bigserial NOT NULL PRIMARY KEY,
-            parent int8 DEFAULT current_setting('pg_task.id', true)::int8 REFERENCES %1$s (id) MATCH SIMPLE ON UPDATE CASCADE ON DELETE SET NULL,
+            id bigserial NOT NULL%4$s,
+            parent int8 DEFAULT current_setting('pg_task.id', true)::int8,
             plan timestamptz NOT NULL DEFAULT current_timestamp,
             start timestamptz,
             stop timestamptz,
@@ -593,7 +593,8 @@ static void work_table(void) {
             output text,
             remote text
         )
-    ), work.schema_table, work.schema_type, "");
+    ), work.schema_table, work.schema_type, "", work.partman ? "" : " PRIMARY KEY");
+    if (work.partman) appendStringInfoString(&buf, " PARTITION BY RANGE (plan)");
     names = stringToQualifiedNameList(work.schema_table);
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
@@ -689,6 +690,10 @@ static void work_conf(void) {
     }
     work_type();
     work_table();
+    if (work.partman) {
+        const char *index_id[] = {"id"};
+        work_index(countof(index_id), index_id);
+    }
     work_index(countof(index_input), index_input);
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);
