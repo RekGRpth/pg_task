@@ -513,7 +513,7 @@ static void work_remote(Task *task_) {
     const char **values;
     int arg = 3;
     PQconninfoOption *opts = PQconninfoParse(task_->remote, &err);
-    StringInfoData buf, buf2;
+    StringInfoData name, value;
     Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
     *task = *task_;
     D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work.table);
@@ -530,22 +530,22 @@ static void work_remote(Task *task_) {
     if (!superuser() && !password) { work_error(task, "!superuser && !password", NULL, false); PQconninfoFree(opts); return; }
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "pg_task %s %s %s", work.conf.schema, work.conf.table, task->group);
+    initStringInfoMy(TopMemoryContext, &name);
+    appendStringInfo(&name, "pg_task %s %s %s", work.conf.schema, work.conf.table, task->group);
     arg = 0;
     keywords[arg] = "application_name";
-    values[arg] = buf.data;
-    initStringInfoMy(TopMemoryContext, &buf2);
-    if (options) appendStringInfoString(&buf2, options);
-    appendStringInfo(&buf2, "%s-c pg_task.data=%s", buf2.len ? " " : "", work.data);
-    appendStringInfo(&buf2, " -c pg_task.user=%s", work.user);
-    appendStringInfo(&buf2, " -c pg_task.schema=%s", work.conf.schema);
-    appendStringInfo(&buf2, " -c pg_task.table=%s", work.conf.table);
-    appendStringInfo(&buf2, " -c pg_task.oid=%i", work.table);
-    appendStringInfo(&buf2, " -c pg_task.group=%s", task->group);
+    values[arg] = name.data;
+    initStringInfoMy(TopMemoryContext, &value);
+    if (options) appendStringInfoString(&value, options);
+    appendStringInfo(&value, "%s-c pg_task.data=%s", value.len ? " " : "", work.data);
+    appendStringInfo(&value, " -c pg_task.user=%s", work.user);
+    appendStringInfo(&value, " -c pg_task.schema=%s", work.conf.schema);
+    appendStringInfo(&value, " -c pg_task.table=%s", work.conf.table);
+    appendStringInfo(&value, " -c pg_task.oid=%i", work.table);
+    appendStringInfo(&value, " -c pg_task.group=%s", task->group);
     arg++;
     keywords[arg] = "options";
-    values[arg] = buf2.data;
+    values[arg] = value.data;
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
         if (!strcmp(opt->keyword, "fallback_application_name")) continue;
@@ -567,26 +567,26 @@ static void work_remote(Task *task_) {
     else if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) work_error(task, "PQsetnonblocking == -1", PQerrorMessageMy(task->conn), true);
     else if (!superuser() && !PQconnectionUsedPassword(task->conn)) work_error(task, "!superuser && !PQconnectionUsedPassword", PQerrorMessageMy(task->conn), true);
     else if (PQclientEncoding(task->conn) != GetDatabaseEncoding()) PQsetClientEncoding(task->conn, GetDatabaseEncodingName());
-    pfree(buf.data);
-    pfree(buf2.data);
+    pfree(name.data);
+    pfree(value.data);
     pfree(keywords);
     pfree(values);
     PQconninfoFree(opts);
 }
 
 static void work_table(void) {
-    StringInfoData buf;
+    StringInfoData src;
     StringInfoData pkey;
     List *names;
     const RangeVar *rangevar;
     const char *pkey_quote;
     D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work.user, work.data, work.conf.schema, work.conf.table, work.schema_table, work.schema_type);
     set_config_option("pg_task.table", work.conf.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    initStringInfoMy(TopMemoryContext, &buf);
+    initStringInfoMy(TopMemoryContext, &src);
     initStringInfoMy(TopMemoryContext, &pkey);
     appendStringInfo(&pkey, "%s_pkey", work.conf.table);
     pkey_quote = quote_identifier(pkey.data);
-    appendStringInfo(&buf, SQL(
+    appendStringInfo(&src, SQL(
         CREATE TABLE %1$s (
             id bigserial NOT NULL,
             parent int8 DEFAULT current_setting('pg_task.id', true)::int8,
@@ -620,21 +620,21 @@ static void work_table(void) {
     ), work.schema_table, work.schema_type, "", pkey_quote, work.conf.partman ? ", plan" : "");
     if (pkey_quote != pkey.data) pfree((void *)pkey_quote);
     pfree(pkey.data);
-    if (work.conf.partman) appendStringInfoString(&buf, " PARTITION BY RANGE (plan)");
+    if (work.conf.partman) appendStringInfoString(&src, " PARTITION BY RANGE (plan)");
     names = stringToQualifiedNameList(work.schema_table);
     rangevar = makeRangeVarFromNameList(names);
-    SPI_connect_my(buf.data);
-    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+    SPI_connect_my(src.data);
+    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     work.table = RangeVarGetRelid(rangevar, NoLock, false);
     SPI_commit_my();
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
     set_config_option("pg_task.table", work.conf.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    resetStringInfo(&buf);
-    appendStringInfo(&buf, "%i", work.table);
-    set_config_option("pg_task.oid", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pfree(buf.data);
+    resetStringInfo(&src);
+    appendStringInfo(&src, "%i", work.table);
+    set_config_option("pg_task.oid", src.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    pfree(src.data);
 }
 
 static void work_task(Task *task) {
@@ -672,20 +672,20 @@ static void work_task(Task *task) {
 }
 
 static void work_type(void) {
-    StringInfoData buf;
+    StringInfoData src;
     Oid type = InvalidOid;
     int32 typmod;
     const char *schema_quote = quote_identifier(work.conf.schema);
     D1("user = %s, data = %s, schema = %s, table = %s", work.user, work.data, work.conf.schema, work.conf.table);
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')), work.schema_type);
-    SPI_connect_my(buf.data);
+    initStringInfoMy(TopMemoryContext, &src);
+    appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')), work.schema_type);
+    SPI_connect_my(src.data);
     parseTypeString(work.schema_type, &type, &typmod, true);
-    if (!OidIsValid(type)) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+    if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
     SPI_finish_my();
     if (work.conf.schema != schema_quote) pfree((void *)schema_quote);
-    pfree(buf.data);
+    pfree(src.data);
 }
 
 static void work_conf(void) {
