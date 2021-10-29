@@ -594,10 +594,10 @@ static void work_table(void) {
             remote text,
             CONSTRAINT %4$s PRIMARY KEY (id%5$s)
         )
-    ), work.schema_table, work.schema_type, "", pkey_quote, work.partman ? ", plan" : "");
+    ), work.schema_table, work.schema_type, "", pkey_quote, work.conf.partman ? ", plan" : "");
     if (pkey_quote != pkey.data) pfree((void *)pkey_quote);
     pfree(pkey.data);
-    if (work.partman) appendStringInfoString(&buf, " PARTITION BY RANGE (plan)");
+    if (work.conf.partman) appendStringInfoString(&buf, " PARTITION BY RANGE (plan)");
     names = stringToQualifiedNameList(work.schema_table);
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(buf.data);
@@ -686,8 +686,7 @@ static void work_conf(void) {
     if (work.conf.schema && schema_quote && work.conf.schema != schema_quote) pfree((void *)schema_quote);
     if (work.conf.table != table_quote) pfree((void *)table_quote);
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, schema_table = %s, schema_table = %s", work.user, work.data, work.conf.schema ? work.conf.schema : default_null, work.conf.table, work.conf.reset, work.conf.timeout, work.conf.count, work.conf.live, work.schema_table, work.schema_type);
-    if (extension_file_exists("pg_partman")) {
-        work.partman = true;
+    if (work.conf.partman) {
         work_schema("partman");
         work_extension("pg_partman", "partman");
     }
@@ -697,7 +696,7 @@ static void work_conf(void) {
     }
     work_type();
     work_table();
-    if (work.partman) {
+    if (work.conf.partman) {
         const char *index_id[] = {"id"};
         work_index(countof(index_id), index_id);
     }
@@ -705,7 +704,7 @@ static void work_conf(void) {
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);
     work_index(countof(index_state), index_state);
-    if (work.partman) work_partman();
+    if (work.conf.partman) work_partman();
     set_config_option("pg_task.data", work.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &buf);

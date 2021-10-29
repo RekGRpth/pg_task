@@ -77,20 +77,24 @@
 
 typedef struct _SPI_plan SPI_plan;
 
+#define get_bool(name) DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, #name, false))
 #define get_char(name) TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, #name, false))
 #define get_char_null(name) TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, #name, true))
 #define get_int32(name) DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, #name, false))
 #define get_int64(name) DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, #name, false))
 
-#define serialize_char(src) if ((len += strlcpy(worker.bgw_extra + len, (src), sizeof(worker.bgw_extra)) + 1) >= sizeof(worker.bgw_extra)) E("strlcpy")
+#define serialize_bool(src) if ((len += sizeof(src)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(src), &(src), sizeof(src));
 #define serialize_char_null(src) serialize_char((src) ? (src) : "")
+#define serialize_char(src) if ((len += strlcpy(worker.bgw_extra + len, (src), sizeof(worker.bgw_extra)) + 1) >= sizeof(worker.bgw_extra)) E("strlcpy")
 #define serialize_int(src) if ((len += sizeof(src)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(src), &(src), sizeof(src));
 
+#define deserialize_bool(dst) (dst) = *(typeof(dst) *)p; p += sizeof(dst);
 #define deserialize_char(dst) (dst) = p; p += strlen(dst) + 1;
 #define deserialize_char_null(dst) deserialize_char(dst); if (p == (dst) + 1) (dst) = NULL;
 #define deserialize_int(dst) (dst) = *(typeof(dst) *)p; p += sizeof(dst);
 
 #define CONF \
+    X(bool, partman, get_bool, serialize_bool, deserialize_bool) \
     X(char *, schema, get_char_null, serialize_char_null, deserialize_char_null) \
     X(char *, table, get_char, serialize_char, deserialize_char) \
     X(int32, count, get_int32, serialize_int, deserialize_int) \
@@ -118,7 +122,6 @@ typedef struct Conf {
     X(table, serialize_int, deserialize_int)
 
 typedef struct Work {
-    bool partman;
     char *data;
     char *schema_table;
     char *schema_type;

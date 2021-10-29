@@ -100,8 +100,9 @@ static void conf_check(void) {
                     COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,
                     COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout,
                     COALESCE(count, current_setting('pg_task.default_count', false)::int4) AS count,
-                    EXTRACT(epoch FROM COALESCE(live, current_setting('pg_task.default_live', false)::interval))::int8 AS live
-            FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, reset int4, timeout int4, count int4, live interval)
+                    EXTRACT(epoch FROM COALESCE(live, current_setting('pg_task.default_live', false)::interval))::int8 AS live,
+                    COALESCE(partman, current_setting('pg_task.default_partman', false)::bool) AS partman
+            FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, reset int4, timeout int4, count int4, live interval, partman bool)
         ) SELECT    DISTINCT COALESCE(u.usesysid, 0) AS user_oid, COALESCE(oid, 0) AS data_oid, COALESCE(pid, 0) AS pid, j.* FROM j
         LEFT JOIN   pg_user AS u ON usename = j.user
         LEFT JOIN   pg_database AS d ON datname = data AND NOT datistemplate AND datallowconn AND (usesysid IS NULL OR usesysid = datdba)
@@ -121,7 +122,7 @@ static void conf_check(void) {
         int32 pid = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "pid", false));
         conf.data = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data_oid", false));
         conf.user = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user_oid", false));
-        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, user_oid = %i, data_oid = %i, pid = %i", row, user, data, conf.schema ? conf.schema : default_null, conf.table, conf.reset, conf.timeout, conf.count, conf.live, conf.user, conf.data, pid);
+        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, user_oid = %i, data_oid = %i, pid = %i, partman = %s", row, user, data, conf.schema ? conf.schema : default_null, conf.table, conf.reset, conf.timeout, conf.count, conf.live, conf.user, conf.data, pid, conf.partman ? "true" : "false");
         if (!pid) {
             if (!conf.user) conf.user = conf_user(user);
             if (!conf.data) conf.data = conf_data(user, data);
