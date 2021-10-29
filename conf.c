@@ -65,11 +65,11 @@ void conf_work(const Conf *conf, const char *data, const char *user) {
     BackgroundWorker worker;
     pid_t pid;
     size_t len = 0;
-    D1("user_oid = %i, data_oid = %i, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, partman = %s", conf->user, conf->data, user, data, conf->schema ? conf->schema : default_null, conf->table, conf->reset, conf->timeout, conf->count, conf->live, conf->partman ? conf->partman : default_null);
+    D1("user_oid = %i, data_oid = %i, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, partman = %s", conf->user, conf->data, user, data, conf->schema, conf->table, conf->reset, conf->timeout, conf->count, conf->live, conf->partman ? conf->partman : default_null);
     MemSet(&worker, 0, sizeof(worker));
     if (strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
-    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_work %s%s%s %i %i", conf->schema ? conf->schema : "", conf->schema ? " " : "", conf->table, conf->reset, conf->timeout) >= sizeof(worker.bgw_type) - 1) E("snprintf");
+    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_work %s %s %i %i", conf->schema, conf->table, conf->reset, conf->timeout) >= sizeof(worker.bgw_type) - 1) E("snprintf");
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", user, data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) E("snprintf");
 #define X(type, name, get, serialize, deserialize) serialize(conf->name);
     CONF
@@ -95,7 +95,7 @@ static void conf_check(void) {
         WITH j AS (
             SELECT  COALESCE(COALESCE(j.user, data), current_setting('pg_task.default_user', false)) AS user,
                     COALESCE(COALESCE(data, j.user), current_setting('pg_task.default_data', false)) AS data,
-                    schema,
+                    COALESCE(schema, current_setting('pg_task.default_schema', false)) AS schema,
                     COALESCE(j.table, current_setting('pg_task.default_table', false)) AS table,
                     COALESCE(reset, current_setting('pg_task.default_reset', false)::int4) AS reset,
                     COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout,
@@ -122,7 +122,7 @@ static void conf_check(void) {
         int32 pid = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "pid", false));
         conf.data = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data_oid", false));
         conf.user = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user_oid", false));
-        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, user_oid = %i, data_oid = %i, pid = %i, partman = %s", row, user, data, conf.schema ? conf.schema : default_null, conf.table, conf.reset, conf.timeout, conf.count, conf.live, conf.user, conf.data, pid, conf.partman ? conf.partman : default_null);
+        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, user_oid = %i, data_oid = %i, pid = %i, partman = %s", row, user, data, conf.schema, conf.table, conf.reset, conf.timeout, conf.count, conf.live, conf.user, conf.data, pid, conf.partman ? conf.partman : default_null);
         if (!pid) {
             if (!conf.user) conf.user = conf_user(user);
             if (!conf.data) conf.data = conf_data(user, data);
@@ -130,7 +130,7 @@ static void conf_check(void) {
         }
         pfree(user);
         pfree(data);
-        if (conf.schema) pfree(conf.schema);
+        pfree(conf.schema);
         pfree(conf.table);
     }
     SPI_finish_my();
