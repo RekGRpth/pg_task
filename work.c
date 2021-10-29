@@ -318,11 +318,11 @@ static void work_done(Task *task) {
     (PQstatus(task->conn) != CONNECTION_OK || !task->live || task_live(task)) ? work_finish(task) : work_query(task);
 }
 
-static void work_schema(void) {
+static void work_schema(const char *schema) {
     StringInfoData buf;
     List *names;
-    const char *schema_quote = quote_identifier(work.conf.schema);
-    D1("user = %s, data = %s, schema = %s, table = %s", work.user, work.data, work.conf.schema, work.conf.table);
+    const char *schema_quote = quote_identifier(schema);
+    D1("user = %s, data = %s, schema = %s", work.user, work.data, schema);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, SQL(CREATE SCHEMA %s), schema_quote);
     names = stringToQualifiedNameList(schema_quote);
@@ -332,9 +332,8 @@ static void work_schema(void) {
     SPI_commit_my();
     SPI_finish_my();
     list_free_deep(names);
-    if (schema_quote != work.conf.schema) pfree((void *)schema_quote);
+    if (schema_quote != schema) pfree((void *)schema_quote);
     pfree(buf.data);
-    set_config_option("pg_task.schema", work.conf.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
 }
 
 static void work_success(Task *task, PGresult *result) {
@@ -457,6 +456,13 @@ static void work_connect(Task *task) {
         if(!(task->pid = PQbackendPID(task->conn))) { work_error(task, "!PQbackendPID", PQerrorMessageMy(task->conn), true); return; }
         if (!init_table_pid_hash_lock(work.table, task->pid, task->hash)) { W("!init_table_pid_hash_lock(%i, %i, %i)", work.table, task->pid, task->hash); work_error(task, "!init_table_pid_hash_lock", NULL, true); return; }
         work_query(task);
+    }
+}
+
+static void work_partman(void) {
+    if (extension_file_exists("pg_partman")) {
+        work.partman = true;
+        work_schema("partman");
     }
 }
 
@@ -655,7 +661,11 @@ static void work_conf(void) {
     if (work.conf.schema && schema_quote && work.conf.schema != schema_quote) pfree((void *)schema_quote);
     if (work.conf.table != table_quote) pfree((void *)table_quote);
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, schema_table = %s, schema_table = %s", work.user, work.data, work.conf.schema ? work.conf.schema : default_null, work.conf.table, work.conf.reset, work.conf.timeout, work.conf.count, work.conf.live, work.schema_table, work.schema_type);
-    if (work.conf.schema) work_schema();
+    work_partman();
+    if (work.conf.schema) {
+        work_schema(work.conf.schema);
+        set_config_option("pg_task.schema", work.conf.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    }
     work_type();
     work_table();
     work_index(countof(index_input), index_input);

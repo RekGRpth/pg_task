@@ -46,6 +46,7 @@
 #include <catalog/pg_type.h>
 #include <commands/async.h>
 #include <commands/dbcommands.h>
+#include <commands/extension.h>
 #include <commands/prepare.h>
 #include <commands/user.h>
 #include <executor/spi.h>
@@ -117,6 +118,7 @@ typedef struct Conf {
     X(table, serialize_int, deserialize_int)
 
 typedef struct Work {
+    bool partman;
     char *data;
     char *schema_table;
     char *schema_type;
