@@ -607,19 +607,14 @@ static void work_remote(Task *task_) {
 
 static void work_table(void) {
     StringInfoData src;
-    StringInfoData pkey;
     List *names;
     const RangeVar *rangevar;
-    const char *pkey_quote;
     D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work.user, work.data, work.conf.schema, work.conf.table, work.schema_table, work.schema_type);
     set_config_option("pg_task.table", work.conf.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &src);
-    initStringInfoMy(TopMemoryContext, &pkey);
-    appendStringInfo(&pkey, "%s_pkey", work.conf.table);
-    pkey_quote = quote_identifier(pkey.data);
     appendStringInfo(&src, SQL(
         CREATE TABLE %1$s (
-            id bigserial NOT NULL,
+            id bigserial NOT NULL%4$s,
             parent int8 DEFAULT current_setting('pg_task.id', true)::int8,
             plan timestamptz NOT NULL DEFAULT current_timestamp,
             start timestamptz,
@@ -645,12 +640,9 @@ static void work_table(void) {
             input text NOT NULL,
             "null" text NOT NULL DEFAULT '\\N',
             output text,
-            remote text,
-            CONSTRAINT %4$s PRIMARY KEY (id%5$s)
+            remote text
         )
-    ), work.schema_table, work.schema_type, "", pkey_quote, work.conf.partman ? ", plan" : "");
-    if (pkey_quote != pkey.data) pfree((void *)pkey_quote);
-    pfree(pkey.data);
+    ), work.schema_table, work.schema_type, "", work.conf.partman ? "" : " PRIMARY KEY");
     if (work.conf.partman) appendStringInfoString(&src, " PARTITION BY RANGE (plan)");
     names = stringToQualifiedNameList(work.schema_table);
     rangevar = makeRangeVarFromNameList(names);
