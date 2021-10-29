@@ -459,10 +459,31 @@ static void work_connect(Task *task) {
     }
 }
 
+static void work_extension(const char *extension, const char *schema) {
+    StringInfoData buf;
+    List *names;
+    const char *extension_quote = quote_identifier(extension);
+    const char *schema_quote = schema ? quote_identifier(schema) : NULL;
+    D1("user = %s, data = %s, schema = %s, extension = %s", work.user, work.data, schema ? schema : default_null, extension);
+    initStringInfoMy(TopMemoryContext, &buf);
+    appendStringInfo(&buf, SQL(CREATE EXTENSION %s), extension_quote);
+    if (schema) appendStringInfo(&buf, SQL(%s SCHEMA %s), " ", schema_quote);
+    names = stringToQualifiedNameList(extension_quote);
+    SPI_connect_my(buf.data);
+    if (!OidIsValid(get_extension_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(buf.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+    SPI_commit_my();
+    SPI_finish_my();
+    list_free_deep(names);
+    if (extension_quote != extension) pfree((void *)extension_quote);
+    if (schema && schema_quote != schema) pfree((void *)schema_quote);
+    pfree(buf.data);
+}
+
 static void work_partman(void) {
     if (extension_file_exists("pg_partman")) {
         work.partman = true;
         work_schema("partman");
+        work_extension("pg_partman", "partman");
     }
 }
 
