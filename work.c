@@ -485,8 +485,6 @@ static void work_partman(void) {
     const RangeVar *rangevar;
     List *names;
     StringInfoData create_template, pkey, template, partman_template;
-    const char *index_id[] = {"id"};
-    work_index(countof(index_id), index_id);
     work_schema(work.conf.partman);
     work_extension(work.conf.partman, "pg_partman");
     initStringInfoMy(TopMemoryContext, &create_template);
