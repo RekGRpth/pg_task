@@ -511,7 +511,7 @@ static void work_partman(void) {
                 p_control := $2,
                 p_type := $3,
                 p_interval := $4,
-                p_template_table = $5
+                p_template_table := $5
             )
         ), partman_quote);
         SPI_execute_with_args_my(create_template.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
