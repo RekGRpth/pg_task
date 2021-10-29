@@ -72,8 +72,8 @@ static void work_check(void) {
                     COALESCE(partman, current_setting('pg_task.default_partman', false)) AS partman
             FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, reset int4, timeout int4, count int4, live interval, partman text)
         ) SELECT    DISTINCT j.* FROM j
-        inner JOIN  pg_user AS u ON usename = j.user
-        inner JOIN  pg_database AS d ON datname = data AND NOT datistemplate AND datallowconn AND usesysid = datdba
+        INNER JOIN  pg_user AS u ON usename = j.user
+        INNER JOIN  pg_database AS d ON datname = data AND NOT datistemplate AND datallowconn AND usesysid = datdba
         WHERE       j.user = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND j.table = current_setting('pg_task.table', false) AND reset = current_setting('pg_task.reset', false)::int4 AND timeout = current_setting('pg_task.timeout', false)::int4
     );
     if (ShutdownRequestPending) return;
