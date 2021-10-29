@@ -479,6 +479,30 @@ static void work_extension(const char *schema, const char *extension) {
 }
 
 static void work_partman(void) {
+    Datum values[] = {CStringGetTextDatum(work.schema_table), CStringGetTextDatum("plan"), CStringGetTextDatum("native"), CStringGetTextDatum("monthly")};
+    static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID, TEXTOID};
+    StringInfoData buf;
+    const char *partman_quote = quote_identifier(work.conf.partman);
+    initStringInfoMy(TopMemoryContext, &buf);
+    appendStringInfo(&buf, SQL(
+        SELECT %1$s.create_parent(
+            p_parent_table := $1,
+            p_control := $2,
+            p_type := $3,
+            p_interval := $4
+        )
+    ), partman_quote);
+    SPI_connect_my(buf.data);
+    SPI_execute_with_args_my(buf.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT, true);
+    if (SPI_tuptable->numvals != 1) E("SPI_tuptable->numvals != 1");
+    if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) E("!create_parent");
+    SPI_finish_my();
+    pfree((void *)values[0]);
+    pfree((void *)values[1]);
+    pfree((void *)values[2]);
+    pfree((void *)values[3]);
+    if (partman_quote != work.conf.partman) pfree((void *)partman_quote);
+    pfree(buf.data);
 }
 
 static void work_remote(Task *task_) {
