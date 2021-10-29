@@ -505,6 +505,41 @@ static void work_create_parent(void) {
     pfree(src.data);
 }
 
+static void work_create_template(void) {
+    const char *partman_quote = quote_identifier(work.conf.partman);
+    const char *pkey_quote;
+    const char *template_quote;
+    const RangeVar *rangevar;
+    List *names;
+    StringInfoData src, pkey, template, partman_template;
+    initStringInfoMy(TopMemoryContext, &src);
+    initStringInfoMy(TopMemoryContext, &pkey);
+    initStringInfoMy(TopMemoryContext, &template);
+    initStringInfoMy(TopMemoryContext, &partman_template);
+    appendStringInfo(&pkey, "%s_pkey", work.conf.table);
+    appendStringInfo(&template, "template_%s_%s", work.conf.schema, work.conf.table);
+    pkey_quote = quote_identifier(pkey.data);
+    template_quote = quote_identifier(template.data);
+    appendStringInfo(&partman_template, "%s.%s", partman_quote, template_quote);
+    appendStringInfo(&src, SQL(
+        CREATE TABLE %1$s (LIKE %2$s, CONSTRAINT %3$s PRIMARY KEY (id))
+    ), partman_template.data, work.schema_table, pkey_quote);
+    if (partman_quote != work.conf.partman) pfree((void *)partman_quote);
+    if (pkey_quote != pkey.data) pfree((void *)pkey_quote);
+    if (template_quote != template.data) pfree((void *)template_quote);
+    names = stringToQualifiedNameList(partman_template.data);
+    rangevar = makeRangeVarFromNameList(names);
+    SPI_connect_my(src.data);
+    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+    SPI_commit_my();
+    SPI_finish_my();
+    pfree((void *)rangevar);
+    list_free_deep(names);
+    pfree(pkey.data);
+    pfree(src.data);
+    pfree(template.data);
+}
+
 static void work_remote(Task *task_) {
     bool password = false;
     char *err;
@@ -723,7 +758,10 @@ static void work_conf(void) {
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);
     work_index(countof(index_state), index_state);
-    if (work.conf.partman) work_create_parent();
+    if (work.conf.partman) {
+        work_create_template();
+        work_create_parent();
+    }
     set_config_option("pg_task.data", work.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &buf);
