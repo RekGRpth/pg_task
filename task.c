@@ -106,10 +106,10 @@ bool task_live(Task *task) {
 
 bool task_work(Task *task) {
     bool exit = false;
-    static Oid argtypes[] = {INT8OID, INT4OID};
     Datum values[] = {Int64GetDatum(task->id), Int32GetDatum(task->pid)};
-    static SPI_plan *plan = NULL;
     static char *command = NULL;
+    static Oid argtypes[] = {INT8OID, INT4OID};
+    static SPI_plan *plan = NULL;
     if (ShutdownRequestPending) return true;
     if (!init_table_id_lock(work.table, task->id)) { W("!init_table_id_lock(%i, %li)", work.table, task->id); return true; }
     task->lock = true;
