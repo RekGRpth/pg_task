@@ -162,8 +162,8 @@ static void work_finish(Task *task) {
 }
 
 static void work_error(Task *task, const char *msg, const char *err, bool finish) {
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     appendStringInfo(&task->error, "%s%s", task->error.len ? "\n" : "", msg);
     if (err && strlen(err)) appendStringInfo(&task->error, " and %s", err);
     W("%li: %s", task->id, task->error.data);
