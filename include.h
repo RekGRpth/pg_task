@@ -134,7 +134,6 @@ typedef struct Work {
 } Work;
 
 typedef struct Task {
-    bool append;
     bool delete;
     bool fail;
     bool header;

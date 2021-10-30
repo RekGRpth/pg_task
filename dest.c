@@ -23,13 +23,6 @@ static void headers(TupleDescData *typeinfo, Task *task) {
         if (task->quote) appendStringInfoChar(&task->output, task->quote);
         if (task->escape) init_escape(&task->output, value, strlen(value), task->escape);
         else appendStringInfoString(&task->output, value);
-        if (task->append) {
-            const char *type = SPI_gettype(typeinfo, col);
-            if (task->escape) init_escape(&task->output, "::", sizeof("::") - 1, task->escape);
-            else appendStringInfoString(&task->output, "::");
-            if (task->escape) init_escape(&task->output, type, strlen(type), task->escape);
-            else appendStringInfoString(&task->output, type);
-        }
         if (task->quote) appendStringInfoChar(&task->output, task->quote);
     }
 }
