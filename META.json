@@ -2,13 +2,13 @@
     "name": "pg_task",
     "abstract": "PostgreSQL task",
     "description": "PostgreSQL job scheduler pg_task allows to execute any sql command at any specific time at background asynchronously",
-    "version": "1.0.39",
+    "version": "1.0.40",
     "maintainer": "RekGRpth <rekgrpth@gmail.com>",
     "license": "mit",
     "provides": {
         "pg_task": {
             "file": "pg_task.so",
-            "version": "1.0.39"
+            "version": "1.0.40"
         }
     },
     "resources": {
