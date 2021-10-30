@@ -633,7 +633,7 @@ static void work_table(void) {
             error text,
             "group" text NOT NULL DEFAULT 'group',
             input text NOT NULL,
-            "null" text NOT NULL DEFAULT '\\N',
+            "null" text NOT NULL DEFAULT current_setting('pg_task.default_null', false),
             output text,
             remote text
         )
