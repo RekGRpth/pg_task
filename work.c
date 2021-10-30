@@ -699,11 +699,11 @@ static void work_task(Task *task) {
     pfree(task->group);
 }
 
-static void work_type(void) {
-    StringInfoData src;
-    Oid type = InvalidOid;
+static void work_type(const char *schema) {
+    const char *schema_quote = quote_identifier(schema);
     int32 typmod;
-    const char *schema_quote = quote_identifier(work.conf.schema);
+    Oid type = InvalidOid;
+    StringInfoData src;
     D1("user = %s, data = %s, schema = %s, table = %s", work.user, work.data, work.conf.schema, work.conf.table);
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')), work.schema_type);
@@ -712,7 +712,7 @@ static void work_type(void) {
     if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
     SPI_finish_my();
-    if (work.conf.schema != schema_quote) pfree((void *)schema_quote);
+    if (schema_quote != schema) pfree((void *)schema_quote);
     pfree(src.data);
 }
 
@@ -737,7 +737,7 @@ static void work_conf(void) {
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work.user, work.data, work.conf.schema, work.conf.table, work.conf.reset, work.conf.timeout, work.conf.count, work.conf.live, work.schema_table, work.schema_type, work.conf.partman ? work.conf.partman : default_null);
     work_schema(work.conf.schema);
     set_config_option("pg_task.schema", work.conf.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    work_type();
+    work_type(work.conf.schema);
     work_table();
     work_index(work.conf.schema, countof(index_input), index_input);
     work_index(work.conf.schema, countof(index_parent), index_parent);
