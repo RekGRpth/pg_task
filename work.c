@@ -318,7 +318,7 @@ static void work_done(Task *task) {
     (PQstatus(task->conn) != CONNECTION_OK || !task->live || task_live(task)) ? work_finish(task) : work_query(task);
 }
 
-static void work_schema(const char *schema) {
+static void work_schema(const char *schema, bool assign) {
     const char *schema_quote = quote_identifier(schema);
     List *names;
     StringInfoData src;
@@ -328,7 +328,7 @@ static void work_schema(const char *schema) {
     names = stringToQualifiedNameList(schema_quote);
     SPI_connect_my(src.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
-    work.schema = get_namespace_oid(strVal(linitial(names)), false);
+    if (assign) work.schema = get_namespace_oid(strVal(linitial(names)), false);
     SPI_commit_my();
     SPI_finish_my();
     list_free_deep(names);
@@ -485,7 +485,7 @@ static void work_partman(void) {
     const RangeVar *rangevar;
     List *names;
     StringInfoData create_template, pkey, template, partman_template;
-    work_schema(work.conf.partman);
+    work_schema(work.conf.partman, false);
     work_extension(work.conf.partman, "pg_partman");
     initStringInfoMy(TopMemoryContext, &pkey);
     appendStringInfo(&pkey, "%s_pkey", work.conf.table);
@@ -723,7 +723,7 @@ static void work_conf(void) {
     if (work.conf.schema != schema_quote) pfree((void *)schema_quote);
     if (work.conf.table != table_quote) pfree((void *)table_quote);
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work.user, work.data, work.conf.schema, work.conf.table, work.conf.reset, work.conf.timeout, work.conf.count, work.conf.live, work.schema_table, work.schema_type, work.conf.partman ? work.conf.partman : default_null);
-    work_schema(work.conf.schema);
+    work_schema(work.conf.schema, true);
     set_config_option("pg_task.schema", work.conf.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
     work_table();
