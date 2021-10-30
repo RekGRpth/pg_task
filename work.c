@@ -497,7 +497,7 @@ static void work_partman(void) {
     template_quote = quote_identifier(template.data);
     appendStringInfo(&partman_template, "%s.%s", partman_quote, template_quote);
     appendStringInfo(&create_template, SQL(
-        CREATE TABLE %1$s (LIKE %2$s, CONSTRAINT %3$s PRIMARY KEY (id))
+        CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))
     ), partman_template.data, work.schema_table, pkey_quote);
     names = stringToQualifiedNameList(partman_template.data);
     rangevar = makeRangeVarFromNameList(names);
@@ -517,6 +517,8 @@ static void work_partman(void) {
             )
         ), partman_quote);
         SPI_execute_with_args_my(create_template.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+        SPI_commit_my();
+        SPI_start_transaction_my(create_parent.data);
         SPI_execute_with_args_my(create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT, false);
         if (SPI_tuptable->numvals != 1) E("SPI_tuptable->numvals != 1");
         if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) E("!create_parent");
