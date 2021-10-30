@@ -6,10 +6,10 @@ extern Work work;
 static Task task;
 
 static void task_update(Task *task) {
-    static Oid argtypes[] = {TEXTOID};
     Datum values[] = {CStringGetTextDatum(task->group)};
-    static SPI_plan *plan = NULL;
     static char *command = NULL;
+    static Oid argtypes[] = {TEXTOID};
+    static SPI_plan *plan = NULL;
     if (!command) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
