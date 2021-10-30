@@ -460,10 +460,10 @@ static void work_connect(Task *task) {
 }
 
 static void work_extension(const char *schema, const char *extension) {
-    StringInfoData src;
-    List *names;
     const char *extension_quote = quote_identifier(extension);
     const char *schema_quote = quote_identifier(schema);
+    List *names;
+    StringInfoData src;
     D1("user = %s, data = %s, schema = %s, extension = %s", work.user, work.data, schema, extension);
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, schema_quote);
