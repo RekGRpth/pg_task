@@ -487,15 +487,15 @@ static void work_partman(void) {
     StringInfoData create_template, pkey, template, partman_template;
     work_schema(work.conf.partman);
     work_extension(work.conf.partman, "pg_partman");
-    initStringInfoMy(TopMemoryContext, &create_template);
-    initStringInfoMy(TopMemoryContext, &partman_template);
     initStringInfoMy(TopMemoryContext, &pkey);
-    initStringInfoMy(TopMemoryContext, &template);
     appendStringInfo(&pkey, "%s_pkey", work.conf.table);
+    initStringInfoMy(TopMemoryContext, &template);
     appendStringInfo(&template, "template_%s_%s", work.conf.schema, work.conf.table);
     pkey_quote = quote_identifier(pkey.data);
     template_quote = quote_identifier(template.data);
+    initStringInfoMy(TopMemoryContext, &partman_template);
     appendStringInfo(&partman_template, "%s.%s", partman_quote, template_quote);
+    initStringInfoMy(TopMemoryContext, &create_template);
     appendStringInfo(&create_template, SQL(
         CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))
     ), partman_template.data, work.schema_table, pkey_quote);
