@@ -92,7 +92,6 @@ exec_simple_query_my(Task *task)
 	 * we are in aborted transaction state!)
 	 */
 	parsetree_list = pg_parse_query(query_string);
-	task->length = list_length(parsetree_list);
 
 	/* Log immediately if dictated by log_statement */
 	if (check_log_statement(parsetree_list))

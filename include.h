@@ -154,7 +154,6 @@ typedef struct Task {
     int count;
     int event;
     int hash;
-    int length;
     int max;
     int pid;
     int skip;

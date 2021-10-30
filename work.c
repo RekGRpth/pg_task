@@ -337,9 +337,8 @@ static void work_schema(const char *schema, bool assign) {
 }
 
 static void work_success(Task *task, PGresult *result) {
-    if (task->length == 1 && !PQntuples(result)) return;
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-    if (task->header && (task->length > 1 || PQnfields(result) > 1)) {
+    if (task->header && PQntuples(result) && PQnfields(result) > 1) {
+        if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
         if (task->output.len) appendStringInfoString(&task->output, "\n");
         for (int col = 0; col < PQnfields(result); col++) {
             const char *value = PQfname(result, col);
@@ -361,6 +360,7 @@ static void work_success(Task *task, PGresult *result) {
         }
     }
     for (int row = 0; row < PQntuples(result); row++) {
+        if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
         if (task->output.len) appendStringInfoString(&task->output, "\n");
         for (int col = 0; col < PQnfields(result); col++) {
             const char *value = PQgetvalue(result, row, col);
@@ -397,18 +397,10 @@ static void work_result(Task *task) {
 }
 
 static bool work_input(Task *task) {
-    List *list;
     StringInfoData input;
     if (ShutdownRequestPending) return true;
     if (task_work(task)) return true;
     D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
-    PG_TRY();
-        list = pg_parse_query(task->input);
-        task->length = list_length(list);
-        list_free_deep(list);
-    PG_CATCH();
-        FlushErrorState();
-    PG_END_TRY();
     initStringInfoMy(TopMemoryContext, &input);
     task->skip = 0;
     appendStringInfo(&input, SQL(SET "pg_task.id" = %li;), task->id);

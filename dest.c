@@ -39,7 +39,7 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     Task *task = my->task;
     TupleDescData *typeinfo = slot->tts_tupleDescriptor;
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-    if (task->header && !my->row && typeinfo->natts > 1 && task->length == 1) headers(typeinfo, task);
+    if (task->header && !my->row && typeinfo->natts > 1) headers(typeinfo, task);
     if (task->output.len) appendStringInfoString(&task->output, "\n");
     for (int col = 1; col <= typeinfo->natts; col++) {
         char *value = SPI_getvalue_my(slot, typeinfo, col);
@@ -66,10 +66,6 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
 static void rStartup(DestReceiver *self, int operation, TupleDescData *typeinfo) {
     DestReceiverMy *my = (DestReceiverMy *)self;
     Task *task = my->task;
-    if (task->header && task->length > 1) {
-        if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-        headers(typeinfo, task);
-    }
     my->row = 0;
     task->skip = 1;
 }
