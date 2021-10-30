@@ -132,6 +132,12 @@ static void init_conf(void) {
     D1("json = %s, schema = %s, table = %s, null = %s, reset = %i, timeout = %i, count = %i, live = %s, partman = %s", default_json, default_schema, default_table, default_null, default_reset, default_timeout, default_count, default_live, default_partman ? default_partman : default_null);
 }
 
+void initStringInfoMy(MemoryContextData *memoryContext, StringInfoData *buf) {
+    MemoryContextData *oldMemoryContext = MemoryContextSwitchTo(memoryContext);
+    initStringInfo(buf);
+    MemoryContextSwitchTo(oldMemoryContext);
+}
+
 void _PG_init(void) {
     if (IsBinaryUpgrade) { W("IsBinaryUpgrade"); return; }
     if (!process_shared_preload_libraries_in_progress) F("!process_shared_preload_libraries_in_progress");
