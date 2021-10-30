@@ -762,7 +762,7 @@ static void work_update(void) {
                 LEFT JOIN pg_locks AS l ON l.locktype = 'userlock' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.objsubid = 4 AND l.database = $1 AND l.classid = t.id>>32 AND l.objid = t.id<<32>>32
                 WHERE plan < current_timestamp - concat_ws(' ', (current_setting('pg_task.reset', false)::int4 * current_setting('pg_task.timeout', false)::int4)::text, 'msec')::interval AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
                 FOR UPDATE OF t SKIP LOCKED
-            ) UPDATE %1$s AS u SET state = 'PLAN'::%2$s FROM s WHERE u.id = s.id RETURNING u.id
+            ) UPDATE %1$s AS u SET state = 'PLAN'::%2$s, start = NULL, stop = NULL, pid = NULL FROM s WHERE u.id = s.id RETURNING u.id
         ), work.schema_table, work.schema_type);
         command = buf.data;
     }
