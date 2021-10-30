@@ -205,12 +205,12 @@ static void work_fini(void) {
 }
 
 static void work_index(int count, const char *const *indexes) {
-    StringInfoData src, name, idx;
-    List *names;
-    RelationData *relation;
-    const RangeVar *rangevar;
     const char *name_quote;
     const char *schema_quote = quote_identifier(work.conf.schema);
+    const RangeVar *rangevar;
+    List *names;
+    RelationData *relation;
+    StringInfoData src, name, idx;
     initStringInfoMy(TopMemoryContext, &name);
     appendStringInfoString(&name, work.conf.table);
     for (int i = 0; i < count; i++) {
