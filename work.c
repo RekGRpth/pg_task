@@ -145,12 +145,12 @@ static void work_fail(Task *task, PGresult *result) {
 }
 
 static void work_free(Task *task) {
-    if (task->group) pfree(task->group);
-    if (task->null) pfree(task->null);
-    if (task->remote) pfree(task->remote);
-    if (task->input) pfree(task->input);
-    if (task->output.data) pfree(task->output.data);
     if (task->error.data) pfree(task->error.data);
+    if (task->group) pfree(task->group);
+    if (task->input) pfree(task->input);
+    if (task->null) pfree(task->null);
+    if (task->output.data) pfree(task->output.data);
+    if (task->remote) pfree(task->remote);
     pfree(task);
 }
 
