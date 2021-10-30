@@ -699,8 +699,7 @@ static void work_task(Task *task) {
     pfree(task->group);
 }
 
-static void work_type(const char *schema) {
-    const char *schema_quote = quote_identifier(schema);
+static void work_type(void) {
     int32 typmod;
     Oid type = InvalidOid;
     StringInfoData src;
@@ -712,7 +711,6 @@ static void work_type(const char *schema) {
     if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
     SPI_finish_my();
-    if (schema_quote != schema) pfree((void *)schema_quote);
     pfree(src.data);
 }
 
@@ -737,7 +735,7 @@ static void work_conf(void) {
     D1("user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work.user, work.data, work.conf.schema, work.conf.table, work.conf.reset, work.conf.timeout, work.conf.count, work.conf.live, work.schema_table, work.schema_type, work.conf.partman ? work.conf.partman : default_null);
     work_schema(work.conf.schema);
     set_config_option("pg_task.schema", work.conf.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    work_type(work.conf.schema);
+    work_type();
     work_table();
     work_index(work.conf.schema, countof(index_input), index_input);
     work_index(work.conf.schema, countof(index_parent), index_parent);
