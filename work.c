@@ -496,9 +496,7 @@ static void work_partman(void) {
     initStringInfoMy(TopMemoryContext, &partman_template);
     appendStringInfo(&partman_template, "%s.%s", partman_quote, template_quote);
     initStringInfoMy(TopMemoryContext, &create_template);
-    appendStringInfo(&create_template, SQL(
-        CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))
-    ), partman_template.data, work.schema_table, pkey_quote);
+    appendStringInfo(&create_template, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))), partman_template.data, work.schema_table, pkey_quote);
     names = stringToQualifiedNameList(partman_template.data);
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(create_template.data);
@@ -507,15 +505,7 @@ static void work_partman(void) {
         static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID, TEXTOID, TEXTOID};
         StringInfoData create_parent;
         initStringInfoMy(TopMemoryContext, &create_parent);
-        appendStringInfo(&create_parent, SQL(
-            SELECT %1$s.create_parent(
-                p_parent_table := $1,
-                p_control := $2,
-                p_type := $3,
-                p_interval := $4,
-                p_template_table := $5
-            )
-        ), partman_quote);
+        appendStringInfo(&create_parent, SQL(SELECT %1$s.create_parent(p_parent_table := $1, p_control := $2, p_type := $3, p_interval := $4, p_template_table := $5)), partman_quote);
         SPI_execute_with_args_my(create_template.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
         SPI_commit_my();
         SPI_start_transaction_my(create_parent.data);
