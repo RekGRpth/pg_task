@@ -204,9 +204,9 @@ static void work_fini(void) {
     conf_work(&work.conf, work.data, work.user);
 }
 
-static void work_index(const char *schema, int count, const char *const *indexes) {
+static void work_index(int count, const char *const *indexes) {
     const char *name_quote;
-    const char *schema_quote = quote_identifier(schema);
+    const char *schema_quote = quote_identifier(work.conf.schema);
     const RangeVar *rangevar;
     List *names;
     RelationData *relation;
@@ -248,7 +248,7 @@ static void work_index(const char *schema, int count, const char *const *indexes
     pfree((void *)rangevar);
     list_free_deep(names);
     if (name_quote != name.data) pfree((void *)name_quote);
-    if (schema_quote != schema) pfree((void *)schema_quote);
+    if (schema_quote != work.conf.schema) pfree((void *)schema_quote);
     pfree(idx.data);
     pfree(name.data);
     pfree(src.data);
@@ -737,10 +737,10 @@ static void work_conf(void) {
     set_config_option("pg_task.schema", work.conf.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
     work_table();
-    work_index(work.conf.schema, countof(index_input), index_input);
-    work_index(work.conf.schema, countof(index_parent), index_parent);
-    work_index(work.conf.schema, countof(index_plan), index_plan);
-    work_index(work.conf.schema, countof(index_state), index_state);
+    work_index(countof(index_input), index_input);
+    work_index(countof(index_parent), index_parent);
+    work_index(countof(index_plan), index_plan);
+    work_index(countof(index_state), index_state);
     if (work.conf.partman) work_partman();
     set_config_option("pg_task.data", work.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
