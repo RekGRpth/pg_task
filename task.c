@@ -157,10 +157,10 @@ bool task_work(Task *task) {
 }
 
 void task_delete(Task *task) {
-    static Oid argtypes[] = {INT8OID};
     Datum values[] = {Int64GetDatum(task->id)};
-    static SPI_plan *plan = NULL;
     static char *command = NULL;
+    static Oid argtypes[] = {INT8OID};
+    static SPI_plan *plan = NULL;
     if (!command) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
