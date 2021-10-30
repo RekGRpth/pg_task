@@ -175,8 +175,8 @@ void task_delete(Task *task) {
 }
 
 void task_error(Task *task, ErrorData *edata) {
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (edata->elevel) appendStringInfo(&task->error, "%selevel%s%c%i", task->error.len ? "\n" : "", task->append ? "::int4" : "", task->delimiter, edata->elevel);
     if (edata->output_to_server) appendStringInfo(&task->error, "%soutput_to_server%s%ctrue", task->error.len ? "\n" : "", task->append ? "::bool" : "", task->delimiter);
     if (edata->output_to_client) appendStringInfo(&task->error, "%soutput_to_client%s%ctrue", task->error.len ? "\n" : "", task->append ? "::bool" : "", task->delimiter);
@@ -212,10 +212,10 @@ void task_error(Task *task, ErrorData *edata) {
 }
 
 void task_repeat(Task *task) {
-    static Oid argtypes[] = {INT8OID};
     Datum values[] = {Int64GetDatum(task->id)};
-    static SPI_plan *plan = NULL;
     static char *command = NULL;
+    static Oid argtypes[] = {INT8OID};
+    static SPI_plan *plan = NULL;
     if (!command) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
