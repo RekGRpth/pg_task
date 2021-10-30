@@ -95,7 +95,7 @@ typedef struct _SPI_plan SPI_plan;
 
 #define CONF \
     X(char *, partman, get_char_null, serialize_char_null, deserialize_char_null) \
-    X(char *, schema, get_char, serialize_char_null, deserialize_char) \
+    X(char *, schema, get_char, serialize_char, deserialize_char) \
     X(char *, table, get_char, serialize_char, deserialize_char) \
     X(int32, count, get_int32, serialize_int, deserialize_int) \
     X(int32, reset, get_int32, serialize_int, deserialize_int) \
