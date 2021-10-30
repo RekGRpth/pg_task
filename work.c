@@ -512,11 +512,11 @@ static void work_partman(void) {
         SPI_execute_with_args_my(create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT, false);
         if (SPI_tuptable->numvals != 1) E("SPI_tuptable->numvals != 1");
         if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) E("!create_parent");
-        pfree((void *)values[0]);
-        pfree((void *)values[1]);
-        pfree((void *)values[2]);
-        pfree((void *)values[3]);
-        pfree((void *)values[4]);
+        if (values[0]) pfree((void *)values[0]);
+        if (values[1]) pfree((void *)values[1]);
+        if (values[2]) pfree((void *)values[2]);
+        if (values[3]) pfree((void *)values[3]);
+        if (values[4]) pfree((void *)values[4]);
     }
     SPI_commit_my();
     SPI_finish_my();

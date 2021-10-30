@@ -28,7 +28,7 @@ static void task_update(Task *task) {
         W("row = %lu, id = %li", row, id);
     }
     SPI_finish_my();
-    pfree((void *)values[0]);
+    if (values[0]) pfree((void *)values[0]);
 }
 
 bool task_done(Task *task) {
@@ -63,8 +63,8 @@ bool task_done(Task *task) {
         task->live = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
     }
     SPI_finish_my();
-    if (task->output.data) pfree((void *)values[2]);
-    if (task->error.data) pfree((void *)values[3]);
+    if (values[2]) pfree((void *)values[2]);
+    if (values[3]) pfree((void *)values[3]);
     if (task->null) pfree(task->null);
     task->null = NULL;
     if (task->lock && !init_table_id_unlock(work.table, task->id)) { W("!init_table_id_unlock(%i, %li)", work.table, task->id); exit = true; }
@@ -99,8 +99,8 @@ bool task_live(Task *task) {
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
     if (!SPI_tuptable->numvals) exit = true; else task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false));
     SPI_finish_my();
-    pfree((void *)values[0]);
-    if (task->remote) pfree((void *)values[1]);
+    if (values[0]) pfree((void *)values[0]);
+    if (values[1]) pfree((void *)values[1]);
     return exit;
 }
 
