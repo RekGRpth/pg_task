@@ -501,7 +501,7 @@ static void work_partman(void) {
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(create_template.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
-        Datum values[] = {CStringGetTextDatum(work.schema_table), CStringGetTextDatum("plan"), CStringGetTextDatum("native"), CStringGetTextDatum("monthly"), CStringGetTextDatum(partman_template.data)};
+        Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, work.schema_table), CStringGetTextDatumMy(TopMemoryContext, "plan"), CStringGetTextDatumMy(TopMemoryContext, "native"), CStringGetTextDatumMy(TopMemoryContext, "monthly"), CStringGetTextDatumMy(TopMemoryContext, partman_template.data)};
         static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID, TEXTOID, TEXTOID};
         StringInfoData create_parent;
         initStringInfoMy(TopMemoryContext, &create_parent);

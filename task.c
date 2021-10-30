@@ -6,7 +6,7 @@ extern Work work;
 static Task task;
 
 static void task_update(Task *task) {
-    Datum values[] = {CStringGetTextDatum(task->group)};
+    Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, task->group)};
     static char *command = NULL;
     static Oid argtypes[] = {TEXTOID};
     static SPI_plan *plan = NULL;
@@ -34,7 +34,7 @@ static void task_update(Task *task) {
 bool task_done(Task *task) {
     bool exit = false;
     char nulls[] = {' ', ' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n'};
-    Datum values[] = {Int64GetDatum(task->id), BoolGetDatum(task->fail = task->output.data ? task->fail : false), task->output.data ? CStringGetTextDatum(task->output.data) : (Datum)NULL, task->error.data ? CStringGetTextDatum(task->error.data) : (Datum)NULL};
+    Datum values[] = {Int64GetDatum(task->id), BoolGetDatum(task->fail = task->output.data ? task->fail : false), CStringGetTextDatumMy(TopMemoryContext, task->output.data), CStringGetTextDatumMy(TopMemoryContext, task->error.data)};
     static char *command = NULL;
     static Oid argtypes[] = {INT8OID, BOOLOID, TEXTOID, TEXTOID};
     static SPI_plan *plan = NULL;
@@ -76,7 +76,7 @@ bool task_done(Task *task) {
 bool task_live(Task *task) {
     bool exit = false;
     char nulls[] = {' ', task->remote ? ' ' : 'n', ' ', ' ', ' '};
-    Datum values[] = {CStringGetTextDatum(task->group), task->remote ? CStringGetTextDatum(task->remote) : (Datum)NULL, Int32GetDatum(task->max), Int32GetDatum(task->count), TimestampTzGetDatum(task->start)};
+    Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, task->group), CStringGetTextDatumMy(TopMemoryContext, task->remote), Int32GetDatum(task->max), Int32GetDatum(task->count), TimestampTzGetDatum(task->start)};
     static char *command = NULL;
     static Oid argtypes[] = {TEXTOID, TEXTOID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPI_plan *plan = NULL;

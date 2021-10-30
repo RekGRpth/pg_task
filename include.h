@@ -180,6 +180,7 @@ bool task_work(Task *task);
 char *TextDatumGetCStringMy(MemoryContextData *memoryContext, Datum datum);
 const char *PQftypeMy(Oid oid);
 const char *PQftypeMy(Oid oid);
+Datum CStringGetTextDatumMy(MemoryContextData *memoryContext, const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDescData *tupdesc, const char *fname, bool allow_null);
 DestReceiver *CreateDestReceiverMy(Task *task);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
@@ -199,9 +200,9 @@ void SPI_execute_plan_my(SPI_plan *plan, Datum *values, const char *nulls, int r
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res, bool commit);
 void SPI_finish_my(void);
 void SPI_start_transaction_my(const char *src);
-void task_main(Datum main_arg);
 void task_delete(Task *task);
 void task_error(Task *task, ErrorData *edata);
+void task_main(Datum main_arg);
 void task_repeat(Task *task);
 void work_main(Datum main_arg);
 

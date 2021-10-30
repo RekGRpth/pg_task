@@ -89,6 +89,17 @@ char *TextDatumGetCStringMy(MemoryContextData *memoryContext, Datum datum) {
     return datum ? text_to_cstring_my(memoryContext, (text *)DatumGetPointer(datum)) : NULL;
 }
 
+static text *cstring_to_text_my(MemoryContextData *memoryContext, const char *s) {
+    MemoryContextData *oldMemoryContext = MemoryContextSwitchTo(memoryContext);
+    text *result = cstring_to_text(s);
+    MemoryContextSwitchTo(oldMemoryContext);
+    return result;
+}
+
+Datum CStringGetTextDatumMy(MemoryContextData *memoryContext, const char *s) {
+    return s ? PointerGetDatum(cstring_to_text_my(memoryContext, s)) : (Datum)NULL;
+}
+
 void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
     for (int i = 0; len-- > 0; i++) {
         if (escape == data[i]) appendStringInfoChar(buf, escape);
