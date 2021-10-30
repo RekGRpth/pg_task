@@ -176,8 +176,6 @@ bool task_done(Task *task);
 bool task_live(Task *task);
 bool task_work(Task *task);
 char *TextDatumGetCStringMy(MemoryContextData *memoryContext, Datum datum);
-const char *PQftypeMy(Oid oid);
-const char *PQftypeMy(Oid oid);
 Datum CStringGetTextDatumMy(MemoryContextData *memoryContext, const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDescData *tupdesc, const char *fname, bool allow_null);
 DestReceiver *CreateDestReceiverMy(Task *task);
