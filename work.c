@@ -627,7 +627,7 @@ static void work_table(void) {
             append boolean NOT NULL DEFAULT false,
             header boolean NOT NULL DEFAULT true,
             string boolean NOT NULL DEFAULT true,
-            delimiter "char" NOT NULL DEFAULT '\t',
+            delimiter "char" NOT NULL DEFAULT '%5$s',
             escape "char",
             quote "char",
             error text,
@@ -637,7 +637,7 @@ static void work_table(void) {
             output text,
             remote text
         )
-    ), work.schema_table, work.schema_type, "", work.conf.partman ? "" : " PRIMARY KEY");
+    ), work.schema_table, work.schema_type, "", work.conf.partman ? "" : " PRIMARY KEY", "\t");
     if (work.conf.partman) appendStringInfoString(&src, " PARTITION BY RANGE (plan)");
     names = stringToQualifiedNameList(work.schema_table);
     rangevar = makeRangeVarFromNameList(names);
