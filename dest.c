@@ -35,9 +35,9 @@ static void headers(TupleDescData *typeinfo, Task *task) {
 }
 
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
-    TupleDescData *typeinfo = slot->tts_tupleDescriptor;
     DestReceiverMy *my = (DestReceiverMy *)self;
     Task *task = my->task;
+    TupleDescData *typeinfo = slot->tts_tupleDescriptor;
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (task->header && !my->row && typeinfo->natts > 1 && task->length == 1) headers(typeinfo, task);
     if (task->output.len) appendStringInfoString(&task->output, "\n");
