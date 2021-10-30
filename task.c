@@ -75,11 +75,11 @@ bool task_done(Task *task) {
 
 bool task_live(Task *task) {
     bool exit = false;
-    static Oid argtypes[] = {TEXTOID, TEXTOID, INT4OID, INT4OID, TIMESTAMPTZOID};
-    Datum values[] = {CStringGetTextDatum(task->group), task->remote ? CStringGetTextDatum(task->remote) : (Datum)NULL, Int32GetDatum(task->max), Int32GetDatum(task->count), TimestampTzGetDatum(task->start)};
     char nulls[] = {' ', task->remote ? ' ' : 'n', ' ', ' ', ' '};
-    static SPI_plan *plan = NULL;
+    Datum values[] = {CStringGetTextDatum(task->group), task->remote ? CStringGetTextDatum(task->remote) : (Datum)NULL, Int32GetDatum(task->max), Int32GetDatum(task->count), TimestampTzGetDatum(task->start)};
     static char *command = NULL;
+    static Oid argtypes[] = {TEXTOID, TEXTOID, INT4OID, INT4OID, TIMESTAMPTZOID};
+    static SPI_plan *plan = NULL;
     if (!command) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
