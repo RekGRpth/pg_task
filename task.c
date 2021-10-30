@@ -33,11 +33,11 @@ static void task_update(Task *task) {
 
 bool task_done(Task *task) {
     bool exit = false;
-    static Oid argtypes[] = {INT8OID, BOOLOID, TEXTOID, TEXTOID};
-    Datum values[] = {Int64GetDatum(task->id), BoolGetDatum(task->fail = task->output.data ? task->fail : false), task->output.data ? CStringGetTextDatum(task->output.data) : (Datum)NULL, task->error.data ? CStringGetTextDatum(task->error.data) : (Datum)NULL};
     char nulls[] = {' ', ' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n'};
-    static SPI_plan *plan = NULL;
+    Datum values[] = {Int64GetDatum(task->id), BoolGetDatum(task->fail = task->output.data ? task->fail : false), task->output.data ? CStringGetTextDatum(task->output.data) : (Datum)NULL, task->error.data ? CStringGetTextDatum(task->error.data) : (Datum)NULL};
     static char *command = NULL;
+    static Oid argtypes[] = {INT8OID, BOOLOID, TEXTOID, TEXTOID};
+    static SPI_plan *plan = NULL;
     D1("id = %li, output = %s, error = %s, fail = %s", task->id, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null, task->fail ? "true" : "false");
     task_update(task);
     if (!command) {
