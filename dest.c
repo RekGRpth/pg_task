@@ -7,9 +7,9 @@ typedef struct DestReceiverMy {
 } DestReceiverMy;
 
 static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDescData *tupdesc, int fnumber) {
-    Oid foutoid, oid = TupleDescAttr(tupdesc, fnumber - 1)->atttypid;
     bool isnull, typisvarlena;
     Datum val = slot_getattr(slot, fnumber, &isnull);
+    Oid foutoid, oid = TupleDescAttr(tupdesc, fnumber - 1)->atttypid;
     if (isnull) return NULL;
     getTypeOutputInfo(oid, &foutoid, &typisvarlena);
     return OidOutputFunctionCall(foutoid, val);
