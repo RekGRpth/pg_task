@@ -397,8 +397,8 @@ static void work_result(Task *task) {
 }
 
 static bool work_input(Task *task) {
-    StringInfoData input;
     List *list;
+    StringInfoData input;
     if (ShutdownRequestPending) return true;
     if (task_work(task)) return true;
     D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
