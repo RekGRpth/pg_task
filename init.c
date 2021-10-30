@@ -78,6 +78,17 @@ bool init_table_pid_hash_unlock(Oid table, int pid, int hash) {
     return LockRelease(&tag, AccessShareLock, true);
 }
 
+static char *text_to_cstring_my(MemoryContextData *memoryContext, const text *t) {
+    MemoryContextData *oldMemoryContext = MemoryContextSwitchTo(memoryContext);
+    char *result = text_to_cstring(t);
+    MemoryContextSwitchTo(oldMemoryContext);
+    return result;
+}
+
+char *TextDatumGetCStringMy(MemoryContextData *memoryContext, Datum datum) {
+    return datum ? text_to_cstring_my(memoryContext, (text *)DatumGetPointer(datum)) : NULL;
+}
+
 void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
     for (int i = 0; len-- > 0; i++) {
         if (escape == data[i]) appendStringInfoChar(buf, escape);
