@@ -319,9 +319,9 @@ static void work_done(Task *task) {
 }
 
 static void work_schema(const char *schema) {
-    StringInfoData src;
-    List *names;
     const char *schema_quote = quote_identifier(schema);
+    List *names;
+    StringInfoData src;
     D1("user = %s, data = %s, schema = %s", work.user, work.data, schema);
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE SCHEMA %s), schema_quote);
