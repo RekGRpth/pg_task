@@ -611,9 +611,9 @@ static void work_remote(Task *task_) {
 }
 
 static void work_table(void) {
-    StringInfoData src;
-    List *names;
     const RangeVar *rangevar;
+    List *names;
+    StringInfoData src;
     D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work.user, work.data, work.conf.schema, work.conf.table, work.schema_table, work.schema_type);
     set_config_option("pg_task.table", work.conf.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &src);
