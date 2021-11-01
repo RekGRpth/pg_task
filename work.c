@@ -643,7 +643,7 @@ static void work_task(Task *task) {
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) { work_error(task, "strlcpy", NULL, false); return; }
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work.user, work.data, work.conf.schema, work.conf.table, task->group) >= sizeof(worker.bgw_name) - 1) { work_error(task, "snprintf", NULL, false); return; }
 #if PG_VERSION_NUM >= 110000
-    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task %s %s %s", work.conf.schema, work.conf.table, task->group) >= sizeof(worker.bgw_type) - 1) { work_error(task, "snprintf", NULL, false); return; }
+    if (strlcpy(worker.bgw_type, worker.bgw_name + strlen(work.user) + 1 + strlen(work.data) + 1, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
 #endif
 #define X(name, serialize, deserialize) serialize(task->name);
     TASK

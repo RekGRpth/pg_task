@@ -111,11 +111,11 @@ void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
 static void init_work(bool dynamic) {
     BackgroundWorker worker;
     MemSet(&worker, 0, sizeof(worker));
-    if (snprintf(worker.bgw_function_name, sizeof(worker.bgw_function_name) - 1, "conf_main") >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
-    if (snprintf(worker.bgw_library_name, sizeof(worker.bgw_library_name) - 1, "pg_task") >= sizeof(worker.bgw_library_name) - 1) E("snprintf");
+    if (strlcpy(worker.bgw_function_name, "conf_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
+    if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "postgres postgres pg_conf") >= sizeof(worker.bgw_name) - 1) E("snprintf");
 #if PG_VERSION_NUM >= 110000
-    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_conf") >= sizeof(worker.bgw_type) - 1) E("snprintf");
+    if (strlcpy(worker.bgw_type, "pg_conf", sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;

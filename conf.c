@@ -87,7 +87,7 @@ void conf_work(const Conf *conf, const char *data, const char *user) {
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %i", user, data, conf->schema, conf->table, conf->timeout) >= sizeof(worker.bgw_name) - 1) E("snprintf");
 #if PG_VERSION_NUM >= 110000
-    if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_work %s %s %i", conf->schema, conf->table, conf->timeout) >= sizeof(worker.bgw_type) - 1) E("snprintf");
+    if (strlcpy(worker.bgw_type, worker.bgw_name + strlen(user) + 1 + strlen(data) + 1, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
 #endif
 #define X(type, name, get, serialize, deserialize) serialize(conf->name);
     CONF
