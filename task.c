@@ -303,6 +303,10 @@ static void task_init(void) {
     work.user = GetUserNameFromId(work.conf.user, false);
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
+#if PG_VERSION_NUM >= 110000
+#else
+    pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work.user) + 1 + strlen(work.data) + 1);
+#endif
     task.id = DatumGetInt64(MyBgworkerEntry->bgw_main_arg);
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
@@ -310,6 +314,8 @@ static void task_init(void) {
     if (!MyProcPort->database_name) MyProcPort->database_name = work.data;
 #if PG_VERSION_NUM >= 110000
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+#else
+    set_config_option("application_name", MyBgworkerEntry->bgw_name + strlen(work.user) + 1 + strlen(work.data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
 #endif
     set_config_option("pg_task.data", work.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.group", task.group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
