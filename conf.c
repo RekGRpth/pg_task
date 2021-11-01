@@ -158,16 +158,14 @@ void conf_main(Datum main_arg) {
     if (!MyProcPort->user_name) MyProcPort->user_name = "postgres";
     if (!MyProcPort->database_name) MyProcPort->database_name = "postgres";
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-#if PG_VERSION_NUM >= 110000
-    set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-#endif
+    set_config_option("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM >= 110000
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
-    pgstat_report_appname(MyBgworkerEntry->bgw_type);
 #else
     BackgroundWorkerInitializeConnection("postgres", "postgres");
 #endif
+    pgstat_report_appname("pg_conf");
     process_session_preload_libraries();
     conf_check();
 }
