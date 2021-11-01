@@ -192,6 +192,8 @@ static void work_fini(void) {
     initStringInfoMy(TopMemoryContext, &error);
 #if PG_VERSION_NUM >= 110000
     appendStringInfo(&error, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
+#else
+    appendStringInfo(&error, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_name + strlen(work.user) + 1 + strlen(work.data) + 1);
 #endif
     dlist_foreach_modify(iter, &work.head) {
         Task *task = dlist_container(Task, node, iter.cur);
@@ -766,12 +768,18 @@ static void work_init(void) {
     work.user = GetUserNameFromId(work.conf.user, false);
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
+#if PG_VERSION_NUM >= 110000
+#else
+    pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work.user) + 1 + strlen(work.data) + 1);
+#endif
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     if (!MyProcPort->user_name) MyProcPort->user_name = work.user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work.data;
 #if PG_VERSION_NUM >= 110000
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+#else
+    set_config_option("application_name", MyBgworkerEntry->bgw_name + strlen(work.user) + 1 + strlen(work.data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
 #endif
     D1("user_oid = %i, data_oid = %i, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, partman = %s", work.conf.user, work.conf.data, work.user, work.data, work.conf.schema, work.conf.table, work.conf.timeout, work.conf.count, work.conf.live, work.conf.partman ? work.conf.partman : default_null);
     work_conf();
