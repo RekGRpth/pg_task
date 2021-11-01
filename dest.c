@@ -83,4 +83,6 @@ void NullCommandMy(CommandDest dest) { }
 #include <dest.12.c>
 #elif PG_VERSION_NUM >= 110000
 #include <dest.11.c>
+#elif PG_VERSION_NUM >= 100000
+#include <dest.10.c>
 #endif

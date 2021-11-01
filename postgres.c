@@ -8,4 +8,6 @@
 #include <postgres.12.c>
 #elif PG_VERSION_NUM >= 110000
 #include <postgres.11.c>
+#elif PG_VERSION_NUM >= 100000
+#include <postgres.10.c>
 #endif

@@ -69,8 +69,12 @@ void conf_work(const Conf *conf, const char *data, const char *user) {
     MemSet(&worker, 0, sizeof(worker));
     if (strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
+#if PG_VERSION_NUM >= 110000
     if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_work %s %s %i", conf->schema, conf->table, conf->timeout) >= sizeof(worker.bgw_type) - 1) E("snprintf");
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", user, data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) E("snprintf");
+#else
+    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %i", user, data, conf->schema, conf->table, conf->timeout) >= sizeof(worker.bgw_name) - 1) E("snprintf");
+#endif
 #define X(type, name, get, serialize, deserialize) serialize(conf->name);
     CONF
 #undef X
@@ -140,10 +144,16 @@ void conf_main(Datum main_arg) {
     if (!MyProcPort->user_name) MyProcPort->user_name = "postgres";
     if (!MyProcPort->database_name) MyProcPort->database_name = "postgres";
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
+#if PG_VERSION_NUM >= 110000
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+#endif
     BackgroundWorkerUnblockSignals();
+#if PG_VERSION_NUM >= 110000
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
+#else
+    BackgroundWorkerInitializeConnection("postgres", "postgres");
+#endif
     process_session_preload_libraries();
     conf_check();
 }

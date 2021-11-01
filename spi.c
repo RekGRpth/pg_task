@@ -19,14 +19,20 @@ SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
 void SPI_commit_my(void) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     PopActiveSnapshot();
+#if PG_VERSION_NUM >= 110000
     SPI_commit();
+#endif
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
 }
 
 void SPI_connect_my(const char *src) {
     int rc;
+#if PG_VERSION_NUM >= 110000
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) E("SPI_connect_ext = %s", SPI_result_code_string(rc));
+#else
+    if ((rc = SPI_connect()) != SPI_OK_CONNECT) E("SPI_connect = %s", SPI_result_code_string(rc));
+#endif
     SPI_start_transaction_my(src);
 }
 
@@ -45,12 +51,17 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_finish_my(void) {
     int rc;
     if ((rc = SPI_finish()) != SPI_OK_FINISH) E("SPI_finish = %s", SPI_result_code_string(rc));
-    if (!SPI_inside_nonatomic_context()) ProcessCompletedNotifies();
+#if PG_VERSION_NUM >= 110000
+    if (!SPI_inside_nonatomic_context())
+#endif
+        ProcessCompletedNotifies();
 }
 
 void SPI_start_transaction_my(const char *src) {
     pgstat_report_activity(STATE_RUNNING, src);
+#if PG_VERSION_NUM >= 110000
     SPI_start_transaction();
+#endif
     PushActiveSnapshot(GetTransactionSnapshot());
     StatementTimeout > 0 ? enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout) : disable_timeout(STATEMENT_TIMEOUT, false);
 }
