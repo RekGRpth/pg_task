@@ -165,7 +165,7 @@ void _PG_init(void) {
     init_work(false);
 }
 
-#if (PG_VERSION_NUM >= 130000)
+#if PG_VERSION_NUM >= 130000
 #else
 void
 SignalHandlerForConfigReload(SIGNAL_ARGS)

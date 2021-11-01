@@ -179,7 +179,7 @@ void task_error(Task *task, ErrorData *edata) {
     if (edata->elevel) appendStringInfo(&task->error, "%selevel%c%i", task->error.len ? "\n" : "", task->delimiter, edata->elevel);
     if (edata->output_to_server) appendStringInfo(&task->error, "%soutput_to_server%ctrue", task->error.len ? "\n" : "", task->delimiter);
     if (edata->output_to_client) appendStringInfo(&task->error, "%soutput_to_client%ctrue", task->error.len ? "\n" : "", task->delimiter);
-#if (PG_VERSION_NUM >= 140000)
+#if PG_VERSION_NUM >= 140000
 #else
     if (edata->show_funcname) appendStringInfo(&task->error, "%sshow_funcname%ctrue", task->error.len ? "\n" : "", task->delimiter);
 #endif

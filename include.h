@@ -39,7 +39,7 @@
 #include <postgres.h>
 
 #include <access/printtup.h>
-#if (PG_VERSION_NUM >= 120000)
+#if PG_VERSION_NUM >= 120000
 #include <access/relation.h>
 #endif
 #include <access/xact.h>
@@ -61,19 +61,19 @@
 #include <parser/parse_type.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
-#if (PG_VERSION_NUM >= 130000)
+#if PG_VERSION_NUM >= 130000
 #include <postmaster/interrupt.h>
 #else
 extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 extern void SignalHandlerForConfigReload(SIGNAL_ARGS);
 extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #endif
-#if (PG_VERSION_NUM >= 120000)
+#if PG_VERSION_NUM >= 120000
 #else
 extern PGDLLIMPORT TimestampTz MyStartTimestamp;
 #endif
 #include <replication/slot.h>
-#if (PG_VERSION_NUM >= 140000)
+#if PG_VERSION_NUM >= 140000
 #include <storage/proc.h>
 #endif
 #include <tcop/pquery.h>
@@ -193,14 +193,14 @@ Datum CStringGetTextDatumMy(MemoryContext memoryContext, const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
-#if (PG_VERSION_NUM >= 130000)
+#if PG_VERSION_NUM >= 130000
 void BeginCommandMy(CommandTag commandTag, CommandDest dest);
 #else
 void BeginCommandMy(const char *commandTag, CommandDest dest);
 #endif
 void conf_main(Datum main_arg);
 void conf_work(const Conf *conf, const char *data, const char *user);
-#if (PG_VERSION_NUM >= 130000)
+#if PG_VERSION_NUM >= 130000
 void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undecorated_output);
 #else
 void EndCommandMy(const char *commandTag, CommandDest dest);

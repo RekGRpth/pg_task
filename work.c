@@ -38,10 +38,10 @@ static const char *work_status(Task *task) {
         case CONNECTION_AUTH_OK: return "CONNECTION_AUTH_OK";
         case CONNECTION_AWAITING_RESPONSE: return "CONNECTION_AWAITING_RESPONSE";
         case CONNECTION_BAD: return "CONNECTION_BAD";
-#if (PG_VERSION_NUM >= 140000)
+#if PG_VERSION_NUM >= 140000
         case CONNECTION_CHECK_STANDBY: return "CONNECTION_CHECK_STANDBY";
 #endif
-#if (PG_VERSION_NUM >= 130000)
+#if PG_VERSION_NUM >= 130000
         case CONNECTION_CHECK_TARGET: return "CONNECTION_CHECK_TARGET";
 #endif
         case CONNECTION_CHECK_WRITABLE: return "CONNECTION_CHECK_WRITABLE";
@@ -816,7 +816,7 @@ void work_main(Datum main_arg) {
     instr_time start_time;
     long cur_timeout = -1;
     work_init();
-#if (PG_VERSION_NUM >= 120000)
+#if PG_VERSION_NUM >= 120000
 #else
     MyStartTimestamp = GetCurrentTimestamp();
 #endif
