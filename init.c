@@ -23,9 +23,7 @@ static bool init_check_ascii(char *data) {
 }
 
 bool init_check_ascii_all(BackgroundWorker *worker) {
-#if (PG_VERSION_NUM >= 110000)
     if (init_check_ascii(worker->bgw_type)) return true;
-#endif
     if (init_check_ascii(worker->bgw_name)) return true;
     return false;
 }
@@ -114,9 +112,7 @@ static void init_work(bool dynamic) {
     if (snprintf(worker.bgw_function_name, sizeof(worker.bgw_function_name) - 1, "conf_main") >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
     if (snprintf(worker.bgw_library_name, sizeof(worker.bgw_library_name) - 1, "pg_task") >= sizeof(worker.bgw_library_name) - 1) E("snprintf");
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "postgres postgres pg_conf") >= sizeof(worker.bgw_name) - 1) E("snprintf");
-#if (PG_VERSION_NUM >= 110000)
     if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_conf") >= sizeof(worker.bgw_type) - 1) E("snprintf");
-#endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
