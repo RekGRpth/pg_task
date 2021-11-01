@@ -23,10 +23,10 @@ static bool init_check_ascii(char *data) {
 }
 
 bool init_check_ascii_all(BackgroundWorker *worker) {
+    if (init_check_ascii(worker->bgw_name)) return true;
 #if PG_VERSION_NUM >= 110000
     if (init_check_ascii(worker->bgw_type)) return true;
 #endif
-    if (init_check_ascii(worker->bgw_name)) return true;
     return false;
 }
 
