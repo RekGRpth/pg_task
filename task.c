@@ -235,11 +235,11 @@ void task_repeat(Task *task) {
     SPI_finish_my();
 }
 
-static void task_fail(Task *task) {
+static void task_fail(void) {
     MemoryContextData *oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
     MemoryContextSwitchTo(oldMemoryContext);
-    task_error(task, edata);
+    task_error(&task, edata);
     FreeErrorData(edata);
     HOLD_INTERRUPTS();
     disable_all_timeouts(false);
@@ -330,7 +330,7 @@ static void task_latch(void) {
     CHECK_FOR_INTERRUPTS();
 }
 
-static void task_success(Task *task) {
+static void task_success(void) {
     int StatementTimeoutMy = StatementTimeout;
     MemoryContextData *oldMemoryContext = MemoryContextSwitchTo(MessageContext);
     MemoryContextResetAndDeleteChildren(MessageContext);
@@ -339,10 +339,10 @@ static void task_success(Task *task) {
     whereToSendOutput = DestDebug;
     ReadyForQueryMy(whereToSendOutput);
     SetCurrentStatementStartTimestamp();
-    StatementTimeout = task->timeout;
-    exec_simple_query_my(task->input);
-    pfree(task->input);
-    task->input = NULL;
+    StatementTimeout = task.timeout;
+    exec_simple_query_my(task.input);
+    pfree(task.input);
+    task.input = NULL;
     if (IsTransactionState()) exec_simple_query_my(SQL(COMMIT));
     if (IsTransactionState()) E("IsTransactionState");
     StatementTimeout = StatementTimeoutMy;
@@ -352,9 +352,9 @@ static bool task_timeout(void) {
     if (task_work(&task)) return true;
     D1("id = %li, timeout = %i, input = %s, count = %i", task.id, task.timeout, task.input, task.count);
     PG_TRY();
-        task_success(&task);
+        task_success();
     PG_CATCH();
-        task_fail(&task);
+        task_fail();
     PG_END_TRY();
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
