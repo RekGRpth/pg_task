@@ -720,34 +720,6 @@ static void work_conf(void) {
     dlist_init(&work.head);
 }
 
-static void work_init(void) {
-    char *p = MyBgworkerEntry->bgw_extra;
-    MemoryContextData *oldcontext = CurrentMemoryContext;
-    MemSet(&work, 0, sizeof(work));
-#define X(type, name, get, serialize, deserialize) deserialize(work.conf.name);
-    CONF
-#undef X
-    pqsignal(SIGHUP, SignalHandlerForConfigReload);
-    pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
-    BackgroundWorkerUnblockSignals();
-    BackgroundWorkerInitializeConnectionByOid(work.conf.data, work.conf.user, 0);
-    pgstat_report_appname(MyBgworkerEntry->bgw_type);
-    process_session_preload_libraries();
-    StartTransactionCommand();
-    MemoryContextSwitchTo(oldcontext);
-    work.data = get_database_name(work.conf.data);
-    work.user = GetUserNameFromId(work.conf.user, false);
-    CommitTransactionCommand();
-    MemoryContextSwitchTo(oldcontext);
-    if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
-    if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-    if (!MyProcPort->user_name) MyProcPort->user_name = work.user;
-    if (!MyProcPort->database_name) MyProcPort->database_name = work.data;
-    set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    D1("user_oid = %i, data_oid = %i, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, partman = %s", work.conf.user, work.conf.data, work.user, work.data, work.conf.schema, work.conf.table, work.conf.reset, work.conf.timeout, work.conf.count, work.conf.live, work.conf.partman ? work.conf.partman : default_null);
-    work_conf();
-}
-
 static void work_update(void) {
     Datum values[] = {ObjectIdGetDatum(work.table)};
     static char *command = NULL;
@@ -776,12 +748,40 @@ static void work_update(void) {
     SPI_finish_my();
 }
 
+static void work_init(void) {
+    char *p = MyBgworkerEntry->bgw_extra;
+    MemoryContextData *oldcontext = CurrentMemoryContext;
+    MemSet(&work, 0, sizeof(work));
+#define X(type, name, get, serialize, deserialize) deserialize(work.conf.name);
+    CONF
+#undef X
+    pqsignal(SIGHUP, SignalHandlerForConfigReload);
+    pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
+    BackgroundWorkerUnblockSignals();
+    BackgroundWorkerInitializeConnectionByOid(work.conf.data, work.conf.user, 0);
+    pgstat_report_appname(MyBgworkerEntry->bgw_type);
+    process_session_preload_libraries();
+    StartTransactionCommand();
+    MemoryContextSwitchTo(oldcontext);
+    work.data = get_database_name(work.conf.data);
+    work.user = GetUserNameFromId(work.conf.user, false);
+    CommitTransactionCommand();
+    MemoryContextSwitchTo(oldcontext);
+    if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
+    if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
+    if (!MyProcPort->user_name) MyProcPort->user_name = work.user;
+    if (!MyProcPort->database_name) MyProcPort->database_name = work.data;
+    set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    D1("user_oid = %i, data_oid = %i, user = %s, data = %s, schema = %s, table = %s, reset = %i, timeout = %i, count = %i, live = %li, partman = %s", work.conf.user, work.conf.data, work.user, work.data, work.conf.schema, work.conf.table, work.conf.reset, work.conf.timeout, work.conf.count, work.conf.live, work.conf.partman ? work.conf.partman : default_null);
+    work_conf();
+    work_update();
+}
+
 static void work_timeout(void) {
     Datum values[] = {ObjectIdGetDatum(work.table)};
     static char *command = NULL;
     static Oid argtypes[] = {OIDOID};
     static SPI_plan *plan = NULL;
-    work_update();
     if (!command) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
