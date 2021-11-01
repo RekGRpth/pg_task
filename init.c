@@ -23,7 +23,9 @@ static bool init_check_ascii(char *data) {
 }
 
 bool init_check_ascii_all(BackgroundWorker *worker) {
+#if (PG_VERSION_NUM >= 110000)
     if (init_check_ascii(worker->bgw_type)) return true;
+#endif
     if (init_check_ascii(worker->bgw_name)) return true;
     return false;
 }
@@ -77,25 +79,25 @@ bool init_table_pid_hash_unlock(Oid table, int pid, int hash) {
     return LockRelease(&tag, AccessShareLock, true);
 }
 
-static char *text_to_cstring_my(MemoryContextData *memoryContext, const text *t) {
-    MemoryContextData *oldMemoryContext = MemoryContextSwitchTo(memoryContext);
+static char *text_to_cstring_my(MemoryContext memoryContext, const text *t) {
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(memoryContext);
     char *result = text_to_cstring(t);
     MemoryContextSwitchTo(oldMemoryContext);
     return result;
 }
 
-char *TextDatumGetCStringMy(MemoryContextData *memoryContext, Datum datum) {
+char *TextDatumGetCStringMy(MemoryContext memoryContext, Datum datum) {
     return datum ? text_to_cstring_my(memoryContext, (text *)DatumGetPointer(datum)) : NULL;
 }
 
-static text *cstring_to_text_my(MemoryContextData *memoryContext, const char *s) {
-    MemoryContextData *oldMemoryContext = MemoryContextSwitchTo(memoryContext);
+static text *cstring_to_text_my(MemoryContext memoryContext, const char *s) {
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(memoryContext);
     text *result = cstring_to_text(s);
     MemoryContextSwitchTo(oldMemoryContext);
     return result;
 }
 
-Datum CStringGetTextDatumMy(MemoryContextData *memoryContext, const char *s) {
+Datum CStringGetTextDatumMy(MemoryContext memoryContext, const char *s) {
     return s ? PointerGetDatum(cstring_to_text_my(memoryContext, s)) : (Datum)NULL;
 }
 
@@ -112,7 +114,9 @@ static void init_work(bool dynamic) {
     if (snprintf(worker.bgw_function_name, sizeof(worker.bgw_function_name) - 1, "conf_main") >= sizeof(worker.bgw_function_name) - 1) E("snprintf");
     if (snprintf(worker.bgw_library_name, sizeof(worker.bgw_library_name) - 1, "pg_task") >= sizeof(worker.bgw_library_name) - 1) E("snprintf");
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "postgres postgres pg_conf") >= sizeof(worker.bgw_name) - 1) E("snprintf");
+#if (PG_VERSION_NUM >= 110000)
     if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_conf") >= sizeof(worker.bgw_type) - 1) E("snprintf");
+#endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -152,8 +156,8 @@ static void init_conf(void) {
     D1("json = %s, schema = %s, table = %s, null = %s, timeout = %i, count = %i, live = %s, partman = %s", default_json, default_schema, default_table, default_null, default_timeout, default_count, default_live, default_partman ? default_partman : default_null);
 }
 
-void initStringInfoMy(MemoryContextData *memoryContext, StringInfoData *buf) {
-    MemoryContextData *oldMemoryContext = MemoryContextSwitchTo(memoryContext);
+void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf) {
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(memoryContext);
     initStringInfo(buf);
     MemoryContextSwitchTo(oldMemoryContext);
 }

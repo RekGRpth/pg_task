@@ -190,7 +190,9 @@ static void work_fini(void) {
     StringInfoData error;
     D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li", work.user, work.data, work.conf.schema, work.conf.table, work.conf.timeout, work.conf.count, work.conf.live);
     initStringInfoMy(TopMemoryContext, &error);
+#if (PG_VERSION_NUM >= 110000)
     appendStringInfo(&error, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
+#endif
     dlist_foreach_modify(iter, &work.head) {
         Task *task = dlist_container(Task, node, iter.cur);
         if (!PQrequestCancel(task->conn)) work_error(task, error.data, PQerrorMessageMy(task->conn), true); else {
@@ -639,8 +641,12 @@ static void work_task(Task *task) {
     MemSet(&worker, 0, sizeof(worker));
     if (strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) { work_error(task, "strlcpy", NULL, false); return; }
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) { work_error(task, "strlcpy", NULL, false); return; }
+#if (PG_VERSION_NUM >= 110000)
     if (snprintf(worker.bgw_type, sizeof(worker.bgw_type) - 1, "pg_task %s %s %s", work.conf.schema, work.conf.table, task->group) >= sizeof(worker.bgw_type) - 1) { work_error(task, "snprintf", NULL, false); return; }
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s %s", work.user, work.data, worker.bgw_type) >= sizeof(worker.bgw_name) - 1) { work_error(task, "snprintf", NULL, false); return; }
+#else
+    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work.user, work.data, work.conf.schema, work.conf.table, task->group) >= sizeof(worker.bgw_name) - 1) { work_error(task, "snprintf", NULL, false); return; }
+#endif
 #define X(name, serialize, deserialize) serialize(task->name);
     TASK
 #undef X
@@ -741,7 +747,7 @@ static void work_update(void) {
 
 static void work_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
-    MemoryContextData *oldcontext = CurrentMemoryContext;
+    MemoryContext oldcontext = CurrentMemoryContext;
     MemSet(&work, 0, sizeof(work));
 #define X(type, name, get, serialize, deserialize) deserialize(work.conf.name);
     CONF
@@ -749,8 +755,12 @@ static void work_init(void) {
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
     BackgroundWorkerUnblockSignals();
+#if (PG_VERSION_NUM >= 110000)
     BackgroundWorkerInitializeConnectionByOid(work.conf.data, work.conf.user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
+#else
+    BackgroundWorkerInitializeConnectionByOid(work.conf.data, work.conf.user);
+#endif
     process_session_preload_libraries();
     StartTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
@@ -762,7 +772,9 @@ static void work_init(void) {
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     if (!MyProcPort->user_name) MyProcPort->user_name = work.user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work.data;
+#if (PG_VERSION_NUM >= 110000)
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+#endif
     D1("user_oid = %i, data_oid = %i, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, partman = %s", work.conf.user, work.conf.data, work.user, work.data, work.conf.schema, work.conf.table, work.conf.timeout, work.conf.count, work.conf.live, work.conf.partman ? work.conf.partman : default_null);
     work_conf();
     work_update();

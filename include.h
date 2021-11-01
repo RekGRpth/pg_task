@@ -52,7 +52,10 @@
 #include <commands/prepare.h>
 #include <commands/user.h>
 #include <executor/spi.h>
+#if (PG_VERSION_NUM >= 110000)
 #include <jit/jit.h>
+#else
+#endif
 #include <libpq-fe.h>
 #include <libpq/libpq-be.h>
 #include <miscadmin.h>
@@ -81,6 +84,7 @@ extern PGDLLIMPORT TimestampTz MyStartTimestamp;
 #include <utils/acl.h>
 #include <utils/builtins.h>
 #include <utils/lsyscache.h>
+#include <utils/memutils.h>
 #include <utils/ps_status.h>
 #include <utils/regproc.h>
 #include <utils/rel.h>
@@ -187,8 +191,8 @@ bool init_table_pid_hash_unlock(Oid table, int pid, int hash);
 bool task_done(Task *task);
 bool task_live(Task *task);
 bool task_work(Task *task);
-char *TextDatumGetCStringMy(MemoryContextData *memoryContext, Datum datum);
-Datum CStringGetTextDatumMy(MemoryContextData *memoryContext, const char *s);
+char *TextDatumGetCStringMy(MemoryContext memoryContext, Datum datum);
+Datum CStringGetTextDatumMy(MemoryContext memoryContext, const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
@@ -206,7 +210,7 @@ void EndCommandMy(const char *commandTag, CommandDest dest);
 #endif
 void exec_simple_query_my(const char *query_string);
 void init_escape(StringInfoData *buf, const char *data, int len, char escape);
-void initStringInfoMy(MemoryContextData *memoryContext, StringInfoData *buf);
+void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf);
 void NullCommandMy(CommandDest dest);
 void _PG_init(void);
 void ReadyForQueryMy(CommandDest dest);

@@ -236,7 +236,7 @@ void task_repeat(Task *task) {
 }
 
 static void task_fail(void) {
-    MemoryContextData *oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
     MemoryContextSwitchTo(oldMemoryContext);
     task_error(&task, edata);
@@ -247,11 +247,15 @@ static void task_fail(void) {
     EmitErrorReport();
     debug_query_string = NULL;
     AbortOutOfAnyTransaction();
+#if (PG_VERSION_NUM >= 110000)
     PortalErrorCleanup();
     SPICleanup();
+#endif
     if (MyReplicationSlot) ReplicationSlotRelease();
     ReplicationSlotCleanup();
+#if (PG_VERSION_NUM >= 110000)
     jit_reset_after_error();
+#endif
     MemoryContextSwitchTo(TopMemoryContext);
     FlushErrorState();
     xact_started = false;
@@ -270,7 +274,7 @@ static void task_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     const char *schema_quote;
     const char *table_quote;
-    MemoryContextData *oldcontext = CurrentMemoryContext;
+    MemoryContext oldcontext = CurrentMemoryContext;
     StringInfoData buf;
     MemSet(&task, 0, sizeof(task));
     MemSet(&work, 0, sizeof(work));
@@ -282,8 +286,12 @@ static void task_init(void) {
 #undef X
     pqsignal(SIGTERM, SignalHandlerForShutdownRequestMy);
     BackgroundWorkerUnblockSignals();
+#if (PG_VERSION_NUM >= 110000)
     BackgroundWorkerInitializeConnectionByOid(work.conf.data, work.conf.user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
+#else
+    BackgroundWorkerInitializeConnectionByOid(work.conf.data, work.conf.user);
+#endif
     process_session_preload_libraries();
     StartTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
@@ -298,7 +306,9 @@ static void task_init(void) {
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     if (!MyProcPort->user_name) MyProcPort->user_name = work.user;
     if (!MyProcPort->database_name) MyProcPort->database_name = work.data;
+#if (PG_VERSION_NUM >= 110000)
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+#endif
     set_config_option("pg_task.data", work.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.group", task.group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.schema", work.conf.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
@@ -332,7 +342,7 @@ static void task_latch(void) {
 
 static void task_success(void) {
     int StatementTimeoutMy = StatementTimeout;
-    MemoryContextData *oldMemoryContext = MemoryContextSwitchTo(MessageContext);
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
     MemoryContextResetAndDeleteChildren(MessageContext);
     InvalidateCatalogSnapshotConditionally();
     MemoryContextSwitchTo(oldMemoryContext);
