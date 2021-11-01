@@ -3,7 +3,7 @@
 extern bool xact_started;
 extern char *default_null;
 extern Work work;
-static Task task;
+Task task;
 
 static void task_update(Task *task) {
     Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, task->group)};
@@ -331,17 +331,21 @@ static void task_latch(void) {
 }
 
 static void task_success(Task *task) {
+    int StatementTimeoutMy = StatementTimeout;
     MemoryContextData *oldMemoryContext = MemoryContextSwitchTo(MessageContext);
     MemoryContextResetAndDeleteChildren(MessageContext);
     InvalidateCatalogSnapshotConditionally();
     MemoryContextSwitchTo(oldMemoryContext);
-    ReadyForQueryMy(task);
+    whereToSendOutput = DestDebug;
+    ReadyForQueryMy(whereToSendOutput);
     SetCurrentStatementStartTimestamp();
-    exec_simple_query_my(task);
+    StatementTimeout = task->timeout;
+    exec_simple_query_my(task->input);
     pfree(task->input);
-    task->input = SQL(COMMIT);
-    if (IsTransactionState()) exec_simple_query_my(task);
+    task->input = NULL;
+    if (IsTransactionState()) exec_simple_query_my(SQL(COMMIT));
     if (IsTransactionState()) E("IsTransactionState");
+    StatementTimeout = StatementTimeoutMy;
 }
 
 static bool task_timeout(void) {

@@ -166,6 +166,7 @@ typedef struct Task {
     StringInfoData error;
     StringInfoData output;
     TimestampTz start;
+    uint64 row;
     void (*socket) (struct Task *task);
 } Task;
 
@@ -183,26 +184,26 @@ bool task_work(Task *task);
 char *TextDatumGetCStringMy(MemoryContextData *memoryContext, Datum datum);
 Datum CStringGetTextDatumMy(MemoryContextData *memoryContext, const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDescData *tupdesc, const char *fname, bool allow_null);
-DestReceiver *CreateDestReceiverMy(Task *task);
+DestReceiver *CreateDestReceiverMy(CommandDest dest);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 #if (PG_VERSION_NUM >= 130000)
-void BeginCommandMy(CommandTag commandTag, Task *task);
+void BeginCommandMy(CommandTag commandTag, CommandDest dest);
 #else
-void BeginCommandMy(const char *commandTag, Task *task);
+void BeginCommandMy(const char *commandTag, CommandDest dest);
 #endif
 void conf_main(Datum main_arg);
 void conf_work(const Conf *conf, const char *data, const char *user);
 #if (PG_VERSION_NUM >= 130000)
-void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_output);
+void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undecorated_output);
 #else
-void EndCommandMy(const char *commandTag, Task *task);
+void EndCommandMy(const char *commandTag, CommandDest dest);
 #endif
-void exec_simple_query_my(Task *task);
+void exec_simple_query_my(const char *query_string);
 void init_escape(StringInfoData *buf, const char *data, int len, char escape);
 void initStringInfoMy(MemoryContextData *memoryContext, StringInfoData *buf);
-void NullCommandMy(Task *task);
+void NullCommandMy(CommandDest dest);
 void _PG_init(void);
-void ReadyForQueryMy(Task *task);
+void ReadyForQueryMy(CommandDest dest);
 void SPI_commit_my(void);
 void SPI_connect_my(const char *src);
 void SPI_execute_plan_my(SPI_plan *plan, Datum *values, const char *nulls, int res, bool commit);

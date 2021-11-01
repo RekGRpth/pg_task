@@ -2,8 +2,6 @@
 //#include <utils/probes.h>
 #include "include.h"
 
-static int StatementTimeoutMy;
-
 /*
  * Flag to keep track of whether we have started a transaction.
  * For extended query protocol this has to be remembered across messages.
@@ -34,10 +32,9 @@ static void disable_statement_timeout(void);
  * Execute a "simple Query" protocol message.
  */
 void
-exec_simple_query_my(Task *task)
+exec_simple_query_my(const char *query_string)
 {
-	const char *query_string = task->input;
-	CommandDest dest = whereToSendOutput = DestDebug;
+	CommandDest dest = whereToSendOutput;
 	MemoryContext oldcontext;
 	List	   *parsetree_list;
 	ListCell   *parsetree_item;
@@ -45,8 +42,6 @@ exec_simple_query_my(Task *task)
 	bool		was_logged = false;
 	bool		use_implicit_block;
 	char		msec_str[32];
-
-	StatementTimeoutMy = task->timeout;
 
 	/*
 	 * Report query to various monitoring facilities.
@@ -145,7 +140,7 @@ exec_simple_query_my(Task *task)
 
 		set_ps_display(GetCommandTagName(commandTag));
 
-		BeginCommandMy(commandTag, task);
+		BeginCommandMy(commandTag, dest);
 
 		/*
 		 * If we are in an aborted transaction, reject all commands except
@@ -283,7 +278,7 @@ exec_simple_query_my(Task *task)
 		/*
 		 * Now we can create the destination receiver object.
 		 */
-		receiver = CreateDestReceiverMy(task);
+		receiver = CreateDestReceiverMy(dest);
 		if (dest == DestRemote)
 			SetRemoteDestReceiverParams(receiver, portal);
 
@@ -352,7 +347,7 @@ exec_simple_query_my(Task *task)
 		 * command the client sent, regardless of rewriting. (But a command
 		 * aborted by error will not send an EndCommand report at all.)
 		 */
-		EndCommandMy(&qc, task, false);
+		EndCommandMy(&qc, dest, false);
 
 		/* Now we may drop the per-parsetree context, if one was created. */
 		if (per_parsetree_context)
@@ -370,7 +365,7 @@ exec_simple_query_my(Task *task)
 	 * If there were no parsetrees, return EmptyQueryResponse message.
 	 */
 	if (!parsetree_list)
-		NullCommandMy(task);
+		NullCommandMy(dest);
 
 	/*
 	 * Emit duration logging if appropriate.
@@ -514,7 +509,7 @@ finish_xact_command(void)
 	if (xact_started)
 	{
 		CommitTransactionCommand();
-		ProcessCompletedNotifies();
+//		ProcessCompletedNotifies();
 
 #ifdef MEMORY_CONTEXT_CHECKING
 		/* Check all memory contexts that weren't freed during commit */
@@ -582,10 +577,10 @@ enable_statement_timeout(void)
 	/* must be within an xact */
 	Assert(xact_started);
 
-	if (StatementTimeoutMy > 0)
+	if (StatementTimeout > 0)
 	{
 		if (!get_timeout_active(STATEMENT_TIMEOUT))
-			enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeoutMy);
+			enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout);
 	}
 	else
 	{

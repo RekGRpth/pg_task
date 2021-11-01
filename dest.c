@@ -1,10 +1,6 @@
 #include "include.h"
 
-typedef struct DestReceiverMy {
-    DestReceiver pub; // !!! always first !!!
-    Task *task;
-    uint64 row;
-} DestReceiverMy;
+extern Task task;
 
 static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDescData *tupdesc, int fnumber) {
     bool isnull, typisvarlena;
@@ -15,52 +11,48 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDescData *tupdesc, int f
     return OidOutputFunctionCall(foutoid, val);
 }
 
-static void headers(TupleDescData *typeinfo, Task *task) {
-    if (task->output.len) appendStringInfoString(&task->output, "\n");
+static void headers(TupleDescData *typeinfo) {
+    if (task.output.len) appendStringInfoString(&task.output, "\n");
     for (int col = 1; col <= typeinfo->natts; col++) {
         const char *value = SPI_fname(typeinfo, col);
-        if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
-        if (task->quote) appendStringInfoChar(&task->output, task->quote);
-        if (task->escape) init_escape(&task->output, value, strlen(value), task->escape);
-        else appendStringInfoString(&task->output, value);
-        if (task->quote) appendStringInfoChar(&task->output, task->quote);
+        if (col > 1) appendStringInfoChar(&task.output, task.delimiter);
+        if (task.quote) appendStringInfoChar(&task.output, task.quote);
+        if (task.escape) init_escape(&task.output, value, strlen(value), task.escape);
+        else appendStringInfoString(&task.output, value);
+        if (task.quote) appendStringInfoChar(&task.output, task.quote);
     }
 }
 
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
-    DestReceiverMy *my = (DestReceiverMy *)self;
-    Task *task = my->task;
     TupleDescData *typeinfo = slot->tts_tupleDescriptor;
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-    if (task->header && !my->row && typeinfo->natts > 1) headers(typeinfo, task);
-    if (task->output.len) appendStringInfoString(&task->output, "\n");
+    if (!task.output.data) initStringInfoMy(TopMemoryContext, &task.output);
+    if (task.header && !task.row && typeinfo->natts > 1) headers(typeinfo);
+    if (task.output.len) appendStringInfoString(&task.output, "\n");
     for (int col = 1; col <= typeinfo->natts; col++) {
         char *value = SPI_getvalue_my(slot, typeinfo, col);
         int len = value ? strlen(value) : 0;
-        if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
-        if (!value) appendStringInfoString(&task->output, task->null); else {
-            if (!init_oid_is_string(SPI_gettypeid(typeinfo, col)) && task->string) {
-                if (len) appendStringInfoString(&task->output, value);
+        if (col > 1) appendStringInfoChar(&task.output, task.delimiter);
+        if (!value) appendStringInfoString(&task.output, task.null); else {
+            if (!init_oid_is_string(SPI_gettypeid(typeinfo, col)) && task.string) {
+                if (len) appendStringInfoString(&task.output, value);
             } else {
-                if (task->quote) appendStringInfoChar(&task->output, task->quote);
+                if (task.quote) appendStringInfoChar(&task.output, task.quote);
                 if (len) {
-                    if (task->escape) init_escape(&task->output, value, len, task->escape);
-                    else appendStringInfoString(&task->output, value);
+                    if (task.escape) init_escape(&task.output, value, len, task.escape);
+                    else appendStringInfoString(&task.output, value);
                 }
-                if (task->quote) appendStringInfoChar(&task->output, task->quote);
+                if (task.quote) appendStringInfoChar(&task.output, task.quote);
             }
         }
         if (value) pfree(value);
     }
-    my->row++;
+    task.row++;
     return true;
 }
 
 static void rStartup(DestReceiver *self, int operation, TupleDescData *typeinfo) {
-    DestReceiverMy *my = (DestReceiverMy *)self;
-    Task *task = my->task;
-    my->row = 0;
-    task->skip = 1;
+    task.row = 0;
+    task.skip = 1;
 }
 
 static void rShutdown(DestReceiver *self) { }
@@ -69,20 +61,19 @@ static void rDestroy(DestReceiver *self) {
     pfree(self);
 }
 
-DestReceiver *CreateDestReceiverMy(Task *task) {
-    DestReceiverMy *self = (DestReceiverMy *)MemoryContextAllocZero(TopMemoryContext, sizeof(*self));
-    self->pub.receiveSlot = receiveSlot;
-    self->pub.rStartup = rStartup;
-    self->pub.rShutdown = rShutdown;
-    self->pub.rDestroy = rDestroy;
-    self->pub.mydest = DestDebug;
-    self->task = task;
-    return (DestReceiver *)self;
+DestReceiver *CreateDestReceiverMy(CommandDest dest) {
+    DestReceiver *self = MemoryContextAllocZero(TopMemoryContext, sizeof(*self));
+    self->receiveSlot = receiveSlot;
+    self->rStartup = rStartup;
+    self->rShutdown = rShutdown;
+    self->rDestroy = rDestroy;
+    self->mydest = dest;
+    return self;
 }
 
-void ReadyForQueryMy(Task *task) { }
+void ReadyForQueryMy(CommandDest dest) { }
 
-void NullCommandMy(Task *task) { }
+void NullCommandMy(CommandDest dest) { }
 
 #if (PG_VERSION_NUM >= 140000)
 #include <dest.140000.c>
