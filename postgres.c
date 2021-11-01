@@ -6,4 +6,6 @@
 #include <postgres.130000.c>
 #elif (PG_VERSION_NUM >= 120000)
 #include <postgres.120000.c>
+#elif (PG_VERSION_NUM >= 110000)
+#include <postgres.110000.c>
 #endif

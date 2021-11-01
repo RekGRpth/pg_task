@@ -90,4 +90,6 @@ void NullCommandMy(Task *task) { }
 #include <dest.130000.c>
 #elif (PG_VERSION_NUM >= 120000)
 #include <dest.120000.c>
+#elif (PG_VERSION_NUM >= 110000)
+#include <dest.110000.c>
 #endif
