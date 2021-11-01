@@ -76,11 +76,11 @@ void ReadyForQueryMy(CommandDest dest) { }
 void NullCommandMy(CommandDest dest) { }
 
 #if PG_VERSION_NUM >= 140000
-#include <dest.140000.c>
+#include <dest.14.c>
 #elif PG_VERSION_NUM >= 130000
-#include <dest.130000.c>
+#include <dest.13.c>
 #elif PG_VERSION_NUM >= 120000
-#include <dest.120000.c>
+#include <dest.12.c>
 #elif PG_VERSION_NUM >= 110000
-#include <dest.110000.c>
+#include <dest.11.c>
 #endif
