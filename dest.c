@@ -2,7 +2,7 @@
 
 extern Task task;
 
-static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDescData *tupdesc, int fnumber) {
+static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
     bool isnull, typisvarlena;
     Datum val = slot_getattr(slot, fnumber, &isnull);
     Oid foutoid, oid = TupleDescAttr(tupdesc, fnumber - 1)->atttypid;
@@ -11,7 +11,7 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDescData *tupdesc, int f
     return OidOutputFunctionCall(foutoid, val);
 }
 
-static void headers(TupleDescData *typeinfo) {
+static void headers(TupleDesc typeinfo) {
     if (task.output.len) appendStringInfoString(&task.output, "\n");
     for (int col = 1; col <= typeinfo->natts; col++) {
         const char *value = SPI_fname(typeinfo, col);
@@ -24,7 +24,7 @@ static void headers(TupleDescData *typeinfo) {
 }
 
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
-    TupleDescData *typeinfo = slot->tts_tupleDescriptor;
+    TupleDesc typeinfo = slot->tts_tupleDescriptor;
     if (!task.output.data) initStringInfoMy(TopMemoryContext, &task.output);
     if (task.header && !task.row && typeinfo->natts > 1) headers(typeinfo);
     if (task.output.len) appendStringInfoString(&task.output, "\n");
@@ -50,7 +50,7 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     return true;
 }
 
-static void rStartup(DestReceiver *self, int operation, TupleDescData *typeinfo) {
+static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
     task.row = 0;
     task.skip = 1;
 }

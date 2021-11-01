@@ -816,6 +816,10 @@ void work_main(Datum main_arg) {
     instr_time start_time;
     long cur_timeout = -1;
     work_init();
+#if (PG_VERSION_NUM >= 120000)
+#else
+    MyStartTimestamp = GetCurrentTimestamp();
+#endif
     if (!init_data_user_table_lock(MyDatabaseId, GetUserId(), work.table)) W("!init_data_user_table_lock(%i, %i, %i)", MyDatabaseId, GetUserId(), work.table); else while (!ShutdownRequestPending) {
         int nevents = 2 + work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));

@@ -39,7 +39,9 @@
 #include <postgres.h>
 
 #include <access/printtup.h>
+#if (PG_VERSION_NUM >= 120000)
 #include <access/relation.h>
+#endif
 #include <access/xact.h>
 #include <catalog/heap.h>
 #include <catalog/namespace.h>
@@ -65,6 +67,10 @@
 extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 extern void SignalHandlerForConfigReload(SIGNAL_ARGS);
 extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
+#endif
+#if (PG_VERSION_NUM >= 120000)
+#else
+extern PGDLLIMPORT TimestampTz MyStartTimestamp;
 #endif
 #include <replication/slot.h>
 #if (PG_VERSION_NUM >= 140000)
@@ -183,7 +189,7 @@ bool task_live(Task *task);
 bool task_work(Task *task);
 char *TextDatumGetCStringMy(MemoryContextData *memoryContext, Datum datum);
 Datum CStringGetTextDatumMy(MemoryContextData *memoryContext, const char *s);
-Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDescData *tupdesc, const char *fname, bool allow_null);
+Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 #if (PG_VERSION_NUM >= 130000)
