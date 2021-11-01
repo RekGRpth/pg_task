@@ -82,22 +82,12 @@ DestReceiver *CreateDestReceiverMy(Task *task) {
 
 void ReadyForQueryMy(Task *task) { }
 
-void BeginCommandMy(CommandTag commandTag, Task *task) {
-    D1("%li: %s", task->id, GetCommandTagName(commandTag));
-}
-
 void NullCommandMy(Task *task) { }
 
-void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_output) {
-    char completionTag[COMPLETION_TAG_BUFSIZE];
-    CommandTag tag = qc->commandTag;
-    const char *tagname = GetCommandTagName(tag);
-    if (command_tag_display_rowcount(tag) && !force_undecorated_output) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, tag == CMDTAG_INSERT ? "%s 0 " UINT64_FORMAT : "%s " UINT64_FORMAT, tagname, qc->nprocessed);
-    else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
-    D1("%li: %s", task->id, completionTag);
-    if (task->skip) task->skip = 0; else {
-        if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-        if (task->output.len) appendStringInfoString(&task->output, "\n");
-        appendStringInfoString(&task->output, completionTag);
-    }
-}
+#if (PG_VERSION_NUM >= 140000)
+#include <dest.140000.c>
+#elif (PG_VERSION_NUM >= 130000)
+#include <dest.130000.c>
+#elif (PG_VERSION_NUM >= 120000)
+#include <dest.120000.c>
+#endif

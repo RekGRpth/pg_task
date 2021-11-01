@@ -79,7 +79,7 @@ static void work_check(void) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
-    if (!SPI_tuptable->numvals) ShutdownRequestPending = true;
+    if (!SPI_processed) ShutdownRequestPending = true;
     SPI_finish_my();
 }
 
@@ -486,7 +486,7 @@ static void work_partman(void) {
         SPI_commit_my();
         SPI_start_transaction_my(create_parent.data);
         SPI_execute_with_args_my(create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT, false);
-        if (SPI_tuptable->numvals != 1) E("SPI_tuptable->numvals != 1");
+        if (SPI_processed != 1) E("SPI_processed != 1");
         if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) E("!create_parent");
         if (values[0]) pfree((void *)values[0]);
         if (values[1]) pfree((void *)values[1]);
@@ -731,7 +731,7 @@ static void work_update(void) {
     ), work.schema_table, work.schema_type);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING, true);
-    for (uint64 row = 0; row < SPI_tuptable->numvals; row++) {
+    for (uint64 row = 0; row < SPI_processed; row++) {
         int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
         W("row = %lu, id = %li", row, id);
     }
@@ -791,7 +791,7 @@ static void work_timeout(void) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
-    for (uint64 row = 0; row < SPI_tuptable->numvals; row++) {
+    for (uint64 row = 0; row < SPI_processed; row++) {
         Task task;
         MemSet(&task, 0, sizeof(task));
         task.group = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
@@ -802,7 +802,7 @@ static void work_timeout(void) {
         D1("row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task.id, task.hash, task.group, task.remote ? task.remote : default_null, task.max);
         task.remote ? work_remote(&task) : work_task(&task);
     }
-    if (work.conf.count) work.count += SPI_tuptable->numvals;
+    if (work.conf.count) work.count += SPI_processed;
     SPI_finish_my();
 }
 

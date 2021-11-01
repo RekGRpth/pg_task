@@ -23,7 +23,7 @@ static void task_update(Task *task) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
-    for (uint64 row = 0; row < SPI_tuptable->numvals; row++) {
+    for (uint64 row = 0; row < SPI_processed; row++) {
         int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
         W("row = %lu, id = %li", row, id);
     }
@@ -54,8 +54,8 @@ bool task_done(Task *task) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
-    if (SPI_tuptable->numvals != 1) {
-        W("%li: SPI_tuptable->numvals != 1", task->id);
+    if (SPI_processed != 1) {
+        W("%li: SPI_processed != 1", task->id);
         exit = true;
     } else {
         task->delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
@@ -97,7 +97,7 @@ bool task_live(Task *task) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
-    if (!SPI_tuptable->numvals) exit = true; else task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false));
+    if (!SPI_processed) exit = true; else task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false));
     SPI_finish_my();
     if (values[0]) pfree((void *)values[0]);
     if (values[1]) pfree((void *)values[1]);
@@ -136,8 +136,8 @@ bool task_work(Task *task) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
-    if (SPI_tuptable->numvals != 1) {
-        W("%li: SPI_tuptable->numvals != 1", task->id);
+    if (SPI_processed != 1) {
+        W("%li: SPI_processed != 1", task->id);
         exit = true;
     } else {
         task->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false));
@@ -169,7 +169,7 @@ void task_delete(Task *task) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE_RETURNING, true);
-    if (SPI_tuptable->numvals != 1) W("%li: SPI_tuptable->numvals != 1", task->id);
+    if (SPI_processed != 1) W("%li: SPI_processed != 1", task->id);
     SPI_finish_my();
 }
 
@@ -231,7 +231,7 @@ void task_repeat(Task *task) {
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING, true);
-    if (SPI_tuptable->numvals != 1) W("%li: SPI_tuptable->numvals != 1", task->id);
+    if (SPI_processed != 1) W("%li: SPI_processed != 1", task->id);
     SPI_finish_my();
 }
 

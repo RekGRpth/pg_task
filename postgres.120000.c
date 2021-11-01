@@ -11,6 +11,11 @@ static int StatementTimeoutMy;
 bool xact_started = false;
 
 /*
+ * Flag to keep track of whether statement timeout timer is active.
+ */
+static bool stmt_timeout_active = false;
+
+/*
  * If an unnamed prepared statement exists, it's stored here.
  * We keep it separate from the hashtable kept by commands/prepare.c
  * in order to reduce overhead for short-lived queries.
@@ -124,16 +129,13 @@ exec_simple_query_my(Task *task)
 	{
 		RawStmt    *parsetree = lfirst_node(RawStmt, parsetree_item);
 		bool		snapshot_set = false;
-		CommandTag	commandTag;
-		QueryCompletion qc;
-		MemoryContext per_parsetree_context = NULL;
+		const char *commandTag;
+		char		completionTag[COMPLETION_TAG_BUFSIZE];
 		List	   *querytree_list,
 				   *plantree_list;
 		Portal		portal;
 		DestReceiver *receiver;
 		int16		format;
-
-		pgstat_report_query_id(0, true);
 
 		/*
 		 * Get the command name for use in status display (it also becomes the
@@ -143,7 +145,7 @@ exec_simple_query_my(Task *task)
 		 */
 		commandTag = CreateCommandTag(parsetree->stmt);
 
-		set_ps_display(GetCommandTagName(commandTag));
+		set_ps_display(commandTag, false);
 
 		BeginCommandMy(commandTag, task);
 
@@ -191,42 +193,18 @@ exec_simple_query_my(Task *task)
 		/*
 		 * OK to analyze, rewrite, and plan this query.
 		 *
-		 * Switch to appropriate context for constructing query and plan trees
-		 * (these can't be in the transaction context, as that will get reset
-		 * when the command is COMMIT/ROLLBACK).  If we have multiple
-		 * parsetrees, we use a separate context for each one, so that we can
-		 * free that memory before moving on to the next one.  But for the
-		 * last (or only) parsetree, just use MessageContext, which will be
-		 * reset shortly after completion anyway.  In event of an error, the
-		 * per_parsetree_context will be deleted when MessageContext is reset.
+		 * Switch to appropriate context for constructing querytrees (again,
+		 * these must outlive the execution context).
 		 */
-		if (lnext(parsetree_list, parsetree_item) != NULL)
-		{
-			per_parsetree_context =
-				AllocSetContextCreate(MessageContext,
-									  "per-parsetree message context",
-									  ALLOCSET_DEFAULT_SIZES);
-			oldcontext = MemoryContextSwitchTo(per_parsetree_context);
-		}
-		else
-			oldcontext = MemoryContextSwitchTo(MessageContext);
+		oldcontext = MemoryContextSwitchTo(MessageContext);
 
 		querytree_list = pg_analyze_and_rewrite(parsetree, query_string,
 												NULL, 0, NULL);
 
-		plantree_list = pg_plan_queries(querytree_list, query_string,
+		plantree_list = pg_plan_queries(querytree_list,
 										CURSOR_OPT_PARALLEL_OK, NULL);
 
-		/*
-		 * Done with the snapshot used for parsing/planning.
-		 *
-		 * While it looks promising to reuse the same snapshot for query
-		 * execution (at least for simple protocol), unfortunately it causes
-		 * execution to use a snapshot that has been acquired before locking
-		 * any of the tables mentioned in the query.  This creates user-
-		 * visible anomalies, so refrain.  Refer to
-		 * https://postgr.es/m/flat/5075D8DF.6050500@fuzzy.cz for details.
-		 */
+		/* Done with the snapshot used for parsing/planning */
 		if (snapshot_set)
 			PopActiveSnapshot();
 
@@ -243,8 +221,8 @@ exec_simple_query_my(Task *task)
 
 		/*
 		 * We don't have to copy anything into the portal, because everything
-		 * we are passing here is in MessageContext or the
-		 * per_parsetree_context, and so will outlive the portal anyway.
+		 * we are passing here is in MessageContext, which will outlive the
+		 * portal anyway.
 		 */
 		PortalDefineQuery(portal,
 						  NULL,
@@ -301,13 +279,13 @@ exec_simple_query_my(Task *task)
 						 true,
 						 receiver,
 						 receiver,
-						 &qc);
+						 completionTag);
 
 		receiver->rDestroy(receiver);
 
 		PortalDrop(portal, false);
 
-		if (lnext(parsetree_list, parsetree_item) == NULL)
+		if (lnext(parsetree_item) == NULL)
 		{
 			/*
 			 * If this is the last parsetree of the query string, close down
@@ -337,13 +315,6 @@ exec_simple_query_my(Task *task)
 			 * those that start or end a transaction block.
 			 */
 			CommandCounterIncrement();
-
-			/*
-			 * Disable statement timeout between queries of a multi-query
-			 * string, so that the timeout applies separately to each query.
-			 * (Our next loop iteration will start a fresh timeout.)
-			 */
-			disable_statement_timeout();
 		}
 
 		/*
@@ -352,11 +323,7 @@ exec_simple_query_my(Task *task)
 		 * command the client sent, regardless of rewriting. (But a command
 		 * aborted by error will not send an EndCommand report at all.)
 		 */
-		EndCommandMy(&qc, task, false);
-
-		/* Now we may drop the per-parsetree context, if one was created. */
-		if (per_parsetree_context)
-			MemoryContextDelete(per_parsetree_context);
+		EndCommandMy(completionTag, task);
 	}							/* end loop over parsetrees */
 
 	/*
@@ -495,14 +462,6 @@ start_xact_command(void)
 	 * not desired, the timeout has to be disabled explicitly.
 	 */
 	enable_statement_timeout();
-
-	/* Start timeout for checking if the client has gone away if necessary. */
-	if (client_connection_check_interval > 0 &&
-		IsUnderPostmaster &&
-		MyProcPort &&
-		!get_timeout_active(CLIENT_CONNECTION_CHECK_TIMEOUT))
-		enable_timeout_after(CLIENT_CONNECTION_CHECK_TIMEOUT,
-							 client_connection_check_interval);
 }
 
 static void
@@ -584,14 +543,14 @@ enable_statement_timeout(void)
 
 	if (StatementTimeoutMy > 0)
 	{
-		if (!get_timeout_active(STATEMENT_TIMEOUT))
+		if (!stmt_timeout_active)
+		{
 			enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeoutMy);
+			stmt_timeout_active = true;
+		}
 	}
 	else
-	{
-		if (get_timeout_active(STATEMENT_TIMEOUT))
-			disable_timeout(STATEMENT_TIMEOUT, false);
-	}
+		disable_timeout(STATEMENT_TIMEOUT, false);
 }
 
 /*
@@ -600,6 +559,10 @@ enable_statement_timeout(void)
 static void
 disable_statement_timeout(void)
 {
-	if (get_timeout_active(STATEMENT_TIMEOUT))
+	if (stmt_timeout_active)
+	{
 		disable_timeout(STATEMENT_TIMEOUT, false);
+
+		stmt_timeout_active = false;
+	}
 }

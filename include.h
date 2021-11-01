@@ -59,7 +59,13 @@
 #include <parser/parse_type.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
+#if (PG_VERSION_NUM >= 130000)
 #include <postmaster/interrupt.h>
+#else
+extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
+extern void SignalHandlerForConfigReload(SIGNAL_ARGS);
+extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
+#endif
 #include <replication/slot.h>
 #if (PG_VERSION_NUM >= 140000)
 #include <storage/proc.h>
@@ -179,10 +185,18 @@ Datum CStringGetTextDatumMy(MemoryContextData *memoryContext, const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDescData *tupdesc, const char *fname, bool allow_null);
 DestReceiver *CreateDestReceiverMy(Task *task);
 SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
+#if (PG_VERSION_NUM >= 130000)
 void BeginCommandMy(CommandTag commandTag, Task *task);
+#else
+void BeginCommandMy(const char *commandTag, Task *task);
+#endif
 void conf_main(Datum main_arg);
 void conf_work(const Conf *conf, const char *data, const char *user);
+#if (PG_VERSION_NUM >= 130000)
 void EndCommandMy(const QueryCompletion *qc, Task *task, bool force_undecorated_output);
+#else
+void EndCommandMy(const char *commandTag, Task *task);
+#endif
 void exec_simple_query_my(Task *task);
 void init_escape(StringInfoData *buf, const char *data, int len, char escape);
 void initStringInfoMy(MemoryContextData *memoryContext, StringInfoData *buf);

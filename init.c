@@ -164,3 +164,28 @@ void _PG_init(void) {
     init_conf();
     init_work(false);
 }
+
+#if (PG_VERSION_NUM >= 130000)
+#else
+void
+SignalHandlerForConfigReload(SIGNAL_ARGS)
+{
+	int			save_errno = errno;
+
+	ConfigReloadPending = true;
+	SetLatch(MyLatch);
+
+	errno = save_errno;
+}
+
+void
+SignalHandlerForShutdownRequest(SIGNAL_ARGS)
+{
+	int			save_errno = errno;
+
+	ShutdownRequestPending = true;
+	SetLatch(MyLatch);
+
+	errno = save_errno;
+}
+#endif
