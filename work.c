@@ -722,30 +722,25 @@ static void work_conf(void) {
 
 static void work_update(void) {
     Datum values[] = {ObjectIdGetDatum(work.table)};
-    static char *command = NULL;
     static Oid argtypes[] = {OIDOID};
-    static SPI_plan *plan = NULL;
-    if (!command) {
-        StringInfoData buf;
-        initStringInfoMy(TopMemoryContext, &buf);
-        appendStringInfo(&buf, SQL(
-            WITH s AS (
-                SELECT id FROM %1$s AS t
-                LEFT JOIN pg_locks AS l ON l.locktype = 'userlock' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.objsubid = 4 AND l.database = $1 AND l.classid = t.id>>32 AND l.objid = t.id<<32>>32
-                WHERE plan < current_timestamp - concat_ws(' ', (current_setting('pg_task.reset', false)::int4 * current_setting('pg_task.timeout', false)::int4)::text, 'msec')::interval AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
-                FOR UPDATE OF t SKIP LOCKED
-            ) UPDATE %1$s AS u SET state = 'PLAN'::%2$s, start = NULL, stop = NULL, pid = NULL FROM s WHERE u.id = s.id RETURNING u.id
-        ), work.schema_table, work.schema_type);
-        command = buf.data;
-    }
-    SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
+    StringInfoData src;
+    initStringInfoMy(TopMemoryContext, &src);
+    appendStringInfo(&src, SQL(
+        WITH s AS (
+            SELECT id FROM %1$s AS t
+            LEFT JOIN pg_locks AS l ON l.locktype = 'userlock' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.objsubid = 4 AND l.database = $1 AND l.classid = t.id>>32 AND l.objid = t.id<<32>>32
+            WHERE plan < current_timestamp - concat_ws(' ', (current_setting('pg_task.reset', false)::int4 * current_setting('pg_task.timeout', false)::int4)::text, 'msec')::interval AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
+            FOR UPDATE OF t SKIP LOCKED
+        ) UPDATE %1$s AS u SET state = 'PLAN'::%2$s, start = NULL, stop = NULL, pid = NULL FROM s WHERE u.id = s.id RETURNING u.id
+    ), work.schema_table, work.schema_type);
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_tuptable->numvals; row++) {
         int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
         W("row = %lu, id = %li", row, id);
     }
     SPI_finish_my();
+    pfree(src.data);
 }
 
 static void work_init(void) {
