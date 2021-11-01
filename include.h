@@ -98,7 +98,6 @@ typedef struct _SPI_plan SPI_plan;
     X(char *, schema, get_char, serialize_char, deserialize_char) \
     X(char *, table, get_char, serialize_char, deserialize_char) \
     X(int32, count, get_int32, serialize_int, deserialize_int) \
-    X(int32, reset, get_int32, serialize_int, deserialize_int) \
     X(int32, timeout, get_int32, serialize_int, deserialize_int) \
     X(int64, live, get_int64, serialize_int, deserialize_int) \
     X(Oid, data, get_int32, serialize_int, deserialize_int) \
