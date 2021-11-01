@@ -841,7 +841,11 @@ void work_main(Datum main_arg) {
             INSTR_TIME_SET_CURRENT(start_time);
             cur_timeout = work.conf.timeout;
         }
+#if PG_VERSION_NUM >= 100000
         nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
+#else
+        nevents = WaitEventSetWait(set, cur_timeout, events, nevents);
+#endif
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) work_latch();

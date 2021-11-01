@@ -17,9 +17,17 @@ static Oid conf_data(const char *user, const char *data) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
         stmt->dbname = (char *)data;
+#if PG_VERSION_NUM >= 100000
         stmt->options = list_make1(makeDefElem("owner", (Node *)makeString((char *)user), -1));
+#else
+        stmt->options = list_make1(makeDefElem("owner", (Node *)makeString((char *)user)));
+#endif
         pstate->p_sourcetext = src.data;
+#if PG_VERSION_NUM >= 100000
         oid = createdb(pstate, stmt);
+#else
+        oid = createdb(stmt);
+#endif
         list_free_deep(stmt->options);
         free_parsestate(pstate);
         pfree(stmt);
@@ -46,9 +54,17 @@ static Oid conf_user(const char *user) {
         CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
         ParseState *pstate = make_parsestate(NULL);
         stmt->role = (char *)user;
+#if PG_VERSION_NUM >= 100000
         stmt->options = list_make1(makeDefElem("canlogin", (Node *)makeInteger(1), -1));
+#else
+        stmt->options = list_make1(makeDefElem("canlogin", (Node *)makeInteger(1)));
+#endif
         pstate->p_sourcetext = src.data;
+#if PG_VERSION_NUM >= 100000
         oid = CreateRole(pstate, stmt);
+#else
+        oid = CreateRole(stmt);
+#endif
         list_free_deep(stmt->options);
         free_parsestate(pstate);
         pfree(stmt);

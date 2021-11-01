@@ -86,7 +86,9 @@ extern PGDLLIMPORT TimestampTz MyStartTimestamp;
 #include <utils/lsyscache.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
+#if PG_VERSION_NUM >= 100000
 #include <utils/regproc.h>
+#endif
 #include <utils/rel.h>
 #include <utils/snapmgr.h>
 #include <utils/timeout.h>
@@ -108,6 +110,11 @@ typedef struct _SPI_plan SPI_plan;
 #define deserialize_char(dst) (dst) = p; p += strlen(dst) + 1;
 #define deserialize_char_null(dst) deserialize_char(dst); if (p == (dst) + 1) (dst) = NULL;
 #define deserialize_int(dst) (dst) = *(typeof(dst) *)p; p += sizeof(dst);
+
+#if PG_VERSION_NUM >= 100000
+#else
+#define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
+#endif
 
 #define CONF \
     X(char *, partman, get_char_null, serialize_char_null, deserialize_char_null) \

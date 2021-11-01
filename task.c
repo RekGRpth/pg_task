@@ -252,7 +252,9 @@ static void task_fail(void) {
     SPICleanup();
 #endif
     if (MyReplicationSlot) ReplicationSlotRelease();
+#if PG_VERSION_NUM >= 100000
     ReplicationSlotCleanup();
+#endif
 #if PG_VERSION_NUM >= 110000
     jit_reset_after_error();
 #endif
@@ -384,7 +386,11 @@ void task_main(Datum main_arg) {
     task_init();
     if (!init_table_pid_hash_lock(work.table, task.pid, task.hash)) { W("!init_table_pid_hash_lock(%i, %i, %i)", work.table, task.pid, task.hash); return; }
     while (!ShutdownRequestPending) {
+#if PG_VERSION_NUM >= 100000
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
+#else
+        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0);
+#endif
         if (rc & WL_TIMEOUT) if (task_timeout()) ShutdownRequestPending = true;
         if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
