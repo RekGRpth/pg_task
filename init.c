@@ -171,6 +171,8 @@ void _PG_init(void) {
 
 #if PG_VERSION_NUM >= 130000
 #else
+volatile sig_atomic_t ShutdownRequestPending;
+
 void
 SignalHandlerForConfigReload(SIGNAL_ARGS)
 {
