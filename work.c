@@ -606,7 +606,7 @@ static void work_table(void) {
             drift boolean NOT NULL DEFAULT current_setting('pg_task.default_drift', false),
             header boolean NOT NULL DEFAULT current_setting('pg_task.default_header', false),
             string boolean NOT NULL DEFAULT current_setting('pg_task.default_string', false),
-            delimiter "char" NOT NULL DEFAULT '%5$s',
+            delimiter "char" NOT NULL DEFAULT current_setting('pg_task.default_delimiter', false),
             escape "char",
             quote "char",
             error text,
@@ -616,7 +616,7 @@ static void work_table(void) {
             output text,
             remote text
         )
-    ), work.schema_table, work.schema_type, "", work.conf.partman ? "" : " PRIMARY KEY", "\t");
+    ), work.schema_table, work.schema_type, "", work.conf.partman ? "" : " PRIMARY KEY");
     if (work.conf.partman) appendStringInfoString(&src, " PARTITION BY RANGE (plan)");
     names = stringToQualifiedNameList(work.schema_table);
     rangevar = makeRangeVarFromNameList(names);
