@@ -599,7 +599,7 @@ static void work_table(void) {
             repeat interval NOT NULL DEFAULT '0 sec',
             hash int4 NOT NULL GENERATED ALWAYS AS (hashtext("group"||COALESCE(remote, '%3$s'))) STORED,
             count int4 NOT NULL DEFAULT 0,
-            max int4 NOT NULL DEFAULT ~(1<<31),
+            max int4 NOT NULL DEFAULT current_setting('pg_task.default_max', false),
             pid int4,
             state %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
             delete boolean NOT NULL DEFAULT false,

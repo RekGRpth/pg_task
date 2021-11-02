@@ -11,6 +11,7 @@ static char *default_schema;
 static char *default_table;
 static char *default_user;
 static int default_count;
+static int default_max;
 static int default_timeout;
 
 static bool init_check_ascii(char *data) {
@@ -144,6 +145,7 @@ static void init_assign(const char *newval, void *extra) {
 
 static void init_conf(void) {
     DefineCustomIntVariable("pg_task.default_count", "pg_task default count", NULL, &default_count, 1000, 0, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.default_max", "pg_task default max", NULL, &default_max, INT_MAX, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.default_timeout", "pg_task default timeout", NULL, &default_timeout, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_data", "pg_task default data", NULL, &default_data, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_live", "pg_task default live", NULL, &default_live, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
