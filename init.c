@@ -9,6 +9,7 @@ static bool default_header;
 static bool default_string;
 static char *default_data;
 static char *default_delimiter;
+static char *default_group;
 static char *default_json;
 static char *default_live;
 static char *default_partman;
@@ -158,6 +159,7 @@ static void init_conf(void) {
     DefineCustomIntVariable("pg_task.default_timeout", "pg_task default timeout", NULL, &default_timeout, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_data", "pg_task default data", NULL, &default_data, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_delimiter", "pg_task default delimiter", NULL, &default_delimiter, "\t", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.default_group", "pg_task default group", NULL, &default_group, "group", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_live", "pg_task default live", NULL, &default_live, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_null", "pg_task default null", NULL, &default_null, "\\N", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_partman", "pg_task default partman", NULL, &default_partman, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);

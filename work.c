@@ -610,7 +610,7 @@ static void work_table(void) {
             escape "char",
             quote "char",
             error text,
-            "group" text NOT NULL DEFAULT 'group',
+            "group" text NOT NULL DEFAULT current_setting('pg_task.default_group', false),
             input text NOT NULL,
             "null" text NOT NULL DEFAULT current_setting('pg_task.default_null', false),
             output text,
