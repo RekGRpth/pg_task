@@ -722,7 +722,7 @@ static void work_conf(void) {
     dlist_init(&work.head);
 }
 
-static void work_update(void) {
+static void work_reset(void) {
     Datum values[] = {ObjectIdGetDatum(work.table)};
     static Oid argtypes[] = {OIDOID};
     StringInfoData src;
@@ -783,7 +783,7 @@ static void work_init(void) {
 #endif
     D1("user_oid = %i, data_oid = %i, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, partman = %s", work.conf.user, work.conf.data, work.user, work.data, work.conf.schema, work.conf.table, work.conf.timeout, work.conf.count, work.conf.live, work.conf.partman ? work.conf.partman : default_null);
     work_conf();
-    work_update();
+    work_reset();
 }
 
 static void work_timeout(void) {
