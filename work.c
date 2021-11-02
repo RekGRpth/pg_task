@@ -602,7 +602,7 @@ static void work_table(void) {
             max int4 NOT NULL DEFAULT current_setting('pg_task.default_max', false),
             pid int4,
             state %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
-            delete boolean NOT NULL DEFAULT false,
+            delete boolean NOT NULL DEFAULT current_setting('pg_task.default_delete', false),
             drift boolean NOT NULL DEFAULT true,
             header boolean NOT NULL DEFAULT true,
             string boolean NOT NULL DEFAULT true,

@@ -3,6 +3,7 @@
 PG_MODULE_MAGIC;
 
 char *default_null;
+static bool default_delete;
 static char *default_data;
 static char *default_json;
 static char *default_live;
@@ -144,6 +145,7 @@ static void init_assign(const char *newval, void *extra) {
 }
 
 static void init_conf(void) {
+    DefineCustomBoolVariable("pg_task.default_delete", "pg_task default delete", NULL, &default_delete, true, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.default_count", "pg_task default count", NULL, &default_count, 1000, 0, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.default_max", "pg_task default max", NULL, &default_max, INT_MAX, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.default_timeout", "pg_task default timeout", NULL, &default_timeout, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
