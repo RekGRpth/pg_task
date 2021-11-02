@@ -604,7 +604,7 @@ static void work_table(void) {
             state %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
             delete boolean NOT NULL DEFAULT current_setting('pg_task.default_delete', false),
             drift boolean NOT NULL DEFAULT current_setting('pg_task.default_drift', false),
-            header boolean NOT NULL DEFAULT true,
+            header boolean NOT NULL DEFAULT current_setting('pg_task.default_header', false),
             string boolean NOT NULL DEFAULT true,
             delimiter "char" NOT NULL DEFAULT '%5$s',
             escape "char",
