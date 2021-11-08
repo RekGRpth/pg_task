@@ -3,7 +3,6 @@
 extern bool xact_started;
 extern char *default_null;
 extern Conf conf;
-extern Work work;
 static char *schema_table;
 static char *schema_type;
 Task task;
@@ -283,7 +282,6 @@ static void task_init(void) {
     StringInfoData buf;
     MemSet(&conf, 0, sizeof(conf));
     MemSet(&task, 0, sizeof(task));
-    MemSet(&work, 0, sizeof(work));
 #define X(name, serialize, deserialize) deserialize(task.name);
     TASK
 #undef X

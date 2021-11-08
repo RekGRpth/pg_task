@@ -5,7 +5,6 @@ extern char *default_null;
 static char *schema_table;
 static char *schema_type;
 static void work_query(Task *task);
-Work work;
 
 static bool work_is_log_level_output(int elevel, int log_min_level) {
     if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
@@ -113,7 +112,7 @@ static void work_event(WaitEventSet *set) {
     dlist_mutable_iter iter;
     AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
     AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
-    dlist_foreach_modify(iter, &work.head) {
+    dlist_foreach_modify(iter, &conf.head) {
         Task *task = dlist_container(Task, node, iter.cur);
         AddWaitEventToSet(set, task->event, PQsocket(task->conn), NULL, task);
     }
@@ -179,7 +178,7 @@ static void work_error(Task *task, const char *msg, const char *err, bool finish
 static int work_nevents(void) {
     dlist_mutable_iter iter;
     int nevents = 0;
-    dlist_foreach_modify(iter, &work.head) {
+    dlist_foreach_modify(iter, &conf.head) {
         Task *task = dlist_container(Task, node, iter.cur);
         if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessageMy(task->conn), true); continue; }
         if (PQsocket(task->conn) == PGINVALID_SOCKET) { work_error(task, "PQsocket == PGINVALID_SOCKET", PQerrorMessageMy(task->conn), true); continue; }
@@ -198,7 +197,7 @@ static void work_fini(void) {
 #else
     appendStringInfo(&error, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_name + strlen(conf.str.user) + 1 + strlen(conf.str.data) + 1);
 #endif
-    dlist_foreach_modify(iter, &work.head) {
+    dlist_foreach_modify(iter, &conf.head) {
         Task *task = dlist_container(Task, node, iter.cur);
         if (!PQrequestCancel(task->conn)) work_error(task, error.data, PQerrorMessageMy(task->conn), true); else {
             work_edata(task, __FILE__, __LINE__, __func__, error.data);
@@ -572,7 +571,7 @@ static void work_remote(Task *task_) {
     task->event = WL_SOCKET_MASK;
     task->socket = work_connect;
     task->start = GetCurrentTimestamp();
-    dlist_push_head(&work.head, &task->node);
+    dlist_push_head(&conf.head, &task->node);
     if (!(task->conn = PQconnectStartParams(keywords, values, false))) work_error(task, "!PQconnectStartParams", PQerrorMessageMy(task->conn), true);
     else if (PQstatus(task->conn) == CONNECTION_BAD) work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessageMy(task->conn), true);
     else if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) work_error(task, "PQsetnonblocking == -1", PQerrorMessageMy(task->conn), true);
@@ -724,7 +723,7 @@ static void work_conf(void) {
     appendStringInfo(&buf, "%i", conf.timeout);
     set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
-    dlist_init(&work.head);
+    dlist_init(&conf.head);
 }
 
 static void work_reset(void) {
@@ -751,7 +750,6 @@ static void work_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
     MemSet(&conf, 0, sizeof(conf));
-    MemSet(&work, 0, sizeof(work));
 #define X(name, serialize, deserialize) deserialize(conf.name);
     CONF
 #undef X

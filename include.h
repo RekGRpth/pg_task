@@ -132,6 +132,7 @@ typedef struct _SPI_plan SPI_plan;
     X(oid.table, serialize_int, deserialize_int)
 
 typedef struct Conf {
+    dlist_head head;
     int32 count;
     int32 processed;
     int32 timeout;
@@ -151,10 +152,6 @@ typedef struct Conf {
         char *user;
     } str;
 } Conf;
-
-typedef struct Work {
-    dlist_head head;
-} Work;
 
 typedef struct Task {
     bool delete;
