@@ -209,7 +209,7 @@ void BeginCommandMy(CommandTag commandTag, CommandDest dest);
 void BeginCommandMy(const char *commandTag, CommandDest dest);
 #endif
 void conf_main(Datum main_arg);
-void conf_work(Work *work);
+void conf_work(BackgroundWorker *worker);
 #if PG_VERSION_NUM >= 130000
 void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undecorated_output);
 #else

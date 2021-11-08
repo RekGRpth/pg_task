@@ -60,30 +60,10 @@ static Oid conf_user(Work *work) {
     return oid;
 }
 
-void conf_work(Work *work) {
+void conf_work(BackgroundWorker *worker) {
     BackgroundWorkerHandle *handle;
-    BackgroundWorker worker;
     pid_t pid;
-    size_t len = 0;
-    D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, partman = %s", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout, work->count, work->live, work->str.partman ? work->str.partman : default_null);
-    work->oid.user = conf_user(work);
-    work->oid.data = conf_data(work);
-    MemSet(&worker, 0, sizeof(worker));
-    if (strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
-    if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
-    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %i", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout) >= sizeof(worker.bgw_name) - 1) E("snprintf");
-#if PG_VERSION_NUM >= 110000
-    if (strlcpy(worker.bgw_type, worker.bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
-#endif
-#define X(name, serialize, deserialize) serialize(work->name);
-    CONF
-#undef X
-    worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    worker.bgw_notify_pid = MyProcPid;
-    worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
-    worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    if (init_check_ascii_all(&worker)) E("init_check_ascii_all");
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) E("!RegisterDynamicBackgroundWorker");
+    if (!RegisterDynamicBackgroundWorker(worker, &handle)) E("!RegisterDynamicBackgroundWorker");
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_NOT_YET_STARTED: E("WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED"); break;
         case BGWH_POSTMASTER_DIED: E("WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED"); break;
@@ -125,7 +105,28 @@ static void conf_check(void) {
         };
         int32 pid = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "pid", false));
         D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, pid = %i, partman = %s", row, work.str.user, work.str.data, work.str.schema, work.str.table, work.timeout, work.count, work.live, pid, work.str.partman ? work.str.partman : default_null);
-        if (!pid) conf_work(&work);
+        if (!pid) {
+            BackgroundWorker worker;
+            size_t len = 0;
+            work.oid.user = conf_user(&work);
+            work.oid.data = conf_data(&work);
+            MemSet(&worker, 0, sizeof(worker));
+            if (strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
+            if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
+            if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %i", work.str.user, work.str.data, work.str.schema, work.str.table, work.timeout) >= sizeof(worker.bgw_name) - 1) E("snprintf");
+#if PG_VERSION_NUM >= 110000
+            if (strlcpy(worker.bgw_type, worker.bgw_name + strlen(work.str.user) + 1 + strlen(work.str.data) + 1, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
+#endif
+#define X(name, serialize, deserialize) serialize(work.name);
+            CONF
+#undef X
+            worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
+            worker.bgw_notify_pid = MyProcPid;
+            worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
+            worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
+            if (init_check_ascii_all(&worker)) E("init_check_ascii_all");
+            conf_work(&worker);
+        }
         pfree(work.str.data);
         if (work.str.partman) pfree(work.str.partman);
         pfree(work.str.schema);

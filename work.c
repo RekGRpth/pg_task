@@ -204,7 +204,7 @@ static void work_fini(void) {
     }
     pfree(error.data);
     if (ShutdownRequestPending) return;
-    conf_work(&work);
+    conf_work(MyBgworkerEntry);
 }
 
 static void work_index(int count, const char *const *indexes) {
