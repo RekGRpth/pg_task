@@ -95,12 +95,6 @@ extern PGDLLIMPORT TimestampTz MyStartTimestamp;
 
 typedef struct _SPI_plan SPI_plan;
 
-#define get_bool(name) DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, #name, false))
-#define get_char(name) TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, #name, false))
-#define get_char_null(name) TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, #name, true))
-#define get_int32(name) DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, #name, false))
-#define get_int64(name) DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, #name, false))
-
 #define serialize_bool(src) if ((len += sizeof(src)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(src), &(src), sizeof(src));
 #define serialize_char_null(src) serialize_char((src) ? (src) : "")
 #define serialize_char(src) if ((len += strlcpy(worker.bgw_extra + len, (src), sizeof(worker.bgw_extra)) + 1) >= sizeof(worker.bgw_extra)) E("strlcpy")
@@ -117,20 +111,14 @@ typedef struct _SPI_plan SPI_plan;
 #endif
 
 #define CONF \
-    X(char *, partman, get_char_null, serialize_char_null, deserialize_char_null) \
-    X(char *, schema, get_char, serialize_char, deserialize_char) \
-    X(char *, table, get_char, serialize_char, deserialize_char) \
-    X(int32, count, get_int32, serialize_int, deserialize_int) \
-    X(int32, timeout, get_int32, serialize_int, deserialize_int) \
-    X(int64, live, get_int64, serialize_int, deserialize_int) \
-    X(Oid, data, get_int32, serialize_int, deserialize_int) \
-    X(Oid, user, get_int32, serialize_int, deserialize_int)
-
-typedef struct Conf {
-#define X(type, name, get, serialize, deserialize) type name;
-    CONF
-#undef X
-} Conf;
+    X(count,  serialize_int, deserialize_int) \
+    X(live, serialize_int, deserialize_int) \
+    X(oid.data, serialize_int, deserialize_int) \
+    X(oid.user, serialize_int, deserialize_int) \
+    X(str.partman, serialize_char_null, deserialize_char_null) \
+    X(str.schema, serialize_char, deserialize_char) \
+    X(str.table, serialize_char, deserialize_char) \
+    X(timeout,  serialize_int, deserialize_int)
 
 #define TASK \
     X(group, serialize_char, deserialize_char) \
@@ -138,21 +126,36 @@ typedef struct Conf {
     X(max, serialize_int, deserialize_int)
 
 #define WORK \
-    X(conf.data, serialize_int, deserialize_int) \
-    X(conf.user, serialize_int, deserialize_int) \
-    X(schema, serialize_int, deserialize_int) \
-    X(table, serialize_int, deserialize_int)
+    X(oid.data, serialize_int, deserialize_int) \
+    X(oid.user, serialize_int, deserialize_int) \
+    X(oid.schema, serialize_int, deserialize_int) \
+    X(oid.table, serialize_int, deserialize_int)
+
+typedef struct Conf {
+    int32 count;
+    int32 timeout;
+    int64 live;
+    struct {
+        Oid data;
+        Oid partman;
+        Oid schema;
+        Oid table;
+        Oid user;
+    } oid;
+    struct {
+        char *data;
+        char *partman;
+        char *schema;
+        char *table;
+        char *user;
+    } str;
+} Conf;
 
 typedef struct Work {
-    char *data;
     char *schema_table;
     char *schema_type;
-    char *user;
-    Conf conf;
     dlist_head head;
     int32 count;
-    Oid schema;
-    Oid table;
 } Work;
 
 typedef struct Task {
@@ -209,7 +212,7 @@ void BeginCommandMy(CommandTag commandTag, CommandDest dest);
 void BeginCommandMy(const char *commandTag, CommandDest dest);
 #endif
 void conf_main(Datum main_arg);
-void conf_work(const Conf *conf, const char *data, const char *user);
+void conf_work(Conf *conf);
 #if PG_VERSION_NUM >= 130000
 void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undecorated_output);
 #else
