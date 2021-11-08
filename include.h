@@ -133,6 +133,7 @@ typedef struct _SPI_plan SPI_plan;
 
 typedef struct Conf {
     int32 count;
+    int32 processed;
     int32 timeout;
     int64 live;
     struct {
@@ -153,7 +154,6 @@ typedef struct Conf {
 
 typedef struct Work {
     dlist_head head;
-    int32 count;
 } Work;
 
 typedef struct Task {

@@ -823,7 +823,7 @@ static void work_timeout(void) {
         D1("row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task.id, task.hash, task.group, task.remote ? task.remote : default_null, task.max);
         task.remote ? work_remote(&task) : work_task(&task);
     }
-    if (conf.count) work.count += SPI_processed;
+    if (conf.count) conf.processed += SPI_processed;
     SPI_finish_my();
 }
 
@@ -870,7 +870,7 @@ void work_main(Datum main_arg) {
         }
         FreeWaitEventSet(set);
         pfree(events);
-        if (conf.count && work.count >= conf.count) break;
+        if (conf.count && conf.processed >= conf.count) break;
         if (conf.live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), conf.live * 1000)) break;
     }
     if (!init_data_user_table_unlock(MyDatabaseId, GetUserId(), conf.oid.table)) W("!init_data_user_table_unlock(%i, %i, %i)", MyDatabaseId, GetUserId(), conf.oid.table);
