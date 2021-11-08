@@ -3,8 +3,6 @@
 extern bool xact_started;
 extern char *default_null;
 extern Work work;
-static char *schema_table;
-static char *schema_type;
 Task task;
 
 static void task_update(Task *task) {
@@ -19,7 +17,7 @@ static void task_update(Task *task) {
             WITH s AS (
                 SELECT id FROM %1$s AS t WHERE max < 0 AND plan < current_timestamp AND t.group = $1 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
             ) UPDATE %1$s AS u SET plan = current_timestamp FROM s WHERE u.id = s.id RETURNING u.id
-        ), schema_table, schema_type);
+        ), work.schema_table, work.schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -50,7 +48,7 @@ bool task_done(Task *task) {
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
             ) UPDATE %1$s AS u SET state = CASE WHEN $2 THEN 'FAIL'::%2$s ELSE 'DONE'::%2$s END, stop = current_timestamp, output = concat_ws('%3$s', NULLIF(output, '%4$s'), $3), error = concat_ws('%3$s', NULLIF(error, '%3$s'), $4) FROM s WHERE u.id = s.id
             RETURNING delete, repeat > '0 sec' AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) AS repeat, count > 0 OR live > '0 sec' AS live
-        ), schema_table, schema_type, "\n", "");
+        ), work.schema_table, work.schema_type, "\n", "");
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -93,7 +91,7 @@ bool task_live(Task *task) {
                 END AND t.start IS NULL AND t.stop IS NULL AND t.pid IS NULL
                 ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t SKIP LOCKED
             ) UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id
-        ), schema_table, schema_type);
+        ), work.schema_table, work.schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -132,7 +130,7 @@ bool task_work(Task *task) {
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
             ) UPDATE %1$s AS u SET state = 'WORK'::%2$s, start = current_timestamp, pid = $2 FROM s WHERE u.id = s.id
             RETURNING input, EXTRACT(epoch FROM timeout)::int4 * 1000 AS timeout, header, string, u.null, delimiter, quote, escape
-        ), schema_table, schema_type);
+        ), work.schema_table, work.schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -165,7 +163,7 @@ void task_delete(Task *task) {
     if (!command) {
         StringInfoData buf;
         initStringInfoMy(TopMemoryContext, &buf);
-        appendStringInfo(&buf, SQL(DELETE FROM %1$s WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) RETURNING id), schema_table, schema_type);
+        appendStringInfo(&buf, SQL(DELETE FROM %1$s WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) RETURNING id), work.schema_table, work.schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -227,7 +225,7 @@ void task_repeat(Task *task) {
                 ELSE (WITH RECURSIVE s AS (SELECT plan AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)
             END AS plan, t.group, max, input, timeout, delete, repeat, drift, count, live
             FROM %1$s AS t WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) LIMIT 1 RETURNING id
-        ), schema_table, schema_type);
+        ), work.schema_table, work.schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
@@ -330,10 +328,10 @@ static void task_init(void) {
     table_quote = quote_identifier(work.str.table);
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "%s.%s", schema_quote, table_quote);
-    schema_table = buf.data;
+    work.schema_table = buf.data;
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "%s.state", schema_quote);
-    schema_type = buf.data;
+    work.schema_type = buf.data;
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "%i", work.oid.table);
     set_config_option("pg_task.oid", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);

@@ -164,6 +164,8 @@ typedef struct Task {
 } Task;
 
 typedef struct Work {
+    char *schema_table;
+    char *schema_type;
     dlist_head head;
     int32 count;
     int32 processed;
