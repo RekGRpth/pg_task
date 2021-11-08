@@ -64,7 +64,7 @@ void conf_work(const Conf *conf, const char *data, const char *user) {
     BackgroundWorker worker;
     pid_t pid;
     size_t len = 0;
-    D1("user_oid = %i, data_oid = %i, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, partman = %s", conf->user, conf->data, user, data, conf->schema, conf->table, conf->timeout, conf->count, conf->live, conf->partman ? conf->partman : default_null);
+    D1("user = %i, data = %i, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, partman = %s", conf->user, conf->data, user, data, conf->schema, conf->table, conf->timeout, conf->count, conf->live, conf->partman ? conf->partman : default_null);
     MemSet(&worker, 0, sizeof(worker));
     if (strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
@@ -103,9 +103,7 @@ static void conf_check(void) {
                     EXTRACT(epoch FROM COALESCE(live, current_setting('pg_task.default_live', false)::interval))::int8 AS live,
                     COALESCE(partman, current_setting('pg_task.default_partman', false)) AS partman
             FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout int4, count int4, live interval, partman text)
-        ) SELECT    DISTINCT COALESCE(u.usesysid, 0) AS user_oid, COALESCE(oid, 0) AS data_oid, COALESCE(pid, 0) AS pid, j.* FROM j
-        LEFT JOIN   pg_user AS u ON usename = j.user
-        LEFT JOIN   pg_database AS d ON datname = data AND NOT datistemplate AND datallowconn AND (usesysid IS NULL OR usesysid = datdba)
+        ) SELECT    COALESCE(pid, 0) AS pid, j.* FROM j
         LEFT JOIN   pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text) AND pid != pg_backend_pid()
     );
     SPI_connect_my(command);
@@ -120,12 +118,10 @@ static void conf_check(void) {
         char *data = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", false));
         char *user = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", false));
         int32 pid = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "pid", false));
-        conf.data = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data_oid", false));
-        conf.user = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user_oid", false));
-        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, user_oid = %i, data_oid = %i, pid = %i, partman = %s", row, user, data, conf.schema, conf.table, conf.timeout, conf.count, conf.live, conf.user, conf.data, pid, conf.partman ? conf.partman : default_null);
+        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, pid = %i, partman = %s", row, user, data, conf.schema, conf.table, conf.timeout, conf.count, conf.live, pid, conf.partman ? conf.partman : default_null);
         if (!pid) {
-            if (!conf.user) conf.user = conf_user(user);
-            if (!conf.data) conf.data = conf_data(user, data);
+            conf.user = conf_user(user);
+            conf.data = conf_data(user, data);
             conf_work(&conf, data, user);
         }
         pfree(user);
