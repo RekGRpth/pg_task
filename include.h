@@ -152,8 +152,6 @@ typedef struct Conf {
 } Conf;
 
 typedef struct Work {
-    char *schema_table;
-    char *schema_type;
     dlist_head head;
     int32 count;
 } Work;

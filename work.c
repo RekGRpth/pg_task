@@ -1,8 +1,10 @@
 #include "include.h"
 
-extern char *default_null;
-static void work_query(Task *task);
 Conf conf;
+extern char *default_null;
+static char *schema_table;
+static char *schema_type;
+static void work_query(Task *task);
 Work work;
 
 static bool work_is_log_level_output(int elevel, int log_min_level) {
@@ -225,7 +227,7 @@ static void work_index(int count, const char *const *indexes) {
     appendStringInfoString(&name, "_idx");
     name_quote = quote_identifier(name.data);
     initStringInfoMy(TopMemoryContext, &src);
-    appendStringInfo(&src, SQL(CREATE INDEX %s ON %s USING btree ), name_quote, work.schema_table);
+    appendStringInfo(&src, SQL(CREATE INDEX %s ON %s USING btree ), name_quote, schema_table);
     appendStringInfoString(&src, "(");
     for (int i = 0; i < count; i++) {
         const char *index = indexes[i];
@@ -239,7 +241,7 @@ static void work_index(int count, const char *const *indexes) {
     appendStringInfo(&idx, "%s.%s", schema_quote, name_quote);
     names = stringToQualifiedNameList(idx.data);
     rangevar = makeRangeVarFromNameList(names);
-    D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", conf.str.user, conf.str.data, conf.str.schema, conf.str.table, idx.data, work.schema_table);
+    D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", conf.str.user, conf.str.data, conf.str.schema, conf.str.table, idx.data, schema_table);
     SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
@@ -479,12 +481,12 @@ static void work_partman(void) {
     initStringInfoMy(TopMemoryContext, &partman_template);
     appendStringInfo(&partman_template, "%s.%s", partman_quote, template_quote);
     initStringInfoMy(TopMemoryContext, &create_template);
-    appendStringInfo(&create_template, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))), partman_template.data, work.schema_table, pkey_quote);
+    appendStringInfo(&create_template, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))), partman_template.data, schema_table, pkey_quote);
     names = stringToQualifiedNameList(partman_template.data);
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(create_template.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
-        Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, work.schema_table), CStringGetTextDatumMy(TopMemoryContext, "plan"), CStringGetTextDatumMy(TopMemoryContext, "native"), CStringGetTextDatumMy(TopMemoryContext, "monthly"), CStringGetTextDatumMy(TopMemoryContext, partman_template.data)};
+        Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, schema_table), CStringGetTextDatumMy(TopMemoryContext, "plan"), CStringGetTextDatumMy(TopMemoryContext, "native"), CStringGetTextDatumMy(TopMemoryContext, "monthly"), CStringGetTextDatumMy(TopMemoryContext, partman_template.data)};
         static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID, TEXTOID, TEXTOID};
         StringInfoData create_parent;
         initStringInfoMy(TopMemoryContext, &create_parent);
@@ -587,7 +589,7 @@ static void work_table(void) {
     const RangeVar *rangevar;
     List *names;
     StringInfoData src;
-    D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", conf.str.user, conf.str.data, conf.str.schema, conf.str.table, work.schema_table, work.schema_type);
+    D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", conf.str.user, conf.str.data, conf.str.schema, conf.str.table, schema_table, schema_type);
     set_config_option("pg_task.table", conf.str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(
@@ -619,9 +621,9 @@ static void work_table(void) {
             output text,
             remote text
         )
-    ), work.schema_table, work.schema_type, "", conf.str.partman ? "" : " PRIMARY KEY");
+    ), schema_table, schema_type, "", conf.str.partman ? "" : " PRIMARY KEY");
     if (conf.str.partman) appendStringInfoString(&src, " PARTITION BY RANGE (plan)");
-    names = stringToQualifiedNameList(work.schema_table);
+    names = stringToQualifiedNameList(schema_table);
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
@@ -679,9 +681,9 @@ static void work_type(void) {
     StringInfoData src;
     D1("user = %s, data = %s, schema = %s, table = %s", conf.str.user, conf.str.data, conf.str.schema, conf.str.table);
     initStringInfoMy(TopMemoryContext, &src);
-    appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')), work.schema_type);
+    appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')), schema_type);
     SPI_connect_my(src.data);
-    parseTypeString(work.schema_type, &type, &typmod, true);
+    parseTypeString(schema_type, &type, &typmod, true);
     if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
     SPI_finish_my();
@@ -698,15 +700,15 @@ static void work_conf(void) {
     StringInfoData buf;
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "%s.%s", schema_quote, table_quote);
-    if (work.schema_table) pfree(work.schema_table);
-    work.schema_table = buf.data;
+    if (schema_table) pfree(schema_table);
+    schema_table = buf.data;
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "%s.state", schema_quote);
-    if (work.schema_type) pfree(work.schema_type);
-    work.schema_type = buf.data;
+    if (schema_type) pfree(schema_type);
+    schema_type = buf.data;
     if (conf.str.schema != schema_quote) pfree((void *)schema_quote);
     if (conf.str.table != table_quote) pfree((void *)table_quote);
-    D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", conf.str.user, conf.str.data, conf.str.schema, conf.str.table, conf.timeout, conf.count, conf.live, work.schema_table, work.schema_type, conf.str.partman ? conf.str.partman : default_null);
+    D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", conf.str.user, conf.str.data, conf.str.schema, conf.str.table, conf.timeout, conf.count, conf.live, schema_table, schema_type, conf.str.partman ? conf.str.partman : default_null);
     conf.oid.schema = work_schema(conf.str.schema);
     set_config_option("pg_task.schema", conf.str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
@@ -737,7 +739,7 @@ static void work_reset(void) {
             WHERE plan < current_timestamp AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
             FOR UPDATE OF t SKIP LOCKED
         ) UPDATE %1$s AS u SET state = 'PLAN'::%2$s, start = NULL, stop = NULL, pid = NULL FROM s WHERE u.id = s.id RETURNING u.id
-    ), work.schema_table, work.schema_type);
+    ), schema_table, schema_type);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_processed; row++) W("row = %lu, id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
@@ -804,7 +806,7 @@ static void work_timeout(void) {
                 AND CASE WHEN t.max > 0 THEN t.max ELSE 1 END > COALESCE(classid, 0) FOR UPDATE OF t SKIP LOCKED
             ) SELECT id, hash, count - row_number() OVER (PARTITION BY hash ORDER BY count DESC, id) + 1 AS count FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id AND s.count > 0 RETURNING u.id, u.hash, u.group, u.remote, u.max
-        ), work.schema_table, work.schema_type);
+        ), schema_table, schema_type);
         command = buf.data;
     }
     SPI_connect_my(command);
