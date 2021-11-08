@@ -50,25 +50,8 @@ static Oid conf_user(const char *user) {
     appendStringInfo(&src, SQL(CREATE ROLE %s WITH LOGIN), user_quote);
     names = stringToQualifiedNameList(user_quote);
     SPI_start_transaction_my(src.data);
-    if (!OidIsValid(oid = get_role_oid(strVal(linitial(names)), true))) {
-        CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
-        ParseState *pstate = make_parsestate(NULL);
-        stmt->role = (char *)user;
-#if PG_VERSION_NUM >= 100000
-        stmt->options = list_make1(makeDefElem("canlogin", (Node *)makeInteger(1), -1));
-#else
-        stmt->options = list_make1(makeDefElem("canlogin", (Node *)makeInteger(1)));
-#endif
-        pstate->p_sourcetext = src.data;
-#if PG_VERSION_NUM >= 100000
-        oid = CreateRole(pstate, stmt);
-#else
-        oid = CreateRole(stmt);
-#endif
-        list_free_deep(stmt->options);
-        free_parsestate(pstate);
-        pfree(stmt);
-    }
+    if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+    oid = get_role_oid(strVal(linitial(names)), false);
     SPI_commit_my();
     list_free_deep(names);
     if (user_quote != user) pfree((void *)user_quote);
