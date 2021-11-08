@@ -131,7 +131,7 @@ typedef struct _SPI_plan SPI_plan;
     X(oid.schema, serialize_int, deserialize_int) \
     X(oid.table, serialize_int, deserialize_int)
 
-typedef struct Conf {
+typedef struct Work {
     dlist_head head;
     int32 count;
     int32 processed;
@@ -151,7 +151,7 @@ typedef struct Conf {
         char *table;
         char *user;
     } str;
-} Conf;
+} Work;
 
 typedef struct Task {
     bool delete;
@@ -207,7 +207,7 @@ void BeginCommandMy(CommandTag commandTag, CommandDest dest);
 void BeginCommandMy(const char *commandTag, CommandDest dest);
 #endif
 void conf_main(Datum main_arg);
-void conf_work(Conf *conf);
+void conf_work(Work *work);
 #if PG_VERSION_NUM >= 130000
 void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undecorated_output);
 #else
