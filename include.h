@@ -110,26 +110,14 @@ typedef struct _SPI_plan SPI_plan;
 #define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
 #endif
 
-#define CONF \
-    X(count,  serialize_int, deserialize_int) \
-    X(live, serialize_int, deserialize_int) \
-    X(oid.data, serialize_int, deserialize_int) \
-    X(oid.user, serialize_int, deserialize_int) \
-    X(str.partman, serialize_char_null, deserialize_char_null) \
-    X(str.schema, serialize_char, deserialize_char) \
-    X(str.table, serialize_char, deserialize_char) \
-    X(timeout,  serialize_int, deserialize_int)
-
 #define TASK \
-    X(group, serialize_char, deserialize_char) \
-    X(hash, serialize_int, deserialize_int) \
-    X(max, serialize_int, deserialize_int)
-
-#define WORK \
-    X(oid.data, serialize_int, deserialize_int) \
-    X(oid.user, serialize_int, deserialize_int) \
-    X(oid.schema, serialize_int, deserialize_int) \
-    X(oid.table, serialize_int, deserialize_int)
+    X(task.group, serialize_char, deserialize_char) \
+    X(task.hash, serialize_int, deserialize_int) \
+    X(task.max, serialize_int, deserialize_int) \
+    X(work.oid.data, serialize_int, deserialize_int) \
+    X(work.oid.schema, serialize_int, deserialize_int) \
+    X(work.oid.table, serialize_int, deserialize_int) \
+    X(work.oid.user, serialize_int, deserialize_int)
 
 typedef struct Task {
     bool delete;
@@ -162,6 +150,16 @@ typedef struct Task {
     uint64 row;
     void (*socket) (struct Task *task);
 } Task;
+
+#define WORK \
+    X(work.count,  serialize_int, deserialize_int) \
+    X(work.live, serialize_int, deserialize_int) \
+    X(work.oid.data, serialize_int, deserialize_int) \
+    X(work.oid.user, serialize_int, deserialize_int) \
+    X(work.str.partman, serialize_char_null, deserialize_char_null) \
+    X(work.str.schema, serialize_char, deserialize_char) \
+    X(work.str.table, serialize_char, deserialize_char) \
+    X(work.timeout,  serialize_int, deserialize_int)
 
 typedef struct Work {
     char *schema_table;

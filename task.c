@@ -280,11 +280,8 @@ static void task_init(void) {
     StringInfoData buf;
     MemSet(&task, 0, sizeof(task));
     MemSet(&work, 0, sizeof(work));
-#define X(name, serialize, deserialize) deserialize(task.name);
+#define X(name, serialize, deserialize) deserialize(name);
     TASK
-#undef X
-#define X(name, serialize, deserialize) deserialize(work.name);
-    WORK
 #undef X
     pqsignal(SIGTERM, SignalHandlerForShutdownRequestMy);
     BackgroundWorkerUnblockSignals();

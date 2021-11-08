@@ -649,11 +649,8 @@ static void work_task(Task task) {
 #if PG_VERSION_NUM >= 110000
     if (strlcpy(worker.bgw_type, worker.bgw_name + strlen(work.str.user) + 1 + strlen(work.str.data) + 1, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
 #endif
-#define X(name, serialize, deserialize) serialize(task.name);
+#define X(name, serialize, deserialize) serialize(name);
     TASK
-#undef X
-#define X(name, serialize, deserialize) serialize(work.name);
-    WORK
 #undef X
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = Int64GetDatum(task.id);
@@ -746,8 +743,8 @@ static void work_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
     MemSet(&work, 0, sizeof(work));
-#define X(name, serialize, deserialize) deserialize(work.name);
-    CONF
+#define X(name, serialize, deserialize) deserialize(name);
+    WORK
 #undef X
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
