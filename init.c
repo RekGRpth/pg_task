@@ -162,7 +162,7 @@ static void init_conf(void) {
     DefineCustomStringVariable("pg_task.default_group", "pg_task default group", "group tasks name", &default_group, "group", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_live", "pg_task default live", "exit until timeout", &default_live, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_null", "pg_task default null", "text null representation", &default_null, "\\N", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_partman", "pg_task default partman", "partman schema name, if null then do not use partman", &default_partman, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    if (extension_file_exists("pg_partman")) DefineCustomStringVariable("pg_task.default_partman", "pg_task default partman", "partman schema name, if null then do not use partman", &default_partman, "partman", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_schema", "pg_task default schema", "schema name for tasks table", &default_schema, "public", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_table", "pg_task default table", "table name for tasks table", &default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_user", "pg_task default user", "default username", &default_user, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);

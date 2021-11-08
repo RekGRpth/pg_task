@@ -84,7 +84,7 @@ static void conf_check(void) {
                     COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout,
                     COALESCE(count, current_setting('pg_task.default_count', false)::int4) AS count,
                     EXTRACT(epoch FROM COALESCE(live, current_setting('pg_task.default_live', false)::interval))::int8 AS live,
-                    COALESCE(partman, current_setting('pg_task.default_partman', false)) AS partman
+                    COALESCE(partman, current_setting('pg_task.default_partman', true)) AS partman
             FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout int4, count int4, live interval, partman text)
         ) SELECT    COALESCE(pid, 0) AS pid, j.* FROM j
         LEFT JOIN   pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text) AND pid != pg_backend_pid()
