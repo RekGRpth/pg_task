@@ -697,11 +697,9 @@ static void work_conf(void) {
     StringInfoData buf;
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "%s.%s", schema_quote, table_quote);
-//    if (work.schema_table) pfree(work.schema_table);
     work.schema_table = buf.data;
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "%s.state", schema_quote);
-//    if (work.schema_type) pfree(work.schema_type);
     work.schema_type = buf.data;
     if (work.str.schema != schema_quote) pfree((void *)schema_quote);
     if (work.str.table != table_quote) pfree((void *)table_quote);
