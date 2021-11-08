@@ -131,28 +131,6 @@ typedef struct _SPI_plan SPI_plan;
     X(oid.schema, serialize_int, deserialize_int) \
     X(oid.table, serialize_int, deserialize_int)
 
-typedef struct Work {
-    dlist_head head;
-    int32 count;
-    int32 processed;
-    int32 timeout;
-    int64 live;
-    struct {
-        Oid data;
-        Oid partman;
-        Oid schema;
-        Oid table;
-        Oid user;
-    } oid;
-    struct {
-        char *data;
-        char *partman;
-        char *schema;
-        char *table;
-        char *user;
-    } str;
-} Work;
-
 typedef struct Task {
     bool delete;
     bool fail;
@@ -184,6 +162,28 @@ typedef struct Task {
     uint64 row;
     void (*socket) (struct Task *task);
 } Task;
+
+typedef struct Work {
+    dlist_head head;
+    int32 count;
+    int32 processed;
+    int32 timeout;
+    int64 live;
+    struct {
+        Oid data;
+        Oid partman;
+        Oid schema;
+        Oid table;
+        Oid user;
+    } oid;
+    struct {
+        char *data;
+        char *partman;
+        char *schema;
+        char *table;
+        char *user;
+    } str;
+} Work;
 
 bool init_check_ascii_all(BackgroundWorker *worker);
 bool init_data_user_table_lock(Oid data, Oid user, Oid table);
