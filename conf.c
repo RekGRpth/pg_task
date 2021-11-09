@@ -100,7 +100,7 @@ static void conf_check(void) {
         int32 pid = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "pid", false));
         D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, pid = %i, partman = %s", row, work.str.user, work.str.data, work.str.schema, work.str.table, work.timeout, work.count, work.live, pid, work.str.partman ? work.str.partman : default_null);
         if (!pid) {
-            BackgroundWorker worker;
+            BackgroundWorker worker = {0};
             size_t len = 0;
             work.quote.data = (char *)quote_identifier(work.str.data);
             if (work.str.partman) work.quote.partman = (char *)quote_identifier(work.str.partman);
@@ -109,7 +109,6 @@ static void conf_check(void) {
             work.quote.user = (char *)quote_identifier(work.str.user);
             work.oid.user = conf_user(&work);
             work.oid.data = conf_data(&work);
-            MemSet(&worker, 0, sizeof(worker));
             if (strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
             if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
             if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %i", work.str.user, work.str.data, work.str.schema, work.str.table, work.timeout) >= sizeof(worker.bgw_name) - 1) E("snprintf");

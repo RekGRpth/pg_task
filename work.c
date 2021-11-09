@@ -2,7 +2,7 @@
 
 extern char *default_null;
 static void work_query(Task *task);
-Work work;
+Work work = {0};
 
 static bool work_is_log_level_output(int elevel, int log_min_level) {
     if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
@@ -90,8 +90,7 @@ static void work_command(Task *task, PGresult *result) {
 }
 
 static void work_edata(Task *task, const char *filename, int lineno, const char *funcname, const char *message) {
-    ErrorData edata;
-    MemSet(&edata, 0, sizeof(edata));
+    ErrorData edata = {0};
     edata.elevel = FATAL;
     edata.output_to_server = work_is_log_level_output(edata.elevel, log_min_messages);
     edata.filename = filename;
@@ -627,11 +626,10 @@ static void work_table(void) {
 
 static void work_task(Task task) {
     BackgroundWorkerHandle *handle = NULL;
-    BackgroundWorker worker;
+    BackgroundWorker worker = {0};
     pid_t pid;
     size_t len = 0;
     D1("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work.str.user, work.str.data, work.str.schema, work.str.table, task.id, task.group, task.max, work.oid.table);
-    MemSet(&worker, 0, sizeof(worker));
     if (strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) { work_error(&task, "strlcpy", NULL, false); return; }
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) { work_error(&task, "strlcpy", NULL, false); return; }
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work.str.user, work.str.data, work.str.schema, work.str.table, task.group) >= sizeof(worker.bgw_name) - 1) { work_error(&task, "snprintf", NULL, false); return; }
@@ -727,7 +725,6 @@ static void work_reset(void) {
 static void work_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
-    MemSet(&work, 0, sizeof(work));
 #define X(name, serialize, deserialize) deserialize(name);
     WORK
 #undef X
@@ -792,8 +789,7 @@ static void work_timeout(void) {
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_processed; row++) {
-        Task task;
-        MemSet(&task, 0, sizeof(task));
+        Task task = {0};
         task.group = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
         task.hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "hash", false));
         task.id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));

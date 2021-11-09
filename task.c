@@ -3,7 +3,7 @@
 extern bool xact_started;
 extern char *default_null;
 extern Work work;
-Task task;
+Task task = {0};
 
 static void task_update(Task *task) {
     Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, task->group)};
@@ -264,8 +264,6 @@ static void task_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
     StringInfoData oid, schema_table, schema_type;
-    MemSet(&task, 0, sizeof(task));
-    MemSet(&work, 0, sizeof(work));
 #define X(name, serialize, deserialize) deserialize(name);
     TASK
 #undef X
