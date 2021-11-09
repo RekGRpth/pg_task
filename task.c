@@ -149,17 +149,15 @@ bool task_work(Task *task) {
 
 void task_delete(Task *task) {
     Datum values[] = {Int64GetDatum(task->id)};
-    static char *command = NULL;
     static Oid argtypes[] = {INT8OID};
     static SPI_plan *plan = NULL;
-    if (!command) {
-        StringInfoData buf;
-        initStringInfoMy(TopMemoryContext, &buf);
-        appendStringInfo(&buf, SQL(DELETE FROM %1$s WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) RETURNING id), work.schema_table, work.schema_type);
-        command = buf.data;
+    static StringInfoData src = {0};
+    if (!src.data) {
+        initStringInfoMy(TopMemoryContext, &src);
+        appendStringInfo(&src, SQL(DELETE FROM %1$s WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) RETURNING id), work.schema_table, work.schema_type);
     }
-    SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
+    SPI_connect_my(src.data);
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE_RETURNING, true);
     if (SPI_processed != 1) W("%li: SPI_processed != 1", task->id);
     SPI_finish_my();
