@@ -680,13 +680,13 @@ static void work_conf(void) {
     const char *index_parent[] = {"parent"};
     const char *index_plan[] = {"plan"};
     const char *index_state[] = {"state"};
-    StringInfoData buf;
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "%s.%s", work.quote.schema, work.quote.table);
-    work.schema_table = buf.data;
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "%s.state", work.quote.schema);
-    work.schema_type = buf.data;
+    StringInfoData schema_table, schema_type, timeout;
+    initStringInfoMy(TopMemoryContext, &schema_table);
+    appendStringInfo(&schema_table, "%s.%s", work.quote.schema, work.quote.table);
+    work.schema_table = schema_table.data;
+    initStringInfoMy(TopMemoryContext, &schema_type);
+    appendStringInfo(&schema_type, "%s.state", work.quote.schema);
+    work.schema_type = schema_type.data;
     D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work.str.user, work.str.data, work.str.schema, work.str.table, work.timeout, work.count, work.live, work.schema_table, work.schema_type, work.str.partman ? work.str.partman : default_null);
     work.oid.schema = work_schema(work.str.schema);
     set_config_option("pg_task.schema", work.str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
@@ -699,10 +699,10 @@ static void work_conf(void) {
     if (work.str.partman) work_partman();
     set_config_option("pg_task.data", work.str.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work.str.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "%i", work.timeout);
-    set_config_option("pg_task.timeout", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pfree(buf.data);
+    initStringInfoMy(TopMemoryContext, &timeout);
+    appendStringInfo(&timeout, "%i", work.timeout);
+    set_config_option("pg_task.timeout", timeout.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    pfree(timeout.data);
     dlist_init(&work.head);
 }
 
