@@ -182,6 +182,13 @@ typedef struct Work {
         char *schema;
         char *table;
         char *user;
+    } quote;
+    struct {
+        char *data;
+        char *partman;
+        char *schema;
+        char *table;
+        char *user;
     } str;
 } Work;
 

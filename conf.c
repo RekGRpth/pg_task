@@ -3,15 +3,13 @@
 extern char *default_null;
 
 static Oid conf_data(Work *work) {
-    const char *data_quote = quote_identifier(work->str.data);
-    const char *user_quote = quote_identifier(work->str.user);
     List *names;
     Oid oid;
     StringInfoData src;
     D1("user = %s, data = %s", work->str.user, work->str.data);
     initStringInfoMy(TopMemoryContext, &src);
-    appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), data_quote, user_quote);
-    names = stringToQualifiedNameList(data_quote);
+    appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), work->quote.data, work->quote.user);
+    names = stringToQualifiedNameList(work->quote.data);
     SPI_start_transaction_my(src.data);
     if (!OidIsValid(oid = get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
@@ -34,28 +32,24 @@ static Oid conf_data(Work *work) {
     }
     SPI_commit_my();
     list_free_deep(names);
-    if (user_quote != work->str.user) pfree((void *)user_quote);
-    if (data_quote != work->str.data) pfree((void *)data_quote);
     pfree(src.data);
     return oid;
 }
 
 static Oid conf_user(Work *work) {
-    const char *user_quote = quote_identifier(work->str.user);
     List *names;
     Oid oid;
     StringInfoData src;
     D1("user = %s", work->str.user);
     initStringInfoMy(TopMemoryContext, &src);
-    appendStringInfo(&src, SQL(CREATE USER %s), user_quote);
+    appendStringInfo(&src, SQL(CREATE USER %s), work->quote.user);
     if (work->str.partman) appendStringInfoString(&src, " SUPERUSER");
-    names = stringToQualifiedNameList(user_quote);
+    names = stringToQualifiedNameList(work->quote.user);
     SPI_start_transaction_my(src.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     oid = get_role_oid(strVal(linitial(names)), false);
     SPI_commit_my();
     list_free_deep(names);
-    if (user_quote != work->str.user) pfree((void *)user_quote);
     pfree(src.data);
     return oid;
 }
@@ -108,6 +102,11 @@ static void conf_check(void) {
         if (!pid) {
             BackgroundWorker worker;
             size_t len = 0;
+            work.quote.data = (char *)quote_identifier(work.str.data);
+            if (work.str.partman) work.quote.partman = (char *)quote_identifier(work.str.partman);
+            work.quote.schema = (char *)quote_identifier(work.str.schema);
+            work.quote.table = (char *)quote_identifier(work.str.table);
+            work.quote.user = (char *)quote_identifier(work.str.user);
             work.oid.user = conf_user(&work);
             work.oid.data = conf_data(&work);
             MemSet(&worker, 0, sizeof(worker));
@@ -126,6 +125,11 @@ static void conf_check(void) {
             worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
             if (init_check_ascii_all(&worker)) E("init_check_ascii_all");
             conf_work(&worker);
+            if (work.quote.data != work.str.data) pfree(work.quote.data);
+            if (work.str.partman && work.quote.partman != work.str.partman) pfree(work.quote.partman);
+            if (work.quote.schema != work.str.schema) pfree(work.quote.schema);
+            if (work.quote.table != work.str.table) pfree(work.quote.table);
+            if (work.quote.user != work.str.user) pfree(work.quote.user);
         }
         pfree(work.str.data);
         if (work.str.partman) pfree(work.str.partman);
