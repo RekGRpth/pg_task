@@ -263,7 +263,7 @@ static void SignalHandlerForShutdownRequestMy(SIGNAL_ARGS) {
 static void task_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
-    StringInfoData buf;
+    StringInfoData oid, schema_table, schema_type;
     MemSet(&task, 0, sizeof(task));
     MemSet(&work, 0, sizeof(work));
 #define X(name, serialize, deserialize) deserialize(name);
@@ -311,16 +311,16 @@ static void task_init(void) {
     set_config_option("pg_task.user", work.str.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     D1("user = %s, data = %s, schema = %s, table = %s, oid = %i, id = %li, hash = %i, group = %s, max = %i", work.str.user, work.str.data, work.str.schema, work.str.table, work.oid.table, task.id, task.hash, task.group, task.max);
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "%s.%s", work.quote.schema, work.quote.table);
-    work.schema_table = buf.data;
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "%s.state", work.quote.schema);
-    work.schema_type = buf.data;
-    initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "%i", work.oid.table);
-    set_config_option("pg_task.oid", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pfree(buf.data);
+    initStringInfoMy(TopMemoryContext, &schema_table);
+    appendStringInfo(&schema_table, "%s.%s", work.quote.schema, work.quote.table);
+    work.schema_table = schema_table.data;
+    initStringInfoMy(TopMemoryContext, &schema_type);
+    appendStringInfo(&schema_type, "%s.state", work.quote.schema);
+    work.schema_type = schema_type.data;
+    initStringInfoMy(TopMemoryContext, &oid);
+    appendStringInfo(&oid, "%i", work.oid.table);
+    set_config_option("pg_task.oid", oid.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    pfree(oid.data);
     task.pid = MyProcPid;
     task.start = GetCurrentTimestamp();
     task.count = 0;
