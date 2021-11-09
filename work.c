@@ -439,11 +439,12 @@ static void work_connect(Task *task) {
 
 static void work_extension(const char *schema, const char *extension) {
     const char *extension_quote = quote_identifier(extension);
+    const char *schema_quote = quote_identifier(schema);
     List *names;
     StringInfoData src;
     D1("user = %s, data = %s, schema = %s, extension = %s", work.str.user, work.str.data, schema, extension);
     initStringInfoMy(TopMemoryContext, &src);
-    appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, work.quote.schema);
+    appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, schema_quote);
     names = stringToQualifiedNameList(extension_quote);
     SPI_connect_my(src.data);
     if (!OidIsValid(get_extension_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
@@ -451,6 +452,7 @@ static void work_extension(const char *schema, const char *extension) {
     SPI_finish_my();
     list_free_deep(names);
     if (extension_quote != extension) pfree((void *)extension_quote);
+    if (schema_quote != schema) pfree((void *)schema_quote);
     pfree(src.data);
 }
 
