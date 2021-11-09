@@ -73,13 +73,12 @@ bool task_live(Task *task) {
     bool exit = false;
     char nulls[] = {' ', task->remote ? ' ' : 'n', ' ', ' ', ' '};
     Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, task->group), CStringGetTextDatumMy(TopMemoryContext, task->remote), Int32GetDatum(task->max), Int32GetDatum(task->count), TimestampTzGetDatum(task->start)};
-    static char *command = NULL;
     static Oid argtypes[] = {TEXTOID, TEXTOID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPI_plan *plan = NULL;
-    if (!command) {
-        StringInfoData buf;
-        initStringInfoMy(TopMemoryContext, &buf);
-        appendStringInfo(&buf, SQL(
+    static StringInfoData src = {0};
+    if (!src.data) {
+        initStringInfoMy(TopMemoryContext, &src);
+        appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t
                 WHERE state = 'PLAN'::%2$s AND plan <= current_timestamp AND t.group = $1 AND remote IS NOT DISTINCT FROM $2 AND max >= $3 AND CASE
@@ -88,10 +87,9 @@ bool task_live(Task *task) {
                 ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t SKIP LOCKED
             ) UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id
         ), work.schema_table, work.schema_type);
-        command = buf.data;
     }
-    SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
+    SPI_connect_my(src.data);
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
     if (!SPI_processed) exit = true; else task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false));
     SPI_finish_my();
