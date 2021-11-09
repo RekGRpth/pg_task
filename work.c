@@ -319,14 +319,14 @@ static void work_done(Task *task) {
     (PQstatus(task->conn) != CONNECTION_OK || !task->live || task_live(task)) ? work_finish(task) : work_query(task);
 }
 
-static Oid work_schema(const char *schema) {
+static Oid work_schema(const char *schema_quote) {
     List *names;
     Oid oid;
     StringInfoData src;
-    D1("user = %s, data = %s, schema = %s", work.str.user, work.str.data, schema);
+    D1("user = %s, data = %s, schema = %s", work.str.user, work.str.data, schema_quote);
     initStringInfoMy(TopMemoryContext, &src);
-    appendStringInfo(&src, SQL(CREATE SCHEMA %s), work.quote.schema);
-    names = stringToQualifiedNameList(work.quote.schema);
+    appendStringInfo(&src, SQL(CREATE SCHEMA %s), schema_quote);
+    names = stringToQualifiedNameList(schema_quote);
     SPI_connect_my(src.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     oid = get_namespace_oid(strVal(linitial(names)), false);
@@ -437,12 +437,11 @@ static void work_connect(Task *task) {
     }
 }
 
-static void work_extension(const char *schema, const char *extension) {
+static void work_extension(const char *schema_quote, const char *extension) {
     const char *extension_quote = quote_identifier(extension);
-    const char *schema_quote = quote_identifier(schema);
     List *names;
     StringInfoData src;
-    D1("user = %s, data = %s, schema = %s, extension = %s", work.str.user, work.str.data, schema, extension);
+    D1("user = %s, data = %s, schema = %s, extension = %s", work.str.user, work.str.data, schema_quote, extension);
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, schema_quote);
     names = stringToQualifiedNameList(extension_quote);
@@ -452,7 +451,6 @@ static void work_extension(const char *schema, const char *extension) {
     SPI_finish_my();
     list_free_deep(names);
     if (extension_quote != extension) pfree((void *)extension_quote);
-    if (schema_quote != schema) pfree((void *)schema_quote);
     pfree(src.data);
 }
 
@@ -462,8 +460,8 @@ static void work_partman(void) {
     const RangeVar *rangevar;
     List *names;
     StringInfoData create_template, pkey, template, template_table;
-    work.oid.partman = work_schema(work.str.partman);
-    work_extension(work.str.partman, "pg_partman");
+    work.oid.partman = work_schema(work.quote.partman);
+    work_extension(work.quote.partman, "pg_partman");
     initStringInfoMy(TopMemoryContext, &pkey);
     appendStringInfo(&pkey, "%s_pkey", work.str.table);
     initStringInfoMy(TopMemoryContext, &template);
@@ -688,7 +686,7 @@ static void work_conf(void) {
     appendStringInfo(&schema_type, "%s.state", work.quote.schema);
     work.schema_type = schema_type.data;
     D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work.str.user, work.str.data, work.str.schema, work.str.table, work.timeout, work.count, work.live, work.schema_table, work.schema_type, work.str.partman ? work.str.partman : default_null);
-    work.oid.schema = work_schema(work.str.schema);
+    work.oid.schema = work_schema(work.quote.schema);
     set_config_option("pg_task.schema", work.str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
     work_table();
