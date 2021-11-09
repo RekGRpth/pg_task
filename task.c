@@ -202,13 +202,12 @@ void task_error(Task *task, ErrorData *edata) {
 
 void task_repeat(Task *task) {
     Datum values[] = {Int64GetDatum(task->id)};
-    static char *command = NULL;
     static Oid argtypes[] = {INT8OID};
     static SPI_plan *plan = NULL;
-    if (!command) {
-        StringInfoData buf;
-        initStringInfoMy(TopMemoryContext, &buf);
-        appendStringInfo(&buf, SQL(
+    static StringInfoData src = {0};
+    if (!src.data) {
+        initStringInfoMy(TopMemoryContext, &src);
+        appendStringInfo(&src, SQL(
             INSERT INTO %1$s (parent, plan, "group", max, input, timeout, delete, repeat, drift, count, live)
             SELECT $1, CASE
                 WHEN drift THEN current_timestamp + repeat
@@ -216,10 +215,9 @@ void task_repeat(Task *task) {
             END AS plan, t.group, max, input, timeout, delete, repeat, drift, count, live
             FROM %1$s AS t WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) LIMIT 1 RETURNING id
         ), work.schema_table, work.schema_type);
-        command = buf.data;
     }
-    SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
+    SPI_connect_my(src.data);
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING, true);
     if (SPI_processed != 1) W("%li: SPI_processed != 1", task->id);
     SPI_finish_my();
