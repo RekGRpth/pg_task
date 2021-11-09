@@ -203,6 +203,7 @@ static void work_fini(void) {
     }
     pfree(error.data);
     if (ShutdownRequestPending) return;
+    MyBgworkerEntry->bgw_notify_pid = MyProcPid;
     conf_work(MyBgworkerEntry);
 }
 
