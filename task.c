@@ -10,6 +10,11 @@ static void task_update(Task *task) {
     static Oid argtypes[] = {TEXTOID};
     static SPI_plan *plan = NULL;
     static StringInfoData src = {0};
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("update");
+#else
+    set_ps_display("update", false);
+#endif
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, SQL(
@@ -27,6 +32,11 @@ static void task_update(Task *task) {
     }
     SPI_finish_my();
     if (values[0]) pfree((void *)values[0]);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
 }
 
 bool task_done(Task *task) {
@@ -38,6 +48,11 @@ bool task_done(Task *task) {
     static StringInfoData src = {0};
     D1("id = %li, output = %s, error = %s, fail = %s", task->id, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null, task->fail ? "true" : "false");
     task_update(task);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("done");
+#else
+    set_ps_display("done", false);
+#endif
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, SQL(
@@ -66,6 +81,11 @@ bool task_done(Task *task) {
     if (task->lock && !init_table_id_unlock(work.oid.table, task->id)) { W("!init_table_id_unlock(%i, %li)", work.oid.table, task->id); exit = true; }
     task->lock = false;
     if (ShutdownRequestPending) exit = true;
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
     return exit;
 }
 
@@ -76,6 +96,11 @@ bool task_live(Task *task) {
     static Oid argtypes[] = {TEXTOID, TEXTOID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPI_plan *plan = NULL;
     static StringInfoData src = {0};
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("live");
+#else
+    set_ps_display("live", false);
+#endif
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, SQL(
@@ -95,6 +120,11 @@ bool task_live(Task *task) {
     SPI_finish_my();
     if (values[0]) pfree((void *)values[0]);
     if (values[1]) pfree((void *)values[1]);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
     return exit;
 }
 
@@ -109,6 +139,11 @@ bool task_work(Task *task) {
     task->lock = true;
     task->count++;
     D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work.oid.table, task->count, task->pid);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("work");
+#else
+    set_ps_display("work", false);
+#endif
     if (!task->conn) {
         StringInfoData id;
         initStringInfoMy(TopMemoryContext, &id);
@@ -144,6 +179,11 @@ bool task_work(Task *task) {
         D1("input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c", task->input, task->timeout, task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote, task->escape);
     }
     SPI_finish_my();
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
     return exit;
 }
 
@@ -152,6 +192,11 @@ void task_delete(Task *task) {
     static Oid argtypes[] = {INT8OID};
     static SPI_plan *plan = NULL;
     static StringInfoData src = {0};
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("delete");
+#else
+    set_ps_display("delete", false);
+#endif
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, SQL(DELETE FROM %1$s WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) RETURNING id), work.schema_table, work.schema_type);
@@ -161,6 +206,11 @@ void task_delete(Task *task) {
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE_RETURNING, true);
     if (SPI_processed != 1) W("%li: SPI_processed != 1", task->id);
     SPI_finish_my();
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
 }
 
 void task_error(Task *task, ErrorData *edata) {
@@ -205,6 +255,11 @@ void task_repeat(Task *task) {
     static Oid argtypes[] = {INT8OID};
     static SPI_plan *plan = NULL;
     static StringInfoData src = {0};
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("repeat");
+#else
+    set_ps_display("repeat", false);
+#endif
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, SQL(
@@ -221,6 +276,11 @@ void task_repeat(Task *task) {
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING, true);
     if (SPI_processed != 1) W("%li: SPI_processed != 1", task->id);
     SPI_finish_my();
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
 }
 
 static void task_fail(void) {
@@ -275,6 +335,11 @@ static void task_init(void) {
 #else
     BackgroundWorkerInitializeConnectionByOid(work.oid.data, work.oid.user);
 #endif
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("init");
+#else
+    set_ps_display("init", false);
+#endif
     process_session_preload_libraries();
     StartTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
@@ -322,6 +387,11 @@ static void task_init(void) {
     task.pid = MyProcPid;
     task.start = GetCurrentTimestamp();
     task.count = 0;
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
 }
 
 static void task_latch(void) {
@@ -350,6 +420,11 @@ static void task_success(void) {
 static bool task_timeout(void) {
     if (task_work(&task)) return true;
     D1("id = %li, timeout = %i, input = %s, count = %i", task.id, task.timeout, task.input, task.count);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("timeout");
+#else
+    set_ps_display("timeout", false);
+#endif
     PG_TRY();
         task_success();
     PG_CATCH();
@@ -366,6 +441,11 @@ static bool task_timeout(void) {
     if (task.error.data) pfree(task.error.data);
     task.error.data = NULL;
     if (ShutdownRequestPending) task.live = false;
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
     return !task.live || task_live(&task);
 }
 

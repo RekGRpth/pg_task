@@ -75,12 +75,22 @@ static void work_check(void) {
         INNER JOIN  pg_database AS d ON datname = data AND NOT datistemplate AND datallowconn AND usesysid = datdba
         WHERE       j.user = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND j.table = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::int4
     );
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("check");
+#else
+    set_ps_display("check", false);
+#endif
     if (ShutdownRequestPending) return;
     SPI_connect_my(src);
     if (!plan) plan = SPI_prepare_my(src, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
     if (!SPI_processed) ShutdownRequestPending = true;
     SPI_finish_my();
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
 }
 
 static void work_command(Task *task, PGresult *result) {
@@ -188,6 +198,11 @@ static void work_fini(void) {
     dlist_mutable_iter iter;
     StringInfoData error;
     D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li", work.str.user, work.str.data, work.str.schema, work.str.table, work.timeout, work.count, work.live);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("fini");
+#else
+    set_ps_display("fini", false);
+#endif
     initStringInfoMy(TopMemoryContext, &error);
 #if PG_VERSION_NUM >= 110000
     appendStringInfo(&error, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
@@ -213,6 +228,11 @@ static void work_index(int count, const char *const *indexes) {
     List *names;
     RelationData *relation;
     StringInfoData src, name, idx;
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("index");
+#else
+    set_ps_display("index", false);
+#endif
     initStringInfoMy(TopMemoryContext, &name);
     appendStringInfoString(&name, work.str.table);
     for (int i = 0; i < count; i++) {
@@ -253,6 +273,11 @@ static void work_index(int count, const char *const *indexes) {
     pfree(idx.data);
     pfree(name.data);
     pfree(src.data);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
 }
 
 static void work_reload(void) {
@@ -324,6 +349,11 @@ static Oid work_schema(const char *schema_quote) {
     Oid oid;
     StringInfoData src;
     D1("user = %s, data = %s, schema = %s", work.str.user, work.str.data, schema_quote);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("schema");
+#else
+    set_ps_display("schema", false);
+#endif
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE SCHEMA %s), schema_quote);
     names = stringToQualifiedNameList(schema_quote);
@@ -334,6 +364,11 @@ static Oid work_schema(const char *schema_quote) {
     SPI_finish_my();
     list_free_deep(names);
     pfree(src.data);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
     return oid;
 }
 
@@ -442,6 +477,11 @@ static void work_extension(const char *schema_quote, const char *extension) {
     List *names;
     StringInfoData src;
     D1("user = %s, data = %s, schema = %s, extension = %s", work.str.user, work.str.data, schema_quote, extension);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("extension");
+#else
+    set_ps_display("extension", false);
+#endif
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, schema_quote);
     names = stringToQualifiedNameList(extension_quote);
@@ -452,6 +492,11 @@ static void work_extension(const char *schema_quote, const char *extension) {
     list_free_deep(names);
     if (extension_quote != extension) pfree((void *)extension_quote);
     pfree(src.data);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
 }
 
 static void work_partman(void) {
@@ -460,6 +505,12 @@ static void work_partman(void) {
     const RangeVar *rangevar;
     List *names;
     StringInfoData create_template, pkey, template, template_table;
+    D1("user = %s, data = %s", work.str.user, work.str.data);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("partman");
+#else
+    set_ps_display("partman", false);
+#endif
     work.oid.partman = work_schema(work.quote.partman);
     work_extension(work.quote.partman, "pg_partman");
     initStringInfoMy(TopMemoryContext, &pkey);
@@ -500,6 +551,11 @@ static void work_partman(void) {
     pfree(pkey.data);
     pfree(template.data);
     pfree(template_table.data);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
 }
 
 static void work_remote(Task task_) {
@@ -576,6 +632,11 @@ static void work_table(void) {
     List *names;
     StringInfoData src;
     D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work.str.user, work.str.data, work.str.schema, work.str.table, work.schema_table, work.schema_type);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("table");
+#else
+    set_ps_display("table", false);
+#endif
     set_config_option("pg_task.table", work.str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(
@@ -623,6 +684,11 @@ static void work_table(void) {
     appendStringInfo(&src, "%i", work.oid.table);
     set_config_option("pg_task.oid", src.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(src.data);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
 }
 
 static void work_task(Task task) {
@@ -662,6 +728,11 @@ static void work_type(void) {
     Oid type = InvalidOid;
     StringInfoData src;
     D1("user = %s, data = %s, schema = %s, table = %s", work.str.user, work.str.data, work.str.schema, work.str.table);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("type");
+#else
+    set_ps_display("type", false);
+#endif
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')), work.schema_type);
     SPI_connect_my(src.data);
@@ -670,6 +741,11 @@ static void work_type(void) {
     SPI_commit_my();
     SPI_finish_my();
     pfree(src.data);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
 }
 
 static void work_conf(void) {
@@ -685,6 +761,11 @@ static void work_conf(void) {
     appendStringInfo(&schema_type, "%s.state", work.quote.schema);
     work.schema_type = schema_type.data;
     D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work.str.user, work.str.data, work.str.schema, work.str.table, work.timeout, work.count, work.live, work.schema_table, work.schema_type, work.str.partman ? work.str.partman : default_null);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("conf");
+#else
+    set_ps_display("conf", false);
+#endif
     work.oid.schema = work_schema(work.quote.schema);
     set_config_option("pg_task.schema", work.str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
@@ -701,12 +782,22 @@ static void work_conf(void) {
     set_config_option("pg_task.timeout", timeout.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(timeout.data);
     dlist_init(&work.head);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
 }
 
 static void work_reset(void) {
     Datum values[] = {ObjectIdGetDatum(work.oid.table)};
     static Oid argtypes[] = {OIDOID};
     StringInfoData src;
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("reset");
+#else
+    set_ps_display("reset", false);
+#endif
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(
         WITH s AS (
@@ -721,6 +812,11 @@ static void work_reset(void) {
     for (uint64 row = 0; row < SPI_processed; row++) W("row = %lu, id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     SPI_finish_my();
     pfree(src.data);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
 }
 
 static void work_init(void) {
@@ -737,6 +833,11 @@ static void work_init(void) {
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
 #else
     BackgroundWorkerInitializeConnectionByOid(work.oid.data, work.oid.user);
+#endif
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("init");
+#else
+    set_ps_display("init", false);
 #endif
     process_session_preload_libraries();
     StartTransactionCommand();
@@ -773,6 +874,11 @@ static void work_timeout(void) {
     static Oid argtypes[] = {OIDOID};
     static SPI_plan *plan = NULL;
     static StringInfoData src = {0};
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("timeout");
+#else
+    set_ps_display("timeout", false);
+#endif
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, SQL(
@@ -801,6 +907,11 @@ static void work_timeout(void) {
     }
     if (work.count) work.processed += SPI_processed;
     SPI_finish_my();
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
 }
 
 static void work_writeable(Task *task) {

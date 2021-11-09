@@ -7,6 +7,11 @@ static Oid conf_data(Work *work) {
     Oid oid;
     StringInfoData src;
     D1("user = %s, data = %s", work->str.user, work->str.data);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("data");
+#else
+    set_ps_display("data", false);
+#endif
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), work->quote.data, work->quote.user);
     names = stringToQualifiedNameList(work->quote.data);
@@ -33,6 +38,11 @@ static Oid conf_data(Work *work) {
     SPI_commit_my();
     list_free_deep(names);
     pfree(src.data);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
     return oid;
 }
 
@@ -41,6 +51,11 @@ static Oid conf_user(Work *work) {
     Oid oid;
     StringInfoData src;
     D1("user = %s", work->str.user);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("user");
+#else
+    set_ps_display("user", false);
+#endif
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE USER %s), work->quote.user);
     if (work->str.partman) appendStringInfoString(&src, " SUPERUSER");
@@ -51,12 +66,22 @@ static Oid conf_user(Work *work) {
     SPI_commit_my();
     list_free_deep(names);
     pfree(src.data);
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
     return oid;
 }
 
 void conf_work(BackgroundWorker *worker) {
     BackgroundWorkerHandle *handle;
     pid_t pid;
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("work");
+#else
+    set_ps_display("work", false);
+#endif
     if (!RegisterDynamicBackgroundWorker(worker, &handle)) E("!RegisterDynamicBackgroundWorker");
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_NOT_YET_STARTED: E("WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED"); break;
@@ -83,6 +108,11 @@ static void conf_check(void) {
         ) SELECT    COALESCE(pid, 0) AS pid, j.* FROM j
         LEFT JOIN   pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text) AND pid != pg_backend_pid()
     );
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("check");
+#else
+    set_ps_display("check", false);
+#endif
     SPI_connect_my(command);
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
@@ -99,6 +129,11 @@ static void conf_check(void) {
         };
         int32 pid = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "pid", false));
         D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, pid = %i, partman = %s", row, work.str.user, work.str.data, work.str.schema, work.str.table, work.timeout, work.count, work.live, pid, work.str.partman ? work.str.partman : default_null);
+#if PG_VERSION_NUM >= 130000
+        set_ps_display("row");
+#else
+        set_ps_display("row", false);
+#endif
         if (!pid) {
             BackgroundWorker worker = {0};
             size_t len = 0;
@@ -137,6 +172,11 @@ static void conf_check(void) {
         pfree(work.str.user);
     }
     SPI_finish_my();
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("idle");
+#else
+    set_ps_display("idle", false);
+#endif
 }
 
 void conf_main(Datum main_arg) {
@@ -152,6 +192,11 @@ void conf_main(Datum main_arg) {
     BackgroundWorkerInitializeConnection("postgres", "postgres");
 #endif
     pgstat_report_appname("pg_conf");
+#if PG_VERSION_NUM >= 130000
+    set_ps_display("main");
+#else
+    set_ps_display("main", false);
+#endif
     process_session_preload_libraries();
     conf_check();
 }
