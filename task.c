@@ -274,8 +274,6 @@ static void SignalHandlerForShutdownRequestMy(SIGNAL_ARGS) {
 
 static void task_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
-    const char *schema_quote;
-    const char *table_quote;
     MemoryContext oldcontext = CurrentMemoryContext;
     StringInfoData buf;
     MemSet(&task, 0, sizeof(task));
@@ -294,12 +292,16 @@ static void task_init(void) {
     process_session_preload_libraries();
     StartTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
+    work.str.data = get_database_name(work.oid.data);
     work.str.schema = get_namespace_name(work.oid.schema);
     work.str.table = get_rel_name(work.oid.table);
-    work.str.data = get_database_name(work.oid.data);
     work.str.user = GetUserNameFromId(work.oid.user, false);
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
+    work.quote.data = (char *)quote_identifier(work.str.data);
+    work.quote.schema = (char *)quote_identifier(work.str.schema);
+    work.quote.table = (char *)quote_identifier(work.str.table);
+    work.quote.user = (char *)quote_identifier(work.str.user);
 #if PG_VERSION_NUM >= 110000
 #else
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work.str.user) + 1 + strlen(work.str.data) + 1);
@@ -321,20 +323,16 @@ static void task_init(void) {
     set_config_option("pg_task.user", work.str.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     D1("user = %s, data = %s, schema = %s, table = %s, oid = %i, id = %li, hash = %i, group = %s, max = %i", work.str.user, work.str.data, work.str.schema, work.str.table, work.oid.table, task.id, task.hash, task.group, task.max);
-    schema_quote = quote_identifier(work.str.schema);
-    table_quote = quote_identifier(work.str.table);
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "%s.%s", schema_quote, table_quote);
+    appendStringInfo(&buf, "%s.%s", work.quote.schema, work.quote.table);
     work.schema_table = buf.data;
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "%s.state", schema_quote);
+    appendStringInfo(&buf, "%s.state", work.quote.schema);
     work.schema_type = buf.data;
     initStringInfoMy(TopMemoryContext, &buf);
     appendStringInfo(&buf, "%i", work.oid.table);
     set_config_option("pg_task.oid", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(buf.data);
-    if (schema_quote != work.str.schema) pfree((void *)schema_quote);
-    if (table_quote != work.str.table) pfree((void *)table_quote);
     task.pid = MyProcPid;
     task.start = GetCurrentTimestamp();
     task.count = 0;
