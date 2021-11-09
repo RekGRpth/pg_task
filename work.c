@@ -59,7 +59,7 @@ static const char *work_status(Task *task) {
 
 static void work_check(void) {
     static SPI_plan *plan = NULL;
-    static const char *command = SQL(
+    static const char *src = SQL(
         WITH j AS (
             SELECT  COALESCE(COALESCE(j.user, data), current_setting('pg_task.default_user', false)) AS user,
                     COALESCE(COALESCE(data, j.user), current_setting('pg_task.default_data', false)) AS data,
@@ -76,8 +76,8 @@ static void work_check(void) {
         WHERE       j.user = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND j.table = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::int4
     );
     if (ShutdownRequestPending) return;
-    SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, 0, NULL);
+    SPI_connect_my(src);
+    if (!plan) plan = SPI_prepare_my(src, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
     if (!SPI_processed) ShutdownRequestPending = true;
     SPI_finish_my();
@@ -774,13 +774,12 @@ static void work_init(void) {
 
 static void work_timeout(void) {
     Datum values[] = {ObjectIdGetDatum(work.oid.table)};
-    static char *command = NULL;
     static Oid argtypes[] = {OIDOID};
     static SPI_plan *plan = NULL;
-    if (!command) {
-        StringInfoData buf;
-        initStringInfoMy(TopMemoryContext, &buf);
-        appendStringInfo(&buf, SQL(
+    static StringInfoData src = {0};
+    if (!src.data) {
+        initStringInfoMy(TopMemoryContext, &src);
+        appendStringInfo(&src, SQL(
             WITH s AS ( WITH l AS (
                 SELECT count(classid) AS classid, objid FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 GROUP BY objid
             ), s AS (
@@ -790,10 +789,9 @@ static void work_timeout(void) {
             ) SELECT id, hash, count - row_number() OVER (PARTITION BY hash ORDER BY count DESC, id) + 1 AS count FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id AND s.count > 0 RETURNING u.id, u.hash, u.group, u.remote, u.max
         ), work.schema_table, work.schema_type);
-        command = buf.data;
     }
-    SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
+    SPI_connect_my(src.data);
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_processed; row++) {
         Task task;
