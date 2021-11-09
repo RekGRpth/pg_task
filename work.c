@@ -466,7 +466,7 @@ static void work_partman(void) {
     const char *template_quote;
     const RangeVar *rangevar;
     List *names;
-    StringInfoData create_template, pkey, template, partman_template;
+    StringInfoData create_template, pkey, template, template_table;
     work.oid.partman = work_schema(work.str.partman);
     work_extension(work.str.partman, "pg_partman");
     initStringInfoMy(TopMemoryContext, &pkey);
@@ -475,15 +475,15 @@ static void work_partman(void) {
     appendStringInfo(&template, "template_%s_%s", work.str.schema, work.str.table);
     pkey_quote = quote_identifier(pkey.data);
     template_quote = quote_identifier(template.data);
-    initStringInfoMy(TopMemoryContext, &partman_template);
-    appendStringInfo(&partman_template, "%s.%s", partman_quote, template_quote);
+    initStringInfoMy(TopMemoryContext, &template_table);
+    appendStringInfo(&template_table, "%s.%s", partman_quote, template_quote);
     initStringInfoMy(TopMemoryContext, &create_template);
-    appendStringInfo(&create_template, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))), partman_template.data, work.schema_table, pkey_quote);
-    names = stringToQualifiedNameList(partman_template.data);
+    appendStringInfo(&create_template, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))), template_table.data, work.schema_table, pkey_quote);
+    names = stringToQualifiedNameList(template_table.data);
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(create_template.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
-        Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, work.schema_table), CStringGetTextDatumMy(TopMemoryContext, partman_template.data)};
+        Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, work.schema_table), CStringGetTextDatumMy(TopMemoryContext, template_table.data)};
         static Oid argtypes[] = {TEXTOID, TEXTOID};
         StringInfoData create_parent;
         initStringInfoMy(TopMemoryContext, &create_parent);
@@ -505,9 +505,9 @@ static void work_partman(void) {
     if (pkey_quote != pkey.data) pfree((void *)pkey_quote);
     if (template_quote != template.data) pfree((void *)template_quote);
     pfree(create_template.data);
-    pfree(partman_template.data);
     pfree(pkey.data);
     pfree(template.data);
+    pfree(template_table.data);
 }
 
 static void work_remote(Task task_) {
