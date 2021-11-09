@@ -209,7 +209,6 @@ static void work_fini(void) {
 
 static void work_index(int count, const char *const *indexes) {
     const char *name_quote;
-    const char *schema_quote = quote_identifier(work.str.schema);
     const RangeVar *rangevar;
     List *names;
     RelationData *relation;
@@ -235,7 +234,7 @@ static void work_index(int count, const char *const *indexes) {
     }
     appendStringInfoString(&src, ")");
     initStringInfoMy(TopMemoryContext, &idx);
-    appendStringInfo(&idx, "%s.%s", schema_quote, name_quote);
+    appendStringInfo(&idx, "%s.%s", work.quote.schema, name_quote);
     names = stringToQualifiedNameList(idx.data);
     rangevar = makeRangeVarFromNameList(names);
     D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work.str.user, work.str.data, work.str.schema, work.str.table, idx.data, work.schema_table);
@@ -251,7 +250,6 @@ static void work_index(int count, const char *const *indexes) {
     pfree((void *)rangevar);
     list_free_deep(names);
     if (name_quote != name.data) pfree((void *)name_quote);
-    if (schema_quote != work.str.schema) pfree((void *)schema_quote);
     pfree(idx.data);
     pfree(name.data);
     pfree(src.data);
@@ -322,21 +320,19 @@ static void work_done(Task *task) {
 }
 
 static Oid work_schema(const char *schema) {
-    const char *schema_quote = quote_identifier(schema);
     List *names;
     Oid oid;
     StringInfoData src;
     D1("user = %s, data = %s, schema = %s", work.str.user, work.str.data, schema);
     initStringInfoMy(TopMemoryContext, &src);
-    appendStringInfo(&src, SQL(CREATE SCHEMA %s), schema_quote);
-    names = stringToQualifiedNameList(schema_quote);
+    appendStringInfo(&src, SQL(CREATE SCHEMA %s), work.quote.schema);
+    names = stringToQualifiedNameList(work.quote.schema);
     SPI_connect_my(src.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     oid = get_namespace_oid(strVal(linitial(names)), false);
     SPI_commit_my();
     SPI_finish_my();
     list_free_deep(names);
-    if (schema_quote != schema) pfree((void *)schema_quote);
     pfree(src.data);
     return oid;
 }
@@ -443,12 +439,11 @@ static void work_connect(Task *task) {
 
 static void work_extension(const char *schema, const char *extension) {
     const char *extension_quote = quote_identifier(extension);
-    const char *schema_quote = quote_identifier(schema);
     List *names;
     StringInfoData src;
     D1("user = %s, data = %s, schema = %s, extension = %s", work.str.user, work.str.data, schema, extension);
     initStringInfoMy(TopMemoryContext, &src);
-    appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, schema_quote);
+    appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, work.quote.schema);
     names = stringToQualifiedNameList(extension_quote);
     SPI_connect_my(src.data);
     if (!OidIsValid(get_extension_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
@@ -456,12 +451,10 @@ static void work_extension(const char *schema, const char *extension) {
     SPI_finish_my();
     list_free_deep(names);
     if (extension_quote != extension) pfree((void *)extension_quote);
-    if (schema_quote != schema) pfree((void *)schema_quote);
     pfree(src.data);
 }
 
 static void work_partman(void) {
-    const char *partman_quote = quote_identifier(work.str.partman);
     const char *pkey_quote;
     const char *template_quote;
     const RangeVar *rangevar;
@@ -476,7 +469,7 @@ static void work_partman(void) {
     pkey_quote = quote_identifier(pkey.data);
     template_quote = quote_identifier(template.data);
     initStringInfoMy(TopMemoryContext, &template_table);
-    appendStringInfo(&template_table, "%s.%s", partman_quote, template_quote);
+    appendStringInfo(&template_table, "%s.%s", work.quote.partman, template_quote);
     initStringInfoMy(TopMemoryContext, &create_template);
     appendStringInfo(&create_template, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))), template_table.data, work.schema_table, pkey_quote);
     names = stringToQualifiedNameList(template_table.data);
@@ -487,7 +480,7 @@ static void work_partman(void) {
         static Oid argtypes[] = {TEXTOID, TEXTOID};
         StringInfoData create_parent;
         initStringInfoMy(TopMemoryContext, &create_parent);
-        appendStringInfo(&create_parent, SQL(SELECT %1$s.create_parent(p_parent_table := $1, p_control := 'plan', p_type := 'native', p_interval := 'monthly', p_template_table := $2)), partman_quote);
+        appendStringInfo(&create_parent, SQL(SELECT %1$s.create_parent(p_parent_table := $1, p_control := 'plan', p_type := 'native', p_interval := 'monthly', p_template_table := $2)), work.quote.partman);
         SPI_execute_with_args_my(create_template.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
         SPI_commit_my();
         SPI_start_transaction_my(create_parent.data);
@@ -501,7 +494,6 @@ static void work_partman(void) {
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
-    if (partman_quote != work.str.partman) pfree((void *)partman_quote);
     if (pkey_quote != pkey.data) pfree((void *)pkey_quote);
     if (template_quote != template.data) pfree((void *)template_quote);
     pfree(create_template.data);
@@ -686,17 +678,13 @@ static void work_conf(void) {
     const char *index_parent[] = {"parent"};
     const char *index_plan[] = {"plan"};
     const char *index_state[] = {"state"};
-    const char *schema_quote = quote_identifier(work.str.schema);
-    const char *table_quote = quote_identifier(work.str.table);
     StringInfoData buf;
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "%s.%s", schema_quote, table_quote);
+    appendStringInfo(&buf, "%s.%s", work.quote.schema, work.quote.table);
     work.schema_table = buf.data;
     initStringInfoMy(TopMemoryContext, &buf);
-    appendStringInfo(&buf, "%s.state", schema_quote);
+    appendStringInfo(&buf, "%s.state", work.quote.schema);
     work.schema_type = buf.data;
-    if (work.str.schema != schema_quote) pfree((void *)schema_quote);
-    if (work.str.table != table_quote) pfree((void *)table_quote);
     D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work.str.user, work.str.data, work.str.schema, work.str.table, work.timeout, work.count, work.live, work.schema_table, work.schema_type, work.str.partman ? work.str.partman : default_null);
     work.oid.schema = work_schema(work.str.schema);
     set_config_option("pg_task.schema", work.str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
@@ -759,6 +747,11 @@ static void work_init(void) {
     work.str.user = GetUserNameFromId(work.oid.user, false);
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
+    work.quote.data = (char *)quote_identifier(work.str.data);
+    if (work.str.partman) work.quote.partman = (char *)quote_identifier(work.str.partman);
+    work.quote.schema = (char *)quote_identifier(work.str.schema);
+    work.quote.table = (char *)quote_identifier(work.str.table);
+    work.quote.user = (char *)quote_identifier(work.str.user);
 #if PG_VERSION_NUM >= 110000
 #else
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work.str.user) + 1 + strlen(work.str.data) + 1);
