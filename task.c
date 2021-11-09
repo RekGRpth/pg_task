@@ -101,34 +101,32 @@ bool task_live(Task *task) {
 bool task_work(Task *task) {
     bool exit = false;
     Datum values[] = {Int64GetDatum(task->id), Int32GetDatum(task->pid)};
-    static char *command = NULL;
     static Oid argtypes[] = {INT8OID, INT4OID};
     static SPI_plan *plan = NULL;
+    static StringInfoData src = {0};
     if (ShutdownRequestPending) return true;
     if (!init_table_id_lock(work.oid.table, task->id)) { W("!init_table_id_lock(%i, %li)", work.oid.table, task->id); return true; }
     task->lock = true;
     task->count++;
     D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work.oid.table, task->count, task->pid);
     if (!task->conn) {
-        StringInfoData buf;
-        initStringInfoMy(TopMemoryContext, &buf);
-        appendStringInfo(&buf, "%li", task->id);
-        set_config_option("pg_task.id", buf.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-        pfree(buf.data);
+        StringInfoData id;
+        initStringInfoMy(TopMemoryContext, &id);
+        appendStringInfo(&id, "%li", task->id);
+        set_config_option("pg_task.id", id.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+        pfree(id.data);
     }
-    if (!command) {
-        StringInfoData buf;
-        initStringInfoMy(TopMemoryContext, &buf);
-        appendStringInfo(&buf, SQL(
+    if (!src.data) {
+        initStringInfoMy(TopMemoryContext, &src);
+        appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
             ) UPDATE %1$s AS u SET state = 'WORK'::%2$s, start = current_timestamp, pid = $2 FROM s WHERE u.id = s.id
             RETURNING input, EXTRACT(epoch FROM timeout)::int4 * 1000 AS timeout, header, string, u.null, delimiter, quote, escape
         ), work.schema_table, work.schema_type);
-        command = buf.data;
     }
-    SPI_connect_my(command);
-    if (!plan) plan = SPI_prepare_my(command, countof(argtypes), argtypes);
+    SPI_connect_my(src.data);
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     if (SPI_processed != 1) {
         W("%li: SPI_processed != 1", task->id);
