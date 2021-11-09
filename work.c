@@ -483,11 +483,11 @@ static void work_partman(void) {
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(create_template.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
-        Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, work.schema_table), CStringGetTextDatumMy(TopMemoryContext, "plan"), CStringGetTextDatumMy(TopMemoryContext, "native"), CStringGetTextDatumMy(TopMemoryContext, "monthly"), CStringGetTextDatumMy(TopMemoryContext, partman_template.data)};
-        static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID, TEXTOID, TEXTOID};
+        Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, work.schema_table), CStringGetTextDatumMy(TopMemoryContext, partman_template.data)};
+        static Oid argtypes[] = {TEXTOID, TEXTOID};
         StringInfoData create_parent;
         initStringInfoMy(TopMemoryContext, &create_parent);
-        appendStringInfo(&create_parent, SQL(SELECT %1$s.create_parent(p_parent_table := $1, p_control := $2, p_type := $3, p_interval := $4, p_template_table := $5)), partman_quote);
+        appendStringInfo(&create_parent, SQL(SELECT %1$s.create_parent(p_parent_table := $1, p_control := 'plan', p_type := 'native', p_interval := 'monthly', p_template_table := $2)), partman_quote);
         SPI_execute_with_args_my(create_template.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
         SPI_commit_my();
         SPI_start_transaction_my(create_parent.data);
@@ -496,9 +496,6 @@ static void work_partman(void) {
         if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) E("!create_parent");
         if (values[0]) pfree((void *)values[0]);
         if (values[1]) pfree((void *)values[1]);
-        if (values[2]) pfree((void *)values[2]);
-        if (values[3]) pfree((void *)values[3]);
-        if (values[4]) pfree((void *)values[4]);
     }
     SPI_commit_my();
     SPI_finish_my();
