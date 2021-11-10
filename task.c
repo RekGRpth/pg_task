@@ -343,10 +343,10 @@ static void task_init(void) {
     process_session_preload_libraries();
     StartTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
-    work.str.data = get_database_name(work.oid.data);
-    work.str.schema = get_namespace_name(work.oid.schema);
-    work.str.table = get_rel_name(work.oid.table);
-    work.str.user = GetUserNameFromId(work.oid.user, false);
+    if (!(work.str.data = get_database_name(work.oid.data))) E("!get_database_name");
+    if (!(work.str.schema = get_namespace_name(work.oid.schema))) E("!get_namespace_name");
+    if (!(work.str.table = get_rel_name(work.oid.table))) E("!get_rel_name");
+    if (!(work.str.user = GetUserNameFromId(work.oid.user, true))) E("!GetUserNameFromId");
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
     work.quote.data = (char *)quote_identifier(work.str.data);

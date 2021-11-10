@@ -842,8 +842,8 @@ static void work_init(void) {
     process_session_preload_libraries();
     StartTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
-    work.str.data = get_database_name(work.oid.data);
-    work.str.user = GetUserNameFromId(work.oid.user, false);
+    if (!(work.str.data = get_database_name(work.oid.data))) E("!get_database_name");
+    if (!(work.str.user = GetUserNameFromId(work.oid.user, true))) E("!GetUserNameFromId");
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
     work.quote.data = (char *)quote_identifier(work.str.data);
