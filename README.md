@@ -12,6 +12,7 @@ by default pg_task
 pg_task.default_count = '1000'
 ```
 tasks until exit
+
 2) uses database
 ```conf
 pg_task.default_data = 'postgres'
@@ -41,11 +42,13 @@ pg_task.default_header = 'on'
 pg_task.default_live = '1 hour'
 ```
 before exit
+
 9) run simultaniously
 ```conf
 pg_task.default_live = '2147483647'
 ```
 tasks
+
 10) print null in output as
 ```conf
 pg_task.default_null = '\N'
@@ -55,11 +58,13 @@ pg_task.default_null = '\N'
 pg_task.default_partman = 'partman'
 ```
 for pg_partman if extension available
+
 12) user schema
 ```conf
 pg_task.default_schema = 'public'
 ```
 for tasks
+
 13) prints only string in quotes in output
 ```conf
 pg_task.default_string = 'on'
@@ -69,11 +74,13 @@ pg_task.default_string = 'on'
 pg_task.default_table = 'task'
 ```
 for tasks
+
 15) uses sleep timeout
 ```conf
 pg_task.default_timeout = '1000'
 ```
 milliseconds
+
 16) uses user
 ```conf
 pg_task.default_user = 'postgres'
