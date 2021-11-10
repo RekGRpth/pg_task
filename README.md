@@ -6,22 +6,80 @@ to run pg_task add it to line
 shared_preload_libraries = 'pg_task'
 ```
 
-by default pg_task use table
+by default pg_task
+1) proceses
+```conf
+pg_task.default_count = '1000'
+```
+tasks until exit
+2) uses database
+```conf
+pg_task.default_data = 'postgres'
+```
+3) deletes task if output is null
+```conf
+pg_task.default_delete = 'on'
+```
+4) uses in output delimiter
+```conf
+pg_task.default_delimiter = '\t'
+```
+5) uses drift
+```conf
+pg_task.default_drift = 'on'
+```
+6) groupes tasks by
+```conf
+pg_task.default_group = 'group'
+```
+7) prints in output headers
+```conf
+pg_task.default_header = 'on'
+```
+8) proceses tasks only
+```conf
+pg_task.default_live = '1 hour'
+```
+before exit
+9) run simultaniously
+```conf
+pg_task.default_live = '2147483647'
+```
+tasks
+10) print null in output as
+```conf
+pg_task.default_null = '\N'
+```
+11) uses schema
+```conf
+pg_task.default_partman = 'partman'
+```
+for pg_partman if extension available
+12) user schema
+```conf
+pg_task.default_schema = 'public'
+```
+for tasks
+13) prints only string in quotes in output
+```conf
+pg_task.default_string = 'on'
+```
+14) uses table
 ```conf
 pg_task.default_table = 'task'
 ```
-and sleep timeout
+for tasks
+15) uses sleep timeout
 ```conf
-pg_task.default_timeout = 1000
+pg_task.default_timeout = '1000'
 ```
 milliseconds
-and reset count
+16) uses user
 ```conf
-pg_task.default_reset = 60
+pg_task.default_user = 'postgres'
 ```
-of timeout
 
-by default pg_task run on local database `postgres` with user `postgres` with default schema (in search path) with default table (as abow) and default timeout (as abow)
+by default pg_task run on default database with default user with default schema with default table with default timeout
 
 to run specific database and/or user and/or schema and/or table and/or timeout set line (in json format)
 ```conf
@@ -29,6 +87,7 @@ pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"
 ```
 
 if database and/or user and/or schema and/or table does not exist then pg_task create it
+(if using pg_partman and user does not exist then pg_task create it as superuser to create extension, then You may alter nosuperuser)
 
 # pg_task using
 
@@ -36,7 +95,7 @@ by default pg_task create table with folowing columns
 
 id bigserial - primary key
 
-parent bigint - foreign key to parent task (if need)
+parent bigint - parent task (if need)
 
 plan timestamp - planned time of start
 
