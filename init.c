@@ -39,7 +39,7 @@ bool init_check_ascii_all(BackgroundWorker *worker) {
 
 bool init_data_user_table_lock(Oid data, Oid user, Oid table) {
     LOCKTAG tag = {data, user, table, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    return LockAcquire(&tag, AccessExclusiveLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
+    return LockAcquire(&tag, AccessExclusiveLock, true, true) == LOCKACQUIRE_OK;
 }
 
 bool init_data_user_table_unlock(Oid data, Oid user, Oid table) {
