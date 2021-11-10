@@ -148,6 +148,80 @@ static void init_assign(const char *newval, void *extra) {
     init_work(true);
 }
 
+#if PG_VERSION_NUM >= 130000
+#else
+static bool
+is_extension_control_filename(const char *filename)
+{
+	const char *extension = strrchr(filename, '.');
+
+	return (extension != NULL) && (strcmp(extension, ".control") == 0);
+}
+
+static char *
+get_extension_control_directory(void)
+{
+	char		sharepath[MAXPGPATH];
+	char	   *result;
+
+	get_share_path(my_exec_path, sharepath);
+	result = (char *) palloc(MAXPGPATH);
+	snprintf(result, MAXPGPATH, "%s/extension", sharepath);
+
+	return result;
+}
+
+static bool
+extension_file_exists(const char *extensionName)
+{
+	bool		result = false;
+	char	   *location;
+	DIR		   *dir;
+	struct dirent *de;
+
+	location = get_extension_control_directory();
+	dir = AllocateDir(location);
+
+	/*
+	 * If the control directory doesn't exist, we want to silently return
+	 * false.  Any other error will be reported by ReadDir.
+	 */
+	if (dir == NULL && errno == ENOENT)
+	{
+		/* do nothing */
+	}
+	else
+	{
+		while ((de = ReadDir(dir, location)) != NULL)
+		{
+			char	   *extname;
+
+			if (!is_extension_control_filename(de->d_name))
+				continue;
+
+			/* extract extension name from 'name.control' filename */
+			extname = pstrdup(de->d_name);
+			*strrchr(extname, '.') = '\0';
+
+			/* ignore it if it's an auxiliary control file */
+			if (strstr(extname, "--"))
+				continue;
+
+			/* done if it matches request */
+			if (strcmp(extname, extensionName) == 0)
+			{
+				result = true;
+				break;
+			}
+		}
+
+		FreeDir(dir);
+	}
+
+	return result;
+}
+#endif
+
 static void init_conf(void) {
     DefineCustomBoolVariable("pg_task.default_delete", "pg_task default delete", "delete task if output is null", &default_delete, true, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.default_drift", "pg_task default drift", "compute next repeat time by plan instead current", &default_drift, true, PGC_SIGHUP, 0, NULL, NULL, NULL);
@@ -161,7 +235,7 @@ static void init_conf(void) {
     DefineCustomStringVariable("pg_task.default_group", "pg_task default group", "group tasks name", &default_group, "group", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_live", "pg_task default live", "exit until timeout", &default_live, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_null", "pg_task default null", "text null representation", &default_null, "\\N", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_partman", "pg_task default partman", "partman schema name, if null then do not use partman", &default_partman, "partman", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    if (extension_file_exists("pg_partman")) DefineCustomStringVariable("pg_task.default_partman", "pg_task default partman", "partman schema name, if null then do not use partman", &default_partman, "partman", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_schema", "pg_task default schema", "schema name for tasks table", &default_schema, "public", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_table", "pg_task default table", "table name for tasks table", &default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_user", "pg_task default user", "default username", &default_user, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
