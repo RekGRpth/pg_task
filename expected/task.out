@@ -1,4 +1,5 @@
 \unset ECHO
-1..2
+1..3
 ok 1 - Schema public should exist
-ok 2 - Table public.task should exist
+ok 2 - Enum public.state should exist
+ok 3 - Table public.task should exist
