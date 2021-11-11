@@ -15,12 +15,13 @@
 BEGIN;
 --\i pgtap.sql
 CREATE EXTENSION pgtap;
-SELECT plan(6);
+SELECT plan(7);
 SELECT has_schema(current_setting('pg_task.default_schema', false)::name);
 SELECT has_enum(current_setting('pg_task.default_schema', false)::name, 'state'::name);
 SELECT enum_has_labels(current_setting('pg_task.default_schema', false)::name, 'state'::name, ARRAY['PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP']);
 SELECT has_table(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name);
 SELECT has_column(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'id'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('id') || ' should exist');
 SELECT has_column(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'parent'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('parent') || ' should exist');
+SELECT has_column(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'plan'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('plan') || ' should exist');
 SELECT * FROM finish();
 ROLLBACK;
