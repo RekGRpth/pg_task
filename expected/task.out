@@ -1,5 +1,5 @@
 \unset ECHO
-1..7
+1..30
 ok 1 - Schema public should exist
 ok 2 - Enum public.state should exist
 ok 3 - Enum public.state should have labels (PLAN, TAKE, WORK, DONE, FAIL, STOP)
@@ -7,3 +7,26 @@ ok 4 - Table public.task should exist
 ok 5 - Column task.id should exist
 ok 6 - Column task.parent should exist
 ok 7 - Column task.plan should exist
+ok 8 - Column task.start should exist
+ok 9 - Column task.stop should exist
+ok 10 - Column task.live should exist
+ok 11 - Column task.timeout should exist
+ok 12 - Column task.repeat should exist
+ok 13 - Column task.hash should exist
+ok 14 - Column task.count should exist
+ok 15 - Column task.max should exist
+ok 16 - Column task.pid should exist
+ok 17 - Column task.state should exist
+ok 18 - Column task.delete should exist
+ok 19 - Column task.drift should exist
+ok 20 - Column task.header should exist
+ok 21 - Column task.string should exist
+ok 22 - Column task.delimiter should exist
+ok 23 - Column task.escape should exist
+ok 24 - Column task.quote should exist
+ok 25 - Column task.error should exist
+ok 26 - Column task."group" should exist
+ok 27 - Column task.input should exist
+ok 28 - Column task."null" should exist
+ok 29 - Column task.output should exist
+ok 30 - Column task.remote should exist
