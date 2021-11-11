@@ -15,7 +15,7 @@
 BEGIN;
 --\i pgtap.sql
 CREATE EXTENSION pgtap;
-SELECT plan(31);
+SELECT plan(47);
 SELECT has_schema(current_setting('pg_task.default_schema', false)::name);
 SELECT has_enum(current_setting('pg_task.default_schema', false)::name, 'state'::name);
 SELECT enum_has_labels(current_setting('pg_task.default_schema', false)::name, 'state'::name, ARRAY['PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP']);
@@ -47,5 +47,21 @@ SELECT has_column(current_setting('pg_task.default_schema', false)::name, curren
 SELECT has_column(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'output'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('output') || ' should exist');
 SELECT has_column(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'remote'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('remote') || ' should exist');
 SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'id'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'plan'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'live'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'timeout'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'repeat'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'hash'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'count'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'max'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'state'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'delete'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'drift'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'header'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'string'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'delimiter'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'group'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'input'::name);
+SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'null'::name);
 SELECT * FROM finish();
 ROLLBACK;
