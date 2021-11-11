@@ -15,9 +15,10 @@
 BEGIN;
 --\i pgtap.sql
 CREATE EXTENSION pgtap;
-SELECT plan(3);
+SELECT plan(4);
 SELECT has_schema(current_setting('pg_task.default_schema', false)::name);
 SELECT has_enum(current_setting('pg_task.default_schema', false)::name, 'state'::name);
+SELECT enum_has_labels(current_setting('pg_task.default_schema', false)::name, 'state'::name, ARRAY['PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP']);
 SELECT has_table(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name);
 SELECT * FROM finish(true);
 ROLLBACK;

@@ -1,5 +1,6 @@
 \unset ECHO
-1..3
+1..4
 ok 1 - Schema public should exist
 ok 2 - Enum public.state should exist
-ok 3 - Table public.task should exist
+ok 3 - Enum public.state should have labels (PLAN, TAKE, WORK, DONE, FAIL, STOP)
+ok 4 - Table public.task should exist
