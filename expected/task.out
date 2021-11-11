@@ -1,5 +1,5 @@
 \unset ECHO
-1..30
+1..31
 ok 1 - Schema public should exist
 ok 2 - Enum public.state should exist
 ok 3 - Enum public.state should have labels (PLAN, TAKE, WORK, DONE, FAIL, STOP)
@@ -30,3 +30,4 @@ ok 27 - Column task.input should exist
 ok 28 - Column task."null" should exist
 ok 29 - Column task.output should exist
 ok 30 - Column task.remote should exist
+ok 31 - Column public.task.id should be NOT NULL
