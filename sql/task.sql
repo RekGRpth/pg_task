@@ -15,7 +15,7 @@
 BEGIN;
 --\i pgtap.sql
 CREATE EXTENSION pgtap;
-SELECT plan(48);
+SELECT plan(56);
 SELECT has_schema(current_setting('pg_task.default_schema', false)::name);
 SELECT has_enum(current_setting('pg_task.default_schema', false)::name, 'state'::name);
 SELECT enum_has_labels(current_setting('pg_task.default_schema', false)::name, 'state'::name, ARRAY['PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP']);
@@ -64,5 +64,13 @@ SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, curr
 SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'input'::name);
 SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'null'::name);
 SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'parent'::name);
+SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'start'::name);
+SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'stop'::name);
+SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'pid'::name);
+SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'escape'::name);
+SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'quote'::name);
+SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'error'::name);
+SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'output'::name);
+SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'remote'::name);
 SELECT * FROM finish();
 ROLLBACK;
