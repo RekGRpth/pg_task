@@ -15,11 +15,17 @@
 BEGIN;
 --\i pgtap.sql
 CREATE EXTENSION pgtap;
-SELECT plan(56);
+
+SELECT plan(57);
+
 SELECT has_schema(current_setting('pg_task.default_schema', false)::name);
+
 SELECT has_enum(current_setting('pg_task.default_schema', false)::name, 'state'::name);
+
 SELECT enum_has_labels(current_setting('pg_task.default_schema', false)::name, 'state'::name, ARRAY['PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP']);
+
 SELECT has_table(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name);
+
 SELECT has_column(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'id'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('id') || ' should exist');
 SELECT has_column(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'parent'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('parent') || ' should exist');
 SELECT has_column(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'plan'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('plan') || ' should exist');
@@ -46,6 +52,7 @@ SELECT has_column(current_setting('pg_task.default_schema', false)::name, curren
 SELECT has_column(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'null'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('null') || ' should exist');
 SELECT has_column(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'output'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('output') || ' should exist');
 SELECT has_column(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'remote'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('remote') || ' should exist');
+
 SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'id'::name);
 SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'plan'::name);
 SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'live'::name);
@@ -63,6 +70,7 @@ SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, curr
 SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'group'::name);
 SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'input'::name);
 SELECT col_not_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'null'::name);
+
 SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'parent'::name);
 SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'start'::name);
 SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'stop'::name);
@@ -72,5 +80,9 @@ SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, curre
 SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'error'::name);
 SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'output'::name);
 SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'remote'::name);
+
+SELECT col_has_default(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'parent'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('parent') || ' should have a default');
+
 SELECT * FROM finish();
+
 ROLLBACK;
