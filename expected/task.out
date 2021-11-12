@@ -1,5 +1,5 @@
 \unset ECHO
-1..125
+1..152
 ok 1 - Schema public should exist
 ok 2 - Enum public.state should exist
 ok 3 - Enum public.state should have labels (PLAN, TAKE, WORK, DONE, FAIL, STOP)
@@ -125,3 +125,30 @@ ok 122 - Column task.string should default to '(current_setting(''pg_task.defaul
 ok 123 - Column task.delimiter should default to '(current_setting(''pg_task.default_delimiter''::text, false))::"char"'
 ok 124 - Column task."group" should default to 'current_setting(''pg_task.default_group''::text, false)'
 ok 125 - Column task."null" should default to 'current_setting(''pg_task.default_null''::text, false)'
+ok 126 - Table task should not have a primary key
+ok 127 - Column task(id) should not be a primary key
+ok 128 - Column task(parent) should not be a primary key
+ok 129 - Column task(plan) should not be a primary key
+ok 130 - Column task(start) should not be a primary key
+ok 131 - Column task(stop) should not be a primary key
+ok 132 - Column task(live) should not be a primary key
+ok 133 - Column task(timeout) should not be a primary key
+ok 134 - Column task(repeat) should not be a primary key
+ok 135 - Column task(hash) should not be a primary key
+ok 136 - Column task(count) should not be a primary key
+ok 137 - Column task(max) should not be a primary key
+ok 138 - Column task(pid) should not be a primary key
+ok 139 - Column task(state) should not be a primary key
+ok 140 - Column task(delete) should not be a primary key
+ok 141 - Column task(drift) should not be a primary key
+ok 142 - Column task(header) should not be a primary key
+ok 143 - Column task(string) should not be a primary key
+ok 144 - Column task(delimiter) should not be a primary key
+ok 145 - Column task(escape) should not be a primary key
+ok 146 - Column task(quote) should not be a primary key
+ok 147 - Column task(error) should not be a primary key
+ok 148 - Column task("group") should not be a primary key
+ok 149 - Column task(input) should not be a primary key
+ok 150 - Column task("null") should not be a primary key
+ok 151 - Column task(output) should not be a primary key
+ok 152 - Column task(remote) should not be a primary key
