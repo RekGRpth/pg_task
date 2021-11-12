@@ -1,5 +1,5 @@
 \unset ECHO
-1..57
+1..72
 ok 1 - Schema public should exist
 ok 2 - Enum public.state should exist
 ok 3 - Enum public.state should have labels (PLAN, TAKE, WORK, DONE, FAIL, STOP)
@@ -57,3 +57,18 @@ ok 54 - Column public.task.error should allow NULL
 ok 55 - Column public.task.output should allow NULL
 ok 56 - Column public.task.remote should allow NULL
 ok 57 - Column task.parent should have a default
+ok 58 - Column task.plan should have a default
+ok 59 - Column task.live should have a default
+ok 60 - Column task.timeout should have a default
+ok 61 - Column task.repeat should have a default
+ok 62 - Column task.hash should have a default
+ok 63 - Column task.count should have a default
+ok 64 - Column task.max should have a default
+ok 65 - Column task.state should have a default
+ok 66 - Column task.delete should have a default
+ok 67 - Column task.drift should have a default
+ok 68 - Column task.header should have a default
+ok 69 - Column task.string should have a default
+ok 70 - Column task.delimiter should have a default
+ok 71 - Column task."group" should have a default
+ok 72 - Column task."null" should have a default
