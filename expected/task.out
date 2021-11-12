@@ -1,5 +1,5 @@
 \unset ECHO
-1..152
+1..153
 ok 1 - Schema public should exist
 ok 2 - Enum public.state should exist
 ok 3 - Enum public.state should have labels (PLAN, TAKE, WORK, DONE, FAIL, STOP)
@@ -152,3 +152,4 @@ ok 149 - Column task(input) should not be a primary key
 ok 150 - Column task("null") should not be a primary key
 ok 151 - Column task(output) should not be a primary key
 ok 152 - Column task(remote) should not be a primary key
+ok 153 - Table public.task should be partitioned

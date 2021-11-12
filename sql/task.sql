@@ -16,7 +16,7 @@ BEGIN;
 --\i pgtap.sql
 CREATE EXTENSION pgtap;
 
-SELECT plan(152);
+SELECT plan(153);
 
 SELECT has_schema(current_setting('pg_task.default_schema', false)::name);
 
@@ -184,6 +184,12 @@ SELECT col_isnt_pk(current_setting('pg_task.default_schema', false)::name, curre
 SELECT col_isnt_pk(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'null'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '(' || quote_ident('null') || ') should not be a primary key');
 SELECT col_isnt_pk(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'output'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '(' || quote_ident('output') || ') should not be a primary key');
 SELECT col_isnt_pk(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'remote'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '(' || quote_ident('remote') || ') should not be a primary key');
+
+--SELECT has_unique(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'Table ' || quote_ident(current_setting('pg_task.default_table', false)) || ' should have a unique constraint');
+--SELECT col_is_unique(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'id'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '(' || quote_ident('id') || ') should have a unique constraint');
+
+SELECT is_partitioned(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name);
+--SELECT isnt_partitioned(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name);
 
 SELECT * FROM finish();
 
