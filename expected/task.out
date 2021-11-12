@@ -1,5 +1,5 @@
 \unset ECHO
-1..82
+1..83
 ok 1 - Schema public should exist
 ok 2 - Enum public.state should exist
 ok 3 - Enum public.state should have labels (PLAN, TAKE, WORK, DONE, FAIL, STOP)
@@ -82,3 +82,4 @@ ok 79 - Column task.error should not have a default
 ok 80 - Column task.input should not have a default
 ok 81 - Column task.output should not have a default
 ok 82 - Column task.remote should not have a default
+ok 83 - Column public.task.id should be type bigint

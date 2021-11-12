@@ -16,7 +16,7 @@ BEGIN;
 --\i pgtap.sql
 CREATE EXTENSION pgtap;
 
-SELECT plan(82);
+SELECT plan(83);
 
 SELECT has_schema(current_setting('pg_task.default_schema', false)::name);
 
@@ -108,6 +108,8 @@ SELECT col_hasnt_default(current_setting('pg_task.default_schema', false)::name,
 SELECT col_hasnt_default(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'input'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('input') || ' should not have a default');
 SELECT col_hasnt_default(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'output'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('output') || ' should not have a default');
 SELECT col_hasnt_default(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'remote'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('remote') || ' should not have a default');
+
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'id'::name, 'bigint'::name);
 
 SELECT * FROM finish();
 
