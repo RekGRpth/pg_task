@@ -16,7 +16,7 @@ BEGIN;
 --\i pgtap.sql
 CREATE EXTENSION pgtap;
 
-SELECT plan(72);
+SELECT plan(75);
 
 SELECT has_schema(current_setting('pg_task.default_schema', false)::name);
 
@@ -81,6 +81,7 @@ SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, curre
 SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'output'::name);
 SELECT col_is_null(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'remote'::name);
 
+SELECT col_has_default(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'id'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('id') || ' should have a default');
 SELECT col_has_default(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'parent'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('parent') || ' should have a default');
 SELECT col_has_default(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'plan'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('plan') || ' should have a default');
 SELECT col_has_default(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'live'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('live') || ' should have a default');
@@ -97,6 +98,9 @@ SELECT col_has_default(current_setting('pg_task.default_schema', false)::name, c
 SELECT col_has_default(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'delimiter'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('delimiter') || ' should have a default');
 SELECT col_has_default(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'group'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('group') || ' should have a default');
 SELECT col_has_default(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'null'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('null') || ' should have a default');
+
+SELECT col_hasnt_default(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'start'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('start') || ' should not have a default');
+SELECT col_hasnt_default(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'stop'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('stop') || ' should not have a default');
 
 SELECT * FROM finish();
 
