@@ -16,7 +16,7 @@ BEGIN;
 --\i pgtap.sql
 CREATE EXTENSION pgtap;
 
-SELECT plan(94);
+SELECT plan(108);
 
 SELECT has_schema(current_setting('pg_task.default_schema', false)::name);
 
@@ -121,6 +121,20 @@ SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, curre
 SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'count'::name, 'integer'::name);
 SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'max'::name, 'integer'::name);
 SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'pid'::name, 'integer'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'state'::name, current_setting('pg_task.default_schema', false)::name, 'state'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'delete'::name, 'boolean'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'drift'::name, 'boolean'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'header'::name, 'boolean'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'string'::name, 'boolean'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'delimiter'::name, 'char'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'escape'::name, 'char'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'quote'::name, 'char'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'error'::name, 'text'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'group'::name, 'text'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'input'::name, 'text'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'null'::name, 'text'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'output'::name, 'text'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'remote'::name, 'text'::name);
 
 SELECT * FROM finish();
 

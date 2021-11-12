@@ -1,5 +1,5 @@
 \unset ECHO
-1..94
+1..108
 ok 1 - Schema public should exist
 ok 2 - Enum public.state should exist
 ok 3 - Enum public.state should have labels (PLAN, TAKE, WORK, DONE, FAIL, STOP)
@@ -94,3 +94,17 @@ ok 91 - Column public.task.hash should be type integer
 ok 92 - Column public.task.count should be type integer
 ok 93 - Column public.task.max should be type integer
 ok 94 - Column public.task.pid should be type integer
+ok 95 - Column public.task.state should be type public.state
+ok 96 - Column public.task.delete should be type boolean
+ok 97 - Column public.task.drift should be type boolean
+ok 98 - Column public.task.header should be type boolean
+ok 99 - Column public.task.string should be type boolean
+ok 100 - Column public.task.delimiter should be type char
+ok 101 - Column public.task.escape should be type char
+ok 102 - Column public.task.quote should be type char
+ok 103 - Column public.task.error should be type text
+ok 104 - Column public.task."group" should be type text
+ok 105 - Column public.task.input should be type text
+ok 106 - Column public.task."null" should be type text
+ok 107 - Column public.task.output should be type text
+ok 108 - Column public.task.remote should be type text
