@@ -1,5 +1,5 @@
 \unset ECHO
-1..108
+1..110
 ok 1 - Schema public should exist
 ok 2 - Enum public.state should exist
 ok 3 - Enum public.state should have labels (PLAN, TAKE, WORK, DONE, FAIL, STOP)
@@ -108,3 +108,5 @@ ok 105 - Column public.task.input should be type text
 ok 106 - Column public.task."null" should be type text
 ok 107 - Column public.task.output should be type text
 ok 108 - Column public.task.remote should be type text
+ok 109 - Column task.id should default to 'nextval(''task_id_seq''::regclass)'
+ok 110 - Column task.parent should default to '(current_setting(''pg_task.id''::text, true))::bigint'

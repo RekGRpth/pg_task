@@ -16,7 +16,7 @@ BEGIN;
 --\i pgtap.sql
 CREATE EXTENSION pgtap;
 
-SELECT plan(108);
+SELECT plan(110);
 
 SELECT has_schema(current_setting('pg_task.default_schema', false)::name);
 
@@ -135,6 +135,9 @@ SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, curre
 SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'null'::name, 'text'::name);
 SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'output'::name, 'text'::name);
 SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'remote'::name, 'text'::name);
+
+SELECT col_default_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'id'::name, 'nextval(''task_id_seq''::regclass)', 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('id') || ' should default to ' || COALESCE( quote_literal('nextval(''task_id_seq''::regclass)'), 'NULL'));
+SELECT col_default_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'parent'::name, '(current_setting(''pg_task.id''::text, true))::bigint', 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('parent') || ' should default to ' || COALESCE( quote_literal('(current_setting(''pg_task.id''::text, true))::bigint'), 'NULL'));
 
 SELECT * FROM finish();
 
