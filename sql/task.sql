@@ -16,7 +16,7 @@ BEGIN;
 --\i pgtap.sql
 CREATE EXTENSION pgtap;
 
-SELECT plan(157);
+SELECT plan(161);
 
 SELECT has_schema(current_setting('pg_task.default_schema', false)::name);
 
@@ -196,6 +196,11 @@ SELECT is_indexed(current_setting('pg_task.default_schema', false)::name, curren
 SELECT is_indexed(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'parent'::name);
 SELECT is_indexed(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'plan'::name);
 SELECT is_indexed(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'state'::name);
+
+SELECT index_is_type(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'task_input_idx'::name, 'btree');
+SELECT index_is_type(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'task_parent_idx'::name, 'btree');
+SELECT index_is_type(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'task_plan_idx'::name, 'btree');
+SELECT index_is_type(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'task_state_idx'::name, 'btree');
 
 SELECT * FROM finish();
 
