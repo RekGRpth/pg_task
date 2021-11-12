@@ -1,5 +1,5 @@
 \unset ECHO
-1..114
+1..125
 ok 1 - Schema public should exist
 ok 2 - Enum public.state should exist
 ok 3 - Enum public.state should have labels (PLAN, TAKE, WORK, DONE, FAIL, STOP)
@@ -114,3 +114,14 @@ ok 111 - Column task.plan should default to 'CURRENT_TIMESTAMP'
 ok 112 - Column task.live should default to '0 sec'
 ok 113 - Column task.timeout should default to '0 sec'
 ok 114 - Column task.repeat should default to '0 sec'
+ok 115 - Column task.hash should default to 'hashtext(("group" || COALESCE(remote, ''''::text)))'
+ok 116 - Column task.count should default to '0'
+ok 117 - Column task.max should default to '(current_setting(''pg_task.default_max''::text, false))::integer'
+ok 118 - Column task.state should default to 'PLAN'
+ok 119 - Column task.delete should default to '(current_setting(''pg_task.default_delete''::text, false))::boolean'
+ok 120 - Column task.drift should default to '(current_setting(''pg_task.default_drift''::text, false))::boolean'
+ok 121 - Column task.header should default to '(current_setting(''pg_task.default_header''::text, false))::boolean'
+ok 122 - Column task.string should default to '(current_setting(''pg_task.default_string''::text, false))::boolean'
+ok 123 - Column task.delimiter should default to '(current_setting(''pg_task.default_delimiter''::text, false))::"char"'
+ok 124 - Column task."group" should default to 'current_setting(''pg_task.default_group''::text, false)'
+ok 125 - Column task."null" should default to 'current_setting(''pg_task.default_null''::text, false)'
