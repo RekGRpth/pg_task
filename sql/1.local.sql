@@ -9,6 +9,7 @@
 BEGIN;
 
 INSERT INTO task (input) VALUES ('SELECT 1');
+INSERT INTO task (input) VALUES ('SELECT 1/0');
 
 COMMIT;
 
@@ -28,9 +29,10 @@ BEGIN;
 
 CREATE EXTENSION pgtap;
 
-SELECT plan(1);
+SELECT plan(2);
 
-SELECT row_eq($$SELECT input, output, error, state FROM task WHERE input = 'SELECT 1' ORDER BY id desc LIMIT 1$$, ROW('SELECT 1'::text, '1'::text, ''::text, 'DONE'::state), 'SELECT 1');
+SELECT row_eq($$SELECT input, output, state FROM task WHERE input = 'SELECT 1' ORDER BY id desc LIMIT 1$$, ROW('SELECT 1'::text, '1'::text, 'DONE'::state), 'SELECT 1');
+SELECT row_eq($$SELECT input, output, state FROM task WHERE input = 'SELECT 1/0' ORDER BY id desc LIMIT 1$$, ROW('SELECT 1/0'::text, 'ROLLBACK'::text, 'FAIL'::state), 'SELECT 1/0');
 
 SELECT * FROM finish();
 
