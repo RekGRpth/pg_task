@@ -157,7 +157,7 @@ bool task_work(Task *task) {
             WITH s AS (
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
             ) UPDATE %1$s AS u SET state = 'WORK'::%2$s, start = current_timestamp, pid = $2 FROM s WHERE u.id = s.id
-            RETURNING input, EXTRACT(epoch FROM timeout)::int4 * 1000 AS timeout, header, string, u.null, delimiter, quote, escape
+            RETURNING input, EXTRACT(epoch FROM timeout)::integer * 1000 AS timeout, header, string, u.null, delimiter, quote, escape
         ), work.schema_table, work.schema_type);
     }
     SPI_connect_my(src.data);

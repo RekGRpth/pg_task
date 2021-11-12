@@ -65,15 +65,15 @@ static void work_check(void) {
                     COALESCE(COALESCE(data, j.user), current_setting('pg_task.default_data', false)) AS data,
                     COALESCE(schema, current_setting('pg_task.default_schema', false)) AS schema,
                     COALESCE(j.table, current_setting('pg_task.default_table', false)) AS table,
-                    COALESCE(timeout, current_setting('pg_task.default_timeout', false)::int4) AS timeout,
-                    COALESCE(count, current_setting('pg_task.default_count', false)::int4) AS count,
-                    EXTRACT(epoch FROM COALESCE(live, current_setting('pg_task.default_live', false)::interval))::int8 AS live,
+                    COALESCE(timeout, current_setting('pg_task.default_timeout', false)::integer) AS timeout,
+                    COALESCE(count, current_setting('pg_task.default_count', false)::integer) AS count,
+                    EXTRACT(epoch FROM COALESCE(live, current_setting('pg_task.default_live', false)::interval))::bigint AS live,
                     COALESCE(partman, current_setting('pg_task.default_partman', true)) AS partman
-            FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout int4, count int4, live interval, partman text)
+            FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout integer, count integer, live interval, partman text)
         ) SELECT    DISTINCT j.* FROM j
         INNER JOIN  pg_user AS u ON usename = j.user
         INNER JOIN  pg_database AS d ON datname = data AND NOT datistemplate AND datallowconn AND usesysid = datdba
-        WHERE       j.user = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND j.table = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::int4
+        WHERE       j.user = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND j.table = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::integer
     );
 #if PG_VERSION_NUM >= 130000
     set_ps_display("check");
@@ -642,17 +642,17 @@ static void work_table(void) {
     appendStringInfo(&src, SQL(
         CREATE TABLE %1$s (
             id bigserial NOT NULL%4$s,
-            parent int8 DEFAULT current_setting('pg_task.id', true)::int8,
-            plan timestamptz NOT NULL DEFAULT current_timestamp,
-            start timestamptz,
-            stop timestamptz,
+            parent bigint DEFAULT current_setting('pg_task.id', true)::bigint,
+            plan timestamp with time zone NOT NULL DEFAULT current_timestamp,
+            start timestamp with time zone,
+            stop timestamp with time zone,
             live interval NOT NULL DEFAULT '0 sec',
             timeout interval NOT NULL DEFAULT '0 sec',
             repeat interval NOT NULL DEFAULT '0 sec',
-            hash int4 NOT NULL GENERATED ALWAYS AS (hashtext("group"||COALESCE(remote, '%3$s'))) STORED,
-            count int4 NOT NULL DEFAULT 0,
-            max int4 NOT NULL DEFAULT current_setting('pg_task.default_max', false)::int4,
-            pid int4,
+            hash integer NOT NULL GENERATED ALWAYS AS (hashtext("group"||COALESCE(remote, '%3$s'))) STORED,
+            count integer NOT NULL DEFAULT 0,
+            max integer NOT NULL DEFAULT current_setting('pg_task.default_max', false)::integer,
+            pid integer,
             state %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
             delete boolean NOT NULL DEFAULT current_setting('pg_task.default_delete', false)::boolean,
             drift boolean NOT NULL DEFAULT current_setting('pg_task.default_drift', false)::boolean,
