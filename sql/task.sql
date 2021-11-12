@@ -16,7 +16,7 @@ BEGIN;
 --\i pgtap.sql
 CREATE EXTENSION pgtap;
 
-SELECT plan(111);
+SELECT plan(114);
 
 SELECT has_schema(current_setting('pg_task.default_schema', false)::name);
 
@@ -139,6 +139,9 @@ SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, curre
 SELECT col_default_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'id'::name, 'nextval(''task_id_seq''::regclass)', 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('id') || ' should default to ' || COALESCE( quote_literal('nextval(''task_id_seq''::regclass)'), 'NULL'));
 SELECT col_default_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'parent'::name, '(current_setting(''pg_task.id''::text, true))::bigint', 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('parent') || ' should default to ' || COALESCE( quote_literal('(current_setting(''pg_task.id''::text, true))::bigint'), 'NULL'));
 SELECT col_default_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'plan'::name, 'CURRENT_TIMESTAMP', 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('plan') || ' should default to ' || COALESCE( quote_literal('CURRENT_TIMESTAMP'), 'NULL'));
+SELECT col_default_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'live'::name, '0 sec', 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('live') || ' should default to ' || COALESCE( quote_literal('0 sec'), 'NULL'));
+SELECT col_default_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'timeout'::name, '0 sec', 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('timeout') || ' should default to ' || COALESCE( quote_literal('0 sec'), 'NULL'));
+SELECT col_default_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'repeat'::name, '0 sec', 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('repeat') || ' should default to ' || COALESCE( quote_literal('0 sec'), 'NULL'));
 
 SELECT * FROM finish();
 

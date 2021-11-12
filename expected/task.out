@@ -1,5 +1,5 @@
 \unset ECHO
-1..111
+1..114
 ok 1 - Schema public should exist
 ok 2 - Enum public.state should exist
 ok 3 - Enum public.state should have labels (PLAN, TAKE, WORK, DONE, FAIL, STOP)
@@ -111,3 +111,6 @@ ok 108 - Column public.task.remote should be type text
 ok 109 - Column task.id should default to 'nextval(''task_id_seq''::regclass)'
 ok 110 - Column task.parent should default to '(current_setting(''pg_task.id''::text, true))::bigint'
 ok 111 - Column task.plan should default to 'CURRENT_TIMESTAMP'
+ok 112 - Column task.live should default to '0 sec'
+ok 113 - Column task.timeout should default to '0 sec'
+ok 114 - Column task.repeat should default to '0 sec'
