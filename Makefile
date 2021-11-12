@@ -4,7 +4,7 @@ PG_CONFIG = pg_config
 PG_CPPFLAGS = -I$(libpq_srcdir)
 PGXS = $(shell $(PG_CONFIG) --pgxs)
 REGRESS = $(patsubst sql/%.sql,%,$(TESTS))
-REGRESS_OPTS = --use-existing --dbname=postgres --user=postgres
+REGRESS_OPTS = --use-existing
 SHLIB_LINK = $(libpq)
 TESTS = $(wildcard sql/*.sql)
 include $(PGXS)
