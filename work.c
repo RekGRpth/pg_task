@@ -643,7 +643,7 @@ static void work_table(void) {
         CREATE TABLE %1$s (
             id bigserial NOT NULL%4$s,
             parent bigint DEFAULT current_setting('pg_task.id', true)::bigint,
-            plan timestamp with time zone NOT NULL DEFAULT current_timestamp,
+            plan timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
             start timestamp with time zone,
             stop timestamp with time zone,
             live interval NOT NULL DEFAULT '0 sec',
@@ -803,7 +803,7 @@ static void work_reset(void) {
         WITH s AS (
             SELECT id FROM %1$s AS t
             LEFT JOIN pg_locks AS l ON l.locktype = 'userlock' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.objsubid = 4 AND l.database = $1 AND l.classid = t.id>>32 AND l.objid = t.id<<32>>32
-            WHERE plan < current_timestamp AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
+            WHERE plan < CURRENT_TIMESTAMP AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
             FOR UPDATE OF t SKIP LOCKED
         ) UPDATE %1$s AS u SET state = 'PLAN'::%2$s, start = NULL, stop = NULL, pid = NULL FROM s WHERE u.id = s.id RETURNING u.id
     ), work.schema_table, work.schema_type);
@@ -886,7 +886,7 @@ static void work_timeout(void) {
                 SELECT count(classid) AS classid, objid FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 GROUP BY objid
             ), s AS (
                 SELECT t.id, t.hash, CASE WHEN t.max > 0 THEN t.max ELSE 1 END - COALESCE(classid, 0) AS count FROM %1$s AS t LEFT JOIN l ON objid = t.hash
-                WHERE t.state = 'PLAN'::%2$s AND t.plan + concat_ws(' ', (CASE WHEN t.max < 0 THEN -t.max ELSE 0 END)::text, 'msec')::interval <= current_timestamp AND t.start IS NULL AND t.stop IS NULL AND t.pid IS NULL
+                WHERE t.state = 'PLAN'::%2$s AND t.plan + concat_ws(' ', (CASE WHEN t.max < 0 THEN -t.max ELSE 0 END)::text, 'msec')::interval <= CURRENT_TIMESTAMP AND t.start IS NULL AND t.stop IS NULL AND t.pid IS NULL
                 AND CASE WHEN t.max > 0 THEN t.max ELSE 1 END > COALESCE(classid, 0) FOR UPDATE OF t SKIP LOCKED
             ) SELECT id, hash, count - row_number() OVER (PARTITION BY hash ORDER BY count DESC, id) + 1 AS count FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id AND s.count > 0 RETURNING u.id, u.hash, u.group, u.remote, u.max

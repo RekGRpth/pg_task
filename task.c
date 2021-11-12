@@ -19,8 +19,8 @@ static void task_update(Task *task) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, SQL(
             WITH s AS (
-                SELECT id FROM %1$s AS t WHERE max < 0 AND plan < current_timestamp AND t.group = $1 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
-            ) UPDATE %1$s AS u SET plan = current_timestamp FROM s WHERE u.id = s.id RETURNING u.id
+                SELECT id FROM %1$s AS t WHERE max < 0 AND plan < CURRENT_TIMESTAMP AND t.group = $1 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
+            ) UPDATE %1$s AS u SET plan = CURRENT_TIMESTAMP FROM s WHERE u.id = s.id RETURNING u.id
         ), work.schema_table, work.schema_type);
     }
     SPI_connect_my(src.data);
@@ -58,7 +58,7 @@ bool task_done(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
-            ) UPDATE %1$s AS u SET state = CASE WHEN $2 THEN 'FAIL'::%2$s ELSE 'DONE'::%2$s END, stop = current_timestamp, output = concat_ws('%3$s', NULLIF(output, '%4$s'), $3), error = concat_ws('%3$s', NULLIF(error, '%3$s'), $4) FROM s WHERE u.id = s.id
+            ) UPDATE %1$s AS u SET state = CASE WHEN $2 THEN 'FAIL'::%2$s ELSE 'DONE'::%2$s END, stop = CURRENT_TIMESTAMP, output = concat_ws('%3$s', NULLIF(output, '%4$s'), $3), error = concat_ws('%3$s', NULLIF(error, '%3$s'), $4) FROM s WHERE u.id = s.id
             RETURNING delete, repeat > '0 sec' AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) AS repeat, count > 0 OR live > '0 sec' AS live
         ), work.schema_table, work.schema_type, "\n", "");
     }
@@ -106,8 +106,8 @@ bool task_live(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t
-                WHERE state = 'PLAN'::%2$s AND plan <= current_timestamp AND t.group = $1 AND remote IS NOT DISTINCT FROM $2 AND max >= $3 AND CASE
-                    WHEN count > 0 AND live > '0 sec' THEN count > $4 AND $5 + live > current_timestamp ELSE count > $4 OR $5 + live > current_timestamp
+                WHERE state = 'PLAN'::%2$s AND plan <= CURRENT_TIMESTAMP AND t.group = $1 AND remote IS NOT DISTINCT FROM $2 AND max >= $3 AND CASE
+                    WHEN count > 0 AND live > '0 sec' THEN count > $4 AND $5 + live > CURRENT_TIMESTAMP ELSE count > $4 OR $5 + live > CURRENT_TIMESTAMP
                 END AND t.start IS NULL AND t.stop IS NULL AND t.pid IS NULL
                 ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t SKIP LOCKED
             ) UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id
@@ -156,7 +156,7 @@ bool task_work(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
-            ) UPDATE %1$s AS u SET state = 'WORK'::%2$s, start = current_timestamp, pid = $2 FROM s WHERE u.id = s.id
+            ) UPDATE %1$s AS u SET state = 'WORK'::%2$s, start = CURRENT_TIMESTAMP, pid = $2 FROM s WHERE u.id = s.id
             RETURNING input, EXTRACT(epoch FROM timeout)::integer * 1000 AS timeout, header, string, u.null, delimiter, quote, escape
         ), work.schema_table, work.schema_type);
     }
@@ -265,8 +265,8 @@ void task_repeat(Task *task) {
         appendStringInfo(&src, SQL(
             INSERT INTO %1$s (parent, plan, "group", max, input, timeout, delete, repeat, drift, count, live)
             SELECT $1, CASE
-                WHEN drift THEN current_timestamp + repeat
-                ELSE (WITH RECURSIVE s AS (SELECT plan AS t UNION SELECT t + repeat FROM s WHERE t <= current_timestamp) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)
+                WHEN drift THEN CURRENT_TIMESTAMP + repeat
+                ELSE (WITH RECURSIVE s AS (SELECT plan AS t UNION SELECT t + repeat FROM s WHERE t <= CURRENT_TIMESTAMP) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)
             END AS plan, t.group, max, input, timeout, delete, repeat, drift, count, live
             FROM %1$s AS t WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) LIMIT 1 RETURNING id
         ), work.schema_table, work.schema_type);
