@@ -1,5 +1,5 @@
 \unset ECHO
-1..161
+1..165
 ok 1 - Schema public should exist
 ok 2 - Enum public.state should exist
 ok 3 - Enum public.state should have labels (PLAN, TAKE, WORK, DONE, FAIL, STOP)
@@ -153,11 +153,15 @@ ok 150 - Column task("null") should not be a primary key
 ok 151 - Column task(output) should not be a primary key
 ok 152 - Column task(remote) should not be a primary key
 ok 153 - Table public.task should be partitioned
-ok 154 - Should have an index on public.task(input)
-ok 155 - Should have an index on public.task(parent)
-ok 156 - Should have an index on public.task(plan)
-ok 157 - Should have an index on public.task(state)
-ok 158 - Index task_input_idx should be a btree index
-ok 159 - Index task_parent_idx should be a btree index
-ok 160 - Index task_plan_idx should be a btree index
-ok 161 - Index task_state_idx should be a btree index
+ok 154 - Index task_input_idx should exist
+ok 155 - Index task_parent_idx should exist
+ok 156 - Index task_plan_idx should exist
+ok 157 - Index task_state_idx should exist
+ok 158 - Should have an index on public.task(input)
+ok 159 - Should have an index on public.task(parent)
+ok 160 - Should have an index on public.task(plan)
+ok 161 - Should have an index on public.task(state)
+ok 162 - Index task_input_idx should be a btree index
+ok 163 - Index task_parent_idx should be a btree index
+ok 164 - Index task_plan_idx should be a btree index
+ok 165 - Index task_state_idx should be a btree index

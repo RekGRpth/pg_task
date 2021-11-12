@@ -16,7 +16,7 @@ BEGIN;
 --\i pgtap.sql
 CREATE EXTENSION pgtap;
 
-SELECT plan(161);
+SELECT plan(165);
 
 SELECT has_schema(current_setting('pg_task.default_schema', false)::name);
 
@@ -190,6 +190,11 @@ SELECT col_isnt_pk(current_setting('pg_task.default_schema', false)::name, curre
 
 SELECT is_partitioned(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name);
 --SELECT isnt_partitioned(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name);
+
+SELECT has_index(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'task_input_idx'::name, 'input'::name);
+SELECT has_index(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'task_parent_idx'::name, 'parent'::name);
+SELECT has_index(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'task_plan_idx'::name, 'plan'::name);
+SELECT has_index(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'task_state_idx'::name, 'state'::name);
 
 --SELECT is_indexed(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'id'::name);
 SELECT is_indexed(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'input'::name);
