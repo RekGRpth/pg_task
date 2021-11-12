@@ -16,7 +16,7 @@ BEGIN;
 --\i pgtap.sql
 CREATE EXTENSION pgtap;
 
-SELECT plan(83);
+SELECT plan(94);
 
 SELECT has_schema(current_setting('pg_task.default_schema', false)::name);
 
@@ -110,6 +110,17 @@ SELECT col_hasnt_default(current_setting('pg_task.default_schema', false)::name,
 SELECT col_hasnt_default(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'remote'::name, 'Column ' || quote_ident(current_setting('pg_task.default_table', false)) || '.' || quote_ident('remote') || ' should not have a default');
 
 SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'id'::name, 'bigint'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'parent'::name, 'bigint'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'plan'::name, 'timestamp with time zone'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'start'::name, 'timestamp with time zone'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'stop'::name, 'timestamp with time zone'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'live'::name, 'interval'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'timeout'::name, 'interval'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'repeat'::name, 'interval'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'hash'::name, 'integer'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'count'::name, 'integer'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'max'::name, 'integer'::name);
+SELECT col_type_is(current_setting('pg_task.default_schema', false)::name, current_setting('pg_task.default_table', false)::name, 'pid'::name, 'integer'::name);
 
 SELECT * FROM finish();
 
