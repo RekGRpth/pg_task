@@ -12,7 +12,17 @@ INSERT INTO task (input) VALUES ('SELECT 1');
 
 COMMIT;
 
-SELECT pg_sleep(2);
+DO $body$ <<local>> DECLARE
+    count bigint;
+BEGIN
+    WHILE true LOOP
+        SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'FAIL') INTO local.count;
+        IF local.count = 0 THEN
+            EXIT;
+        END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
 
 BEGIN;
 
