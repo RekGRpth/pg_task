@@ -30,7 +30,7 @@ CREATE EXTENSION pgtap;
 
 SELECT plan(1);
 
-SELECT row_eq($$SELECT input, output, error, state FROM task ORDER BY id desc LIMIT 1$$, ROW('SELECT 1'::text, '1'::text, ''::text, 'DONE'::state), 'SELECT 1');
+SELECT row_eq($$SELECT input, output, error, state FROM task WHERE input = 'SELECT 1' ORDER BY id desc LIMIT 1$$, ROW('SELECT 1'::text, '1'::text, ''::text, 'DONE'::state), 'SELECT 1');
 
 SELECT * FROM finish();
 
