@@ -16,6 +16,9 @@ INSERT INTO task (input) VALUES ('SELECT 1 AS a;SELECT 2 AS b');
 INSERT INTO task (input) VALUES ('SELECT 1 AS a, 2 AS b;SELECT 3 AS c');
 INSERT INTO task (input) VALUES ('SELECT 1 AS a, 2 AS b;SELECT 3 AS c, 4 AS d');
 
+INSERT INTO task (input) VALUES ('SELECT 1 AS a WHERE false');
+INSERT INTO task (input) VALUES ('SELECT null AS a');
+
 COMMIT;
 
 DO $body$ <<local>> DECLARE
@@ -37,3 +40,6 @@ SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a, 2 AS b' ORDE
 SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a;SELECT 2 AS b' ORDER BY id desc LIMIT 1;
 SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a, 2 AS b;SELECT 3 AS c' ORDER BY id desc LIMIT 1;
 SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a, 2 AS b;SELECT 3 AS c, 4 AS d' ORDER BY id desc LIMIT 1;
+
+SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a WHERE false' ORDER BY id desc LIMIT 1;
+SELECT input, output, state FROM task WHERE input = 'SELECT null AS a' ORDER BY id desc LIMIT 1;
