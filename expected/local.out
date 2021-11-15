@@ -12,5 +12,5 @@ SELECT 1 AS a6, 2 AS b6;SELECT 3 AS c6, 4 AS d6|a6	b6
 1	2
 c6	d6
 3	4|DONE
-SELECT pg_sleep(1) AS a7||DONE|5
-SELECT pg_sleep(1) AS a7||DONE|5
+SELECT pg_sleep(0.1) AS a7||DONE|5
+SELECT pg_sleep(0.1) AS a7||DONE|5

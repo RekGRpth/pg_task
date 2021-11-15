@@ -19,7 +19,7 @@ INSERT INTO task (input) VALUES ('SELECT 1 AS a4;SELECT 2 AS b4');
 INSERT INTO task (input) VALUES ('SELECT 1 AS a5, 2 AS b5;SELECT 3 AS c5');
 INSERT INTO task (input) VALUES ('SELECT 1 AS a6, 2 AS b6;SELECT 3 AS c6, 4 AS d6');
 
-WITH s AS (SELECT generate_series(1,10) AS s)  INSERT INTO task (input, max, live) SELECT 'SELECT pg_sleep(1) AS a7', 2, '1 min' FROM s;
+WITH s AS (SELECT generate_series(1,10) AS s)  INSERT INTO task (input, max, live) SELECT 'SELECT pg_sleep(0.1) AS a7', 2, '1 min' FROM s;
 
 DO $body$ <<local>> DECLARE
     count bigint;
@@ -43,4 +43,4 @@ SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a4;SELECT 2 AS 
 SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a5, 2 AS b5;SELECT 3 AS c5' AND start >= :ct::timestamp ORDER BY id desc;
 SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a6, 2 AS b6;SELECT 3 AS c6, 4 AS d6' AND start >= :ct::timestamp ORDER BY id desc;
 
-SELECT input, output, state, count(id) FROM task WHERE input like 'SELECT pg_sleep(1) AS a7' AND start >= :ct::timestamp GROUP BY input, output, state, pid;
+SELECT input, output, state, count(id) FROM task WHERE input like 'SELECT pg_sleep(0.1) AS a7' AND start >= :ct::timestamp GROUP BY input, output, state, pid;
