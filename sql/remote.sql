@@ -5,22 +5,16 @@
 \pset pager off
 \set ON_ERROR_ROLLBACK 1
 \set ON_ERROR_STOP true
-
 SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
-
-INSERT INTO task (input, remote) VALUES ('SELECT 1 AS a0 WHERE false', 'application_name=test');
-
-INSERT INTO task (input, remote) VALUES ('SELECT 1/0 AS a1', 'application_name=test');
-
-INSERT INTO task (input, remote) VALUES ('SELECT 1 AS a2', 'application_name=test');
-INSERT INTO task (input, remote) VALUES ('SELECT 1 AS a3, 2 AS b3', 'application_name=test');
-INSERT INTO task (input, remote) VALUES ('SELECT 1 AS a4;SELECT 2 AS b4', 'application_name=test');
-INSERT INTO task (input, remote) VALUES ('SELECT 1 AS a5, 2 AS b5;SELECT 3 AS c5', 'application_name=test');
-INSERT INTO task (input, remote) VALUES ('SELECT 1 AS a6, 2 AS b6;SELECT 3 AS c6, 4 AS d6', 'application_name=test');
-
-WITH s AS (SELECT generate_series(1,10) AS s)  INSERT INTO task (input, max, live, remote) SELECT 'SELECT pg_sleep(0.1) AS a7', 2, '1 min', 'application_name=test' FROM s;
-
+INSERT INTO task ("group", input, remote) VALUES ('0', 'SELECT 1 AS a WHERE false', 'application_name=test');
+INSERT INTO task ("group", input, remote) VALUES ('1', 'SELECT 1/0 AS a', 'application_name=test');
+INSERT INTO task ("group", input, remote) VALUES ('2', 'SELECT 1 AS a', 'application_name=test');
+INSERT INTO task ("group", input, remote) VALUES ('3', 'SELECT 1 AS a, 2 AS b', 'application_name=test');
+INSERT INTO task ("group", input, remote) VALUES ('4', 'SELECT 1 AS a;SELECT 2 AS b', 'application_name=test');
+INSERT INTO task ("group", input, remote) VALUES ('5', 'SELECT 1 AS a, 2 AS b;SELECT 3 AS c', 'application_name=test');
+INSERT INTO task ("group", input, remote) VALUES ('6', 'SELECT 1 AS a, 2 AS b;SELECT 3 AS c, 4 AS d', 'application_name=test');
+WITH s AS (SELECT generate_series(1,10) AS s)  INSERT INTO task ("group", input, max, live, remote) SELECT '7', 'SELECT pg_sleep(0.1) AS a', 2, '1 min', 'application_name=test' FROM s;
 DO $body$ <<local>> DECLARE
     count bigint;
 BEGIN
@@ -32,15 +26,11 @@ BEGIN
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
-
-SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a0 WHERE false' AND start >= :ct::timestamp ORDER BY id desc;
-
-SELECT input, output, state FROM task WHERE input = 'SELECT 1/0 AS a1' AND start >= :ct::timestamp ORDER BY id desc;
-
-SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a2' AND start >= :ct::timestamp ORDER BY id desc;
-SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a3, 2 AS b3' AND start >= :ct::timestamp ORDER BY id desc;
-SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a4;SELECT 2 AS b4' AND start >= :ct::timestamp ORDER BY id desc;
-SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a5, 2 AS b5;SELECT 3 AS c5' AND start >= :ct::timestamp ORDER BY id desc;
-SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a6, 2 AS b6;SELECT 3 AS c6, 4 AS d6' AND start >= :ct::timestamp ORDER BY id desc;
-
-SELECT input, output, state, count(id) FROM task WHERE input like 'SELECT pg_sleep(0.1) AS a7' AND start >= :ct::timestamp GROUP BY input, output, state, pid;
+SELECT "group", input, output, state FROM task WHERE "group" = '0' AND input = 'SELECT 1 AS a WHERE false' AND start >= :ct::timestamp ORDER BY id desc;
+SELECT "group", input, output, state FROM task WHERE "group" = '1' AND input = 'SELECT 1/0 AS a' AND start >= :ct::timestamp ORDER BY id desc;
+SELECT "group", input, output, state FROM task WHERE "group" = '2' AND input = 'SELECT 1 AS a' AND start >= :ct::timestamp ORDER BY id desc;
+SELECT "group", input, output, state FROM task WHERE "group" = '3' AND input = 'SELECT 1 AS a, 2 AS b' AND start >= :ct::timestamp ORDER BY id desc;
+SELECT "group", input, output, state FROM task WHERE "group" = '4' AND input = 'SELECT 1 AS a;SELECT 2 AS b' AND start >= :ct::timestamp ORDER BY id desc;
+SELECT "group", input, output, state FROM task WHERE "group" = '5' AND input = 'SELECT 1 AS a, 2 AS b;SELECT 3 AS c' AND start >= :ct::timestamp ORDER BY id desc;
+SELECT "group", input, output, state FROM task WHERE "group" = '6' AND input = 'SELECT 1 AS a, 2 AS b;SELECT 3 AS c, 4 AS d' AND start >= :ct::timestamp ORDER BY id desc;
+SELECT "group", input, output, state, count(id) FROM task WHERE "group" = '7' AND input = 'SELECT pg_sleep(0.1) AS a' AND start >= :ct::timestamp GROUP BY "group", input, output, state, pid;
