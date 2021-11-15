@@ -15,14 +15,9 @@ INSERT INTO task ("group", input, remote) VALUES ('4', 'SELECT 1 AS a;SELECT 2 A
 INSERT INTO task ("group", input, remote) VALUES ('5', 'SELECT 1 AS a, 2 AS b;SELECT 3 AS c', 'application_name=test');
 INSERT INTO task ("group", input, remote) VALUES ('6', 'SELECT 1 AS a, 2 AS b;SELECT 3 AS c, 4 AS d', 'application_name=test');
 WITH s AS (SELECT generate_series(1,10) AS s)  INSERT INTO task ("group", input, max, live, remote) SELECT '7', 'SELECT pg_sleep(0.1) AS a', 2, '1 min', 'application_name=test' FROM s;
-DO $body$ <<local>> DECLARE
-    count bigint;
-BEGIN
+DO $body$ BEGIN
     WHILE true LOOP
-        SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'FAIL') INTO local.count;
-        IF local.count = 0 THEN
-            EXIT;
-        END IF;
+        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'FAIL')) = 0 THEN EXIT; END IF;
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
