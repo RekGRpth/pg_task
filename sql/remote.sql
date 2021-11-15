@@ -9,6 +9,8 @@
 SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
 
+INSERT INTO task (input, remote) VALUES ('SELECT 1 AS a0 WHERE false', 'application_name=test');
+
 INSERT INTO task (input, remote) VALUES ('SELECT 1/0 AS a1', 'application_name=test');
 
 INSERT INTO task (input, remote) VALUES ('SELECT 1 AS a2', 'application_name=test');
@@ -30,6 +32,8 @@ BEGIN
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
+
+SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a0 WHERE false' AND start >= :ct::timestamp ORDER BY id desc;
 
 SELECT input, output, state FROM task WHERE input = 'SELECT 1/0 AS a1' AND start >= :ct::timestamp ORDER BY id desc;
 
