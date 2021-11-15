@@ -8,13 +8,13 @@
 
 BEGIN;
 
+INSERT INTO task (input) VALUES ('SELECT 1/0 AS a');
+
 INSERT INTO task (input) VALUES ('SELECT 1 AS a');
 INSERT INTO task (input) VALUES ('SELECT 1 AS a, 2 AS b');
 INSERT INTO task (input) VALUES ('SELECT 1 AS a;SELECT 2 AS b');
 INSERT INTO task (input) VALUES ('SELECT 1 AS a, 2 AS b;SELECT 3 AS c');
 INSERT INTO task (input) VALUES ('SELECT 1 AS a, 2 AS b;SELECT 3 AS c, 4 AS d');
-
-INSERT INTO task (input) VALUES ('SELECT 1/0 AS a');
 
 COMMIT;
 
@@ -30,10 +30,10 @@ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 
+SELECT input, output, state FROM task WHERE input = 'SELECT 1/0 AS a' ORDER BY id desc LIMIT 1;
+
 SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a' ORDER BY id desc LIMIT 1;
 SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a, 2 AS b' ORDER BY id desc LIMIT 1;
 SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a;SELECT 2 AS b' ORDER BY id desc LIMIT 1;
 SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a, 2 AS b;SELECT 3 AS c' ORDER BY id desc LIMIT 1;
 SELECT input, output, state FROM task WHERE input = 'SELECT 1 AS a, 2 AS b;SELECT 3 AS c, 4 AS d' ORDER BY id desc LIMIT 1;
-
-SELECT input, output, state FROM task WHERE input = 'SELECT 1/0 AS a' ORDER BY id desc LIMIT 1;
