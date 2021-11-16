@@ -54,7 +54,6 @@
 #include <executor/spi.h>
 #if PG_VERSION_NUM >= 110000
 #include <jit/jit.h>
-#else
 #endif
 #include <libpq-fe.h>
 #include <libpq/libpq-be.h>
