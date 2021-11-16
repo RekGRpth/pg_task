@@ -226,6 +226,7 @@ void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf);
 void NullCommandMy(CommandDest dest);
 void _PG_init(void);
 void ReadyForQueryMy(CommandDest dest);
+void set_ps_display_my(const char *activity);
 void SPI_commit_my(void);
 void SPI_connect_my(const char *src);
 void SPI_execute_plan_my(SPI_plan *plan, Datum *values, const char *nulls, int res, bool commit);

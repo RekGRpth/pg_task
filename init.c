@@ -249,6 +249,14 @@ void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf) {
     MemoryContextSwitchTo(oldMemoryContext);
 }
 
+void set_ps_display_my(const char *activity) {
+#if PG_VERSION_NUM >= 130000
+    set_ps_display(activity);
+#else
+    set_ps_display(activity, false);
+#endif
+}
+
 void _PG_init(void) {
     if (IsBinaryUpgrade) { W("IsBinaryUpgrade"); return; }
     if (!process_shared_preload_libraries_in_progress) F("!process_shared_preload_libraries_in_progress");
