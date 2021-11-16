@@ -33,30 +33,6 @@ static char *PQresultErrorMessageMy(const PGresult *res) {
     return err;
 }
 
-static const char *work_status(Task *task) {
-    switch (PQstatus(task->conn)) {
-        case CONNECTION_AUTH_OK: return "CONNECTION_AUTH_OK";
-        case CONNECTION_AWAITING_RESPONSE: return "CONNECTION_AWAITING_RESPONSE";
-        case CONNECTION_BAD: return "CONNECTION_BAD";
-#if PG_VERSION_NUM >= 140000
-        case CONNECTION_CHECK_STANDBY: return "CONNECTION_CHECK_STANDBY";
-#endif
-#if PG_VERSION_NUM >= 130000
-        case CONNECTION_CHECK_TARGET: return "CONNECTION_CHECK_TARGET";
-#endif
-        case CONNECTION_CHECK_WRITABLE: return "CONNECTION_CHECK_WRITABLE";
-        case CONNECTION_CONSUME: return "CONNECTION_CONSUME";
-        case CONNECTION_GSS_STARTUP: return "CONNECTION_GSS_STARTUP";
-        case CONNECTION_MADE: return "CONNECTION_MADE";
-        case CONNECTION_NEEDED: return "CONNECTION_NEEDED";
-        case CONNECTION_OK: return "CONNECTION_OK";
-        case CONNECTION_SETENV: return "CONNECTION_SETENV";
-        case CONNECTION_SSL_STARTUP: return "CONNECTION_SSL_STARTUP";
-        case CONNECTION_STARTED: return "CONNECTION_STARTED";
-    }
-    return "";
-}
-
 static void work_check(void) {
     static SPI_plan *plan = NULL;
     static const char *src = SQL(
@@ -459,11 +435,11 @@ static void work_connect(Task *task) {
         default: break;
     }
     if (!connected) switch (PQconnectPoll(task->conn)) {
-        case PGRES_POLLING_ACTIVE: D1("%li: PQconnectPoll == PGRES_POLLING_ACTIVE and %s", task->id, work_status(task)); break;
-        case PGRES_POLLING_FAILED: D1("%li: PQconnectPoll == PGRES_POLLING_FAILED and %s", task->id, work_status(task)); work_error(task, "PQconnectPoll == PGRES_POLLING_FAILED", PQerrorMessageMy(task->conn), true); return;
-        case PGRES_POLLING_OK: D1("%li: PQconnectPoll == PGRES_POLLING_OK and %s", task->id, work_status(task)); connected = true; break;
-        case PGRES_POLLING_READING: D1("%li: PQconnectPoll == PGRES_POLLING_READING and %s", task->id, work_status(task)); task->event = WL_SOCKET_READABLE; break;
-        case PGRES_POLLING_WRITING: D1("%li: PQconnectPoll == PGRES_POLLING_WRITING and %s", task->id, work_status(task)); task->event = WL_SOCKET_WRITEABLE; break;
+        case PGRES_POLLING_ACTIVE: D1("%li: PQconnectPoll == PGRES_POLLING_ACTIVE", task->id); break;
+        case PGRES_POLLING_FAILED: D1("%li: PQconnectPoll == PGRES_POLLING_FAILED", task->id); work_error(task, "PQconnectPoll == PGRES_POLLING_FAILED", PQerrorMessageMy(task->conn), true); return;
+        case PGRES_POLLING_OK: D1("%li: PQconnectPoll == PGRES_POLLING_OK", task->id); connected = true; break;
+        case PGRES_POLLING_READING: D1("%li: PQconnectPoll == PGRES_POLLING_READING", task->id); task->event = WL_SOCKET_READABLE; break;
+        case PGRES_POLLING_WRITING: D1("%li: PQconnectPoll == PGRES_POLLING_WRITING", task->id); task->event = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
         if(!(task->pid = PQbackendPID(task->conn))) { work_error(task, "!PQbackendPID", PQerrorMessageMy(task->conn), true); return; }
