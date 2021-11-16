@@ -105,6 +105,12 @@ typedef struct _SPI_plan SPI_plan;
 #define deserialize_char_null(dst) deserialize_char(dst); if (p == (dst) + 1) (dst) = NULL;
 #define deserialize_int(dst) (dst) = *(typeof(dst) *)p; p += sizeof(dst);
 
+#if PG_VERSION_NUM >= 130000
+#define set_ps_display_my(activity) set_ps_display(activity)
+#else
+#define set_ps_display_my(activity) set_ps_display(activity, false)
+#endif
+
 #if PG_VERSION_NUM >= 100000
 #else
 #define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
@@ -226,7 +232,6 @@ void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf);
 void NullCommandMy(CommandDest dest);
 void _PG_init(void);
 void ReadyForQueryMy(CommandDest dest);
-void set_ps_display_my(const char *activity);
 void SPI_commit_my(void);
 void SPI_connect_my(const char *src);
 void SPI_execute_plan_my(SPI_plan *plan, Datum *values, const char *nulls, int res, bool commit);
