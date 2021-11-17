@@ -1,23 +1,24 @@
 \unset ECHO
 1|SELECT 1/0 AS a|ROLLBACK|FAIL
-2|SELECT 1 AS a|1|DONE
-3|SELECT 1 AS a, 2 AS b|a	b
+2|SELECT pg_sleep(2) AS a|ROLLBACK|FAIL
+3|SELECT 1 AS a|1|DONE
+4|SELECT 1 AS a, 2 AS b|a	b
 1	2|DONE
-4|SELECT 1 AS a;SELECT 2 AS b|1
+5|SELECT 1 AS a;SELECT 2 AS b|1
 2|DONE
-5|SELECT 1 AS a, 2 AS b;SELECT 3 AS c|a	b
+6|SELECT 1 AS a, 2 AS b;SELECT 3 AS c|a	b
 1	2
 3|DONE
-6|SELECT 1 AS a, 2 AS b;SELECT 3 AS c, 4 AS d|a	b
+7|SELECT 1 AS a, 2 AS b;SELECT 3 AS c, 4 AS d|a	b
 1	2
 c	d
 3	4|DONE
-7|SELECT pg_sleep(0.1) AS a|DONE|5
-7|SELECT pg_sleep(0.1) AS a|DONE|5
-8|SELECT pg_sleep(0.1) AS a|DONE|3|1
-8|SELECT pg_sleep(0.1) AS a|DONE|2|7
-8|SELECT pg_sleep(0.1) AS a|DONE|2|3
-9|SELECT pg_sleep(0.1) AS a|DONE|5
-9|SELECT pg_sleep(0.1) AS a|DONE|5
-9|SELECT pg_sleep(0.1) AS a|DONE|5
-9|SELECT pg_sleep(0.1) AS a|DONE|5
+8|SELECT pg_sleep(0.1) AS a|DONE|5
+8|SELECT pg_sleep(0.1) AS a|DONE|5
+9|SELECT pg_sleep(0.1) AS a|DONE|3|1
+9|SELECT pg_sleep(0.1) AS a|DONE|2|7
+9|SELECT pg_sleep(0.1) AS a|DONE|2|3
+10|SELECT pg_sleep(0.1) AS a|DONE|5
+10|SELECT pg_sleep(0.1) AS a|DONE|5
+10|SELECT pg_sleep(0.1) AS a|DONE|5
+10|SELECT pg_sleep(0.1) AS a|DONE|5
