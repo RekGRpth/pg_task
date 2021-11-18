@@ -562,10 +562,16 @@ static void work_remote(Task task_) {
 static void work_table(void) {
     const RangeVar *rangevar;
     List *names;
-    StringInfoData src;
+    StringInfoData src, hash;
     D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work.str.user, work.str.data, work.str.schema, work.str.table, work.schema_table, work.schema_type);
     set_ps_display_my("table");
     set_config_option("pg_task.table", work.str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    initStringInfoMy(TopMemoryContext, &hash);
+#if PG_VERSION_NUM >= 120000
+    appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (hashtext("group"||COALESCE(remote, '%1$s'))) STORED), "");
+#else
+    appendStringInfo(&hash, SQL(DEFAULT hashtext("group"||COALESCE(remote, '%1$s'))), "");
+#endif
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(
         CREATE TABLE %1$s (
@@ -577,7 +583,7 @@ static void work_table(void) {
             live interval NOT NULL DEFAULT '0 sec',
             timeout interval NOT NULL DEFAULT '0 sec',
             repeat interval NOT NULL DEFAULT '0 sec',
-            hash integer NOT NULL GENERATED ALWAYS AS (hashtext("group"||COALESCE(remote, '%3$s'))) STORED,
+            hash integer NOT NULL %3$s,
             count integer NOT NULL DEFAULT 0,
             max integer NOT NULL DEFAULT current_setting('pg_task.default_max', false)::integer,
             pid integer,
@@ -596,7 +602,8 @@ static void work_table(void) {
             output text,
             remote text
         )
-    ), work.schema_table, work.schema_type, "", work.str.partman ? "" : " PRIMARY KEY");
+    ), work.schema_table, work.schema_type, hash.data, work.str.partman ? "" : " PRIMARY KEY");
+    pfree(hash.data);
     if (work.str.partman) appendStringInfoString(&src, " PARTITION BY RANGE (plan)");
     names = stringToQualifiedNameList(work.schema_table);
     rangevar = makeRangeVarFromNameList(names);
