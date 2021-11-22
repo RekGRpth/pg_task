@@ -67,22 +67,6 @@ static void work_command(Task *task, PGresult *result) {
     appendStringInfo(&task->output, "%s%s", task->output.len ? "\n" : "", PQcmdStatus(result));
 }
 
-static void work_edata(Task *task, const char *filename, int lineno, const char *funcname, const char *message) {
-    ErrorData edata = {0};
-    edata.elevel = FATAL;
-    edata.output_to_server = work_is_log_level_output(edata.elevel, log_min_messages);
-    edata.filename = filename;
-    edata.lineno = lineno;
-    edata.funcname = funcname;
-    edata.domain = TEXTDOMAIN ? TEXTDOMAIN : PG_TEXTDOMAIN("postgres");
-    edata.context_domain = edata.domain;
-    edata.sqlerrcode = ERRCODE_ADMIN_SHUTDOWN;
-    edata.message = (char *)message;
-    edata.message_id = edata.message;
-    task_error(task, &edata);
-    task_done(task);
-}
-
 static void work_event(WaitEventSet *set) {
     dlist_mutable_iter iter;
     AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
@@ -176,7 +160,19 @@ static void work_fini(void) {
     dlist_foreach_modify(iter, &work.head) {
         Task *task = dlist_container(Task, node, iter.cur);
         if (!PQrequestCancel(task->conn)) work_error(task, error.data, PQerrorMessageMy(task->conn), true); else {
-            work_edata(task, __FILE__, __LINE__, __func__, error.data);
+            ErrorData edata = {0};
+            edata.elevel = FATAL;
+            edata.output_to_server = work_is_log_level_output(edata.elevel, log_min_messages);
+            edata.filename = __FILE__;
+            edata.lineno = __LINE__;
+            edata.funcname = __func__;
+            edata.domain = TEXTDOMAIN ? TEXTDOMAIN : PG_TEXTDOMAIN("postgres");
+            edata.context_domain = edata.domain;
+            edata.sqlerrcode = ERRCODE_ADMIN_SHUTDOWN;
+            edata.message = (char *)error.data;
+            edata.message_id = edata.message;
+            task_error(task, &edata);
+            task_done(task);
             work_finish(task);
         }
     }
