@@ -48,7 +48,7 @@ static void work_check(void) {
             FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout integer, count integer, live interval, partman text)
         ) SELECT    DISTINCT j.* FROM j
         INNER JOIN  pg_user AS u ON usename = j.user
-        INNER JOIN  pg_database AS d ON datname = data AND NOT datistemplate AND datallowconn AND usesysid = datdba
+        INNER JOIN  pg_database AS d ON datname = data AND NOT datistemplate AND datallowconn
         WHERE       j.user = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND j.table = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::integer
     );
     set_ps_display_my("check");
