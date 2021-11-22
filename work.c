@@ -394,14 +394,14 @@ static void work_query(Task *task) {
         ErrorData edata = {0};
         initStringInfoMy(TopMemoryContext, &error);
         appendStringInfo(&error, "task %li not active", task->id);
-        edata.elevel = FATAL; // ???
+        edata.elevel = ERROR;
         edata.output_to_server = work_is_log_level_output(edata.elevel, log_min_messages);
         edata.filename = __FILE__;
         edata.lineno = __LINE__;
         edata.funcname = __func__;
         edata.domain = TEXTDOMAIN ? TEXTDOMAIN : PG_TEXTDOMAIN("postgres");
         edata.context_domain = edata.domain;
-        edata.sqlerrcode = ERRCODE_ADMIN_SHUTDOWN; // ???
+        edata.sqlerrcode = ERRCODE_INTERNAL_ERROR;
         edata.message = (char *)error.data;
         edata.message_id = edata.message;
         task_error(task, &edata);
