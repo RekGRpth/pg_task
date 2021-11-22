@@ -125,6 +125,7 @@ typedef struct _SPI_plan SPI_plan;
     X(work.oid.user, serialize_int, deserialize_int)
 
 typedef struct Task {
+    bool active;
     bool delete;
     bool fail;
     bool header;

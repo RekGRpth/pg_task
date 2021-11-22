@@ -129,7 +129,7 @@ bool task_work(Task *task) {
             WITH s AS (
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
             ) UPDATE %1$s AS u SET state = 'WORK'::%2$s, start = CURRENT_TIMESTAMP, pid = $2 FROM s WHERE u.id = s.id
-            RETURNING input, EXTRACT(epoch FROM timeout)::integer * 1000 AS timeout, header, string, u.null, delimiter, quote, escape
+            RETURNING input, EXTRACT(epoch FROM timeout)::integer * 1000 AS timeout, header, string, u.null, delimiter, quote, escape, plan + active > CURRENT_TIMESTAMP AS active
         ), work.schema_table, work.schema_type);
     }
     SPI_connect_my(src.data);
@@ -139,6 +139,7 @@ bool task_work(Task *task) {
         W("%li: SPI_processed != 1", task->id);
         exit = true;
     } else {
+        task->active = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "active", false));
         task->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false));
         task->escape = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "escape", true));
         task->header = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "header", false));
@@ -148,7 +149,7 @@ bool task_work(Task *task) {
         task->string = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "string", false));
         task->timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "timeout", false));
         if (0 < StatementTimeout && StatementTimeout < task->timeout) task->timeout = StatementTimeout;
-        D1("input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c", task->input, task->timeout, task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote, task->escape);
+        D1("input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, active = %s", task->input, task->timeout, task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote, task->escape, task->active ? "true" : "false");
     }
     SPI_finish_my();
     set_ps_display_my("idle");
@@ -354,8 +355,6 @@ static void task_success(void) {
     SetCurrentStatementStartTimestamp();
     StatementTimeout = task.timeout;
     exec_simple_query_my(task.input);
-    pfree(task.input);
-    task.input = NULL;
     if (IsTransactionState()) exec_simple_query_my(SQL(COMMIT));
     if (IsTransactionState()) E("IsTransactionState");
     StatementTimeout = StatementTimeoutMy;
@@ -366,10 +365,13 @@ static bool task_timeout(void) {
     D1("id = %li, timeout = %i, input = %s, count = %i", task.id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
     PG_TRY();
+        if (!task.active) E("task %li not active", task.id);
         task_success();
     PG_CATCH();
         task_fail();
     PG_END_TRY();
+    pfree(task.input);
+    task.input = NULL;
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
     if (task_done(&task)) return true;

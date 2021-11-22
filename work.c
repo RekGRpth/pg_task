@@ -389,6 +389,26 @@ static void work_query(Task *task) {
     task->socket = work_query;
     if (!work_busy(task, WL_SOCKET_WRITEABLE)) return;
     if (work_input(task)) { work_finish(task); return; }
+    if (!task->active) {
+        StringInfoData error;
+        ErrorData edata = {0};
+        initStringInfoMy(TopMemoryContext, &error);
+        appendStringInfo(&error, "task %li not active", task->id);
+        edata.elevel = FATAL; // ???
+        edata.output_to_server = work_is_log_level_output(edata.elevel, log_min_messages);
+        edata.filename = __FILE__;
+        edata.lineno = __LINE__;
+        edata.funcname = __func__;
+        edata.domain = TEXTDOMAIN ? TEXTDOMAIN : PG_TEXTDOMAIN("postgres");
+        edata.context_domain = edata.domain;
+        edata.sqlerrcode = ERRCODE_ADMIN_SHUTDOWN; // ???
+        edata.message = (char *)error.data;
+        edata.message_id = edata.message;
+        task_error(task, &edata);
+        work_done(task);
+        pfree(error.data);
+        return;
+    }
     if (!PQsendQuery(task->conn, task->input)) { work_error(task, "!PQsendQuery", PQerrorMessageMy(task->conn), false); return; }
     task->socket = work_result;
     if (!work_flush(task)) return;
@@ -576,6 +596,7 @@ static void work_table(void) {
             plan timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
             start timestamp with time zone,
             stop timestamp with time zone,
+            active interval NOT NULL DEFAULT '1 hour',
             live interval NOT NULL DEFAULT '0 sec',
             timeout interval NOT NULL DEFAULT '0 sec',
             repeat interval NOT NULL DEFAULT '0 sec',
