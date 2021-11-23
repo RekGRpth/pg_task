@@ -63,7 +63,7 @@ DO $body$ BEGIN
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, state, count(id) FROM task WHERE "group" = '10' AND plan > :ct::timestamp GROUP BY "group", input, output, state, pid;
 BEGIN;
-WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, live, active) SELECT '11', 'SELECT pg_sleep(2) AS a', 2, '1 min', '1 sec' FROM s;
+WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, live, active) SELECT '11', 'SELECT pg_sleep(10) AS a', 2, '1 min', '5 sec' FROM s;
 COMMIT;
 DO $body$ BEGIN
     WHILE true LOOP
