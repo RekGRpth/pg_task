@@ -598,7 +598,7 @@ static void work_table(void) {
             END IF;
             return new;
         end;$$ LANGUAGE plpgsql;
-        CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROWS EXECUTE PROCEDURE %1$s.%2$s()), work.quote.schema, function_quote, "", work.schema_table);
+        CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s()), work.quote.schema, function_quote, "", work.schema_table);
         if (function_quote != function.data) pfree((void *)function_quote);
         pfree(function.data);
     }
