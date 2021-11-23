@@ -13,15 +13,15 @@
 1	2
 c	d
 3	4|DONE
-8|SELECT pg_sleep(0.1) AS a|DONE|5
-8|SELECT pg_sleep(0.1) AS a|DONE|5
-9|SELECT pg_sleep(0.1) AS a|DONE|3|1
-9|SELECT pg_sleep(0.1) AS a|DONE|2|7
-9|SELECT pg_sleep(0.1) AS a|DONE|2|3
-10|SELECT pg_sleep(0.1) AS a|DONE|5
-10|SELECT pg_sleep(0.1) AS a|DONE|5
-10|SELECT pg_sleep(0.1) AS a|DONE|5
-10|SELECT pg_sleep(0.1) AS a|DONE|5
+8|SELECT pg_sleep(1) AS a|DONE|5
+8|SELECT pg_sleep(1) AS a|DONE|5
+9|SELECT pg_sleep(1) AS a|DONE|3|1
+9|SELECT pg_sleep(1) AS a|DONE|2|6
+9|SELECT pg_sleep(1) AS a|DONE|2|4
+10|SELECT pg_sleep(1) AS a|DONE|5
+10|SELECT pg_sleep(1) AS a|DONE|5
+10|SELECT pg_sleep(1) AS a|DONE|5
+10|SELECT pg_sleep(1) AS a|DONE|5
 11|SELECT pg_sleep(2) AS a|DONE|1
 11|SELECT pg_sleep(2) AS a|DONE|1
 11|SELECT pg_sleep(2) AS a|FAIL|4
