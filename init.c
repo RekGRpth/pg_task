@@ -227,18 +227,18 @@ static void init_conf(void) {
     DefineCustomBoolVariable("pg_task.default_drift", "pg_task default drift", "compute next repeat time by plan instead current", &default_drift, true, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.default_header", "pg_task default header", "show headers", &default_header, true, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.default_string", "pg_task default string", "quote string only", &default_string, true, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.default_count", "pg_task default count", "do count tasks before exit", &default_count, 1000, 0, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_work.default_count", "pg_work default count", "do count tasks before exit", &default_count, 1000, 0, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.default_max", "pg_task default max", "maximum parallel tasks", &default_max, INT_MAX, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.default_timeout", "pg_task default timeout", "check tasks every timeout milliseconds", &default_timeout, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_data", "pg_task default data", "default database name", &default_data, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_work.default_timeout", "pg_work default timeout", "check tasks every timeout milliseconds", &default_timeout, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_work.default_data", "pg_work default data", "default database name", &default_data, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_delimiter", "pg_task default delimiter", "results colums delimiter", &default_delimiter, "\t", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_group", "pg_task default group", "group tasks name", &default_group, "group", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_live", "pg_task default live", "exit until timeout", &default_live, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_work.default_live", "pg_work default live", "exit until timeout", &default_live, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_null", "pg_task default null", "text null representation", &default_null, "\\N", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    if (extension_file_exists("pg_partman")) DefineCustomStringVariable("pg_task.default_partman", "pg_task default partman", "partman schema name, if null then do not use partman", &default_partman, "partman", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_schema", "pg_task default schema", "schema name for tasks table", &default_schema, "public", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_table", "pg_task default table", "table name for tasks table", &default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_user", "pg_task default user", "default username", &default_user, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    if (extension_file_exists("pg_partman")) DefineCustomStringVariable("pg_work.default_partman", "pg_work default partman", "partman schema name, if null then do not use partman", &default_partman, "partman", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_work.default_schema", "pg_work default schema", "schema name for tasks table", &default_schema, "public", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_work.default_table", "pg_work default table", "table name for tasks table", &default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_work.default_user", "pg_work default user", "default username", &default_user, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.json", "pg_task json", "json configuration: available keys are: user, data, schema, table, timeout, count, live and partman", &default_json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign, NULL);
     D1("json = %s, schema = %s, table = %s, null = %s, timeout = %i, count = %i, live = %s, partman = %s", default_json, default_schema, default_table, default_null, default_timeout, default_count, default_live, default_partman ? default_partman : default_null);
 }
