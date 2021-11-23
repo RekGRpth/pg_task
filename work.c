@@ -601,7 +601,7 @@ static void work_table(void) {
             timeout interval NOT NULL DEFAULT '0 sec',
             repeat interval NOT NULL DEFAULT '0 sec',
             hash integer NOT NULL %3$s,
-            count integer NOT NULL DEFAULT 0,
+            count integer NOT NULL DEFAULT current_setting('pg_task.default_count', false)::integer,
             max integer NOT NULL DEFAULT current_setting('pg_task.default_max', false)::integer,
             pid integer,
             state %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
