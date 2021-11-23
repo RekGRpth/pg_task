@@ -594,11 +594,11 @@ static void work_table(void) {
         function_quote = quote_identifier(function.data);
         appendStringInfo(&hash, SQL(;CREATE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
             IF tg_op = 'INSERT' OR (new.group, new.remote) IS DISTINCT FROM (old.group, old.remote) THEN
-                new.hash = hashtext(new.group||COALESCE(new.remote, '%3$s'))
+                new.hash = hashtext(new.group||COALESCE(new.remote, '%3$s'));
             END IF;
             return new;
         end;$$ LANGUAGE plpgsql;
-        CREATE TRIGGER BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROWS EXECUTE PROCEDURE %1$s.%2$s()), work.quote.schema, function_quote, "", work.schema_table);
+        CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROWS EXECUTE PROCEDURE %1$s.%2$s()), work.quote.schema, function_quote, "", work.schema_table);
         if (function_quote != function.data) pfree((void *)function_quote);
         pfree(function.data);
     }
