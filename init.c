@@ -7,17 +7,17 @@ static bool task_default_delete;
 static bool task_default_drift;
 static bool task_default_header;
 static bool task_default_string;
-static char *work_default_data;
+static char *default_json;
 static char *task_default_delimiter;
 static char *task_default_group;
-static char *default_json;
+static char *work_default_data;
 static char *work_default_live;
 static char *work_default_partman;
 static char *work_default_schema;
 static char *work_default_table;
 static char *work_default_user;
-static int work_default_count;
 static int task_default_max;
+static int work_default_count;
 static int work_default_timeout;
 
 static bool init_check_ascii(char *data) {
