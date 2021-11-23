@@ -266,6 +266,11 @@ void _PG_init(void) {
     init_work(false);
 }
 
+#if PG_VERSION_NUM >= 120000
+#else
+TimestampTz MyStartTimestamp;
+#endif
+
 #if PG_VERSION_NUM >= 130000
 #else
 volatile sig_atomic_t ShutdownRequestPending;
