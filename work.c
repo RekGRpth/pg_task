@@ -586,7 +586,22 @@ static void work_table(void) {
 #if PG_VERSION_NUM >= 120000
     appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (hashtext("group"||COALESCE(remote, '%1$s'))) STORED), "");
 #else
-    appendStringInfo(&hash, SQL(DEFAULT hashtext("group"||COALESCE(remote, '%1$s'))), "");
+    if (true) {
+        const char *function_quote;
+        StringInfoData function;
+        initStringInfoMy(TopMemoryContext, &function);
+        appendStringInfo(&function, "%1$s_hash_generate", work.str.table);
+        function_quote = quote_identifier(function.data);
+        appendStringInfo(&hash, SQL(;CREATE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
+            IF tg_op = 'INSERT' OR (new.group, new.remote) IS DISTINCT FROM (old.group, old.remote) THEN
+                new.hash = hashtext(new.group||COALESCE(new.remote, '%3$s'))
+            END IF;
+            return new;
+        end;$$ LANGUAGE plpgsql;
+        CREATE TRIGGER BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROWS EXECUTE PROCEDURE %1$s.%2$s()), work.quote.schema, function_quote, "", work.schema_table);
+        if (function_quote != function.data) pfree((void *)function_quote);
+        pfree(function.data);
+    }
 #endif
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(
@@ -619,9 +634,18 @@ static void work_table(void) {
             output text,
             remote text
         )
-    ), work.schema_table, work.schema_type, hash.data, work.str.partman ? "" : " PRIMARY KEY");
-    pfree(hash.data);
+    ), work.schema_table, work.schema_type,
+#if PG_VERSION_NUM >= 120000
+        hash.data,
+#else
+        "",
+#endif
+        work.str.partman ? "" : " PRIMARY KEY");
     if (work.str.partman) appendStringInfoString(&src, " PARTITION BY RANGE (plan)");
+#if PG_VERSION_NUM >= 120000
+#else
+    appendStringInfoString(&src, hash.data);
+#endif
     names = stringToQualifiedNameList(work.schema_table);
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(src.data);
@@ -635,6 +659,7 @@ static void work_table(void) {
     resetStringInfo(&src);
     appendStringInfo(&src, "%i", work.oid.table);
     set_config_option("pg_task.oid", src.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    pfree(hash.data);
     pfree(src.data);
     set_ps_display_my("idle");
 }
