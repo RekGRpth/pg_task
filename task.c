@@ -10,6 +10,7 @@ static void task_delete(Task *task) {
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
+    D1("id = %li", task->id);
     set_ps_display_my("delete");
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
@@ -28,6 +29,7 @@ static void task_repeat(Task *task) {
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
+    D1("id = %li", task->id);
     set_ps_display_my("repeat");
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
@@ -53,6 +55,7 @@ static void task_update(Task *task) {
     static Oid argtypes[] = {TEXTOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
+    D1("id = %li", task->id);
     set_ps_display_my("update");
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
@@ -131,6 +134,7 @@ bool task_live(Task *task) {
     static Oid argtypes[] = {TEXTOID, TEXTOID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
+    D1("id = %li", task->id);
     set_ps_display_my("live");
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
