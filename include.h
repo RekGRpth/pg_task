@@ -239,7 +239,6 @@ void SPI_start_transaction_my(const char *src);
 void task_delete(Task *task);
 void task_error(Task *task, ErrorData *edata);
 void task_main(Datum main_arg);
-void task_repeat(Task *task);
 void work_main(Datum main_arg);
 
 #endif // _INCLUDE_H_
