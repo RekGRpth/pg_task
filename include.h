@@ -126,7 +126,6 @@ typedef struct Task {
     bool active;
     bool header;
     bool live;
-//    bool lock;
     bool string;
     char delimiter;
     char escape;

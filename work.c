@@ -105,7 +105,6 @@ static void work_fatal(Task *task, PGresult *result) {
 
 static void work_free(Task *task) {
     task_free(task);
-//    if (/*task->lock && */!init_table_id_unlock(work->oid.table, task->id)) W("!init_table_id_unlock(%i, %li)", work->oid.table, task->id);
     pfree(task);
 }
 
@@ -114,7 +113,6 @@ static void work_finish(Task *task) {
     PQfinish(task->conn);
     if (!init_table_pid_hash_unlock(work->oid.table, task->pid, task->hash)) W("!init_table_pid_hash_unlock(%i, %i, %i)", work->oid.table, task->pid, task->hash);
     work_free(task);
-//    if (/*task->lock && */!init_table_id_unlock(work->oid.table, task->id)) W("!init_table_id_unlock(%i, %li)", work->oid.table, task->id);
 }
 
 static void work_error(Task *task, const char *msg, const char *err, bool finish) {
@@ -501,8 +499,6 @@ static void work_remote(Task *task) {
     int arg = 3;
     PQconninfoOption *opts = PQconninfoParse(task->remote, &err);
     StringInfoData name, value;
-//    Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
-//    *task = *task_;
     D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->oid.table);
     if (!opts) { work_error(task, "!PQconninfoParse", err, false); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
@@ -680,7 +676,6 @@ static void work_task(Task *task) {
     }
     pfree(handle);
     work_free(task);
-//    pfree(task->group);
 }
 
 static void work_type(void) {
