@@ -181,6 +181,22 @@ void task_error(Task *task, ErrorData *edata) {
     appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
 }
 
+static void task_execute(void) {
+    int StatementTimeoutMy = StatementTimeout;
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
+    MemoryContextResetAndDeleteChildren(MessageContext);
+    InvalidateCatalogSnapshotConditionally();
+    MemoryContextSwitchTo(oldMemoryContext);
+    whereToSendOutput = DestDebug;
+    ReadyForQueryMy(whereToSendOutput);
+    SetCurrentStatementStartTimestamp();
+    StatementTimeout = task.timeout;
+    exec_simple_query_my(task.input);
+    if (IsTransactionState()) exec_simple_query_my(SQL(COMMIT));
+    if (IsTransactionState()) E("IsTransactionState");
+    StatementTimeout = StatementTimeoutMy;
+}
+
 static void task_fail(void) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
@@ -289,29 +305,13 @@ static void task_latch(void) {
     CHECK_FOR_INTERRUPTS();
 }
 
-static void task_success(void) {
-    int StatementTimeoutMy = StatementTimeout;
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
-    MemoryContextResetAndDeleteChildren(MessageContext);
-    InvalidateCatalogSnapshotConditionally();
-    MemoryContextSwitchTo(oldMemoryContext);
-    whereToSendOutput = DestDebug;
-    ReadyForQueryMy(whereToSendOutput);
-    SetCurrentStatementStartTimestamp();
-    StatementTimeout = task.timeout;
-    exec_simple_query_my(task.input);
-    if (IsTransactionState()) exec_simple_query_my(SQL(COMMIT));
-    if (IsTransactionState()) E("IsTransactionState");
-    StatementTimeout = StatementTimeoutMy;
-}
-
 static bool task_timeout(void) {
     if (task_work(&task)) return true;
     D1("id = %li, timeout = %i, input = %s, count = %i", task.id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
     PG_TRY();
         if (!task.active) E("task %li not active", task.id);
-        task_success();
+        task_execute();
     PG_CATCH();
         task_fail();
     PG_END_TRY();
