@@ -77,7 +77,7 @@ static void work_event(WaitEventSet *set) {
     }
 }
 
-static void work_fail(Task *task, PGresult *result) {
+static void work_fatal(Task *task, PGresult *result) {
     char *value = NULL;
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
@@ -339,7 +339,7 @@ static void work_result(Task *task) {
     for (PGresult *result; PQstatus(task->conn) == CONNECTION_OK && (result = PQgetResult(task->conn)); ) {
         switch (PQresultStatus(result)) {
             case PGRES_COMMAND_OK: work_command(task, result); break;
-            case PGRES_FATAL_ERROR: W("%li: PQresultStatus == PGRES_FATAL_ERROR and %s", task->id, PQresultErrorMessageMy(result)); work_fail(task, result); break;
+            case PGRES_FATAL_ERROR: W("%li: PQresultStatus == PGRES_FATAL_ERROR and %s", task->id, PQresultErrorMessageMy(result)); work_fatal(task, result); break;
             case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) work_success(task, result, row); break;
             default: D1("%li: %s", task->id, PQresStatus(PQresultStatus(result))); break;
         }

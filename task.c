@@ -197,7 +197,7 @@ static void task_execute(void) {
     StatementTimeout = StatementTimeoutMy;
 }
 
-static void task_fail(void) {
+static void task_catch(void) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
     MemoryContextSwitchTo(oldMemoryContext);
@@ -313,7 +313,7 @@ static bool task_timeout(void) {
         if (!task.active) E("task %li not active", task.id);
         task_execute();
     PG_CATCH();
-        task_fail();
+        task_catch();
     PG_END_TRY();
 //    pfree(task.input);
 //    task.input = NULL;
