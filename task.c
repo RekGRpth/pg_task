@@ -18,13 +18,13 @@ bool task_done(Task *task) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, SQL(
             WITH ss AS (
-                SELECT * FROM %1$s AS t WHERE max < 0 AND plan < CURRENT_TIMESTAMP AND t.group = $4 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
+                SELECT t.* FROM %1$s AS t WHERE max < 0 AND plan < CURRENT_TIMESTAMP AND t.group = $4 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
             ), uu AS (
                 UPDATE %1$s AS u SET plan = CURRENT_TIMESTAMP FROM ss WHERE u.id = ss.id RETURNING u.*
             ), sss AS (
                 SELECT "group", count(id) FROM uu GROUP BY 1
             ), s AS (
-                SELECT * FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
+                SELECT t.* FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
             ), i AS (
                 INSERT INTO %1$s AS i (parent, plan, "group", max, input, timeout, delete, repeat, drift, count, live) SELECT id, CASE
                     WHEN drift THEN CURRENT_TIMESTAMP + repeat
