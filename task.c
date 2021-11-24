@@ -68,7 +68,6 @@ bool task_done(Task *task) {
     task->null = NULL;
     if (task->lock && !init_table_id_unlock(work.oid.table, task->id)) { W("!init_table_id_unlock(%i, %li)", work.oid.table, task->id); exit = true; }
     task->lock = false;
-    if (ShutdownRequestPending) exit = true;
     set_ps_display_my("idle");
     if (exit) return exit;
     D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
@@ -79,7 +78,7 @@ bool task_done(Task *task) {
     if (task->error.data) pfree(task->error.data);
     task->error.data = NULL;
     if (ShutdownRequestPending) task->live = false;
-    return exit;
+    return ShutdownRequestPending || exit;
 }
 
 bool task_live(Task *task) {
