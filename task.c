@@ -246,6 +246,7 @@ static void task_init(void) {
 #define X(name, serialize, deserialize) deserialize(name);
     TASK
 #undef X
+    task->group = MemoryContextStrdup(TopMemoryContext, task->group);
     pqsignal(SIGTERM, SignalHandlerForShutdownRequestMy);
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM >= 110000
@@ -330,7 +331,7 @@ static bool task_timeout(void) {
 
 void task_free(Task *task) {
     if (task->error.data) { pfree(task->error.data); task->error.data = NULL; }
-//    if (task->group) { pfree(task->group); task->group = NULL; }
+    if (task->group) { pfree(task->group); task->group = NULL; }
     if (task->input) { pfree(task->input); task->input = NULL; }
     if (task->null) { pfree(task->null); task->null = NULL; }
     if (task->output.data) { pfree(task->output.data); task->output.data = NULL; }
