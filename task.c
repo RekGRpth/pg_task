@@ -18,9 +18,11 @@ bool task_done(Task *task) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, SQL(
             WITH ss AS (
-                SELECT id FROM %1$s AS t WHERE max < 0 AND plan < CURRENT_TIMESTAMP AND t.group = $4 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
+                SELECT * FROM %1$s AS t WHERE max < 0 AND plan < CURRENT_TIMESTAMP AND t.group = $4 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
             ), uu AS (
                 UPDATE %1$s AS u SET plan = CURRENT_TIMESTAMP FROM ss WHERE u.id = ss.id RETURNING u.*
+            ), sss AS (
+                SELECT "group", count(id) FROM uu GROUP BY 1
             ), s AS (
                 SELECT * FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
             ), i AS (
@@ -32,7 +34,7 @@ bool task_done(Task *task) {
                 DELETE FROM %1$s AS d WHERE id = $1 AND delete AND $2 IS NULL RETURNING d.*
             ), u AS (
                 UPDATE %1$s AS u SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = $2, error = $3 WHERE id = $1 RETURNING u.*
-            ) SELECT s.count > 0 OR s.live > '0 sec' AS live, u.id IS NOT NULL AS update, i.id IS NOT NULL AS insert, d.id IS NOT NULL AS delete FROM s LEFT JOIN i USING(id) LEFT JOIN d USING(id) LEFT JOIN u USING(id)
+            ) SELECT s.count > 0 OR s.live > '0 sec' AS live, u.id IS NOT NULL AS update, i.id IS NOT NULL AS insert, d.id IS NOT NULL AS delete, sss.count IS NOT NULL AS count FROM s LEFT JOIN i USING(id) LEFT JOIN d USING(id) LEFT JOIN u USING(id) LEFT JOIN sss ON true
         ), work.schema_table, work.schema_type);
     }
     SPI_connect_my(src.data);
@@ -42,11 +44,12 @@ bool task_done(Task *task) {
         W("%li: SPI_processed != 1", task->id);
         exit = true;
     } else {
+        bool count = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "count", false));
         bool delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
         bool insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false));
         bool update = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "update", false));
         task->live = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
-        D1("live = %s, update = %s, insert = %s, delete = %s", task->live ? "true" : "false", update ? "true" : "false", insert ? "true" : "false", delete ? "true" : "false");
+        D1("live = %s, update = %s, insert = %s, delete = %s, count = %s", task->live ? "true" : "false", update ? "true" : "false", insert ? "true" : "false", delete ? "true" : "false", count ? "true" : "false");
     }
     SPI_finish_my();
     if (values[1]) pfree((void *)values[1]);
