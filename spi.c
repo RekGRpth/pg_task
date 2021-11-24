@@ -31,6 +31,7 @@ void SPI_connect_my(const char *src) {
 #if PG_VERSION_NUM >= 110000
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) E("SPI_connect_ext = %s", SPI_result_code_string(rc));
 #else
+    if (!TopTransactionContext) TopTransactionContext = AllocSetContextCreate(TopMemoryContext, "TopTransactionContext", ALLOCSET_DEFAULT_SIZES);
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) E("SPI_connect = %s", SPI_result_code_string(rc));
 #endif
     SPI_start_transaction_my(src);
