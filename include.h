@@ -126,7 +126,7 @@ typedef struct Task {
     bool active;
     bool header;
     bool live;
-    bool lock;
+//    bool lock;
     bool string;
     char delimiter;
     char escape;
@@ -234,6 +234,7 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_finish_my(void);
 void SPI_start_transaction_my(const char *src);
 void task_error(Task *task, ErrorData *edata);
+void task_free(Task *task);
 void task_main(Datum main_arg);
 void work_main(Datum main_arg);
 

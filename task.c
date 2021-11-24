@@ -52,16 +52,11 @@ bool task_done(Task *task) {
     if (values[1]) pfree((void *)values[1]);
     if (values[2]) pfree((void *)values[2]);
     if (values[3]) pfree((void *)values[3]);
-    if (task->null) pfree(task->null);
-    task->null = NULL;
-    if (task->lock && !init_table_id_unlock(work.oid.table, task->id)) { W("!init_table_id_unlock(%i, %li)", work.oid.table, task->id); exit = true; }
-    task->lock = false;
+    task_free(task);
+//    if (task->lock && !init_table_id_unlock(work.oid.table, task->id)) { W("!init_table_id_unlock(%i, %li)", work.oid.table, task->id); exit = true; }
+//    task->lock = false;
     set_ps_display_my("idle");
     if (exit) return exit;
-    if (task->output.data) pfree(task->output.data);
-    task->output.data = NULL;
-    if (task->error.data) pfree(task->error.data);
-    task->error.data = NULL;
     if (ShutdownRequestPending) task->live = false;
     return ShutdownRequestPending || exit;
 }
@@ -106,7 +101,7 @@ bool task_work(Task *task) {
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return true;
     if (!init_table_id_lock(work.oid.table, task->id)) { W("!init_table_id_lock(%i, %li)", work.oid.table, task->id); return true; }
-    task->lock = true;
+//    task->lock = true;
     task->count++;
     D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work.oid.table, task->count, task->pid);
     set_ps_display_my("work");
@@ -326,6 +321,17 @@ static bool task_timeout(void) {
     pgstat_report_activity(STATE_IDLE, NULL);
     set_ps_display_my("idle");
     return task_done(&task) || !task.live || task_live(&task);
+}
+
+void task_free(Task *task) {
+    if (task->error.data) { pfree(task->error.data); task->error.data = NULL; }
+    if (task->group) { pfree(task->group); task->group = NULL; }
+    if (task->input) { pfree(task->input); task->input = NULL; }
+    if (task->null) { pfree(task->null); task->null = NULL; }
+    if (task->output.data) { pfree(task->output.data); task->output.data = NULL; }
+    if (task->remote) { pfree(task->remote); task->remote = NULL; }
+    if (/*task->lock && */!init_table_id_unlock(work.oid.table, task->id)) W("!init_table_id_unlock(%i, %li)", work.oid.table, task->id);
+//    task->lock = false;
 }
 
 void task_main(Datum main_arg) {

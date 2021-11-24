@@ -104,12 +104,7 @@ static void work_fail(Task *task, PGresult *result) {
 }
 
 static void work_free(Task *task) {
-    if (task->error.data) pfree(task->error.data);
-    if (task->group) pfree(task->group);
-    if (task->input) pfree(task->input);
-    if (task->null) pfree(task->null);
-    if (task->output.data) pfree(task->output.data);
-    if (task->remote) pfree(task->remote);
+    task_free(task);
     pfree(task);
 }
 
@@ -854,7 +849,8 @@ void work_main(Datum main_arg) {
 #else
     MyStartTimestamp = GetCurrentTimestamp();
 #endif
-    if (!init_data_user_table_lock(MyDatabaseId, GetUserId(), work.oid.table)) W("!init_data_user_table_lock(%i, %i, %i)", MyDatabaseId, GetUserId(), work.oid.table); else while (!ShutdownRequestPending) {
+    if (!init_data_user_table_lock(MyDatabaseId, GetUserId(), work.oid.table)) { W("!init_data_user_table_lock(%i, %i, %i)", MyDatabaseId, GetUserId(), work.oid.table); return; }
+    while (!ShutdownRequestPending) {
         int nevents = 2 + work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
