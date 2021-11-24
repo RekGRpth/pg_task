@@ -5,51 +5,6 @@ extern char *default_null;
 extern Work work;
 Task task = {0};
 
-static void task_delete(Task *task) {
-    Datum values[] = {Int64GetDatum(task->id)};
-    static Oid argtypes[] = {INT8OID};
-    static SPIPlanPtr plan = NULL;
-    static StringInfoData src = {0};
-    D1("id = %li", task->id);
-    set_ps_display_my("delete");
-    if (!src.data) {
-        initStringInfoMy(TopMemoryContext, &src);
-        appendStringInfo(&src, SQL(DELETE FROM %1$s WHERE id = $1 AND state = 'DONE'::%2$s RETURNING id), work.schema_table, work.schema_type);
-    }
-    SPI_connect_my(src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE_RETURNING, true);
-    if (SPI_processed != 1) W("%li: SPI_processed != 1", task->id);
-    SPI_finish_my();
-    set_ps_display_my("idle");
-}
-
-static void task_repeat(Task *task) {
-    Datum values[] = {Int64GetDatum(task->id)};
-    static Oid argtypes[] = {INT8OID};
-    static SPIPlanPtr plan = NULL;
-    static StringInfoData src = {0};
-    D1("id = %li", task->id);
-    set_ps_display_my("repeat");
-    if (!src.data) {
-        initStringInfoMy(TopMemoryContext, &src);
-        appendStringInfo(&src, SQL(
-            INSERT INTO %1$s (parent, plan, "group", max, input, timeout, delete, repeat, drift, count, live)
-            SELECT $1, CASE
-                WHEN drift THEN CURRENT_TIMESTAMP + repeat
-                ELSE (WITH RECURSIVE s AS (SELECT plan AS t UNION SELECT t + repeat FROM s WHERE t <= CURRENT_TIMESTAMP) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)
-            END AS plan, t.group, max, input, timeout, delete, repeat, drift, count, live
-            FROM %1$s AS t WHERE id = $1 AND state = 'DONE'::%2$s LIMIT 1 RETURNING id
-        ), work.schema_table, work.schema_type);
-    }
-    SPI_connect_my(src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING, true);
-    if (SPI_processed != 1) W("%li: SPI_processed != 1", task->id);
-    SPI_finish_my();
-    set_ps_display_my("idle");
-}
-
 static void task_update(Task *task) {
     Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, task->group)};
     static Oid argtypes[] = {TEXTOID};
@@ -91,21 +46,31 @@ bool task_done(Task *task) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, SQL(
             WITH s AS (
-                SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
-            ) UPDATE %1$s AS u SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = concat_ws('%3$s', NULLIF(output, '%4$s'), $2), error = concat_ws('%3$s', NULLIF(error, '%4$s'), $3) FROM s WHERE u.id = s.id
-            RETURNING delete, repeat > '0 sec' AS repeat, count > 0 OR live > '0 sec' AS live
-        ), work.schema_table, work.schema_type, "\n", "");
+                SELECT * FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
+            ), i AS (
+                INSERT INTO %1$s AS i (parent, plan, "group", max, input, timeout, delete, repeat, drift, count, live) SELECT id, CASE
+                    WHEN drift THEN CURRENT_TIMESTAMP + repeat
+                    ELSE (WITH RECURSIVE r AS (SELECT plan AS t UNION SELECT t + repeat FROM r WHERE t <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
+                END AS plan, "group", max, input, timeout, delete, repeat, drift, count, live FROM s WHERE repeat > '0 sec' LIMIT 1 RETURNING i.*
+            ), d AS (
+                DELETE FROM %1$s AS d WHERE id = $1 AND delete AND $2 IS NULL RETURNING d.*
+            ), u AS (
+                UPDATE %1$s AS u SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = $2, error = $3 WHERE id = $1 RETURNING u.*
+            ) SELECT s.count > 0 OR s.live > '0 sec' AS live, u.id IS NOT NULL AS update, i.id IS NOT NULL AS insert, d.id IS NOT NULL AS delete FROM s LEFT JOIN i USING(id) LEFT JOIN d USING(id) LEFT JOIN u USING(id)
+        ), work.schema_table, work.schema_type);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
+    SPI_execute_plan_my(plan, values, nulls, SPI_OK_SELECT, true);
     if (SPI_processed != 1) {
         W("%li: SPI_processed != 1", task->id);
         exit = true;
     } else {
-        task->delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
-        task->repeat = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "repeat", false));
+        bool delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
+        bool insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false));
+        bool update = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "update", false));
         task->live = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
+        D1("live = %s, update = %s, insert = %s, delete = %s", task->live ? "true" : "false", update ? "true" : "false", insert ? "true" : "false", delete ? "true" : "false");
     }
     SPI_finish_my();
     if (values[1]) pfree((void *)values[1]);
@@ -116,9 +81,6 @@ bool task_done(Task *task) {
     task->lock = false;
     set_ps_display_my("idle");
     if (exit) return exit;
-    D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
-    if (task->repeat) task_repeat(task);
-    if (task->delete && !task->output.data) task_delete(task);
     if (task->output.data) pfree(task->output.data);
     task->output.data = NULL;
     if (task->error.data) pfree(task->error.data);
