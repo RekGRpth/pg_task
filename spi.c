@@ -31,6 +31,7 @@ void SPI_connect_my(const char *src) {
 #if PG_VERSION_NUM >= 110000
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) E("SPI_connect_ext = %s", SPI_result_code_string(rc));
 #else
+    SetCurrentStatementStartTimestamp();
     if (true) {
         MemoryContext oldcontext = CurrentMemoryContext;
         StartTransactionCommand();
@@ -71,6 +72,7 @@ void SPI_finish_my(void) {
 void SPI_start_transaction_my(const char *src) {
     pgstat_report_activity(STATE_RUNNING, src);
 #if PG_VERSION_NUM >= 110000
+    SetCurrentStatementStartTimestamp();
     SPI_start_transaction();
 #endif
     PushActiveSnapshot(GetTransactionSnapshot());
