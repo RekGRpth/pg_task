@@ -1,6 +1,6 @@
 #include "include.h"
 
-extern Task task;
+extern Task *task;
 
 static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
     bool isnull, typisvarlena;
@@ -12,47 +12,47 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
 }
 
 static void headers(TupleDesc typeinfo) {
-    if (task.output.len) appendStringInfoString(&task.output, "\n");
+    if (task->output.len) appendStringInfoString(&task->output, "\n");
     for (int col = 1; col <= typeinfo->natts; col++) {
         const char *value = SPI_fname(typeinfo, col);
-        if (col > 1) appendStringInfoChar(&task.output, task.delimiter);
-        if (task.quote) appendStringInfoChar(&task.output, task.quote);
-        if (task.escape) init_escape(&task.output, value, strlen(value), task.escape);
-        else appendStringInfoString(&task.output, value);
-        if (task.quote) appendStringInfoChar(&task.output, task.quote);
+        if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
+        if (task->quote) appendStringInfoChar(&task->output, task->quote);
+        if (task->escape) init_escape(&task->output, value, strlen(value), task->escape);
+        else appendStringInfoString(&task->output, value);
+        if (task->quote) appendStringInfoChar(&task->output, task->quote);
     }
 }
 
 static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     TupleDesc typeinfo = slot->tts_tupleDescriptor;
-    if (!task.output.data) initStringInfoMy(TopMemoryContext, &task.output);
-    if (task.header && !task.row && typeinfo->natts > 1) headers(typeinfo);
-    if (task.output.len) appendStringInfoString(&task.output, "\n");
+    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    if (task->header && !task->row && typeinfo->natts > 1) headers(typeinfo);
+    if (task->output.len) appendStringInfoString(&task->output, "\n");
     for (int col = 1; col <= typeinfo->natts; col++) {
         char *value = SPI_getvalue_my(slot, typeinfo, col);
         int len = value ? strlen(value) : 0;
-        if (col > 1) appendStringInfoChar(&task.output, task.delimiter);
-        if (!value) appendStringInfoString(&task.output, task.null); else {
-            if (!init_oid_is_string(SPI_gettypeid(typeinfo, col)) && task.string) {
-                if (len) appendStringInfoString(&task.output, value);
+        if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
+        if (!value) appendStringInfoString(&task->output, task->null); else {
+            if (!init_oid_is_string(SPI_gettypeid(typeinfo, col)) && task->string) {
+                if (len) appendStringInfoString(&task->output, value);
             } else {
-                if (task.quote) appendStringInfoChar(&task.output, task.quote);
+                if (task->quote) appendStringInfoChar(&task->output, task->quote);
                 if (len) {
-                    if (task.escape) init_escape(&task.output, value, len, task.escape);
-                    else appendStringInfoString(&task.output, value);
+                    if (task->escape) init_escape(&task->output, value, len, task->escape);
+                    else appendStringInfoString(&task->output, value);
                 }
-                if (task.quote) appendStringInfoChar(&task.output, task.quote);
+                if (task->quote) appendStringInfoChar(&task->output, task->quote);
             }
         }
         if (value) pfree(value);
     }
-    task.row++;
+    task->row++;
     return true;
 }
 
 static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
-    task.row = 0;
-    task.skip = 1;
+    task->row = 0;
+    task->skip = 1;
 }
 
 static void rShutdown(DestReceiver *self) { }
