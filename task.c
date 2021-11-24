@@ -5,29 +5,21 @@ extern char *default_null;
 extern Work work;
 Task task = {0};
 
-static void task_update(Task *task) {
-    Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, task->group)};
-    static Oid argtypes[] = {TEXTOID};
+static void task_delete(Task *task) {
+    Datum values[] = {Int64GetDatum(task->id)};
+    static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    set_ps_display_my("update");
+    set_ps_display_my("delete");
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
-        appendStringInfo(&src, SQL(
-            WITH s AS (
-                SELECT id FROM %1$s AS t WHERE max < 0 AND plan < CURRENT_TIMESTAMP AND t.group = $1 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
-            ) UPDATE %1$s AS u SET plan = CURRENT_TIMESTAMP FROM s WHERE u.id = s.id RETURNING u.id
-        ), work.schema_table, work.schema_type);
+        appendStringInfo(&src, SQL(DELETE FROM %1$s WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) RETURNING id), work.schema_table, work.schema_type);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
-    for (uint64 row = 0; row < SPI_processed; row++) {
-        int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
-        W("row = %lu, id = %li", row, id);
-    }
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE_RETURNING, true);
+    if (SPI_processed != 1) W("%li: SPI_processed != 1", task->id);
     SPI_finish_my();
-    if (values[0]) pfree((void *)values[0]);
     set_ps_display_my("idle");
 }
 
@@ -53,6 +45,32 @@ static void task_repeat(Task *task) {
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING, true);
     if (SPI_processed != 1) W("%li: SPI_processed != 1", task->id);
     SPI_finish_my();
+    set_ps_display_my("idle");
+}
+
+static void task_update(Task *task) {
+    Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, task->group)};
+    static Oid argtypes[] = {TEXTOID};
+    static SPIPlanPtr plan = NULL;
+    static StringInfoData src = {0};
+    set_ps_display_my("update");
+    if (!src.data) {
+        initStringInfoMy(TopMemoryContext, &src);
+        appendStringInfo(&src, SQL(
+            WITH s AS (
+                SELECT id FROM %1$s AS t WHERE max < 0 AND plan < CURRENT_TIMESTAMP AND t.group = $1 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
+            ) UPDATE %1$s AS u SET plan = CURRENT_TIMESTAMP FROM s WHERE u.id = s.id RETURNING u.id
+        ), work.schema_table, work.schema_type);
+    }
+    SPI_connect_my(src.data);
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
+    for (uint64 row = 0; row < SPI_processed; row++) {
+        int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
+        W("row = %lu, id = %li", row, id);
+    }
+    SPI_finish_my();
+    if (values[0]) pfree((void *)values[0]);
     set_ps_display_my("idle");
 }
 
@@ -187,24 +205,6 @@ bool task_work(Task *task) {
     SPI_finish_my();
     set_ps_display_my("idle");
     return exit;
-}
-
-void task_delete(Task *task) {
-    Datum values[] = {Int64GetDatum(task->id)};
-    static Oid argtypes[] = {INT8OID};
-    static SPIPlanPtr plan = NULL;
-    static StringInfoData src = {0};
-    set_ps_display_my("delete");
-    if (!src.data) {
-        initStringInfoMy(TopMemoryContext, &src);
-        appendStringInfo(&src, SQL(DELETE FROM %1$s WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) RETURNING id), work.schema_table, work.schema_type);
-    }
-    SPI_connect_my(src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE_RETURNING, true);
-    if (SPI_processed != 1) W("%li: SPI_processed != 1", task->id);
-    SPI_finish_my();
-    set_ps_display_my("idle");
 }
 
 void task_error(Task *task, ErrorData *edata) {
