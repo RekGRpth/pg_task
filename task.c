@@ -2,8 +2,8 @@
 
 extern bool xact_started;
 extern char *default_null;
-extern Work work;
-Task task = {0};
+extern Work *work;
+Task *task;
 
 bool task_done(Task *task) {
     bool exit = false;
@@ -35,7 +35,7 @@ bool task_done(Task *task) {
             ), u AS (
                 UPDATE %1$s AS u SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = $2, error = $3 WHERE id = $1 RETURNING u.*
             ) SELECT s.count > 0 OR s.live > '0 sec' AS live, u.id IS NOT NULL AS update, i.id IS NOT NULL AS insert, d.id IS NOT NULL AS delete, sss.count IS NOT NULL AS count FROM s LEFT JOIN i USING(id) LEFT JOIN d USING(id) LEFT JOIN u USING(id) LEFT JOIN sss ON true
-        ), work.schema_table, work.schema_type);
+        ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -56,7 +56,7 @@ bool task_done(Task *task) {
     if (values[2]) pfree((void *)values[2]);
     if (values[3]) pfree((void *)values[3]);
     task_free(task);
-//    if (task->lock && !init_table_id_unlock(work.oid.table, task->id)) { W("!init_table_id_unlock(%i, %li)", work.oid.table, task->id); exit = true; }
+    if (/*task->lock && */!init_table_id_unlock(work->oid.table, task->id)) { W("!init_table_id_unlock(%i, %li)", work->oid.table, task->id); exit = true; }
 //    task->lock = false;
     set_ps_display_my("idle");
     if (exit) return exit;
@@ -83,7 +83,7 @@ bool task_live(Task *task) {
                 END AND t.start IS NULL AND t.stop IS NULL AND t.pid IS NULL
                 ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t SKIP LOCKED
             ) UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.id
-        ), work.schema_table, work.schema_type);
+        ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -103,10 +103,10 @@ bool task_work(Task *task) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return true;
-    if (!init_table_id_lock(work.oid.table, task->id)) { W("!init_table_id_lock(%i, %li)", work.oid.table, task->id); return true; }
+    if (!init_table_id_lock(work->oid.table, task->id)) { W("!init_table_id_lock(%i, %li)", work->oid.table, task->id); return true; }
 //    task->lock = true;
     task->count++;
-    D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work.oid.table, task->count, task->pid);
+    D1("id = %li, group = %s, max = %i, oid = %i, count = %i, pid = %i", task->id, task->group, task->max, work->oid.table, task->count, task->pid);
     set_ps_display_my("work");
     if (!task->conn) {
         StringInfoData id;
@@ -122,7 +122,7 @@ bool task_work(Task *task) {
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
             ) UPDATE %1$s AS u SET state = 'WORK'::%2$s, start = CURRENT_TIMESTAMP, pid = $2 FROM s WHERE u.id = s.id
             RETURNING input, EXTRACT(epoch FROM timeout)::integer * 1000 AS timeout, header, string, u.null, delimiter, quote, escape, plan + active > CURRENT_TIMESTAMP AS active
-        ), work.schema_table, work.schema_type);
+        ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -193,8 +193,8 @@ static void task_execute(void) {
     whereToSendOutput = DestDebug;
     ReadyForQueryMy(whereToSendOutput);
     SetCurrentStatementStartTimestamp();
-    StatementTimeout = task.timeout;
-    exec_simple_query_my(task.input);
+    StatementTimeout = task->timeout;
+    exec_simple_query_my(task->input);
     if (IsTransactionState()) exec_simple_query_my(SQL(COMMIT));
     if (IsTransactionState()) E("IsTransactionState");
     StatementTimeout = StatementTimeoutMy;
@@ -204,7 +204,7 @@ static void task_catch(void) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
     MemoryContextSwitchTo(oldMemoryContext);
-    task_error(&task, edata);
+    task_error(task, edata);
     FreeErrorData(edata);
     HOLD_INTERRUPTS();
     disable_all_timeouts(false);
@@ -241,65 +241,67 @@ static void task_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
     StringInfoData oid, schema_table, schema_type;
+    task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
+    work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
 #define X(name, serialize, deserialize) deserialize(name);
     TASK
 #undef X
     pqsignal(SIGTERM, SignalHandlerForShutdownRequestMy);
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM >= 110000
-    BackgroundWorkerInitializeConnectionByOid(work.oid.data, work.oid.user, 0);
+    BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
 #else
-    BackgroundWorkerInitializeConnectionByOid(work.oid.data, work.oid.user);
+    BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user);
 #endif
     set_ps_display_my("init");
     process_session_preload_libraries();
     StartTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
-    if (!(work.str.data = get_database_name(work.oid.data))) E("!get_database_name");
-    if (!(work.str.schema = get_namespace_name(work.oid.schema))) E("!get_namespace_name");
-    if (!(work.str.table = get_rel_name(work.oid.table))) E("!get_rel_name");
-    if (!(work.str.user = GetUserNameFromId(work.oid.user, true))) E("!GetUserNameFromId");
+    if (!(work->str.data = get_database_name(work->oid.data))) E("!get_database_name");
+    if (!(work->str.schema = get_namespace_name(work->oid.schema))) E("!get_namespace_name");
+    if (!(work->str.table = get_rel_name(work->oid.table))) E("!get_rel_name");
+    if (!(work->str.user = GetUserNameFromId(work->oid.user, true))) E("!GetUserNameFromId");
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
-    work.quote.data = (char *)quote_identifier(work.str.data);
-    work.quote.schema = (char *)quote_identifier(work.str.schema);
-    work.quote.table = (char *)quote_identifier(work.str.table);
-    work.quote.user = (char *)quote_identifier(work.str.user);
+    work->quote.data = (char *)quote_identifier(work->str.data);
+    work->quote.schema = (char *)quote_identifier(work->str.schema);
+    work->quote.table = (char *)quote_identifier(work->str.table);
+    work->quote.user = (char *)quote_identifier(work->str.user);
 #if PG_VERSION_NUM >= 110000
 #else
-    pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work.str.user) + 1 + strlen(work.str.data) + 1);
+    pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1);
 #endif
-    task.id = DatumGetInt64(MyBgworkerEntry->bgw_main_arg);
+    task->id = DatumGetInt64(MyBgworkerEntry->bgw_main_arg);
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-    if (!MyProcPort->user_name) MyProcPort->user_name = work.str.user;
-    if (!MyProcPort->database_name) MyProcPort->database_name = work.str.data;
+    if (!MyProcPort->user_name) MyProcPort->user_name = work->str.user;
+    if (!MyProcPort->database_name) MyProcPort->database_name = work->str.data;
 #if PG_VERSION_NUM >= 110000
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
 #else
-    set_config_option("application_name", MyBgworkerEntry->bgw_name + strlen(work.str.user) + 1 + strlen(work.str.data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("application_name", MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
 #endif
-    set_config_option("pg_task.data", work.str.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option("pg_task.group", task.group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option("pg_task.schema", work.str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option("pg_task.table", work.str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option("pg_task.user", work.str.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.data", work->str.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.group", task->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.schema", work->str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.table", work->str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.user", work->str.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
-    D1("user = %s, data = %s, schema = %s, table = %s, oid = %i, id = %li, hash = %i, group = %s, max = %i", work.str.user, work.str.data, work.str.schema, work.str.table, work.oid.table, task.id, task.hash, task.group, task.max);
+    D1("user = %s, data = %s, schema = %s, table = %s, oid = %i, id = %li, hash = %i, group = %s, max = %i", work->str.user, work->str.data, work->str.schema, work->str.table, work->oid.table, task->id, task->hash, task->group, task->max);
     initStringInfoMy(TopMemoryContext, &schema_table);
-    appendStringInfo(&schema_table, "%s.%s", work.quote.schema, work.quote.table);
-    work.schema_table = schema_table.data;
+    appendStringInfo(&schema_table, "%s.%s", work->quote.schema, work->quote.table);
+    work->schema_table = schema_table.data;
     initStringInfoMy(TopMemoryContext, &schema_type);
-    appendStringInfo(&schema_type, "%s.state", work.quote.schema);
-    work.schema_type = schema_type.data;
+    appendStringInfo(&schema_type, "%s.state", work->quote.schema);
+    work->schema_type = schema_type.data;
     initStringInfoMy(TopMemoryContext, &oid);
-    appendStringInfo(&oid, "%i", work.oid.table);
+    appendStringInfo(&oid, "%i", work->oid.table);
     set_config_option("pg_task.oid", oid.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(oid.data);
-    task.pid = MyProcPid;
-    task.start = GetCurrentTimestamp();
-    task.count = 0;
+    task->pid = MyProcPid;
+    task->start = GetCurrentTimestamp();
+    task->count = 0;
     set_ps_display_my("idle");
 }
 
@@ -309,37 +311,37 @@ static void task_latch(void) {
 }
 
 static bool task_timeout(void) {
-    if (task_work(&task)) return true;
-    D1("id = %li, timeout = %i, input = %s, count = %i", task.id, task.timeout, task.input, task.count);
+    if (task_work(task)) return true;
+    D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
     set_ps_display_my("timeout");
     PG_TRY();
-        if (!task.active) E("task %li not active", task.id);
+        if (!task->active) E("task %li not active", task->id);
         task_execute();
     PG_CATCH();
         task_catch();
     PG_END_TRY();
-//    pfree(task.input);
-//    task.input = NULL;
+//    pfree(task->input);
+//    task->input = NULL;
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
     set_ps_display_my("idle");
-    return task_done(&task) || !task.live || task_live(&task);
+    return task_done(task) || !task->live || task_live(task);
 }
 
 void task_free(Task *task) {
     if (task->error.data) { pfree(task->error.data); task->error.data = NULL; }
-    if (task->group) { pfree(task->group); task->group = NULL; }
+//    if (task->group) { pfree(task->group); task->group = NULL; }
     if (task->input) { pfree(task->input); task->input = NULL; }
     if (task->null) { pfree(task->null); task->null = NULL; }
     if (task->output.data) { pfree(task->output.data); task->output.data = NULL; }
     if (task->remote) { pfree(task->remote); task->remote = NULL; }
-    if (/*task->lock && */!init_table_id_unlock(work.oid.table, task->id)) W("!init_table_id_unlock(%i, %li)", work.oid.table, task->id);
+//    if (/*task->lock && */!init_table_id_unlock(work->oid.table, task->id)) W("!init_table_id_unlock(%i, %li)", work->oid.table, task->id);
 //    task->lock = false;
 }
 
 void task_main(Datum main_arg) {
     task_init();
-    if (!init_table_pid_hash_lock(work.oid.table, task.pid, task.hash)) { W("!init_table_pid_hash_lock(%i, %i, %i)", work.oid.table, task.pid, task.hash); return; }
+    if (!init_table_pid_hash_lock(work->oid.table, task->pid, task->hash)) { W("!init_table_pid_hash_lock(%i, %i, %i)", work->oid.table, task->pid, task->hash); return; }
     while (!ShutdownRequestPending) {
 #if PG_VERSION_NUM >= 100000
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
@@ -350,5 +352,5 @@ void task_main(Datum main_arg) {
         if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
     }
-    if (!init_table_pid_hash_unlock(work.oid.table, task.pid ? task.pid : MyProcPid, task.hash)) W("!init_table_pid_hash_unlock(%i, %i, %i)", work.oid.table, task.pid ? task.pid : MyProcPid, task.hash);
+    if (!init_table_pid_hash_unlock(work->oid.table, task->pid ? task->pid : MyProcPid, task->hash)) W("!init_table_pid_hash_unlock(%i, %i, %i)", work->oid.table, task->pid ? task->pid : MyProcPid, task->hash);
 }

@@ -93,34 +93,33 @@ static void conf_check(void) {
     if (!plan) plan = SPI_prepare_my(command, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
     for (uint64 row = 0; row < SPI_processed; row++) {
-        Work work = {
-            .count =  DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "count", false)),
-            .live =  DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "live", false)),
-            .str.data = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", false)),
-            .str.partman = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "partman", true)),
-            .str.schema = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schema", false)),
-            .str.table = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", false)),
-            .str.user = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", false)),
-            .timeout =  DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "timeout", false))
-        };
+        Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
         int32 pid = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "pid", false));
-        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, pid = %i, partman = %s", row, work.str.user, work.str.data, work.str.schema, work.str.table, work.timeout, work.count, work.live, pid, work.str.partman ? work.str.partman : default_null);
+        work->count =  DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "count", false));
+        work->live =  DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "live", false));
+        work->str.data = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", false));
+        work->str.partman = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "partman", true));
+        work->str.schema = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schema", false));
+        work->str.table = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", false));
+        work->str.user = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", false));
+        work->timeout =  DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "timeout", false));
+        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, pid = %i, partman = %s", row, work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout, work->count, work->live, pid, work->str.partman ? work->str.partman : default_null);
         set_ps_display_my("row");
         if (!pid) {
             BackgroundWorker worker = {0};
             size_t len = 0;
-            work.quote.data = (char *)quote_identifier(work.str.data);
-            if (work.str.partman) work.quote.partman = (char *)quote_identifier(work.str.partman);
-            work.quote.schema = (char *)quote_identifier(work.str.schema);
-            work.quote.table = (char *)quote_identifier(work.str.table);
-            work.quote.user = (char *)quote_identifier(work.str.user);
-            work.oid.user = conf_user(&work);
-            work.oid.data = conf_data(&work);
+            work->quote.data = (char *)quote_identifier(work->str.data);
+            if (work->str.partman) work->quote.partman = (char *)quote_identifier(work->str.partman);
+            work->quote.schema = (char *)quote_identifier(work->str.schema);
+            work->quote.table = (char *)quote_identifier(work->str.table);
+            work->quote.user = (char *)quote_identifier(work->str.user);
+            work->oid.user = conf_user(work);
+            work->oid.data = conf_data(work);
             if (strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
             if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
-            if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %i", work.str.user, work.str.data, work.str.schema, work.str.table, work.timeout) >= sizeof(worker.bgw_name) - 1) E("snprintf");
+            if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %i", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout) >= sizeof(worker.bgw_name) - 1) E("snprintf");
 #if PG_VERSION_NUM >= 110000
-            if (strlcpy(worker.bgw_type, worker.bgw_name + strlen(work.str.user) + 1 + strlen(work.str.data) + 1, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
+            if (strlcpy(worker.bgw_type, worker.bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
 #endif
 #define X(name, serialize, deserialize) serialize(name);
             WORK
@@ -131,17 +130,18 @@ static void conf_check(void) {
             worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
             if (init_check_ascii_all(&worker)) E("init_check_ascii_all");
             conf_work(&worker);
-            if (work.quote.data != work.str.data) pfree(work.quote.data);
-            if (work.str.partman && work.quote.partman != work.str.partman) pfree(work.quote.partman);
-            if (work.quote.schema != work.str.schema) pfree(work.quote.schema);
-            if (work.quote.table != work.str.table) pfree(work.quote.table);
-            if (work.quote.user != work.str.user) pfree(work.quote.user);
+            if (work->quote.data != work->str.data) pfree(work->quote.data);
+            if (work->str.partman && work->quote.partman != work->str.partman) pfree(work->quote.partman);
+            if (work->quote.schema != work->str.schema) pfree(work->quote.schema);
+            if (work->quote.table != work->str.table) pfree(work->quote.table);
+            if (work->quote.user != work->str.user) pfree(work->quote.user);
         }
-        pfree(work.str.data);
-        if (work.str.partman) pfree(work.str.partman);
-        pfree(work.str.schema);
-        pfree(work.str.table);
-        pfree(work.str.user);
+        pfree(work->str.data);
+        if (work->str.partman) pfree(work->str.partman);
+        pfree(work->str.schema);
+        pfree(work->str.table);
+        pfree(work->str.user);
+        pfree(work);
     }
     SPI_finish_my();
     set_ps_display_my("idle");

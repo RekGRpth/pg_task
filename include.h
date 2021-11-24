@@ -114,13 +114,13 @@ extern PGDLLIMPORT TimestampTz MyStartTimestamp;
 #endif
 
 #define TASK \
-    X(task.group, serialize_char, deserialize_char) \
-    X(task.hash, serialize_int, deserialize_int) \
-    X(task.max, serialize_int, deserialize_int) \
-    X(work.oid.data, serialize_int, deserialize_int) \
-    X(work.oid.schema, serialize_int, deserialize_int) \
-    X(work.oid.table, serialize_int, deserialize_int) \
-    X(work.oid.user, serialize_int, deserialize_int)
+    X(task->group, serialize_char, deserialize_char) \
+    X(task->hash, serialize_int, deserialize_int) \
+    X(task->max, serialize_int, deserialize_int) \
+    X(work->oid.data, serialize_int, deserialize_int) \
+    X(work->oid.schema, serialize_int, deserialize_int) \
+    X(work->oid.table, serialize_int, deserialize_int) \
+    X(work->oid.user, serialize_int, deserialize_int)
 
 typedef struct Task {
     bool active;
@@ -153,14 +153,14 @@ typedef struct Task {
 } Task;
 
 #define WORK \
-    X(work.count,  serialize_int, deserialize_int) \
-    X(work.live, serialize_int, deserialize_int) \
-    X(work.oid.data, serialize_int, deserialize_int) \
-    X(work.oid.user, serialize_int, deserialize_int) \
-    X(work.str.partman, serialize_char_null, deserialize_char_null) \
-    X(work.str.schema, serialize_char, deserialize_char) \
-    X(work.str.table, serialize_char, deserialize_char) \
-    X(work.timeout,  serialize_int, deserialize_int)
+    X(work->count,  serialize_int, deserialize_int) \
+    X(work->live, serialize_int, deserialize_int) \
+    X(work->oid.data, serialize_int, deserialize_int) \
+    X(work->oid.user, serialize_int, deserialize_int) \
+    X(work->str.partman, serialize_char_null, deserialize_char_null) \
+    X(work->str.schema, serialize_char, deserialize_char) \
+    X(work->str.table, serialize_char, deserialize_char) \
+    X(work->timeout,  serialize_int, deserialize_int)
 
 typedef struct Work {
     char *schema_table;

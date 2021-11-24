@@ -2,7 +2,7 @@
 
 extern char *default_null;
 static void work_query(Task *task);
-Work work = {0};
+Work *work;
 
 static bool work_is_log_level_output(int elevel, int log_min_level) {
     if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
@@ -71,7 +71,7 @@ static void work_event(WaitEventSet *set) {
     dlist_mutable_iter iter;
     AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
     AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
-    dlist_foreach_modify(iter, &work.head) {
+    dlist_foreach_modify(iter, &work->head) {
         Task *task = dlist_container(Task, node, iter.cur);
         AddWaitEventToSet(set, task->event, PQsocket(task->conn), NULL, task);
     }
@@ -105,14 +105,16 @@ static void work_fatal(Task *task, PGresult *result) {
 
 static void work_free(Task *task) {
     task_free(task);
+//    if (/*task->lock && */!init_table_id_unlock(work->oid.table, task->id)) W("!init_table_id_unlock(%i, %li)", work->oid.table, task->id);
     pfree(task);
 }
 
 static void work_finish(Task *task) {
     dlist_delete(&task->node);
     PQfinish(task->conn);
-    if (!init_table_pid_hash_unlock(work.oid.table, task->pid, task->hash)) W("!init_table_pid_hash_unlock(%i, %i, %i)", work.oid.table, task->pid, task->hash);
+    if (!init_table_pid_hash_unlock(work->oid.table, task->pid, task->hash)) W("!init_table_pid_hash_unlock(%i, %i, %i)", work->oid.table, task->pid, task->hash);
     work_free(task);
+//    if (/*task->lock && */!init_table_id_unlock(work->oid.table, task->id)) W("!init_table_id_unlock(%i, %li)", work->oid.table, task->id);
 }
 
 static void work_error(Task *task, const char *msg, const char *err, bool finish) {
@@ -129,7 +131,7 @@ static void work_error(Task *task, const char *msg, const char *err, bool finish
 static int work_nevents(void) {
     dlist_mutable_iter iter;
     int nevents = 0;
-    dlist_foreach_modify(iter, &work.head) {
+    dlist_foreach_modify(iter, &work->head) {
         Task *task = dlist_container(Task, node, iter.cur);
         if (PQstatus(task->conn) == CONNECTION_BAD) { work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessageMy(task->conn), true); continue; }
         if (PQsocket(task->conn) == PGINVALID_SOCKET) { work_error(task, "PQsocket == PGINVALID_SOCKET", PQerrorMessageMy(task->conn), true); continue; }
@@ -141,15 +143,15 @@ static int work_nevents(void) {
 static void work_fini(void) {
     dlist_mutable_iter iter;
     StringInfoData error;
-    D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li", work.str.user, work.str.data, work.str.schema, work.str.table, work.timeout, work.count, work.live);
+    D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout, work->count, work->live);
     set_ps_display_my("fini");
     initStringInfoMy(TopMemoryContext, &error);
 #if PG_VERSION_NUM >= 110000
     appendStringInfo(&error, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
 #else
-    appendStringInfo(&error, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_name + strlen(work.str.user) + 1 + strlen(work.str.data) + 1);
+    appendStringInfo(&error, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1);
 #endif
-    dlist_foreach_modify(iter, &work.head) {
+    dlist_foreach_modify(iter, &work->head) {
         Task *task = dlist_container(Task, node, iter.cur);
         if (!PQrequestCancel(task->conn)) work_error(task, error.data, PQerrorMessageMy(task->conn), true); else {
             ErrorData edata = {0};
@@ -182,7 +184,7 @@ static void work_index(int count, const char *const *indexes) {
     StringInfoData src, name, idx;
     set_ps_display_my("index");
     initStringInfoMy(TopMemoryContext, &name);
-    appendStringInfoString(&name, work.str.table);
+    appendStringInfoString(&name, work->str.table);
     for (int i = 0; i < count; i++) {
         const char *index = indexes[i];
         appendStringInfoString(&name, "_");
@@ -191,7 +193,7 @@ static void work_index(int count, const char *const *indexes) {
     appendStringInfoString(&name, "_idx");
     name_quote = quote_identifier(name.data);
     initStringInfoMy(TopMemoryContext, &src);
-    appendStringInfo(&src, SQL(CREATE INDEX %s ON %s USING btree ), name_quote, work.schema_table);
+    appendStringInfo(&src, SQL(CREATE INDEX %s ON %s USING btree ), name_quote, work->schema_table);
     appendStringInfoString(&src, "(");
     for (int i = 0; i < count; i++) {
         const char *index = indexes[i];
@@ -202,15 +204,15 @@ static void work_index(int count, const char *const *indexes) {
     }
     appendStringInfoString(&src, ")");
     initStringInfoMy(TopMemoryContext, &idx);
-    appendStringInfo(&idx, "%s.%s", work.quote.schema, name_quote);
+    appendStringInfo(&idx, "%s.%s", work->quote.schema, name_quote);
     names = stringToQualifiedNameList(idx.data);
     rangevar = makeRangeVarFromNameList(names);
-    D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work.str.user, work.str.data, work.str.schema, work.str.table, idx.data, work.schema_table);
+    D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work->str.user, work->str.data, work->str.schema, work->str.table, idx.data, work->schema_table);
     SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     } else if ((relation = relation_openrv_extended(rangevar, AccessShareLock, true))) {
-        if (relation->rd_index && relation->rd_index->indrelid != work.oid.table) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+        if (relation->rd_index && relation->rd_index->indrelid != work->oid.table) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
         relation_close(relation, AccessShareLock);
     }
     SPI_commit_my();
@@ -284,7 +286,7 @@ static Oid work_schema(const char *schema_quote) {
     List *names;
     Oid oid;
     StringInfoData src;
-    D1("user = %s, data = %s, schema = %s", work.str.user, work.str.data, schema_quote);
+    D1("user = %s, data = %s, schema = %s", work->str.user, work->str.data, schema_quote);
     set_ps_display_my("schema");
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE SCHEMA %s), schema_quote);
@@ -415,7 +417,7 @@ static void work_connect(Task *task) {
     }
     if (connected) {
         if(!(task->pid = PQbackendPID(task->conn))) { work_error(task, "!PQbackendPID", PQerrorMessageMy(task->conn), true); return; }
-        if (!init_table_pid_hash_lock(work.oid.table, task->pid, task->hash)) { W("!init_table_pid_hash_lock(%i, %i, %i)", work.oid.table, task->pid, task->hash); work_error(task, "!init_table_pid_hash_lock", NULL, true); return; }
+        if (!init_table_pid_hash_lock(work->oid.table, task->pid, task->hash)) { W("!init_table_pid_hash_lock(%i, %i, %i)", work->oid.table, task->pid, task->hash); work_error(task, "!init_table_pid_hash_lock", NULL, true); return; }
         work_query(task);
     }
 }
@@ -424,7 +426,7 @@ static void work_extension(const char *schema_quote, const char *extension) {
     const char *extension_quote = quote_identifier(extension);
     List *names;
     StringInfoData src;
-    D1("user = %s, data = %s, schema = %s, extension = %s", work.str.user, work.str.data, schema_quote, extension);
+    D1("user = %s, data = %s, schema = %s, extension = %s", work->str.user, work->str.data, schema_quote, extension);
     set_ps_display_my("extension");
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, schema_quote);
@@ -445,29 +447,29 @@ static void work_partman(void) {
     const RangeVar *rangevar;
     List *names;
     StringInfoData create_template, pkey, template, template_table;
-    D1("user = %s, data = %s", work.str.user, work.str.data);
+    D1("user = %s, data = %s", work->str.user, work->str.data);
     set_ps_display_my("partman");
-    work.oid.partman = work_schema(work.quote.partman);
-    work_extension(work.quote.partman, "pg_partman");
+    work->oid.partman = work_schema(work->quote.partman);
+    work_extension(work->quote.partman, "pg_partman");
     initStringInfoMy(TopMemoryContext, &pkey);
-    appendStringInfo(&pkey, "%s_pkey", work.str.table);
+    appendStringInfo(&pkey, "%s_pkey", work->str.table);
     initStringInfoMy(TopMemoryContext, &template);
-    appendStringInfo(&template, "template_%s_%s", work.str.schema, work.str.table);
+    appendStringInfo(&template, "template_%s_%s", work->str.schema, work->str.table);
     pkey_quote = quote_identifier(pkey.data);
     template_quote = quote_identifier(template.data);
     initStringInfoMy(TopMemoryContext, &template_table);
-    appendStringInfo(&template_table, "%s.%s", work.quote.partman, template_quote);
+    appendStringInfo(&template_table, "%s.%s", work->quote.partman, template_quote);
     initStringInfoMy(TopMemoryContext, &create_template);
-    appendStringInfo(&create_template, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))), template_table.data, work.schema_table, pkey_quote);
+    appendStringInfo(&create_template, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))), template_table.data, work->schema_table, pkey_quote);
     names = stringToQualifiedNameList(template_table.data);
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(create_template.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
-        Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, work.schema_table), CStringGetTextDatumMy(TopMemoryContext, template_table.data)};
+        Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, work->schema_table), CStringGetTextDatumMy(TopMemoryContext, template_table.data)};
         static Oid argtypes[] = {TEXTOID, TEXTOID};
         StringInfoData create_parent;
         initStringInfoMy(TopMemoryContext, &create_parent);
-        appendStringInfo(&create_parent, SQL(SELECT %1$s.create_parent(p_parent_table := $1, p_control := 'plan', p_type := 'native', p_interval := 'monthly', p_template_table := $2)), work.quote.partman);
+        appendStringInfo(&create_parent, SQL(SELECT %1$s.create_parent(p_parent_table := $1, p_control := 'plan', p_type := 'native', p_interval := 'monthly', p_template_table := $2)), work->quote.partman);
         SPI_execute_with_args_my(create_template.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
         SPI_commit_my();
         SPI_start_transaction_my(create_parent.data);
@@ -490,18 +492,18 @@ static void work_partman(void) {
     set_ps_display_my("idle");
 }
 
-static void work_remote(Task task_) {
+static void work_remote(Task *task) {
     bool password = false;
     char *err;
     char *options = NULL;
     const char **keywords;
     const char **values;
     int arg = 3;
-    PQconninfoOption *opts = PQconninfoParse(task_.remote, &err);
+    PQconninfoOption *opts = PQconninfoParse(task->remote, &err);
     StringInfoData name, value;
-    Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
-    *task = task_;
-    D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work.oid.table);
+//    Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
+//    *task = *task_;
+    D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->oid.table);
     if (!opts) { work_error(task, "!PQconninfoParse", err, false); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
@@ -516,17 +518,17 @@ static void work_remote(Task task_) {
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
     initStringInfoMy(TopMemoryContext, &name);
-    appendStringInfo(&name, "pg_task %s %s %s", work.str.schema, work.str.table, task->group);
+    appendStringInfo(&name, "pg_task %s %s %s", work->str.schema, work->str.table, task->group);
     arg = 0;
     keywords[arg] = "application_name";
     values[arg] = name.data;
     initStringInfoMy(TopMemoryContext, &value);
     if (options) appendStringInfoString(&value, options);
-    appendStringInfo(&value, "%s-c pg_task.data=%s", value.len ? " " : "", work.str.data);
-    appendStringInfo(&value, " -c pg_task.user=%s", work.str.user);
-    appendStringInfo(&value, " -c pg_task.schema=%s", work.str.schema);
-    appendStringInfo(&value, " -c pg_task.table=%s", work.str.table);
-    appendStringInfo(&value, " -c pg_task.oid=%i", work.oid.table);
+    appendStringInfo(&value, "%s-c pg_task.data=%s", value.len ? " " : "", work->str.data);
+    appendStringInfo(&value, " -c pg_task.user=%s", work->str.user);
+    appendStringInfo(&value, " -c pg_task.schema=%s", work->str.schema);
+    appendStringInfo(&value, " -c pg_task.table=%s", work->str.table);
+    appendStringInfo(&value, " -c pg_task.oid=%i", work->oid.table);
     appendStringInfo(&value, " -c pg_task.group=%s", task->group);
     arg++;
     keywords[arg] = "options";
@@ -546,7 +548,7 @@ static void work_remote(Task task_) {
     task->event = WL_SOCKET_MASK;
     task->socket = work_connect;
     task->start = GetCurrentTimestamp();
-    dlist_push_head(&work.head, &task->node);
+    dlist_push_head(&work->head, &task->node);
     if (!(task->conn = PQconnectStartParams(keywords, values, false))) work_error(task, "!PQconnectStartParams", PQerrorMessageMy(task->conn), true);
     else if (PQstatus(task->conn) == CONNECTION_BAD) work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessageMy(task->conn), true);
     else if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) work_error(task, "PQsetnonblocking == -1", PQerrorMessageMy(task->conn), true);
@@ -563,9 +565,9 @@ static void work_table(void) {
     const RangeVar *rangevar;
     List *names;
     StringInfoData src, hash;
-    D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work.str.user, work.str.data, work.str.schema, work.str.table, work.schema_table, work.schema_type);
+    D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work->str.user, work->str.data, work->str.schema, work->str.table, work->schema_table, work->schema_type);
     set_ps_display_my("table");
-    set_config_option("pg_task.table", work.str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.table", work->str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &hash);
 #if PG_VERSION_NUM >= 120000
     appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (hashtext("group"||COALESCE(remote, '%1$s'))) STORED), "");
@@ -574,7 +576,7 @@ static void work_table(void) {
         const char *function_quote;
         StringInfoData function;
         initStringInfoMy(TopMemoryContext, &function);
-        appendStringInfo(&function, "%1$s_hash_generate", work.str.table);
+        appendStringInfo(&function, "%1$s_hash_generate", work->str.table);
         function_quote = quote_identifier(function.data);
         appendStringInfo(&hash, SQL(;CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
             IF tg_op = 'INSERT' OR (new.group, new.remote) IS DISTINCT FROM (old.group, old.remote) THEN
@@ -582,7 +584,7 @@ static void work_table(void) {
             END IF;
             return new;
         end;$$ LANGUAGE plpgsql;
-        CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s()), work.quote.schema, function_quote, "", work.schema_table);
+        CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s()), work->quote.schema, function_quote, "", work->schema_table);
         if (function_quote != function.data) pfree((void *)function_quote);
         pfree(function.data);
     }
@@ -618,78 +620,79 @@ static void work_table(void) {
             output text,
             remote text
         )
-    ), work.schema_table, work.schema_type,
+    ), work->schema_table, work->schema_type,
 #if PG_VERSION_NUM >= 120000
         hash.data,
 #else
         "",
 #endif
-        work.str.partman ? "" : " PRIMARY KEY");
-    if (work.str.partman) appendStringInfoString(&src, " PARTITION BY RANGE (plan)");
+        work->str.partman ? "" : " PRIMARY KEY");
+    if (work->str.partman) appendStringInfoString(&src, " PARTITION BY RANGE (plan)");
 #if PG_VERSION_NUM >= 120000
 #else
     appendStringInfoString(&src, hash.data);
 #endif
-    names = stringToQualifiedNameList(work.schema_table);
+    names = stringToQualifiedNameList(work->schema_table);
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
-    work.oid.table = RangeVarGetRelid(rangevar, NoLock, false);
+    work->oid.table = RangeVarGetRelid(rangevar, NoLock, false);
     SPI_commit_my();
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
-    set_config_option("pg_task.table", work.str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.table", work->str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     resetStringInfo(&src);
-    appendStringInfo(&src, "%i", work.oid.table);
+    appendStringInfo(&src, "%i", work->oid.table);
     set_config_option("pg_task.oid", src.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(hash.data);
     pfree(src.data);
     set_ps_display_my("idle");
 }
 
-static void work_task(Task task) {
+static void work_task(Task *task) {
     BackgroundWorkerHandle *handle = NULL;
     BackgroundWorker worker = {0};
     pid_t pid;
     size_t len = 0;
-    D1("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work.str.user, work.str.data, work.str.schema, work.str.table, task.id, task.group, task.max, work.oid.table);
-    if (strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) { work_error(&task, "strlcpy", NULL, false); return; }
-    if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) { work_error(&task, "strlcpy", NULL, false); return; }
-    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work.str.user, work.str.data, work.str.schema, work.str.table, task.group) >= sizeof(worker.bgw_name) - 1) { work_error(&task, "snprintf", NULL, false); return; }
+    D1("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->str.user, work->str.data, work->str.schema, work->str.table, task->id, task->group, task->max, work->oid.table);
+    if (strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) { work_error(task, "strlcpy", NULL, false); return; }
+    if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) { work_error(task, "strlcpy", NULL, false); return; }
+    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work->str.user, work->str.data, work->str.schema, work->str.table, task->group) >= sizeof(worker.bgw_name) - 1) { work_error(task, "snprintf", NULL, false); return; }
 #if PG_VERSION_NUM >= 110000
-    if (strlcpy(worker.bgw_type, worker.bgw_name + strlen(work.str.user) + 1 + strlen(work.str.data) + 1, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
+    if (strlcpy(worker.bgw_type, worker.bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
 #endif
 #define X(name, serialize, deserialize) serialize(name);
     TASK
 #undef X
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    worker.bgw_main_arg = Int64GetDatum(task.id);
+    worker.bgw_main_arg = Int64GetDatum(task->id);
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    if (init_check_ascii_all(&worker)) { work_error(&task, "init_check_ascii_all", NULL, false); return; }
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) { work_error(&task, "RegisterDynamicBackgroundWorker", NULL, false); if (handle) pfree(handle); return; }
+    if (init_check_ascii_all(&worker)) { work_error(task, "init_check_ascii_all", NULL, false); return; }
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) { work_error(task, "RegisterDynamicBackgroundWorker", NULL, false); if (handle) pfree(handle); return; }
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
-        case BGWH_NOT_YET_STARTED: work_error(&task, "WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED", NULL, false); pfree(handle); return;
-        case BGWH_POSTMASTER_DIED: work_error(&task, "WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED", NULL, false); pfree(handle); return;
+        case BGWH_NOT_YET_STARTED: work_error(task, "WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED", NULL, false); pfree(handle); return;
+        case BGWH_POSTMASTER_DIED: work_error(task, "WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED", NULL, false); pfree(handle); return;
         case BGWH_STARTED: break;
-        case BGWH_STOPPED: work_error(&task, "WaitForBackgroundWorkerStartup == BGWH_STOPPED", NULL, false); pfree(handle); return;
+        case BGWH_STOPPED: work_error(task, "WaitForBackgroundWorkerStartup == BGWH_STOPPED", NULL, false); pfree(handle); return;
     }
     pfree(handle);
-    pfree(task.group);
+    work_free(task);
+//    pfree(task->group);
 }
 
 static void work_type(void) {
     int32 typmod;
     Oid type = InvalidOid;
     StringInfoData src;
-    D1("user = %s, data = %s, schema = %s, table = %s", work.str.user, work.str.data, work.str.schema, work.str.table);
+    D1("user = %s, data = %s, schema = %s, table = %s", work->str.user, work->str.data, work->str.schema, work->str.table);
     set_ps_display_my("type");
     initStringInfoMy(TopMemoryContext, &src);
-    appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'STOP')), work.schema_type);
+    appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'STOP')), work->schema_type);
     SPI_connect_my(src.data);
-    parseTypeString(work.schema_type, &type, &typmod, true);
+    parseTypeString(work->schema_type, &type, &typmod, true);
     if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
     SPI_finish_my();
@@ -704,34 +707,34 @@ static void work_conf(void) {
     const char *index_state[] = {"state"};
     StringInfoData schema_table, schema_type, timeout;
     initStringInfoMy(TopMemoryContext, &schema_table);
-    appendStringInfo(&schema_table, "%s.%s", work.quote.schema, work.quote.table);
-    work.schema_table = schema_table.data;
+    appendStringInfo(&schema_table, "%s.%s", work->quote.schema, work->quote.table);
+    work->schema_table = schema_table.data;
     initStringInfoMy(TopMemoryContext, &schema_type);
-    appendStringInfo(&schema_type, "%s.state", work.quote.schema);
-    work.schema_type = schema_type.data;
-    D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work.str.user, work.str.data, work.str.schema, work.str.table, work.timeout, work.count, work.live, work.schema_table, work.schema_type, work.str.partman ? work.str.partman : default_null);
+    appendStringInfo(&schema_type, "%s.state", work->quote.schema);
+    work->schema_type = schema_type.data;
+    D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout, work->count, work->live, work->schema_table, work->schema_type, work->str.partman ? work->str.partman : default_null);
     set_ps_display_my("conf");
-    work.oid.schema = work_schema(work.quote.schema);
-    set_config_option("pg_task.schema", work.str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    work->oid.schema = work_schema(work->quote.schema);
+    set_config_option("pg_task.schema", work->str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
     work_table();
     work_index(countof(index_input), index_input);
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);
     work_index(countof(index_state), index_state);
-    if (work.str.partman) work_partman();
-    set_config_option("pg_task.data", work.str.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option("pg_task.user", work.str.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    if (work->str.partman) work_partman();
+    set_config_option("pg_task.data", work->str.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("pg_task.user", work->str.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &timeout);
-    appendStringInfo(&timeout, "%i", work.timeout);
+    appendStringInfo(&timeout, "%i", work->timeout);
     set_config_option("pg_task.timeout", timeout.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(timeout.data);
-    dlist_init(&work.head);
+    dlist_init(&work->head);
     set_ps_display_my("idle");
 }
 
 static void work_reset(void) {
-    Datum values[] = {ObjectIdGetDatum(work.oid.table)};
+    Datum values[] = {ObjectIdGetDatum(work->oid.table)};
     static Oid argtypes[] = {OIDOID};
     StringInfoData src;
     set_ps_display_my("reset");
@@ -743,7 +746,7 @@ static void work_reset(void) {
             WHERE plan < CURRENT_TIMESTAMP AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
             FOR UPDATE OF t SKIP LOCKED
         ) UPDATE %1$s AS u SET state = 'PLAN'::%2$s, start = NULL, stop = NULL, pid = NULL FROM s WHERE u.id = s.id RETURNING u.id
-    ), work.schema_table, work.schema_type);
+    ), work->schema_table, work->schema_type);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_processed; row++) W("row = %lu, id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
@@ -755,6 +758,7 @@ static void work_reset(void) {
 static void work_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
+    work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
 #define X(name, serialize, deserialize) deserialize(name);
     WORK
 #undef X
@@ -762,44 +766,44 @@ static void work_init(void) {
     pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM >= 110000
-    BackgroundWorkerInitializeConnectionByOid(work.oid.data, work.oid.user, 0);
+    BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user, 0);
     pgstat_report_appname(MyBgworkerEntry->bgw_type);
 #else
-    BackgroundWorkerInitializeConnectionByOid(work.oid.data, work.oid.user);
+    BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user);
 #endif
     set_ps_display_my("init");
     process_session_preload_libraries();
     StartTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
-    if (!(work.str.data = get_database_name(work.oid.data))) E("!get_database_name");
-    if (!(work.str.user = GetUserNameFromId(work.oid.user, true))) E("!GetUserNameFromId");
+    if (!(work->str.data = get_database_name(work->oid.data))) E("!get_database_name");
+    if (!(work->str.user = GetUserNameFromId(work->oid.user, true))) E("!GetUserNameFromId");
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
-    work.quote.data = (char *)quote_identifier(work.str.data);
-    if (work.str.partman) work.quote.partman = (char *)quote_identifier(work.str.partman);
-    work.quote.schema = (char *)quote_identifier(work.str.schema);
-    work.quote.table = (char *)quote_identifier(work.str.table);
-    work.quote.user = (char *)quote_identifier(work.str.user);
+    work->quote.data = (char *)quote_identifier(work->str.data);
+    if (work->str.partman) work->quote.partman = (char *)quote_identifier(work->str.partman);
+    work->quote.schema = (char *)quote_identifier(work->str.schema);
+    work->quote.table = (char *)quote_identifier(work->str.table);
+    work->quote.user = (char *)quote_identifier(work->str.user);
 #if PG_VERSION_NUM >= 110000
 #else
-    pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work.str.user) + 1 + strlen(work.str.data) + 1);
+    pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1);
 #endif
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
-    if (!MyProcPort->user_name) MyProcPort->user_name = work.str.user;
-    if (!MyProcPort->database_name) MyProcPort->database_name = work.str.data;
+    if (!MyProcPort->user_name) MyProcPort->user_name = work->str.user;
+    if (!MyProcPort->database_name) MyProcPort->database_name = work->str.data;
 #if PG_VERSION_NUM >= 110000
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
 #else
-    set_config_option("application_name", MyBgworkerEntry->bgw_name + strlen(work.str.user) + 1 + strlen(work.str.data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option("application_name", MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
 #endif
-    D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, partman = %s", work.str.user, work.str.data, work.str.schema, work.str.table, work.timeout, work.count, work.live, work.str.partman ? work.str.partman : default_null);
+    D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, partman = %s", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout, work->count, work->live, work->str.partman ? work->str.partman : default_null);
     work_conf();
     work_reset();
 }
 
 static void work_timeout(void) {
-    Datum values[] = {ObjectIdGetDatum(work.oid.table)};
+    Datum values[] = {ObjectIdGetDatum(work->oid.table)};
     static Oid argtypes[] = {OIDOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
@@ -815,22 +819,22 @@ static void work_timeout(void) {
                 AND CASE WHEN t.max > 0 THEN t.max ELSE 1 END > COALESCE(classid, 0) FOR UPDATE OF t SKIP LOCKED
             ) SELECT id, hash, count - row_number() OVER (PARTITION BY hash ORDER BY count DESC, id) + 1 AS count FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id AND s.count > 0 RETURNING u.id, u.hash, u.group, u.remote, u.max
-        ), work.schema_table, work.schema_type);
+        ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_processed; row++) {
-        Task task = {0};
-        task.group = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
-        task.hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "hash", false));
-        task.id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
-        task.max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "max", false));
-        task.remote = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
-        D1("row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task.id, task.hash, task.group, task.remote ? task.remote : default_null, task.max);
-        task.remote ? work_remote(task) : work_task(task);
+        Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
+        task->group = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
+        task->hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "hash", false));
+        task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
+        task->max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "max", false));
+        task->remote = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
+        D1("row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task->id, task->hash, task->group, task->remote ? task->remote : default_null, task->max);
+        task->remote ? work_remote(task) : work_task(task);
     }
-    if (work.count) work.processed += SPI_processed;
+    if (work->count) work->processed += SPI_processed;
     SPI_finish_my();
     set_ps_display_my("idle");
 }
@@ -849,7 +853,7 @@ void work_main(Datum main_arg) {
 #else
     MyStartTimestamp = GetCurrentTimestamp();
 #endif
-    if (!init_data_user_table_lock(MyDatabaseId, GetUserId(), work.oid.table)) { W("!init_data_user_table_lock(%i, %i, %i)", MyDatabaseId, GetUserId(), work.oid.table); return; }
+    if (!init_data_user_table_lock(MyDatabaseId, GetUserId(), work->oid.table)) { W("!init_data_user_table_lock(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid.table); return; }
     while (!ShutdownRequestPending) {
         int nevents = 2 + work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
@@ -857,7 +861,7 @@ void work_main(Datum main_arg) {
         work_event(set);
         if (cur_timeout <= 0) {
             INSTR_TIME_SET_CURRENT(start_time);
-            cur_timeout = work.timeout;
+            cur_timeout = work->timeout;
         }
 #if PG_VERSION_NUM >= 100000
         nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
@@ -871,17 +875,17 @@ void work_main(Datum main_arg) {
             if (event->events & WL_SOCKET_READABLE) work_readable(event->user_data);
             if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
-        if (work.timeout >= 0) {
+        if (work->timeout >= 0) {
             INSTR_TIME_SET_CURRENT(cur_time);
             INSTR_TIME_SUBTRACT(cur_time, start_time);
-            cur_timeout = work.timeout - (long)INSTR_TIME_GET_MILLISEC(cur_time);
+            cur_timeout = work->timeout - (long)INSTR_TIME_GET_MILLISEC(cur_time);
             if (cur_timeout <= 0) work_timeout();
         }
         FreeWaitEventSet(set);
         pfree(events);
-        if (work.count && work.processed >= work.count) break;
-        if (work.live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), work.live * 1000)) break;
+        if (work->count && work->processed >= work->count) break;
+        if (work->live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), work->live * 1000)) break;
     }
-    if (!init_data_user_table_unlock(MyDatabaseId, GetUserId(), work.oid.table)) W("!init_data_user_table_unlock(%i, %i, %i)", MyDatabaseId, GetUserId(), work.oid.table);
+    if (!init_data_user_table_unlock(MyDatabaseId, GetUserId(), work->oid.table)) W("!init_data_user_table_unlock(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid.table);
     work_fini();
 }
