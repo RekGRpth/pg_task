@@ -130,7 +130,7 @@ static void work_error(Task *task, const char *msg, const char *err, bool finish
     appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
     task->fail = true;
     task->skip++;
-    task_done(task);
+    if (!task_done(task) && task->repeat) task_repeat(task);
     finish ? work_finish(task) : work_free(task);
 }
 
@@ -172,7 +172,7 @@ static void work_fini(void) {
             edata.message = (char *)error.data;
             edata.message_id = edata.message;
             task_error(task, &edata);
-            task_done(task);
+            if (!task_done(task) && task->repeat) task_repeat(task);
             work_finish(task);
         }
     }
