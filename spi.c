@@ -33,6 +33,11 @@ void SPI_connect_my(const char *src) {
 #else
     if (!TopTransactionContext) TopTransactionContext = AllocSetContextCreate(TopMemoryContext, "TopTransactionContext", ALLOCSET_DEFAULT_SIZES);
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) E("SPI_connect = %s", SPI_result_code_string(rc));
+    if (true) {
+        MemoryContext oldcontext = CurrentMemoryContext;
+        StartTransactionCommand();
+        MemoryContextSwitchTo(oldcontext);
+    }
 #endif
     SPI_start_transaction_my(src);
 }
@@ -53,9 +58,15 @@ void SPI_finish_my(void) {
     int rc;
     if ((rc = SPI_finish()) != SPI_OK_FINISH) E("SPI_finish = %s", SPI_result_code_string(rc));
 #if PG_VERSION_NUM >= 110000
-    if (!SPI_inside_nonatomic_context())
+    if (!SPI_inside_nonatomic_context()) ProcessCompletedNotifies();
+#else
+    ProcessCompletedNotifies();
+    if (true) {
+        MemoryContext oldcontext = CurrentMemoryContext;
+        CommitTransactionCommand();
+        MemoryContextSwitchTo(oldcontext);
+    }
 #endif
-        ProcessCompletedNotifies();
 }
 
 void SPI_start_transaction_my(const char *src) {
