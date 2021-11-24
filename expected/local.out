@@ -1,6 +1,6 @@
 \unset ECHO
-1|SELECT 1/0 AS a|ROLLBACK|FAIL
-2|SELECT pg_sleep(2) AS a|ROLLBACK|FAIL
+1|SELECT 1/0 AS a|ROLLBACK|DONE
+2|SELECT pg_sleep(2) AS a|ROLLBACK|DONE
 3|SELECT 1 AS a|1|DONE
 4|SELECT 1 AS a, 2 AS b|a	b
 1	2|DONE
@@ -24,5 +24,5 @@ c	d
 10|SELECT pg_sleep(1) AS a|DONE|5
 11|SELECT pg_sleep(10) AS a|DONE|1
 11|SELECT pg_sleep(10) AS a|DONE|1
-11|SELECT pg_sleep(10) AS a|FAIL|4
-11|SELECT pg_sleep(10) AS a|FAIL|4
+11|SELECT pg_sleep(10) AS a|DONE|4
+11|SELECT pg_sleep(10) AS a|DONE|4
