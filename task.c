@@ -5,47 +5,23 @@ extern char *default_null;
 extern Work work;
 Task task = {0};
 
-static void task_update(Task *task) {
-    Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, task->group)};
-    static Oid argtypes[] = {TEXTOID};
-    static SPIPlanPtr plan = NULL;
-    static StringInfoData src = {0};
-    D1("id = %li", task->id);
-    set_ps_display_my("update");
-    if (!src.data) {
-        initStringInfoMy(TopMemoryContext, &src);
-        appendStringInfo(&src, SQL(
-            WITH s AS (
-                SELECT id FROM %1$s AS t WHERE max < 0 AND plan < CURRENT_TIMESTAMP AND t.group = $1 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
-            ) UPDATE %1$s AS u SET plan = CURRENT_TIMESTAMP FROM s WHERE u.id = s.id RETURNING u.id
-        ), work.schema_table, work.schema_type);
-    }
-    SPI_connect_my(src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
-    for (uint64 row = 0; row < SPI_processed; row++) {
-        int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
-        W("row = %lu, id = %li", row, id);
-    }
-    SPI_finish_my();
-    if (values[0]) pfree((void *)values[0]);
-    set_ps_display_my("idle");
-}
-
 bool task_done(Task *task) {
     bool exit = false;
-    char nulls[] = {' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n'};
-    Datum values[] = {Int64GetDatum(task->id), CStringGetTextDatumMy(TopMemoryContext, task->output.data), CStringGetTextDatumMy(TopMemoryContext, task->error.data)};
-    static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
+    char nulls[] = {' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n', ' '};
+    Datum values[] = {Int64GetDatum(task->id), CStringGetTextDatumMy(TopMemoryContext, task->output.data), CStringGetTextDatumMy(TopMemoryContext, task->error.data), CStringGetTextDatumMy(TopMemoryContext, task->group)};
+    static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID, TEXTOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     D1("id = %li, output = %s, error = %s", task->id, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null);
-    task_update(task);
     set_ps_display_my("done");
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, SQL(
-            WITH s AS (
+            WITH ss AS (
+                SELECT id FROM %1$s AS t WHERE max < 0 AND plan < CURRENT_TIMESTAMP AND t.group = $4 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
+            ), uu AS (
+                UPDATE %1$s AS u SET plan = CURRENT_TIMESTAMP FROM ss WHERE u.id = ss.id RETURNING u.*
+            ), s AS (
                 SELECT * FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
             ), i AS (
                 INSERT INTO %1$s AS i (parent, plan, "group", max, input, timeout, delete, repeat, drift, count, live) SELECT id, CASE
@@ -75,6 +51,7 @@ bool task_done(Task *task) {
     SPI_finish_my();
     if (values[1]) pfree((void *)values[1]);
     if (values[2]) pfree((void *)values[2]);
+    if (values[3]) pfree((void *)values[3]);
     if (task->null) pfree(task->null);
     task->null = NULL;
     if (task->lock && !init_table_id_unlock(work.oid.table, task->id)) { W("!init_table_id_unlock(%i, %li)", work.oid.table, task->id); exit = true; }
