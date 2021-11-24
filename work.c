@@ -130,8 +130,7 @@ static void work_error(Task *task, const char *msg, const char *err, bool finish
     appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
     task->fail = true;
     task->skip++;
-    if (!task_done(task) && task->repeat) task_repeat(task);
-    finish ? work_finish(task) : work_free(task);
+    task_done(task) || finish ? work_finish(task) : work_free(task);
 }
 
 static int work_nevents(void) {
@@ -172,7 +171,7 @@ static void work_fini(void) {
             edata.message = (char *)error.data;
             edata.message_id = edata.message;
             task_error(task, &edata);
-            if (!task_done(task) && task->repeat) task_repeat(task);
+            task_done(task);
             work_finish(task);
         }
     }
@@ -285,14 +284,6 @@ static void work_done(Task *task) {
         return;
     }
     if (task_done(task)) { work_finish(task); return; }
-    D1("id = %li, repeat = %s, delete = %s, live = %s", task->id, task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
-    if (task->repeat) task_repeat(task);
-    if (task->delete && !task->output.data) task_delete(task);
-    if (task->output.data) pfree(task->output.data);
-    task->output.data = NULL;
-    if (task->error.data) pfree(task->error.data);
-    task->error.data = NULL;
-    if (ShutdownRequestPending) task->live = false;
     (PQstatus(task->conn) != CONNECTION_OK || !task->live || task_live(task)) ? work_finish(task) : work_query(task);
 }
 

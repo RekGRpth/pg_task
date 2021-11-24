@@ -70,6 +70,15 @@ bool task_done(Task *task) {
     task->lock = false;
     if (ShutdownRequestPending) exit = true;
     set_ps_display_my("idle");
+    if (exit) return exit;
+    D1("repeat = %s, delete = %s, live = %s", task->repeat ? "true" : "false", task->delete ? "true" : "false", task->live ? "true" : "false");
+    if (task->repeat) task_repeat(task);
+    if (task->delete && !task->output.data) task_delete(task);
+    if (task->output.data) pfree(task->output.data);
+    task->output.data = NULL;
+    if (task->error.data) pfree(task->error.data);
+    task->error.data = NULL;
+    if (ShutdownRequestPending) task->live = false;
     return exit;
 }
 
@@ -374,17 +383,8 @@ static bool task_timeout(void) {
     task.input = NULL;
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
-    if (task_done(&task)) return true;
-    D1("repeat = %s, delete = %s, live = %s", task.repeat ? "true" : "false", task.delete ? "true" : "false", task.live ? "true" : "false");
-    if (task.repeat) task_repeat(&task);
-    if (task.delete && !task.output.data) task_delete(&task);
-    if (task.output.data) pfree(task.output.data);
-    task.output.data = NULL;
-    if (task.error.data) pfree(task.error.data);
-    task.error.data = NULL;
-    if (ShutdownRequestPending) task.live = false;
     set_ps_display_my("idle");
-    return !task.live || task_live(&task);
+    return task_done(&task) || !task.live || task_live(&task);
 }
 
 void task_main(Datum main_arg) {
