@@ -315,8 +315,8 @@ static bool task_timeout(void) {
     PG_CATCH();
         task_fail();
     PG_END_TRY();
-    pfree(task.input);
-    task.input = NULL;
+//    pfree(task.input);
+//    task.input = NULL;
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
     set_ps_display_my("idle");
