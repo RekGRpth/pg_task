@@ -592,7 +592,7 @@ static void work_table(void) {
         initStringInfoMy(TopMemoryContext, &function);
         appendStringInfo(&function, "%1$s_hash_generate", work.str.table);
         function_quote = quote_identifier(function.data);
-        appendStringInfo(&hash, SQL(;CREATE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
+        appendStringInfo(&hash, SQL(;CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
             IF tg_op = 'INSERT' OR (new.group, new.remote) IS DISTINCT FROM (old.group, old.remote) THEN
                 new.hash = hashtext(new.group||COALESCE(new.remote, '%3$s'));
             END IF;
