@@ -34,7 +34,7 @@ static char *PQresultErrorMessageMy(const PGresult *res) {
 }
 
 static void work_check(void) {
-    static SPI_plan *plan = NULL;
+    static SPIPlanPtr plan = NULL;
     static const char *src = SQL(
         WITH j AS (
             SELECT  COALESCE(COALESCE(j.user, data), current_setting('pg_work.default_user', false)) AS user,
@@ -817,7 +817,7 @@ static void work_init(void) {
 static void work_timeout(void) {
     Datum values[] = {ObjectIdGetDatum(work.oid.table)};
     static Oid argtypes[] = {OIDOID};
-    static SPI_plan *plan = NULL;
+    static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     set_ps_display_my("timeout");
     if (!src.data) {

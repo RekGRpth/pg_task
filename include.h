@@ -92,8 +92,6 @@ extern PGDLLIMPORT TimestampTz MyStartTimestamp;
 #include <utils/snapmgr.h>
 #include <utils/timeout.h>
 
-typedef struct _SPI_plan SPI_plan;
-
 #define serialize_bool(src) if ((len += sizeof(src)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(src), &(src), sizeof(src));
 #define serialize_char_null(src) serialize_char((src) ? (src) : "")
 #define serialize_char(src) if ((len += strlcpy(worker.bgw_extra + len, (src), sizeof(worker.bgw_extra)) + 1) >= sizeof(worker.bgw_extra)) E("strlcpy")
@@ -213,7 +211,7 @@ char *TextDatumGetCStringMy(MemoryContext memoryContext, Datum datum);
 Datum CStringGetTextDatumMy(MemoryContext memoryContext, const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
-SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
+SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 #if PG_VERSION_NUM >= 130000
 void BeginCommandMy(CommandTag commandTag, CommandDest dest);
 #else
@@ -234,7 +232,7 @@ void _PG_init(void);
 void ReadyForQueryMy(CommandDest dest);
 void SPI_commit_my(void);
 void SPI_connect_my(const char *src);
-void SPI_execute_plan_my(SPI_plan *plan, Datum *values, const char *nulls, int res, bool commit);
+void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res, bool commit);
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res, bool commit);
 void SPI_finish_my(void);
 void SPI_start_transaction_my(const char *src);

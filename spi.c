@@ -8,9 +8,9 @@ Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fnam
     return datum;
 }
 
-SPI_plan *SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
+SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     int rc;
-    SPI_plan *plan;
+    SPIPlanPtr plan;
     if (!(plan = SPI_prepare(src, nargs, argtypes))) E("SPI_prepare = %s", SPI_result_code_string(SPI_result));
     if ((rc = SPI_keepplan(plan))) E("SPI_keepplan = %s", SPI_result_code_string(rc));
     return plan;
@@ -41,7 +41,7 @@ void SPI_connect_my(const char *src) {
     SPI_start_transaction_my(src);
 }
 
-void SPI_execute_plan_my(SPI_plan *plan, Datum *values, const char *nulls, int res, bool commit) {
+void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res, bool commit) {
     int rc;
     if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != res) E("SPI_execute_plan = %s", SPI_result_code_string(rc));
     if (commit) SPI_commit_my();

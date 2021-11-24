@@ -8,7 +8,7 @@ Task task = {0};
 static void task_update(Task *task) {
     Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, task->group)};
     static Oid argtypes[] = {TEXTOID};
-    static SPI_plan *plan = NULL;
+    static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     set_ps_display_my("update");
     if (!src.data) {
@@ -36,7 +36,7 @@ bool task_done(Task *task) {
     char nulls[] = {' ', ' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n'};
     Datum values[] = {Int64GetDatum(task->id), BoolGetDatum(task->fail = task->output.data ? task->fail : false), CStringGetTextDatumMy(TopMemoryContext, task->output.data), CStringGetTextDatumMy(TopMemoryContext, task->error.data)};
     static Oid argtypes[] = {INT8OID, BOOLOID, TEXTOID, TEXTOID};
-    static SPI_plan *plan = NULL;
+    static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     D1("id = %li, output = %s, error = %s, fail = %s", task->id, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null, task->fail ? "true" : "false");
     task_update(task);
@@ -78,7 +78,7 @@ bool task_live(Task *task) {
     char nulls[] = {' ', task->remote ? ' ' : 'n', ' ', ' ', ' '};
     Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, task->group), CStringGetTextDatumMy(TopMemoryContext, task->remote), Int32GetDatum(task->max), Int32GetDatum(task->count), TimestampTzGetDatum(task->start)};
     static Oid argtypes[] = {TEXTOID, TEXTOID, INT4OID, INT4OID, TIMESTAMPTZOID};
-    static SPI_plan *plan = NULL;
+    static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     set_ps_display_my("live");
     if (!src.data) {
@@ -108,7 +108,7 @@ bool task_work(Task *task) {
     bool exit = false;
     Datum values[] = {Int64GetDatum(task->id), Int32GetDatum(task->pid)};
     static Oid argtypes[] = {INT8OID, INT4OID};
-    static SPI_plan *plan = NULL;
+    static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return true;
     if (!init_table_id_lock(work.oid.table, task->id)) { W("!init_table_id_lock(%i, %li)", work.oid.table, task->id); return true; }
@@ -159,7 +159,7 @@ bool task_work(Task *task) {
 void task_delete(Task *task) {
     Datum values[] = {Int64GetDatum(task->id)};
     static Oid argtypes[] = {INT8OID};
-    static SPI_plan *plan = NULL;
+    static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     set_ps_display_my("delete");
     if (!src.data) {
@@ -214,7 +214,7 @@ void task_error(Task *task, ErrorData *edata) {
 void task_repeat(Task *task) {
     Datum values[] = {Int64GetDatum(task->id)};
     static Oid argtypes[] = {INT8OID};
-    static SPI_plan *plan = NULL;
+    static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     set_ps_display_my("repeat");
     if (!src.data) {

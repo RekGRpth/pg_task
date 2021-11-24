@@ -73,7 +73,7 @@ void conf_work(BackgroundWorker *worker) {
 }
 
 static void conf_check(void) {
-    static SPI_plan *plan = NULL;
+    static SPIPlanPtr plan = NULL;
     static const char *command = SQL(
         WITH j AS (
             SELECT  COALESCE(COALESCE(j.user, data), current_setting('pg_work.default_user', false)) AS user,
