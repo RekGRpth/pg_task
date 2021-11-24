@@ -14,7 +14,7 @@ static void task_delete(Task *task) {
     set_ps_display_my("delete");
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
-        appendStringInfo(&src, SQL(DELETE FROM %1$s WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) RETURNING id), work.schema_table, work.schema_type);
+        appendStringInfo(&src, SQL(DELETE FROM %1$s WHERE id = $1 AND state = 'DONE'::%2$s RETURNING id), work.schema_table, work.schema_type);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -39,7 +39,7 @@ static void task_repeat(Task *task) {
                 WHEN drift THEN CURRENT_TIMESTAMP + repeat
                 ELSE (WITH RECURSIVE s AS (SELECT plan AS t UNION SELECT t + repeat FROM s WHERE t <= CURRENT_TIMESTAMP) SELECT * FROM s ORDER BY 1 DESC LIMIT 1)
             END AS plan, t.group, max, input, timeout, delete, repeat, drift, count, live
-            FROM %1$s AS t WHERE id = $1 AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) LIMIT 1 RETURNING id
+            FROM %1$s AS t WHERE id = $1 AND state = 'DONE'::%2$s LIMIT 1 RETURNING id
         ), work.schema_table, work.schema_type);
     }
     SPI_connect_my(src.data);
@@ -79,12 +79,12 @@ static void task_update(Task *task) {
 
 bool task_done(Task *task) {
     bool exit = false;
-    char nulls[] = {' ', ' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n'};
-    Datum values[] = {Int64GetDatum(task->id), BoolGetDatum(task->fail = task->output.data ? task->fail : false), CStringGetTextDatumMy(TopMemoryContext, task->output.data), CStringGetTextDatumMy(TopMemoryContext, task->error.data)};
-    static Oid argtypes[] = {INT8OID, BOOLOID, TEXTOID, TEXTOID};
+    char nulls[] = {' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n'};
+    Datum values[] = {Int64GetDatum(task->id), CStringGetTextDatumMy(TopMemoryContext, task->output.data), CStringGetTextDatumMy(TopMemoryContext, task->error.data)};
+    static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    D1("id = %li, output = %s, error = %s, fail = %s", task->id, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null, task->fail ? "true" : "false");
+    D1("id = %li, output = %s, error = %s", task->id, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null);
     task_update(task);
     set_ps_display_my("done");
     if (!src.data) {
@@ -92,8 +92,8 @@ bool task_done(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
-            ) UPDATE %1$s AS u SET state = CASE WHEN $2 THEN 'FAIL'::%2$s ELSE 'DONE'::%2$s END, stop = CURRENT_TIMESTAMP, output = concat_ws('%3$s', NULLIF(output, '%4$s'), $3), error = concat_ws('%3$s', NULLIF(error, '%3$s'), $4) FROM s WHERE u.id = s.id
-            RETURNING delete, repeat > '0 sec' AND state IN ('DONE'::%2$s, 'FAIL'::%2$s) AS repeat, count > 0 OR live > '0 sec' AS live
+            ) UPDATE %1$s AS u SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = concat_ws('%3$s', NULLIF(output, '%4$s'), $2), error = concat_ws('%3$s', NULLIF(error, '%3$s'), $3) FROM s WHERE u.id = s.id
+            RETURNING delete, repeat > '0 sec' AS repeat, count > 0 OR live > '0 sec' AS live
         ), work.schema_table, work.schema_type, "\n", "");
     }
     SPI_connect_my(src.data);
@@ -108,8 +108,8 @@ bool task_done(Task *task) {
         task->live = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
     }
     SPI_finish_my();
+    if (values[1]) pfree((void *)values[1]);
     if (values[2]) pfree((void *)values[2]);
-    if (values[3]) pfree((void *)values[3]);
     if (task->null) pfree(task->null);
     task->null = NULL;
     if (task->lock && !init_table_id_unlock(work.oid.table, task->id)) { W("!init_table_id_unlock(%i, %li)", work.oid.table, task->id); exit = true; }
@@ -245,7 +245,6 @@ void task_error(Task *task, ErrorData *edata) {
     if (edata->internalquery) appendStringInfo(&task->error, "%sinternalquery%c%s", task->error.len ? "\n" : "", task->delimiter, edata->internalquery);
     if (edata->saved_errno) appendStringInfo(&task->error, "%ssaved_errno%c%i", task->error.len ? "\n" : "", task->delimiter, edata->saved_errno);
     appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
-    task->fail = true;
 }
 
 static void task_fail(void) {

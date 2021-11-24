@@ -101,7 +101,6 @@ static void work_fail(Task *task, PGresult *result) {
     if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->error, "%ssource_function%c%s", task->error.len ? "\n" : "", task->delimiter, value);
     if (value) appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
     task->skip++;
-    task->fail = true;
 }
 
 static void work_free(Task *task) {
@@ -128,7 +127,6 @@ static void work_error(Task *task, const char *msg, const char *err, bool finish
     if (err && strlen(err)) appendStringInfo(&task->error, " and %s", err);
     W("%li: %s", task->id, task->error.data);
     appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
-    task->fail = true;
     task->skip++;
     task_done(task) || finish ? work_finish(task) : work_free(task);
 }
@@ -694,7 +692,7 @@ static void work_type(void) {
     D1("user = %s, data = %s, schema = %s, table = %s", work.str.user, work.str.data, work.str.schema, work.str.table);
     set_ps_display_my("type");
     initStringInfoMy(TopMemoryContext, &src);
-    appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')), work.schema_type);
+    appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'STOP')), work.schema_type);
     SPI_connect_my(src.data);
     parseTypeString(work.schema_type, &type, &typmod, true);
     if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);

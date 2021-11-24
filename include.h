@@ -125,7 +125,6 @@ extern PGDLLIMPORT TimestampTz MyStartTimestamp;
 typedef struct Task {
     bool active;
     bool delete;
-    bool fail;
     bool header;
     bool live;
     bool lock;
