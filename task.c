@@ -92,7 +92,7 @@ bool task_done(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
-            ) UPDATE %1$s AS u SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = concat_ws('%3$s', NULLIF(output, '%4$s'), $2), error = concat_ws('%3$s', NULLIF(error, '%3$s'), $3) FROM s WHERE u.id = s.id
+            ) UPDATE %1$s AS u SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = concat_ws('%3$s', NULLIF(output, '%4$s'), $2), error = concat_ws('%3$s', NULLIF(error, '%4$s'), $3) FROM s WHERE u.id = s.id
             RETURNING delete, repeat > '0 sec' AS repeat, count > 0 OR live > '0 sec' AS live
         ), work.schema_table, work.schema_type, "\n", "");
     }
