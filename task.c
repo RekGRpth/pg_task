@@ -273,7 +273,6 @@ static void task_init(void) {
     pfree(oid.data);
     task->pid = MyProcPid;
     task->start = GetCurrentTimestamp();
-    task->count = 0;
     set_ps_display_my("idle");
 }
 
