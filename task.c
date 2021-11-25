@@ -62,7 +62,7 @@ bool task_done(Task *task) {
     if (values[3]) pfree((void *)values[3]);
     if (values[4]) pfree((void *)values[4]);
     task_free(task);
-    if (!init_table_id_unlock(work->oid.table, task->id)) { W("!init_table_id_unlock(%i, %li)", work->oid.table, task->id); live = 0; }
+    if (!unlock_table_id(work->oid.table, task->id)) { W("!unlock_table_id(%i, %li)", work->oid.table, task->id); live = 0; }
     set_ps_display_my("idle");
     task->id = live;
     return ShutdownRequestPending || !live;
@@ -75,7 +75,7 @@ bool task_work(Task *task) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return true;
-    if (!init_table_id_lock(work->oid.table, task->id)) { W("!init_table_id_lock(%i, %li)", work->oid.table, task->id); return true; }
+    if (!lock_table_id(work->oid.table, task->id)) { W("!lock_table_id(%i, %li)", work->oid.table, task->id); return true; }
     task->count++;
     D1("id = %li, max = %i, oid = %i, count = %i, pid = %i", task->id, task->max, work->oid.table, task->count, task->pid);
     set_ps_display_my("work");
@@ -308,7 +308,7 @@ void task_free(Task *task) {
 
 void task_main(Datum main_arg) {
     task_init();
-    if (!init_table_pid_hash_lock(work->oid.table, task->pid, task->hash)) { W("!init_table_pid_hash_lock(%i, %i, %i)", work->oid.table, task->pid, task->hash); return; }
+    if (!lock_table_pid_hash(work->oid.table, task->pid, task->hash)) { W("!lock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash); return; }
     while (!ShutdownRequestPending) {
 #if PG_VERSION_NUM >= 100000
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
@@ -319,5 +319,5 @@ void task_main(Datum main_arg) {
         if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
     }
-    if (!init_table_pid_hash_unlock(work->oid.table, task->pid ? task->pid : MyProcPid, task->hash)) W("!init_table_pid_hash_unlock(%i, %i, %i)", work->oid.table, task->pid ? task->pid : MyProcPid, task->hash);
+    if (!unlock_table_pid_hash(work->oid.table, task->pid ? task->pid : MyProcPid, task->hash)) W("!unlock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid ? task->pid : MyProcPid, task->hash);
 }

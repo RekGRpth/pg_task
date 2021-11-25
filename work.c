@@ -111,7 +111,7 @@ static void work_free(Task *task) {
 static void work_finish(Task *task) {
     dlist_delete(&task->node);
     PQfinish(task->conn);
-    if (!init_table_pid_hash_unlock(work->oid.table, task->pid, task->hash)) W("!init_table_pid_hash_unlock(%i, %i, %i)", work->oid.table, task->pid, task->hash);
+    if (!unlock_table_pid_hash(work->oid.table, task->pid, task->hash)) W("!unlock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash);
     work_free(task);
 }
 
@@ -414,7 +414,7 @@ static void work_connect(Task *task) {
     }
     if (connected) {
         if(!(task->pid = PQbackendPID(task->conn))) { work_error(task, "!PQbackendPID", PQerrorMessageMy(task->conn), true); return; }
-        if (!init_table_pid_hash_lock(work->oid.table, task->pid, task->hash)) { W("!init_table_pid_hash_lock(%i, %i, %i)", work->oid.table, task->pid, task->hash); work_error(task, "!init_table_pid_hash_lock", NULL, true); return; }
+        if (!lock_table_pid_hash(work->oid.table, task->pid, task->hash)) { W("!lock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash); work_error(task, "!lock_table_pid_hash", NULL, true); return; }
         work_query(task);
     }
 }
@@ -848,7 +848,7 @@ void work_main(Datum main_arg) {
 #else
     MyStartTimestamp = GetCurrentTimestamp();
 #endif
-    if (!init_data_user_table_lock(MyDatabaseId, GetUserId(), work->oid.table)) { W("!init_data_user_table_lock(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid.table); return; }
+    if (!lock_data_user_table(MyDatabaseId, GetUserId(), work->oid.table)) { W("!lock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid.table); return; }
     while (!ShutdownRequestPending) {
         int nevents = 2 + work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
@@ -881,6 +881,6 @@ void work_main(Datum main_arg) {
         if (work->count && work->processed >= work->count) break;
         if (work->live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), work->live * 1000)) break;
     }
-    if (!init_data_user_table_unlock(MyDatabaseId, GetUserId(), work->oid.table)) W("!init_data_user_table_unlock(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid.table);
+    if (!unlock_data_user_table(MyDatabaseId, GetUserId(), work->oid.table)) W("!unlock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid.table);
     work_fini();
 }

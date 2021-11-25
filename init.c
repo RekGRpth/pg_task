@@ -42,12 +42,12 @@ bool init_check_ascii_all(BackgroundWorker *worker) {
     return false;
 }
 
-bool init_data_user_table_lock(Oid data, Oid user, Oid table) {
+bool lock_data_user_table(Oid data, Oid user, Oid table) {
     LOCKTAG tag = {data, user, table, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
     return LockAcquire(&tag, AccessExclusiveLock, true, true) == LOCKACQUIRE_OK;
 }
 
-bool init_data_user_table_unlock(Oid data, Oid user, Oid table) {
+bool unlock_data_user_table(Oid data, Oid user, Oid table) {
     LOCKTAG tag = {data, user, table, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
     return LockRelease(&tag, AccessExclusiveLock, true);
 }
@@ -71,22 +71,22 @@ bool init_oid_is_string(Oid oid) {
     }
 }
 
-bool init_table_id_lock(Oid table, int64 id) {
+bool lock_table_id(Oid table, int64 id) {
     LOCKTAG tag = {table, (uint32)(id >> 32), (uint32)id, 4, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
     return LockAcquire(&tag, AccessExclusiveLock, true, true) == LOCKACQUIRE_OK;
 }
 
-bool init_table_id_unlock(Oid table, int64 id) {
+bool unlock_table_id(Oid table, int64 id) {
     LOCKTAG tag = {table, (uint32)(id >> 32), (uint32)id, 4, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
     return LockRelease(&tag, AccessExclusiveLock, true);
 }
 
-bool init_table_pid_hash_lock(Oid table, int pid, int hash) {
+bool lock_table_pid_hash(Oid table, int pid, int hash) {
     LOCKTAG tag = {table, (uint32)pid, (uint32)hash, 5, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
     return LockAcquire(&tag, AccessShareLock, true, true) == LOCKACQUIRE_OK;
 }
 
-bool init_table_pid_hash_unlock(Oid table, int pid, int hash) {
+bool unlock_table_pid_hash(Oid table, int pid, int hash) {
     LOCKTAG tag = {table, (uint32)pid, (uint32)hash, 5, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
     return LockRelease(&tag, AccessShareLock, true);
 }
