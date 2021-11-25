@@ -20,7 +20,7 @@ COMMIT;
 DO $body$ BEGIN
     WHILE true LOOP
         PERFORM pg_sleep(1);
-        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        IF (SELECT count(*) FROM task WHERE state != 'DONE') = 0 THEN EXIT; END IF;
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, state FROM task WHERE "group" = '0' AND plan > :ct::timestamp;
@@ -37,7 +37,7 @@ COMMIT;
 DO $body$ BEGIN
     WHILE true LOOP
         PERFORM pg_sleep(1);
-        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        IF (SELECT count(*) FROM task WHERE state != 'DONE') = 0 THEN EXIT; END IF;
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, state, count(id) FROM task WHERE "group" = '8' AND plan > :ct::timestamp GROUP BY "group", input, output, state, pid;
@@ -48,7 +48,7 @@ COMMIT;
 DO $body$ BEGIN
     WHILE true LOOP
         PERFORM pg_sleep(1);
-        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        IF (SELECT count(*) FROM task WHERE state != 'DONE') = 0 THEN EXIT; END IF;
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, state, max, count(id) FROM task WHERE "group" = '9' AND plan > :ct::timestamp GROUP BY "group", input, output, state, max, pid ORDER BY max DESC;
@@ -58,7 +58,7 @@ COMMIT;
 DO $body$ BEGIN
     WHILE true LOOP
         PERFORM pg_sleep(1);
-        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        IF (SELECT count(*) FROM task WHERE state != 'DONE') = 0 THEN EXIT; END IF;
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, state, count(id) FROM task WHERE "group" = '10' AND plan > :ct::timestamp GROUP BY "group", input, output, state, pid;
@@ -68,7 +68,7 @@ COMMIT;
 DO $body$ BEGIN
     WHILE true LOOP
         PERFORM pg_sleep(1);
-        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        IF (SELECT count(*) FROM task WHERE state != 'DONE') = 0 THEN EXIT; END IF;
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, state, count(id) FROM task WHERE "group" = '11' AND plan > :ct::timestamp GROUP BY "group", input, output, state, pid;
