@@ -6,10 +6,10 @@ extern Work *work;
 Task *task;
 
 bool task_done(Task *task) {
-    char nulls[] = {' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n', ' ', task->remote ? ' ' : 'n', ' ', ' ', ' '};
-    Datum values[] = {Int64GetDatum(task->id), CStringGetTextDatumMy(TopMemoryContext, task->output.data), CStringGetTextDatumMy(TopMemoryContext, task->error.data), CStringGetTextDatumMy(TopMemoryContext, task->group), CStringGetTextDatumMy(TopMemoryContext, task->remote), Int32GetDatum(task->max), Int32GetDatum(task->count), TimestampTzGetDatum(task->start)};
+    char nulls[] = {' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n', ' ', ' ', ' ', ' '};
+    Datum values[] = {Int64GetDatum(task->id), CStringGetTextDatumMy(TopMemoryContext, task->output.data), CStringGetTextDatumMy(TopMemoryContext, task->error.data), Int32GetDatum(task->hash), Int32GetDatum(task->max), Int32GetDatum(task->count), TimestampTzGetDatum(task->start)};
     int64 live = 0;
-    static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID, TEXTOID, TEXTOID, INT4OID, INT4OID, TIMESTAMPTZOID};
+    static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID, INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     D1("id = %li, group = %s, output = %s, error = %s, max = %i, count = %i, start = %s", task->id, task->group, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null, task->max, task->count, timestamptz_to_str(task->start));
@@ -18,7 +18,7 @@ bool task_done(Task *task) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, SQL(
             WITH a AS (
-                SELECT t.* FROM %1$s AS t WHERE max < 0 AND plan < CURRENT_TIMESTAMP AND "group" = $4 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
+                SELECT t.* FROM %1$s AS t WHERE max < 0 AND plan < CURRENT_TIMESTAMP AND hash = $4 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
             ), au AS (
                 UPDATE %1$s AS t SET plan = CURRENT_TIMESTAMP FROM a WHERE t.id = a.id RETURNING t.*
             ), c AS (
@@ -36,8 +36,8 @@ bool task_done(Task *task) {
                 UPDATE %1$s AS t SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = $2, error = $3 FROM s WHERE t.id = s.id RETURNING t.*
             ), l AS (
                 SELECT t.* FROM %1$s AS t
-                WHERE state = 'PLAN'::%2$s AND plan <= CURRENT_TIMESTAMP AND "group" = $4 AND remote IS NOT DISTINCT FROM $5 AND max >= $6 AND CASE
-                    WHEN count > 0 AND live > '0 sec' THEN count > $7 AND $8 + live > CURRENT_TIMESTAMP ELSE count > $7 OR $8 + live > CURRENT_TIMESTAMP
+                WHERE state = 'PLAN'::%2$s AND plan <= CURRENT_TIMESTAMP AND hash = $4 AND max >= $5 AND CASE
+                    WHEN count > 0 AND live > '0 sec' THEN count > $6 AND $7 + live > CURRENT_TIMESTAMP ELSE count > $6 OR $7 + live > CURRENT_TIMESTAMP
                 END ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t SKIP LOCKED
             ), lu AS (
                 UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM l WHERE t.id = l.id RETURNING t.*
@@ -59,8 +59,6 @@ bool task_done(Task *task) {
     SPI_finish_my();
     if (values[1]) pfree((void *)values[1]);
     if (values[2]) pfree((void *)values[2]);
-    if (values[3]) pfree((void *)values[3]);
-    if (values[4]) pfree((void *)values[4]);
     task_free(task);
     if (!unlock_table_id(work->oid.table, task->id)) { W("!unlock_table_id(%i, %li)", work->oid.table, task->id); live = 0; }
     set_ps_display_my("idle");
@@ -92,7 +90,7 @@ bool task_work(Task *task) {
             WITH s AS (
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
             ) UPDATE %1$s AS u SET state = 'WORK'::%2$s, start = CURRENT_TIMESTAMP, pid = $2 FROM s WHERE u.id = s.id
-            RETURNING "group", input, EXTRACT(epoch FROM timeout)::integer * 1000 AS timeout, header, string, u.null, delimiter, quote, escape, plan + active > CURRENT_TIMESTAMP AS active
+            RETURNING "group", hash, input, EXTRACT(epoch FROM timeout)::integer * 1000 AS timeout, header, string, u.null, delimiter, quote, escape, plan + active > CURRENT_TIMESTAMP AS active
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
@@ -106,6 +104,7 @@ bool task_work(Task *task) {
         task->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false));
         task->escape = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "escape", true));
         task->group = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "group", false));
+        task->hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "hash", false));
         task->header = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "header", false));
         task->input = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "input", false));
         task->null = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "null", false));
@@ -113,7 +112,7 @@ bool task_work(Task *task) {
         task->string = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "string", false));
         task->timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "timeout", false));
         if (0 < StatementTimeout && StatementTimeout < task->timeout) task->timeout = StatementTimeout;
-        D1("group = %s, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, active = %s", task->group, task->input, task->timeout, task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote ? task->quote : 30, task->escape ? task->escape : 30, task->active ? "true" : "false");
+        D1("group = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, active = %s", task->group, task->hash, task->input, task->timeout, task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote ? task->quote : 30, task->escape ? task->escape : 30, task->active ? "true" : "false");
     }
     SPI_finish_my();
     set_ps_display_my("idle");
