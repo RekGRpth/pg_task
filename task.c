@@ -24,7 +24,7 @@ bool task_done(Task *task) {
             ), c AS (
                 SELECT "group", count(id) FROM au GROUP BY 1
             ), s AS (
-                SELECT t.* FROM %1$s AS t WHERE id = $1 LIMIT 1 FOR UPDATE OF t
+                SELECT t.* FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
             ), si AS (
                 INSERT INTO %1$s AS t (parent, plan, "group", max, input, timeout, delete, repeat, drift, count, live) SELECT id, CASE
                     WHEN drift THEN CURRENT_TIMESTAMP + repeat
