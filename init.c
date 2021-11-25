@@ -63,31 +63,37 @@ bool init_oid_is_string(Oid oid) {
 
 bool lock_data_user_table(Oid data, Oid user, Oid table) {
     LOCKTAG tag = {data, user, table, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    D1("data = %i, user = %i, table = %i", data, user, table);
     return LockAcquire(&tag, AccessExclusiveLock, true, true) == LOCKACQUIRE_OK;
 }
 
 bool lock_table_id(Oid table, int64 id) {
     LOCKTAG tag = {table, (uint32)(id >> 32), (uint32)id, 4, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    D1("table = %i, id = %li", table, id);
     return LockAcquire(&tag, AccessExclusiveLock, true, true) == LOCKACQUIRE_OK;
 }
 
 bool lock_table_pid_hash(Oid table, int pid, int hash) {
     LOCKTAG tag = {table, (uint32)pid, (uint32)hash, 5, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    D1("table = %i, pid = %i, hash = %i", table, pid, hash);
     return LockAcquire(&tag, AccessShareLock, true, true) == LOCKACQUIRE_OK;
 }
 
 bool unlock_data_user_table(Oid data, Oid user, Oid table) {
     LOCKTAG tag = {data, user, table, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    D1("data = %i, user = %i, table = %i", data, user, table);
     return LockRelease(&tag, AccessExclusiveLock, true);
 }
 
 bool unlock_table_id(Oid table, int64 id) {
     LOCKTAG tag = {table, (uint32)(id >> 32), (uint32)id, 4, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    D1("table = %i, id = %li", table, id);
     return LockRelease(&tag, AccessExclusiveLock, true);
 }
 
 bool unlock_table_pid_hash(Oid table, int pid, int hash) {
     LOCKTAG tag = {table, (uint32)pid, (uint32)hash, 5, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    D1("table = %i, pid = %i, hash = %i", table, pid, hash);
     return LockRelease(&tag, AccessShareLock, true);
 }
 
