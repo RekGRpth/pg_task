@@ -17,32 +17,32 @@ bool task_done(Task *task) {
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, SQL(
-            WITH ss AS (
-                SELECT t.* FROM %1$s AS t WHERE max < 0 AND plan < CURRENT_TIMESTAMP AND t.group = $4 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
-            ), uu AS (
-                UPDATE %1$s AS u SET plan = CURRENT_TIMESTAMP FROM ss WHERE u.id = ss.id RETURNING u.*
-            ), sss AS (
-                SELECT "group", count(id) FROM uu GROUP BY 1
+            WITH a AS (
+                SELECT t.* FROM %1$s AS t WHERE max < 0 AND plan < CURRENT_TIMESTAMP AND "group" = $4 AND state = 'PLAN'::%2$s FOR UPDATE OF t SKIP LOCKED
+            ), au AS (
+                UPDATE %1$s AS t SET plan = CURRENT_TIMESTAMP FROM a WHERE t.id = a.id RETURNING t.*
+            ), c AS (
+                SELECT "group", count(id) FROM au GROUP BY 1
             ), s AS (
-                SELECT t.* FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
-            ), i AS (
-                INSERT INTO %1$s AS i (parent, plan, "group", max, input, timeout, delete, repeat, drift, count, live) SELECT id, CASE
+                SELECT t.* FROM %1$s AS t WHERE id = $1 LIMIT 1 FOR UPDATE OF t
+            ), si AS (
+                INSERT INTO %1$s AS t (parent, plan, "group", max, input, timeout, delete, repeat, drift, count, live) SELECT id, CASE
                     WHEN drift THEN CURRENT_TIMESTAMP + repeat
-                    ELSE (WITH RECURSIVE r AS (SELECT plan AS t UNION SELECT t + repeat FROM r WHERE t <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
-                END AS plan, "group", max, input, timeout, delete, repeat, drift, count, live FROM s WHERE repeat > '0 sec' LIMIT 1 RETURNING i.*
-            ), d AS (
-                DELETE FROM %1$s AS d WHERE id = $1 AND delete AND $2 IS NULL RETURNING d.*
-            ), u AS (
-                UPDATE %1$s AS u SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = $2, error = $3 WHERE id = $1 RETURNING u.*
+                    ELSE (WITH RECURSIVE r AS (SELECT plan AS p UNION SELECT p + repeat FROM r WHERE p <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
+                END AS plan, "group", max, input, timeout, delete, repeat, drift, count, live FROM s WHERE repeat > '0 sec' LIMIT 1 RETURNING t.*
+            ), sd AS (
+                DELETE FROM %1$s AS t WHERE id = $1 AND delete AND $2 IS NULL RETURNING t.*
+            ), su AS (
+                UPDATE %1$s AS t SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = $2, error = $3 FROM s WHERE t.id = s.id RETURNING t.*
             ), l AS (
-                SELECT id FROM %1$s AS t
+                SELECT t.* FROM %1$s AS t
                 WHERE state = 'PLAN'::%2$s AND plan <= CURRENT_TIMESTAMP AND t.group = $4 AND remote IS NOT DISTINCT FROM $5 AND max >= $6 AND CASE
                     WHEN count > 0 AND live > '0 sec' THEN count > $7 AND $8 + live > CURRENT_TIMESTAMP ELSE count > $7 OR $8 + live > CURRENT_TIMESTAMP
-                END AND t.start IS NULL AND t.stop IS NULL AND t.pid IS NULL
-                ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t SKIP LOCKED
-            ), ll AS (
-                UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id RETURNING u.*
-            ) SELECT s.id, ll.id AS live, u.id IS NOT NULL AS update, i.id IS NOT NULL AS insert, d.id IS NOT NULL AS delete, sss.count IS NOT NULL AS count FROM s LEFT JOIN ll ON true LEFT JOIN i ON true LEFT JOIN d ON true LEFT JOIN u ON true LEFT JOIN sss ON true
+                END AND t.start IS NULL AND t.stop IS NULL AND t.pid IS NULL ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t SKIP LOCKED
+            ), lu AS (
+                UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM l WHERE t.id = l.id RETURNING t.*
+            ) SELECT s.id, lu.id AS live, su.id IS NOT NULL AS update, si.id IS NOT NULL AS insert, sd.id IS NOT NULL AS delete, c.count IS NOT NULL AS count
+            FROM s LEFT JOIN lu ON true LEFT JOIN si ON true LEFT JOIN sd ON true LEFT JOIN su ON true LEFT JOIN c ON true
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
