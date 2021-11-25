@@ -56,7 +56,7 @@ bool task_done(Task *task) {
         bool delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
         bool insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false));
         bool update = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "update", false));
-        if (!(task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", true)))) exit = true;
+        if (!(task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", true)))) exit = true;
         D1("live = %li, update = %s, insert = %s, delete = %s, count = %s", task->id, update ? "true" : "false", insert ? "true" : "false", delete ? "true" : "false", count ? "true" : "false");
     }
     SPI_finish_my();
