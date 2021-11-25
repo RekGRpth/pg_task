@@ -119,7 +119,7 @@ bool task_work(Task *task) {
     return exit;
 }
 
-void task_error(Task *task, ErrorData *edata) {
+static void task_error(Task *task, ErrorData *edata) {
     if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (edata->elevel) appendStringInfo(&task->error, "%selevel%c%i", task->error.len ? "\n" : "", task->delimiter, edata->elevel);

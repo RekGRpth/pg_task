@@ -4,15 +4,6 @@ extern char *default_null;
 static void work_query(Task *task);
 Work *work;
 
-static bool work_is_log_level_output(int elevel, int log_min_level) {
-    if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
-        if (log_min_level == LOG || log_min_level <= ERROR) return true;
-    } else if (log_min_level == LOG) { /* elevel != LOG */
-        if (elevel >= FATAL) return true;
-    } /* Neither is LOG */ else if (elevel >= log_min_level) return true;
-    return false;
-}
-
 static char *PQerrorMessageMy(const PGconn *conn) {
     char *err = PQerrorMessage(conn);
     int len;
@@ -361,23 +352,18 @@ static void work_query(Task *task) {
     if (!work_busy(task, WL_SOCKET_WRITEABLE)) return;
     if (work_input(task)) { work_finish(task); return; }
     if (!task->active) {
-        StringInfoData error;
-        ErrorData edata = {0};
-        initStringInfoMy(TopMemoryContext, &error);
-        appendStringInfo(&error, "task %li not active", task->id);
-        edata.elevel = ERROR;
-        edata.output_to_server = work_is_log_level_output(edata.elevel, log_min_messages);
-        edata.filename = __FILE__;
-        edata.lineno = __LINE__;
-        edata.funcname = __func__;
-        edata.domain = TEXTDOMAIN ? TEXTDOMAIN : PG_TEXTDOMAIN("postgres");
-        edata.context_domain = edata.domain;
-        edata.sqlerrcode = ERRCODE_INTERNAL_ERROR;
-        edata.message = (char *)error.data;
-        edata.message_id = edata.message;
-        task_error(task, &edata);
+        if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+        if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
+        appendStringInfo(&task->error, "%sseverity%cERROR", task->error.len ? "\n" : "", task->delimiter);
+        appendStringInfo(&task->error, "%sseverity_nonlocalized%cERROR", task->error.len ? "\n" : "", task->delimiter);
+        appendStringInfo(&task->error, "%ssqlstate%c2600", task->error.len ? "\n" : "", task->delimiter);
+        appendStringInfo(&task->error, "%smessage_primary%ctask %li not active", task->error.len ? "\n" : "", task->delimiter, task->id);
+        appendStringInfo(&task->error, "%ssource_file%c%s", task->error.len ? "\n" : "", task->delimiter, __FILE__);
+        appendStringInfo(&task->error, "%ssource_line%c%i", task->error.len ? "\n" : "", task->delimiter, __LINE__);
+        appendStringInfo(&task->error, "%ssource_function%c%s", task->error.len ? "\n" : "", task->delimiter, __func__);
+        appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
+        task->skip++;
         work_done(task);
-        pfree(error.data);
         return;
     }
     if (!PQsendQuery(task->conn, task->input)) { work_error(task, "!PQsendQuery", PQerrorMessageMy(task->conn), false); return; }
