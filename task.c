@@ -38,7 +38,7 @@ bool task_done(Task *task) {
                 SELECT t.* FROM %1$s AS t
                 WHERE state = 'PLAN'::%2$s AND plan <= CURRENT_TIMESTAMP AND "group" = $4 AND remote IS NOT DISTINCT FROM $5 AND max >= $6 AND CASE
                     WHEN count > 0 AND live > '0 sec' THEN count > $7 AND $8 + live > CURRENT_TIMESTAMP ELSE count > $7 OR $8 + live > CURRENT_TIMESTAMP
-                END AND start IS NULL AND stop IS NULL AND pid IS NULL ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t SKIP LOCKED
+                END ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t SKIP LOCKED
             ), lu AS (
                 UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM l WHERE t.id = l.id RETURNING t.*
             ) SELECT s.id, lu.id AS live, su.id IS NOT NULL AS update, si.id IS NOT NULL AS insert, sd.id IS NOT NULL AS delete, c.count IS NOT NULL AS count
