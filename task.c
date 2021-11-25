@@ -12,7 +12,7 @@ bool task_done(Task *task) {
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID, TEXTOID, TEXTOID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    D1("id = %li, output = %s, error = %s", task->id, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null);
+    D1("id = %li, group = %s, output = %s, error = %s, max = %i, count = %i", task->id, task->group, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null, task->max, task->count);
     set_ps_display_my("done");
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
