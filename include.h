@@ -192,15 +192,15 @@ typedef struct Work {
 } Work;
 
 bool init_check_ascii_all(BackgroundWorker *worker);
-bool lock_data_user_table(Oid data, Oid user, Oid table);
-bool unlock_data_user_table(Oid data, Oid user, Oid table);
 bool init_oid_is_string(Oid oid);
+bool lock_data_user_table(Oid data, Oid user, Oid table);
 bool lock_table_id(Oid table, int64 id);
-bool unlock_table_id(Oid table, int64 id);
 bool lock_table_pid_hash(Oid table, int pid, int hash);
-bool unlock_table_pid_hash(Oid table, int pid, int hash);
 bool task_done(Task *task);
 bool task_work(Task *task);
+bool unlock_data_user_table(Oid data, Oid user, Oid table);
+bool unlock_table_id(Oid table, int64 id);
+bool unlock_table_pid_hash(Oid table, int pid, int hash);
 char *TextDatumGetCStringMy(MemoryContext memoryContext, Datum datum);
 Datum CStringGetTextDatumMy(MemoryContext memoryContext, const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
