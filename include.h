@@ -125,7 +125,6 @@ extern PGDLLIMPORT TimestampTz MyStartTimestamp;
 typedef struct Task {
     bool active;
     bool header;
-    bool live;
     bool string;
     char delimiter;
     char escape;
@@ -201,7 +200,6 @@ bool init_table_id_unlock(Oid table, int64 id);
 bool init_table_pid_hash_lock(Oid table, int pid, int hash);
 bool init_table_pid_hash_unlock(Oid table, int pid, int hash);
 bool task_done(Task *task);
-bool task_live(Task *task);
 bool task_work(Task *task);
 char *TextDatumGetCStringMy(MemoryContext memoryContext, Datum datum);
 Datum CStringGetTextDatumMy(MemoryContext memoryContext, const char *s);

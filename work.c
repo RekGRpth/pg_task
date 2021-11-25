@@ -276,8 +276,7 @@ static void work_done(Task *task) {
         task->event = WL_SOCKET_READABLE;
         return;
     }
-    if (task_done(task)) { work_finish(task); return; }
-    (PQstatus(task->conn) != CONNECTION_OK || !task->live || task_live(task)) ? work_finish(task) : work_query(task);
+    task_done(task) || PQstatus(task->conn) != CONNECTION_OK ? work_finish(task) : work_query(task);
 }
 
 static Oid work_schema(const char *schema_quote) {
