@@ -34,7 +34,7 @@ bool task_done(Task *task) {
                 DELETE FROM %1$s AS d WHERE id = $1 AND delete AND $2 IS NULL RETURNING d.*
             ), u AS (
                 UPDATE %1$s AS u SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = $2, error = $3 WHERE id = $1 RETURNING u.*
-            ) SELECT s.count > 0 OR s.live > '0 sec' AS live, u.id IS NOT NULL AS update, i.id IS NOT NULL AS insert, d.id IS NOT NULL AS delete, sss.count IS NOT NULL AS count FROM s LEFT JOIN i USING(id) LEFT JOIN d USING(id) LEFT JOIN u USING(id) LEFT JOIN sss ON true
+            ) SELECT s.count > 0 OR s.live > '0 sec' AS live, u.id IS NOT NULL AS update, i.id IS NOT NULL AS insert, d.id IS NOT NULL AS delete, sss.count IS NOT NULL AS count FROM s LEFT JOIN i ON true LEFT JOIN d ON true LEFT JOIN u ON true LEFT JOIN sss ON true
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
