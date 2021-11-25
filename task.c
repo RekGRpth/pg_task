@@ -200,14 +200,6 @@ static void task_catch(void) {
     RESUME_INTERRUPTS();
 }
 
-static void SignalHandlerForShutdownRequestMy(SIGNAL_ARGS) {
-    int save_errno = errno;
-    ShutdownRequestPending = true;
-    SetLatch(MyLatch);
-    if (!DatumGetBool(DirectFunctionCall1(pg_cancel_backend, Int32GetDatum(MyProcPid)))) E("!pg_cancel_backend(%i)", MyProcPid);
-    errno = save_errno;
-}
-
 static void task_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
@@ -217,7 +209,6 @@ static void task_init(void) {
 #define X(name, serialize, deserialize) deserialize(name);
     TASK
 #undef X
-    pqsignal(SIGTERM, SignalHandlerForShutdownRequestMy);
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM >= 110000
     BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user, 0);

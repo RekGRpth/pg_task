@@ -140,35 +140,23 @@ static int work_nevents(void) {
 
 static void work_fini(void) {
     dlist_mutable_iter iter;
-    StringInfoData error;
     D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout, work->count, work->live);
     set_ps_display_my("fini");
-    initStringInfoMy(TopMemoryContext, &error);
 #if PG_VERSION_NUM >= 110000
-    appendStringInfo(&error, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
+    W("terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
 #else
-    appendStringInfo(&error, "terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1);
+    W("terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1);
 #endif
     dlist_foreach_modify(iter, &work->head) {
+        char errbuf[256];
         Task *task = dlist_container(Task, node, iter.cur);
-        if (!PQrequestCancel(task->conn)) work_error(task, error.data, PQerrorMessageMy(task->conn), true); else {
-            ErrorData edata = {0};
-            edata.elevel = FATAL;
-            edata.output_to_server = work_is_log_level_output(edata.elevel, log_min_messages);
-            edata.filename = __FILE__;
-            edata.lineno = __LINE__;
-            edata.funcname = __func__;
-            edata.domain = TEXTDOMAIN ? TEXTDOMAIN : PG_TEXTDOMAIN("postgres");
-            edata.context_domain = edata.domain;
-            edata.sqlerrcode = ERRCODE_ADMIN_SHUTDOWN;
-            edata.message = (char *)error.data;
-            edata.message_id = edata.message;
-            task_error(task, &edata);
-            task_done(task);
-            work_finish(task);
-        }
+        PGcancel *cancel = PQgetCancel(task->conn);
+        if (!cancel) { W("!PQgetCancel and %s", PQerrorMessageMy(task->conn)); continue; }
+        if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { W("!PQcancel and %s", errbuf); PQfreeCancel(cancel); continue; }
+        PQfreeCancel(cancel);
+        work_finish(task);
     }
-    pfree(error.data);
+    set_ps_display_my("idle");
     if (ShutdownRequestPending) return;
     MyBgworkerEntry->bgw_notify_pid = MyProcPid;
     conf_work(MyBgworkerEntry);
