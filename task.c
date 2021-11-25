@@ -6,9 +6,9 @@ extern Work *work;
 Task *task;
 
 bool task_done(Task *task) {
-    bool exit = false;
     char nulls[] = {' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n', ' ', task->remote ? ' ' : 'n', ' ', ' ', ' '};
     Datum values[] = {Int64GetDatum(task->id), CStringGetTextDatumMy(TopMemoryContext, task->output.data), CStringGetTextDatumMy(TopMemoryContext, task->error.data), CStringGetTextDatumMy(TopMemoryContext, task->group), CStringGetTextDatumMy(TopMemoryContext, task->remote), Int32GetDatum(task->max), Int32GetDatum(task->count), TimestampTzGetDatum(task->start)};
+    int64 live = 0;
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID, TEXTOID, TEXTOID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
@@ -48,16 +48,13 @@ bool task_done(Task *task) {
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_SELECT, true);
-    if (SPI_processed != 1) {
-        W("%li: SPI_processed != 1", task->id);
-        exit = true;
-    } else {
+    if (SPI_processed != 1) W("%li: SPI_processed != 1", task->id); else {
         bool count = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "count", false));
         bool delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
         bool insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false));
         bool update = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "update", false));
-        if (!(task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", true)))) exit = true;
-        D1("live = %li, update = %s, insert = %s, delete = %s, count = %s", task->id, update ? "true" : "false", insert ? "true" : "false", delete ? "true" : "false", count ? "true" : "false");
+        live = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", true));
+        D1("live = %li, update = %s, insert = %s, delete = %s, count = %s", live, update ? "true" : "false", insert ? "true" : "false", delete ? "true" : "false", count ? "true" : "false");
     }
     SPI_finish_my();
     if (values[1]) pfree((void *)values[1]);
@@ -65,9 +62,10 @@ bool task_done(Task *task) {
     if (values[3]) pfree((void *)values[3]);
     if (values[4]) pfree((void *)values[4]);
     task_free(task);
-    if (!init_table_id_unlock(work->oid.table, task->id)) { W("!init_table_id_unlock(%i, %li)", work->oid.table, task->id); exit = true; }
+    if (!init_table_id_unlock(work->oid.table, task->id)) { W("!init_table_id_unlock(%i, %li)", work->oid.table, task->id); live = 0; }
     set_ps_display_my("idle");
-    return ShutdownRequestPending || exit;
+    task->id = live;
+    return ShutdownRequestPending || !live;
 }
 
 bool task_work(Task *task) {
