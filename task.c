@@ -136,7 +136,8 @@ bool task_done(Task *task) {
     if (values[1]) pfree((void *)values[1]);
     if (values[2]) pfree((void *)values[2]);
     task_update(task);
-    if (!unlock_table_id(work->oid.table, task->id)) { W("!unlock_table_id(%i, %li)", work->oid.table, task->id); exit = true; }
+    if (task->lock && !unlock_table_id(work->oid.table, task->id)) { W("!unlock_table_id(%i, %li)", work->oid.table, task->id); exit = true; }
+    task->lock = false;
     if (insert) task_insert(task);
     if (delete) task_delete(task);
     exit = exit || task_live(task);
@@ -153,6 +154,7 @@ bool task_work(Task *task) {
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return true;
     if (!lock_table_id(work->oid.table, task->id)) { W("!lock_table_id(%i, %li)", work->oid.table, task->id); return true; }
+    task->lock = true;
     task->count++;
     D1("id = %li, max = %i, oid = %i, count = %i, pid = %i", task->id, task->max, work->oid.table, task->count, task->pid);
     set_ps_display_my("work");
