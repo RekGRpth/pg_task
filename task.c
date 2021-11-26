@@ -107,7 +107,7 @@ static void task_update(Task *task) {
 }
 
 bool task_done(Task *task) {
-    bool delete = false, exit = true, insert = false, live = false;
+    bool delete = false, exit = true, insert = false;
     char nulls[] = {' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n'};
     Datum values[] = {Int64GetDatum(task->id), CStringGetTextDatumMy(TopMemoryContext, task->output.data), CStringGetTextDatumMy(TopMemoryContext, task->error.data)};
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
@@ -128,10 +128,9 @@ bool task_done(Task *task) {
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
     if (SPI_processed != 1) W("%li: %lu != 1", SPI_processed, task->id); else {
         delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
-        exit = ShutdownRequestPending;
+        exit = !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
         insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false));
-        live = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
-        D1("delete = %s, insert = %s, live = %s", delete ? "true" : "false", insert ? "true" : "false", live ? "true" : "false");
+        D1("delete = %s, exit = %s, insert = %s", delete ? "true" : "false", exit ? "true" : "false", insert ? "true" : "false");
     }
     SPI_finish_my();
     if (values[1]) pfree((void *)values[1]);
@@ -140,7 +139,7 @@ bool task_done(Task *task) {
     if (!unlock_table_id(work->oid.table, task->id)) { W("!unlock_table_id(%i, %li)", work->oid.table, task->id); exit = true; }
     if (!exit && insert) task_insert(task);
     if (!exit && delete) task_delete(task);
-    if (!exit && live) exit = task_live(task);
+    if (!exit) exit = task_live(task);
     task_free(task);
     set_ps_display_my("idle");
     return ShutdownRequestPending || exit;
