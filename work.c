@@ -714,7 +714,7 @@ static void work_reset(void) {
             LEFT JOIN pg_locks AS l ON l.locktype = 'userlock' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.objsubid = 4 AND l.database = $1 AND l.classid = t.id>>32 AND l.objid = t.id<<32>>32
             WHERE plan < CURRENT_TIMESTAMP AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
             FOR UPDATE OF t SKIP LOCKED
-        ) UPDATE %1$s AS u SET state = 'PLAN'::%2$s, start = NULL, stop = NULL, pid = NULL FROM s WHERE u.id = s.id RETURNING u.id
+        ) UPDATE %1$s AS t SET state = 'PLAN'::%2$s, start = NULL, stop = NULL, pid = NULL FROM s WHERE t.id = s.id RETURNING t.id
     ), work->schema_table, work->schema_type);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING, true);
@@ -787,7 +787,7 @@ static void work_timeout(void) {
                 WHERE t.state = 'PLAN'::%2$s AND t.plan + concat_ws(' ', (CASE WHEN t.max < 0 THEN -t.max ELSE 0 END)::text, 'msec')::interval <= CURRENT_TIMESTAMP
                 AND CASE WHEN t.max > 0 THEN t.max ELSE 1 END > COALESCE(classid, 0) FOR UPDATE OF t SKIP LOCKED
             ) SELECT id, hash, count - row_number() OVER (PARTITION BY hash ORDER BY count DESC, id) + 1 AS count FROM s ORDER BY s.count DESC, id
-            ) UPDATE %1$s AS u SET state = 'TAKE'::%2$s FROM s WHERE u.id = s.id AND s.count > 0 RETURNING u.id, u.hash, u.group, u.remote, u.max
+            ) UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM s WHERE t.id = s.id AND s.count > 0 RETURNING t.id, t.hash, t.group, t.remote, t.max
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
