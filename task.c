@@ -20,7 +20,7 @@ static bool task_live(Task *task) {
                 WHERE plan BETWEEN CURRENT_TIMESTAMP - active AND CURRENT_TIMESTAMP AND state = 'PLAN'::%2$s AND hash = $1 AND max >= $2 AND CASE
                     WHEN count > 0 AND live > '0 sec' THEN count > $3 AND $4 + live > CURRENT_TIMESTAMP ELSE count > $3 OR $4 + live > CURRENT_TIMESTAMP
                 END ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t SKIP LOCKED
-            ) UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM l WHERE t.id = l.id RETURNING id
+            ) UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM l WHERE t.id = l.id RETURNING t.id
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
@@ -45,7 +45,7 @@ static void task_delete(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
-            ) DELETE FROM %1$s AS t WHERE id = $1 AND delete AND $2 IS NULL RETURNING id
+            ) DELETE FROM %1$s AS t WHERE id = $1 AND delete AND $2 IS NULL RETURNING t.id
         ), work->schema_table);
     }
     SPI_connect_my(src.data);
@@ -72,7 +72,7 @@ static void task_insert(Task *task) {
             SELECT id, CASE
                 WHEN drift THEN CURRENT_TIMESTAMP + repeat
                 ELSE (WITH RECURSIVE r AS (SELECT plan AS p UNION SELECT p + repeat FROM r WHERE p <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
-            END AS plan, "group", max, input, timeout, delete, repeat, drift, count, live FROM s WHERE repeat > '0 sec' LIMIT 1 RETURNING id
+            END AS plan, "group", max, input, timeout, delete, repeat, drift, count, live FROM s WHERE repeat > '0 sec' LIMIT 1 RETURNING t.id
         ), work->schema_table);
     }
     SPI_connect_my(src.data);
@@ -95,7 +95,7 @@ static void task_update(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t WHERE plan BETWEEN CURRENT_TIMESTAMP - active AND CURRENT_TIMESTAMP AND hash = $1 AND state = 'PLAN'::%2$s AND max < 0 FOR UPDATE OF t SKIP LOCKED
-            ) UPDATE %1$s AS t SET plan = CURRENT_TIMESTAMP FROM s WHERE t.id = s.id RETURNING id
+            ) UPDATE %1$s AS t SET plan = CURRENT_TIMESTAMP FROM s WHERE t.id = s.id RETURNING t.id
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
