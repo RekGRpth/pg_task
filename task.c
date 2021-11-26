@@ -45,7 +45,7 @@ static void task_delete(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
-            ) DELETE FROM %1$s AS t WHERE id = $1 AND delete AND $2 IS NULL RETURNING t.id
+            ) DELETE FROM %1$s AS t WHERE id = $1 RETURNING t.id
         ), work->schema_table);
     }
     SPI_connect_my(src.data);
@@ -120,7 +120,7 @@ bool task_done(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
-            ) UPDATE %1$s AS t SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = $2, error = $3 FROM s WHERE t.id = s.id RETURNING delete AND $2 IS NULL AS delete, repeat > '0 sec' AS insert, count > 0 OR live > '0 sec' AS live
+            ) UPDATE %1$s AS t SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = $2, error = $3 FROM s WHERE t.id = s.id RETURNING delete AND output IS NULL AS delete, repeat > '0 sec' AS insert, count > 0 OR live > '0 sec' AS live
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
@@ -137,9 +137,9 @@ bool task_done(Task *task) {
     if (values[2]) pfree((void *)values[2]);
     task_update(task);
     if (!unlock_table_id(work->oid.table, task->id)) { W("!unlock_table_id(%i, %li)", work->oid.table, task->id); exit = true; }
-    if (!exit && insert) task_insert(task);
-    if (!exit && delete) task_delete(task);
-    if (!exit) exit = task_live(task);
+    if (insert) task_insert(task);
+    if (delete) task_delete(task);
+    exit = exit || task_live(task);
     task_free(task);
     set_ps_display_my("idle");
     return ShutdownRequestPending || exit;
