@@ -529,6 +529,7 @@ static void work_remote(Task *task) {
     pfree(values);
     PQconninfoFree(opts);
     pfree(task->group);
+    task->group = NULL;
 }
 
 static void work_table(void) {
