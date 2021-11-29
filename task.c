@@ -365,12 +365,13 @@ void task_main(Datum main_arg) {
     if (!lock_table_pid_hash(work->oid.table, task->pid, task->hash)) { W("!lock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash); return; }
     while (!ShutdownRequestPending) {
 #if PG_VERSION_NUM >= 100000
-        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, 0, PG_WAIT_EXTENSION);
+        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
 #else
-        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_EXIT_ON_PM_DEATH, 0);
+        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0);
 #endif
         if (rc & WL_TIMEOUT) if (task_timeout()) ShutdownRequestPending = true;
         if (rc & WL_LATCH_SET) task_latch();
+        if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
     }
     if (!unlock_table_pid_hash(work->oid.table, task->pid ? task->pid : MyProcPid, task->hash)) W("!unlock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid ? task->pid : MyProcPid, task->hash);
 }
