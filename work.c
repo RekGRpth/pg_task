@@ -102,7 +102,7 @@ static void work_free(Task *task) {
 static void work_finish(Task *task) {
     dlist_delete(&task->node);
     PQfinish(task->conn);
-    if (!unlock_table_pid_hash(work->oid.table, task->pid, task->hash)) W("!unlock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash);
+    if (task->pid && !unlock_table_pid_hash(work->oid.table, task->pid, task->hash)) W("!unlock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash);
     work_free(task);
 }
 
