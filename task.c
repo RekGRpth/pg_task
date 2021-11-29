@@ -225,6 +225,13 @@ static void task_execute(void) {
 
 static void task_exit(int code, Datum arg) {
     D1("code = %i, id = %li", code, task->id);
+    if (!code) return;
+#ifdef HAVE_SETSID
+    if (kill(-MyBgworkerEntry->bgw_notify_pid, SIGHUP))
+#else
+    if (kill(MyBgworkerEntry->bgw_notify_pid, SIGHUP))
+#endif
+        E("could not send signal to process %d: %m", MyBgworkerEntry->bgw_notify_pid);
 }
 
 static void task_catch(void) {
@@ -256,17 +263,6 @@ static void task_catch(void) {
     RESUME_INTERRUPTS();
 }
 
-static void work_exit(int code, Datum arg) {
-    D1("code = %i", code);
-    if (!code) return;
-#ifdef HAVE_SETSID
-    if (kill(-MyBgworkerEntry->bgw_notify_pid, SIGHUP))
-#else
-    if (kill(MyBgworkerEntry->bgw_notify_pid, SIGHUP))
-#endif
-        E("could not send signal to process %d: %m", MyBgworkerEntry->bgw_notify_pid);
-}
-
 static void task_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
@@ -274,7 +270,6 @@ static void task_init(void) {
     task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
     on_proc_exit(task_exit, (Datum)task);
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
-    on_proc_exit(work_exit, (Datum)work);
 #define X(name, serialize, deserialize) deserialize(name);
     TASK
 #undef X
