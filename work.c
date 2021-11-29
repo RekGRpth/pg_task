@@ -334,12 +334,16 @@ static bool work_input(Task *task) {
     D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
     initStringInfoMy(TopMemoryContext, &input);
     task->skip = 0;
-    appendStringInfo(&input, SQL(SET "pg_task.id" = %li;), task->id);
+    appendStringInfoString(&input, SQL(BEGIN;));
+    task->skip++;
+    appendStringInfo(&input, SQL(SET SESSION "pg_task.id" = %li;), task->id);
     task->skip++;
     if (task->timeout) {
-        appendStringInfo(&input, SQL(SET "statement_timeout" = %i;), task->timeout);
+        appendStringInfo(&input, SQL(SET SESSION "statement_timeout" = %i;), task->timeout);
         task->skip++;
     }
+    appendStringInfoString(&input, SQL(COMMIT;));
+    task->skip++;
     appendStringInfoString(&input, task->input);
     pfree(task->input);
     task->input = input.data;
@@ -366,6 +370,7 @@ static void work_query(Task *task) {
         work_done(task);
         return;
     }
+    D1("input = %s", task->input);
     if (!PQsendQuery(task->conn, task->input)) { work_error(task, "!PQsendQuery", PQerrorMessageMy(task->conn), false); return; }
     task->socket = work_result;
     if (!work_flush(task)) return;
