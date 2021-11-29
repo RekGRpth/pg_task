@@ -61,7 +61,7 @@ static void work_command(Task *task, PGresult *result) {
 static void work_event(WaitEventSet *set) {
     dlist_mutable_iter iter;
     AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
-    AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
+    AddWaitEventToSet(set, WL_EXIT_ON_PM_DEATH, PGINVALID_SOCKET, NULL, NULL);
     dlist_foreach_modify(iter, &work->head) {
         Task *task = dlist_container(Task, node, iter.cur);
         AddWaitEventToSet(set, task->event, PQsocket(task->conn), NULL, task);
@@ -845,7 +845,6 @@ void work_main(Datum main_arg) {
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) work_latch();
-            if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
             if (event->events & WL_SOCKET_READABLE) work_readable(event->user_data);
             if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
