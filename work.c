@@ -179,10 +179,33 @@ static void work_index(int count, const char *const *indexes) {
     set_ps_display_my("idle");
 }
 
+static void work_reset(void) {
+    Datum values[] = {ObjectIdGetDatum(work->oid.table)};
+    static Oid argtypes[] = {OIDOID};
+    StringInfoData src;
+    set_ps_display_my("reset");
+    initStringInfoMy(TopMemoryContext, &src);
+    appendStringInfo(&src, SQL(
+        WITH s AS (
+            SELECT id FROM %1$s AS t
+            LEFT JOIN pg_locks AS l ON l.locktype = 'userlock' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.objsubid = 4 AND l.database = $1 AND l.classid = t.id>>32 AND l.objid = t.id<<32>>32
+            WHERE plan < CURRENT_TIMESTAMP AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
+            FOR UPDATE OF t SKIP LOCKED
+        ) UPDATE %1$s AS t SET state = 'PLAN'::%2$s, start = NULL, stop = NULL, pid = NULL FROM s WHERE t.id = s.id RETURNING t.id
+    ), work->schema_table, work->schema_type);
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING, true);
+    for (uint64 row = 0; row < SPI_processed; row++) W("row = %lu, id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
+    SPI_finish_my();
+    pfree(src.data);
+    set_ps_display_my("idle");
+}
+
 static void work_reload(void) {
     ConfigReloadPending = false;
     ProcessConfigFile(PGC_SIGHUP);
     work_check();
+    if (!ShutdownRequestPending) work_reset();
 }
 
 static void work_latch(void) {
@@ -696,28 +719,6 @@ static void work_conf(void) {
     set_config_option("pg_task.timeout", timeout.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(timeout.data);
     dlist_init(&work->head);
-    set_ps_display_my("idle");
-}
-
-static void work_reset(void) {
-    Datum values[] = {ObjectIdGetDatum(work->oid.table)};
-    static Oid argtypes[] = {OIDOID};
-    StringInfoData src;
-    set_ps_display_my("reset");
-    initStringInfoMy(TopMemoryContext, &src);
-    appendStringInfo(&src, SQL(
-        WITH s AS (
-            SELECT id FROM %1$s AS t
-            LEFT JOIN pg_locks AS l ON l.locktype = 'userlock' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.objsubid = 4 AND l.database = $1 AND l.classid = t.id>>32 AND l.objid = t.id<<32>>32
-            WHERE plan < CURRENT_TIMESTAMP AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
-            FOR UPDATE OF t SKIP LOCKED
-        ) UPDATE %1$s AS t SET state = 'PLAN'::%2$s, start = NULL, stop = NULL, pid = NULL FROM s WHERE t.id = s.id RETURNING t.id
-    ), work->schema_table, work->schema_type);
-    SPI_connect_my(src.data);
-    SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING, true);
-    for (uint64 row = 0; row < SPI_processed; row++) W("row = %lu, id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
-    SPI_finish_my();
-    pfree(src.data);
     set_ps_display_my("idle");
 }
 
