@@ -398,6 +398,11 @@ static void work_connect(Task *task) {
     }
 }
 
+static void work_exit(int code, Datum arg) {
+    Work *work = (Work *)arg;
+    D1("code = %i, oid = %i", code, work->oid.table);
+}
+
 static void work_extension(const char *schema_quote, const char *extension) {
     const char *extension_quote = quote_identifier(extension);
     List *names;
@@ -734,6 +739,7 @@ static void work_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
+    on_proc_exit(work_exit, (Datum)work);
 #define X(name, serialize, deserialize) deserialize(name);
     WORK
 #undef X

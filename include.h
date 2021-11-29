@@ -75,6 +75,7 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 extern PGDLLIMPORT TimestampTz MyStartTimestamp;
 #endif
 #include <replication/slot.h>
+#include <storage/ipc.h>
 #if PG_VERSION_NUM >= 140000
 #include <storage/proc.h>
 #endif

@@ -223,6 +223,11 @@ static void task_execute(void) {
     StatementTimeout = StatementTimeoutMy;
 }
 
+static void task_exit(int code, Datum arg) {
+    Task *task = (Task *)arg;
+    D1("code = %i, id = %li", code, task->id);
+}
+
 static void task_catch(void) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
@@ -252,12 +257,19 @@ static void task_catch(void) {
     RESUME_INTERRUPTS();
 }
 
+static void work_exit(int code, Datum arg) {
+    Work *work = (Work *)arg;
+    D1("code = %i, oid = %i", code, work->oid.table);
+}
+
 static void task_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
     StringInfoData oid, schema_table, schema_type;
     task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
+    on_proc_exit(task_exit, (Datum)task);
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
+    on_proc_exit(work_exit, (Datum)work);
 #define X(name, serialize, deserialize) deserialize(name);
     TASK
 #undef X
