@@ -129,30 +129,6 @@ static int work_nevents(void) {
     return nevents;
 }
 
-static void work_fini(void) {
-    dlist_mutable_iter iter;
-    D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout, work->count, work->live);
-    set_ps_display_my("fini");
-#if PG_VERSION_NUM >= 110000
-    W("terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_type);
-#else
-    W("terminating background worker \"%s\" due to administrator command", MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1);
-#endif
-    dlist_foreach_modify(iter, &work->head) {
-        char errbuf[256];
-        Task *task = dlist_container(Task, node, iter.cur);
-        PGcancel *cancel = PQgetCancel(task->conn);
-        if (!cancel) { W("!PQgetCancel and %s", PQerrorMessageMy(task->conn)); continue; }
-        if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { W("!PQcancel and %s", errbuf); PQfreeCancel(cancel); continue; }
-        PQfreeCancel(cancel);
-        work_finish(task);
-    }
-    set_ps_display_my("idle");
-    if (ShutdownRequestPending) return;
-    MyBgworkerEntry->bgw_notify_pid = MyProcPid;
-    conf_work(MyBgworkerEntry);
-}
-
 static void work_index(int count, const char *const *indexes) {
     const char *name_quote;
     const RangeVar *rangevar;
@@ -399,8 +375,18 @@ static void work_connect(Task *task) {
 }
 
 static void work_exit(int code, Datum arg) {
-    Work *work = (Work *)arg;
-    D1("code = %i, oid = %i", code, work->oid.table);
+    dlist_mutable_iter iter;
+    D1("code = %i", code);
+    dlist_foreach_modify(iter, &work->head) {
+        char errbuf[256];
+        Task *task = dlist_container(Task, node, iter.cur);
+        PGcancel *cancel = PQgetCancel(task->conn);
+        W("id = %li", task->id);
+        if (!cancel) { W("!PQgetCancel and %s", PQerrorMessageMy(task->conn)); continue; }
+        if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { W("!PQcancel and %s", errbuf); PQfreeCancel(cancel); continue; }
+        PQfreeCancel(cancel);
+        work_finish(task);
+    }
 }
 
 static void work_extension(const char *schema_quote, const char *extension) {
@@ -744,7 +730,6 @@ static void work_init(void) {
     WORK
 #undef X
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
-    pqsignal(SIGTERM, SignalHandlerForShutdownRequest);
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM >= 110000
     BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user, 0);
@@ -866,5 +851,6 @@ void work_main(Datum main_arg) {
         if (work->live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), work->live * 1000)) break;
     }
     if (!unlock_data_user_table(MyDatabaseId, GetUserId(), work->oid.table)) W("!unlock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid.table);
-    work_fini();
+    MyBgworkerEntry->bgw_notify_pid = MyProcPid;
+    conf_work(MyBgworkerEntry);
 }

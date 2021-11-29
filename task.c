@@ -224,7 +224,6 @@ static void task_execute(void) {
 }
 
 static void task_exit(int code, Datum arg) {
-    Task *task = (Task *)arg;
     D1("code = %i, id = %li", code, task->id);
 }
 
@@ -258,8 +257,7 @@ static void task_catch(void) {
 }
 
 static void work_exit(int code, Datum arg) {
-    Work *work = (Work *)arg;
-    D1("code = %i, oid = %i", code, work->oid.table);
+    D1("code = %i", code);
 }
 
 static void task_init(void) {
