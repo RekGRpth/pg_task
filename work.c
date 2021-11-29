@@ -594,7 +594,13 @@ static void work_table(void) {
             input text NOT NULL,
             "null" text NOT NULL DEFAULT current_setting('pg_task.default_null', false),
             output text,
-            remote text
+            remote text,
+            CONSTRAINT "active IS POSITIVE" CHECK (active > '0 sec'::interval),
+            CONSTRAINT "live IS NOT NEGATIVE" CHECK (live >= '0 sec'::interval),
+            CONSTRAINT "repeat IS NOT NEGATIVE" CHECK (repeat >= '0 sec'::interval),
+            CONSTRAINT "timeout IS NOT NEGATIVE" CHECK (timeout >= '0 sec'::interval),
+            CONSTRAINT "count IS NOT NEGATIVE" CHECK (count >= 0),
+            CONSTRAINT "max IS POSITIVE" CHECK (max > 0)
         )
     ), work->schema_table, work->schema_type,
 #if PG_VERSION_NUM >= 120000
