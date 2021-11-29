@@ -64,11 +64,11 @@ static void task_insert(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT * FROM %1$s AS t WHERE id = $1 FOR UPDATE OF t
-            ) INSERT INTO %1$s AS t (parent, plan, "group", max, input, timeout, delete, repeat, drift, count, live)
+            ) INSERT INTO %1$s AS t (parent, plan, "group", max, input, timeout, delete, repeat, drift, count, live, remote)
             SELECT id, CASE
                 WHEN drift THEN CURRENT_TIMESTAMP + repeat
                 ELSE (WITH RECURSIVE r AS (SELECT plan AS p UNION SELECT p + repeat FROM r WHERE p <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
-            END AS plan, "group", max, input, timeout, delete, repeat, drift, count, live FROM s WHERE repeat > '0 sec' LIMIT 1 RETURNING t.id
+            END AS plan, "group", max, input, timeout, delete, repeat, drift, count, live, remote FROM s WHERE repeat > '0 sec' LIMIT 1 RETURNING t.id
         ), work->schema_table);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
