@@ -132,6 +132,7 @@ bool task_done(Task *task) {
     if (insert) task_insert(task);
     if (delete) task_delete(task);
     exit = exit || task_live(task);
+    SPI_commit_my();
     SPI_finish_my();
     task_free(task);
     set_ps_display_my("idle");
