@@ -23,11 +23,9 @@ static bool task_live(Task *task) {
             ) UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM s WHERE t.id = s.id RETURNING t.id
         ), work->schema_table, work->schema_type);
     }
-    SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, false);
     task->id = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false)) : 0;
-    SPI_finish_my();
     D1("id = %li", task->id);
     set_ps_display_my("idle");
     return ShutdownRequestPending || !task->id;
@@ -48,11 +46,9 @@ static void task_delete(Task *task) {
             ) DELETE FROM %1$s AS t WHERE id = $1 RETURNING t.id
         ), work->schema_table);
     }
-    SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE_RETURNING, true);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE_RETURNING, false);
     for (uint64 row = 0; row < SPI_processed; row++) W("row = %lu, id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
-    SPI_finish_my();
     set_ps_display_my("idle");
 }
 
@@ -75,11 +71,9 @@ static void task_insert(Task *task) {
             END AS plan, "group", max, input, timeout, delete, repeat, drift, count, live FROM s WHERE repeat > '0 sec' LIMIT 1 RETURNING t.id
         ), work->schema_table);
     }
-    SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING, true);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING, false);
     for (uint64 row = 0; row < SPI_processed; row++) W("row = %lu, id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
-    SPI_finish_my();
     set_ps_display_my("idle");
 }
 
@@ -98,11 +92,9 @@ static void task_update(Task *task) {
             ) UPDATE %1$s AS t SET plan = CURRENT_TIMESTAMP FROM s WHERE t.id = s.id RETURNING t.id
         ), work->schema_table, work->schema_type);
     }
-    SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, false);
     for (uint64 row = 0; row < SPI_processed; row++) W("row = %lu, id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
-    SPI_finish_my();
     set_ps_display_my("idle");
 }
 
@@ -125,14 +117,13 @@ bool task_done(Task *task) {
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, true);
+    SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, false);
     if (SPI_processed != 1) W("%li: %lu != 1", SPI_processed, task->id); else {
         delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
         exit = !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
         insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false));
         D1("delete = %s, exit = %s, insert = %s", delete ? "true" : "false", exit ? "true" : "false", insert ? "true" : "false");
     }
-    SPI_finish_my();
     if (values[1]) pfree((void *)values[1]);
     if (values[2]) pfree((void *)values[2]);
     task_update(task);
@@ -141,6 +132,7 @@ bool task_done(Task *task) {
     if (insert) task_insert(task);
     if (delete) task_delete(task);
     exit = exit || task_live(task);
+    SPI_finish_my();
     task_free(task);
     set_ps_display_my("idle");
     return ShutdownRequestPending || exit;
