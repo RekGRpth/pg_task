@@ -784,9 +784,8 @@ static void work_timeout(void) {
             WITH s AS ( WITH l AS (
                 SELECT count(classid) AS classid, objid FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 GROUP BY objid
             ), s AS (
-                SELECT t.id, t.hash, CASE WHEN t.max > 0 THEN t.max ELSE 1 END - COALESCE(classid, 0) AS count FROM %1$s AS t LEFT JOIN l ON objid = t.hash
-                WHERE t.state = 'PLAN'::%2$s AND t.plan + concat_ws(' ', (CASE WHEN t.max < 0 THEN -t.max ELSE 0 END)::text, 'msec')::interval <= CURRENT_TIMESTAMP
-                AND CASE WHEN t.max > 0 THEN t.max ELSE 1 END > COALESCE(classid, 0) FOR UPDATE OF t SKIP LOCKED
+                SELECT t.id, t.hash, t.max - COALESCE(classid, 0) AS count FROM %1$s AS t LEFT JOIN l ON objid = t.hash
+                WHERE t.plan <= CURRENT_TIMESTAMP AND t.state = 'PLAN'::%2$s AND t.max > COALESCE(classid, 0) FOR UPDATE OF t SKIP LOCKED
             ) SELECT id, hash, count - row_number() OVER (PARTITION BY hash ORDER BY count DESC, id) + 1 AS count FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM s WHERE t.id = s.id AND s.count > 0 RETURNING t.id, t.hash, t.group, t.remote, t.max
         ), work->schema_table, work->schema_type);

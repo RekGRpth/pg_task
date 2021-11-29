@@ -77,27 +77,6 @@ static void task_insert(Task *task) {
     set_ps_display_my("idle");
 }
 
-static void task_update(Task *task) {
-    Datum values[] = {Int32GetDatum(task->hash)};
-    static Oid argtypes[] = {INT4OID};
-    static SPIPlanPtr plan = NULL;
-    static StringInfoData src = {0};
-    D1("hash = %i", task->hash);
-    set_ps_display_my("update");
-    if (!src.data) {
-        initStringInfoMy(TopMemoryContext, &src);
-        appendStringInfo(&src, SQL(
-            WITH s AS (
-                SELECT id FROM %1$s AS t WHERE plan < CURRENT_TIMESTAMP AND hash = $1 AND state = 'PLAN'::%2$s AND max < 0 FOR UPDATE OF t SKIP LOCKED
-            ) UPDATE %1$s AS t SET plan = CURRENT_TIMESTAMP FROM s WHERE t.id = s.id RETURNING t.id
-        ), work->schema_table, work->schema_type);
-    }
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, false);
-    for (uint64 row = 0; row < SPI_processed; row++) W("row = %lu, id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
-    set_ps_display_my("idle");
-}
-
 bool task_done(Task *task) {
     bool delete = false, exit = true, insert = false;
     char nulls[] = {' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n'};
@@ -126,11 +105,10 @@ bool task_done(Task *task) {
     }
     if (values[1]) pfree((void *)values[1]);
     if (values[2]) pfree((void *)values[2]);
-    task_update(task);
-    if (task->lock && !unlock_table_id(work->oid.table, task->id)) { W("!unlock_table_id(%i, %li)", work->oid.table, task->id); exit = true; }
-    task->lock = false;
     if (insert) task_insert(task);
     if (delete) task_delete(task);
+    if (task->lock && !unlock_table_id(work->oid.table, task->id)) { W("!unlock_table_id(%i, %li)", work->oid.table, task->id); exit = true; }
+    task->lock = false;
     exit = exit || task_live(task);
     SPI_commit_my();
     SPI_finish_my();
