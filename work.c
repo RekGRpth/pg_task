@@ -441,7 +441,7 @@ static void work_partman(void) {
     const char *template_quote;
     const RangeVar *rangevar;
     List *names;
-    StringInfoData create_template, pkey, template, template_table;
+    StringInfoData src, pkey, template, template_table;
     D1("user = %s, data = %s", work->str.user, work->str.data);
     set_ps_display_my("partman");
     work->oid.partman = work_schema(work->quote.partman);
@@ -454,18 +454,18 @@ static void work_partman(void) {
     template_quote = quote_identifier(template.data);
     initStringInfoMy(TopMemoryContext, &template_table);
     appendStringInfo(&template_table, "%s.%s", work->quote.partman, template_quote);
-    initStringInfoMy(TopMemoryContext, &create_template);
-    appendStringInfo(&create_template, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))), template_table.data, work->schema_table, pkey_quote);
+    initStringInfoMy(TopMemoryContext, &src);
+    appendStringInfo(&src, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))), template_table.data, work->schema_table, pkey_quote);
     names = stringToQualifiedNameList(template_table.data);
     rangevar = makeRangeVarFromNameList(names);
-    SPI_connect_my(create_template.data);
+    SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, work->schema_table), CStringGetTextDatumMy(TopMemoryContext, template_table.data)};
         static Oid argtypes[] = {TEXTOID, TEXTOID};
         StringInfoData create_parent;
         initStringInfoMy(TopMemoryContext, &create_parent);
         appendStringInfo(&create_parent, SQL(SELECT %1$s.create_parent(p_parent_table := $1, p_control := 'plan', p_type := 'native', p_interval := 'monthly', p_template_table := $2)), work->quote.partman);
-        SPI_execute_with_args_my(create_template.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
         SPI_commit_my();
         SPI_start_transaction_my(create_parent.data);
         SPI_execute_with_args_my(create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT, false);
@@ -480,8 +480,8 @@ static void work_partman(void) {
     list_free_deep(names);
     if (pkey_quote != pkey.data) pfree((void *)pkey_quote);
     if (template_quote != template.data) pfree((void *)template_quote);
-    pfree(create_template.data);
     pfree(pkey.data);
+    pfree(src.data);
     pfree(template.data);
     pfree(template_table.data);
     set_ps_display_my("idle");
