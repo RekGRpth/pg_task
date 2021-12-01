@@ -254,11 +254,11 @@ static void init_conf(void) {
     DefineCustomStringVariable("pg_work.default_active", "pg_work default active", "task active before now", &work_default_active, "1 week", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_data", "pg_work default data", "default database name", &work_default_data, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_live", "pg_work default live", "exit until timeout", &work_default_live, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    if (extension_file_exists("pg_partman")) DefineCustomStringVariable("pg_work.default_partman", "pg_work default partman", "partman schema name, if null then do not use partman", &work_default_partman, NULL, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    if (extension_file_exists("pg_partman")) DefineCustomStringVariable("pg_work.default_partman", "pg_work default partman", "partman schema name, if null then do not use partman", &work_default_partman, "partman", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_schema", "pg_work default schema", "schema name for tasks table", &work_default_schema, "public", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_table", "pg_work default table", "table name for tasks table", &work_default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_user", "pg_work default user", "default username", &work_default_user, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    D1("json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, timeout = %i, count = %i, live = %s, active = %s, partman = %s", default_json, work_default_user, work_default_data, work_default_schema, work_default_table, default_null, work_default_timeout, work_default_count, work_default_live, work_default_active, work_default_partman ? work_default_partman : default_null);
+    D1("json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, timeout = %i, count = %i, live = %s, active = %s, partman = %s", default_json, work_default_user, work_default_data, work_default_schema, work_default_table, default_null, work_default_timeout, work_default_count, work_default_live, work_default_active, work_default_partman && work_default_partman[0] ? work_default_partman : default_null);
 }
 
 void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf) {

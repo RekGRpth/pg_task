@@ -26,26 +26,30 @@ static char *PQresultErrorMessageMy(const PGresult *res) {
 
 static void work_check(void) {
     static SPIPlanPtr plan = NULL;
-    static const char *src = SQL(
-        WITH j AS (
-            SELECT  COALESCE(COALESCE(j.user, data), current_setting('pg_work.default_user', false)) AS user,
-                    COALESCE(COALESCE(data, j.user), current_setting('pg_work.default_data', false)) AS data,
-                    COALESCE(schema, current_setting('pg_work.default_schema', false)) AS schema,
-                    COALESCE(j.table, current_setting('pg_work.default_table', false)) AS table,
-                    COALESCE(timeout, current_setting('pg_work.default_timeout', false)::integer) AS timeout,
-                    COALESCE(count, current_setting('pg_work.default_count', false)::integer) AS count,
-                    EXTRACT(epoch FROM COALESCE(live, current_setting('pg_work.default_live', false)::interval))::bigint AS live,
-                    COALESCE(partman, current_setting('pg_work.default_partman', true)) AS partman
-            FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout integer, count integer, live interval, partman text)
-        ) SELECT    DISTINCT j.* FROM j
-        INNER JOIN  pg_user AS u ON usename = j.user
-        INNER JOIN  pg_database AS d ON datname = data AND NOT datistemplate AND datallowconn
-        WHERE       j.user = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND j.table = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::integer
-    );
-    set_ps_display_my("check");
+    static StringInfoData src = {0};
     if (ShutdownRequestPending) return;
-    SPI_connect_my(src);
-    if (!plan) plan = SPI_prepare_my(src, 0, NULL);
+    set_ps_display_my("check");
+    if (!src.data) {
+        initStringInfoMy(TopMemoryContext, &src);
+        appendStringInfo(&src, SQL(
+            WITH j AS (
+                SELECT  COALESCE(COALESCE(j.user, data), current_setting('pg_work.default_user', false)) AS user,
+                        COALESCE(COALESCE(data, j.user), current_setting('pg_work.default_data', false)) AS data,
+                        COALESCE(schema, current_setting('pg_work.default_schema', false)) AS schema,
+                        COALESCE(j.table, current_setting('pg_work.default_table', false)) AS table,
+                        COALESCE(timeout, current_setting('pg_work.default_timeout', false)::integer) AS timeout,
+                        COALESCE(count, current_setting('pg_work.default_count', false)::integer) AS count,
+                        EXTRACT(epoch FROM COALESCE(live, current_setting('pg_work.default_live', false)::interval))::bigint AS live,
+                        COALESCE(partman, NULLIF(current_setting('pg_work.default_partman', true), '%1$s')) AS partman
+                FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout integer, count integer, live interval, partman text)
+            ) SELECT    DISTINCT j.* FROM j
+            INNER JOIN  pg_user AS u ON usename = j.user
+            INNER JOIN  pg_database AS d ON datname = data AND NOT datistemplate AND datallowconn
+            WHERE       j.user = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND j.table = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::integer
+        ), "");
+    }
+    SPI_connect_my(src.data);
+    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
     if (!SPI_processed) ShutdownRequestPending = true;
     SPI_finish_my();
