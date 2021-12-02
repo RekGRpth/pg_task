@@ -417,6 +417,7 @@ static void work_exit(int code, Datum arg) {
     }
 }
 
+#if PG_VERSION_NUM >= 120000
 static void work_extension(const char *schema_quote, const char *extension) {
     const char *extension_quote = quote_identifier(extension);
     List *names;
@@ -456,25 +457,6 @@ static void work_partman(void) {
     appendStringInfo(&template_table, "%s.%s", work->quote.partman, template_quote);
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))), template_table.data, work->schema_table, pkey_quote);
-#if PG_VERSION_NUM >= 120000
-#else
-    if (work->str.partman) {
-        const char *function_quote;
-        StringInfoData function;
-        initStringInfoMy(TopMemoryContext, &function);
-        appendStringInfo(&function, "%1$s_hash_generate", work->str.table);
-        function_quote = quote_identifier(function.data);
-        appendStringInfo(&src, SQL(;CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
-            IF tg_op = 'INSERT' OR (new.group, new.remote) IS DISTINCT FROM (old.group, old.remote) THEN
-                new.hash = hashtext(new.group||COALESCE(new.remote, '%3$s'));
-            END IF;
-            return new;
-        end;$$ LANGUAGE plpgsql;
-        CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s()), work->quote.schema, function_quote, "", template_table.data);
-        if (function_quote != function.data) pfree((void *)function_quote);
-        pfree(function.data);
-    }
-#endif
     names = stringToQualifiedNameList(template_table.data);
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(src.data);
@@ -505,6 +487,7 @@ static void work_partman(void) {
     pfree(template_table.data);
     set_ps_display_my("idle");
 }
+#endif
 
 static void work_remote(Task *task) {
     bool password = false;
@@ -586,7 +569,7 @@ static void work_table(void) {
 #if PG_VERSION_NUM >= 120000
     appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (hashtext("group"||COALESCE(remote, '%1$s'))) STORED), "");
 #else
-    if (!work->str.partman) {
+    if (true) {
         const char *function_quote;
         StringInfoData function;
         initStringInfoMy(TopMemoryContext, &function);
@@ -735,7 +718,9 @@ static void work_conf(void) {
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);
     work_index(countof(index_state), index_state);
+#if PG_VERSION_NUM >= 120000
     if (work->str.partman) work_partman();
+#endif
     set_config_option("pg_task.data", work->str.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work->str.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &timeout);
