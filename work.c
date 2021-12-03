@@ -32,9 +32,7 @@ static void work_check(void) {
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, init_check(), "");
-        appendStringInfo(&src, SQL(%1$s
-            WHERE       "user" = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND "table" = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::integer
-        ), " ");
+        appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND "table" = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::integer), " ");
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);

@@ -79,10 +79,7 @@ static void conf_check(void) {
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, init_check(), "");
-        appendStringInfo(&src, SQL(%1$s
-            LEFT JOIN   pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text)
-            WHERE       pid IS NULL
-        ), " ");
+        appendStringInfo(&src, SQL(%1$sLEFT JOIN pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text) WHERE pid IS NULL), " ");
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
