@@ -309,9 +309,9 @@ static void task_init(void) {
 #endif
     task->id = DatumGetInt64(MyBgworkerEntry->bgw_main_arg);
     if (!MyProcPort && !(MyProcPort = (Port *) calloc(1, sizeof(Port)))) E("!calloc");
+    if (!MyProcPort->database_name) MyProcPort->database_name = work->str.data;
     if (!MyProcPort->remote_host) MyProcPort->remote_host = "[local]";
     if (!MyProcPort->user_name) MyProcPort->user_name = work->str.user;
-    if (!MyProcPort->database_name) MyProcPort->database_name = work->str.data;
 #if PG_VERSION_NUM >= 110000
     set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
 #else
