@@ -350,7 +350,7 @@ static void work_query(Task *task) {
         if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
         appendStringInfo(&task->error, "%sseverity%cERROR", task->error.len ? "\n" : "", task->delimiter);
         appendStringInfo(&task->error, "%sseverity_nonlocalized%cERROR", task->error.len ? "\n" : "", task->delimiter);
-        appendStringInfo(&task->error, "%ssqlstate%c2600", task->error.len ? "\n" : "", task->delimiter);
+        appendStringInfo(&task->error, "%ssqlstate%c%s", task->error.len ? "\n" : "", task->delimiter, unpack_sql_state(ERRCODE_INTERNAL_ERROR));
         appendStringInfo(&task->error, "%smessage_primary%ctask %li not active", task->error.len ? "\n" : "", task->delimiter, task->id);
         appendStringInfo(&task->error, "%ssource_file%c%s", task->error.len ? "\n" : "", task->delimiter, __FILE__);
         appendStringInfo(&task->error, "%ssource_line%c%i", task->error.len ? "\n" : "", task->delimiter, __LINE__);
