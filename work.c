@@ -43,8 +43,10 @@ static void work_check(void) {
                         NULLIF(COALESCE(partman, current_setting('pg_work.default_partman', true)), '%1$s') AS partman
                 FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout integer, count integer, live interval, partman text)
             ) SELECT    DISTINCT j.* FROM j
-            WHERE       "user" = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND "table" = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::integer
         ), "");
+        appendStringInfo(&src, SQL(%1$s
+            WHERE       "user" = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND "table" = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::integer
+        ), " ");
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);

@@ -90,9 +90,11 @@ static void conf_check(void) {
                         NULLIF(COALESCE(partman, current_setting('pg_work.default_partman', true)), '%1$s') AS partman
                 FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout integer, count integer, live interval, partman text)
             ) SELECT    DISTINCT j.* FROM j
+        ), "");
+        appendStringInfo(&src, SQL(%1$s
             LEFT JOIN   pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text)
             WHERE       pid IS NULL
-        ), "");
+        ), " ");
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
