@@ -152,9 +152,6 @@ static void conf_check(void) {
 }
 
 void conf_main(Datum main_arg) {
-    if (!MyProcPort && !(MyProcPort = (Port *)calloc(1, sizeof(Port)))) E("!calloc");
-    if (!MyProcPort->database_name) MyProcPort->database_name = "postgres";
-    if (!MyProcPort->user_name) MyProcPort->user_name = "postgres";
     set_config_option("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM >= 110000
