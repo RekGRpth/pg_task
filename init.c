@@ -109,6 +109,22 @@ char *TextDatumGetCStringMy(MemoryContext memoryContext, Datum datum) {
     return datum ? text_to_cstring_my(memoryContext, (text *)DatumGetPointer(datum)) : NULL;
 }
 
+const char *init_check(void) {
+    return SQL(
+        WITH j AS (
+            SELECT  COALESCE(COALESCE(j.user, data), current_setting('pg_work.default_user', false)) AS user,
+                    COALESCE(COALESCE(data, j.user), current_setting('pg_work.default_data', false)) AS data,
+                    COALESCE(schema, current_setting('pg_work.default_schema', false)) AS schema,
+                    COALESCE(j.table, current_setting('pg_work.default_table', false)) AS table,
+                    COALESCE(timeout, current_setting('pg_work.default_timeout', false)::integer) AS timeout,
+                    COALESCE(count, current_setting('pg_work.default_count', false)::integer) AS count,
+                    EXTRACT(epoch FROM COALESCE(live, current_setting('pg_work.default_live', false)::interval))::bigint AS live,
+                    NULLIF(COALESCE(partman, current_setting('pg_work.default_partman', true)), '%1$s') AS partman
+            FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout integer, count integer, live interval, partman text)
+        ) SELECT    DISTINCT j.* FROM j
+    );
+}
+
 static text *cstring_to_text_my(MemoryContext memoryContext, const char *s) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(memoryContext);
     text *result = cstring_to_text(s);

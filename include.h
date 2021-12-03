@@ -184,6 +184,7 @@ bool unlock_data_user_table(Oid data, Oid user, Oid table);
 bool unlock_table_id(Oid table, int64 id);
 bool unlock_table_pid_hash(Oid table, int pid, int hash);
 char *TextDatumGetCStringMy(MemoryContext memoryContext, Datum datum);
+const char *init_check(void);
 Datum CStringGetTextDatumMy(MemoryContext memoryContext, const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
 DestReceiver *CreateDestReceiverMy(CommandDest dest);

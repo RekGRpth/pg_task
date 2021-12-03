@@ -78,19 +78,7 @@ static void conf_check(void) {
     set_ps_display_my("check");
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
-        appendStringInfo(&src, SQL(
-            WITH j AS (
-                SELECT  COALESCE(COALESCE(j.user, data), current_setting('pg_work.default_user', false)) AS user,
-                        COALESCE(COALESCE(data, j.user), current_setting('pg_work.default_data', false)) AS data,
-                        COALESCE(schema, current_setting('pg_work.default_schema', false)) AS schema,
-                        COALESCE(j.table, current_setting('pg_work.default_table', false)) AS table,
-                        COALESCE(timeout, current_setting('pg_work.default_timeout', false)::integer) AS timeout,
-                        COALESCE(count, current_setting('pg_work.default_count', false)::integer) AS count,
-                        EXTRACT(epoch FROM COALESCE(live, current_setting('pg_work.default_live', false)::interval))::bigint AS live,
-                        NULLIF(COALESCE(partman, current_setting('pg_work.default_partman', true)), '%1$s') AS partman
-                FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout integer, count integer, live interval, partman text)
-            ) SELECT    DISTINCT j.* FROM j
-        ), "");
+        appendStringInfo(&src, init_check(), "");
         appendStringInfo(&src, SQL(%1$s
             LEFT JOIN   pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text)
             WHERE       pid IS NULL
