@@ -197,7 +197,7 @@ static void task_error(Task *task, ErrorData *edata) {
     if (edata->funcname) appendStringInfo(&task->error, "%sfuncname%c%s", task->error.len ? "\n" : "", task->delimiter, edata->funcname);
     if (edata->domain) appendStringInfo(&task->error, "%sdomain%c%s", task->error.len ? "\n" : "", task->delimiter, edata->domain);
     if (edata->context_domain) appendStringInfo(&task->error, "%scontext_domain%c%s", task->error.len ? "\n" : "", task->delimiter, edata->context_domain);
-    if (edata->sqlerrcode) appendStringInfo(&task->error, "%ssqlerrcode%c%i", task->error.len ? "\n" : "", task->delimiter, edata->sqlerrcode);
+    if (edata->sqlerrcode) appendStringInfo(&task->error, "%ssqlerrcode%c%s", task->error.len ? "\n" : "", task->delimiter, unpack_sql_state(edata->sqlerrcode));
     if (edata->message) appendStringInfo(&task->error, "%smessage%c%s", task->error.len ? "\n" : "", task->delimiter, edata->message);
     if (edata->detail) appendStringInfo(&task->error, "%sdetail%c%s", task->error.len ? "\n" : "", task->delimiter, edata->detail);
     if (edata->detail_log) appendStringInfo(&task->error, "%sdetail_log%c%s", task->error.len ? "\n" : "", task->delimiter, edata->detail_log);
