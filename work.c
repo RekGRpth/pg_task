@@ -115,7 +115,7 @@ static void work_error(Task *task, const char *msg, const char *err, bool finish
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     appendStringInfo(&task->error, "%s%s", task->error.len ? "\n" : "", msg);
     if (err && strlen(err)) appendStringInfo(&task->error, " and %s", err);
-    W("%li: %s", task->id, task->error.data);
+    W("id = %li, error = %s", task->id, task->error.data);
     appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
     task->skip++;
     task_done(task) || finish ? work_finish(task) : work_free(task);
@@ -220,7 +220,7 @@ static void work_latch(void) {
 }
 
 static bool work_busy(Task *task, int event) {
-    if (PQisBusy(task->conn)) { W("%li: PQisBusy", task->id); task->event = event; return false; }
+    if (PQisBusy(task->conn)) { W("id = %li, PQisBusy", task->id); task->event = event; return false; }
     return true;
 }
 
@@ -232,7 +232,7 @@ static bool work_consume(Task *task) {
 static bool work_flush(Task *task) {
     switch (PQflush(task->conn)) {
         case 0: break;
-        case 1: D1("%li: PQflush == 1", task->id); task->event = WL_SOCKET_MASK; return false;
+        case 1: D1("id = %li, PQflush == 1", task->id); task->event = WL_SOCKET_MASK; return false;
         case -1: work_error(task, "PQflush == -1", PQerrorMessageMy(task->conn), true); return false;
     }
     return true;
@@ -321,9 +321,9 @@ static void work_result(Task *task) {
     for (PGresult *result; PQstatus(task->conn) == CONNECTION_OK && (result = PQgetResult(task->conn)); ) {
         switch (PQresultStatus(result)) {
             case PGRES_COMMAND_OK: work_command(task, result); break;
-            case PGRES_FATAL_ERROR: W("%li: PQresultStatus == PGRES_FATAL_ERROR and %s", task->id, PQresultErrorMessageMy(result)); work_fatal(task, result); break;
+            case PGRES_FATAL_ERROR: W("id = %li, PQresultStatus == PGRES_FATAL_ERROR and %s", task->id, PQresultErrorMessageMy(result)); work_fatal(task, result); break;
             case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) work_success(task, result, row); break;
-            default: D1("%li: %s", task->id, PQresStatus(PQresultStatus(result))); break;
+            default: D1("id = %li, %s", task->id, PQresStatus(PQresultStatus(result))); break;
         }
         PQclear(result);
         if (!work_consume_flush_busy(task)) return;
@@ -384,16 +384,16 @@ static void work_query(Task *task) {
 static void work_connect(Task *task) {
     bool connected = false;
     switch (PQstatus(task->conn)) {
-        case CONNECTION_BAD: D1("%li: PQstatus == CONNECTION_BAD", task->id); work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessageMy(task->conn), true); return;
-        case CONNECTION_OK: D1("%li: PQstatus == CONNECTION_OK", task->id); connected = true; break;
+        case CONNECTION_BAD: D1("id = %li, PQstatus == CONNECTION_BAD", task->id); work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessageMy(task->conn), true); return;
+        case CONNECTION_OK: D1("id = %li, PQstatus == CONNECTION_OK", task->id); connected = true; break;
         default: break;
     }
     if (!connected) switch (PQconnectPoll(task->conn)) {
-        case PGRES_POLLING_ACTIVE: D1("%li: PQconnectPoll == PGRES_POLLING_ACTIVE", task->id); break;
-        case PGRES_POLLING_FAILED: D1("%li: PQconnectPoll == PGRES_POLLING_FAILED", task->id); work_error(task, "PQconnectPoll == PGRES_POLLING_FAILED", PQerrorMessageMy(task->conn), true); return;
-        case PGRES_POLLING_OK: D1("%li: PQconnectPoll == PGRES_POLLING_OK", task->id); connected = true; break;
-        case PGRES_POLLING_READING: D1("%li: PQconnectPoll == PGRES_POLLING_READING", task->id); task->event = WL_SOCKET_READABLE; break;
-        case PGRES_POLLING_WRITING: D1("%li: PQconnectPoll == PGRES_POLLING_WRITING", task->id); task->event = WL_SOCKET_WRITEABLE; break;
+        case PGRES_POLLING_ACTIVE: D1("id = %li, PQconnectPoll == PGRES_POLLING_ACTIVE", task->id); break;
+        case PGRES_POLLING_FAILED: D1("id = %li, PQconnectPoll == PGRES_POLLING_FAILED", task->id); work_error(task, "PQconnectPoll == PGRES_POLLING_FAILED", PQerrorMessageMy(task->conn), true); return;
+        case PGRES_POLLING_OK: D1("id = %li, PQconnectPoll == PGRES_POLLING_OK", task->id); connected = true; break;
+        case PGRES_POLLING_READING: D1("id = %li, PQconnectPoll == PGRES_POLLING_READING", task->id); task->event = WL_SOCKET_READABLE; break;
+        case PGRES_POLLING_WRITING: D1("id = %li, PQconnectPoll == PGRES_POLLING_WRITING", task->id); task->event = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
         if(!(task->pid = PQbackendPID(task->conn))) { work_error(task, "!PQbackendPID", PQerrorMessageMy(task->conn), true); return; }

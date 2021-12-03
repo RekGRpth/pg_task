@@ -104,7 +104,7 @@ bool task_done(Task *task) {
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, false);
-    if (SPI_processed != 1) W("%li: %lu != 1", SPI_processed, task->id); else {
+    if (SPI_processed != 1) W("id = %li, %lu != 1", SPI_processed, task->id); else {
         delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
         exit = !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
         insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false));
@@ -158,7 +158,7 @@ bool task_work(Task *task) {
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     if (SPI_processed != 1) {
-        W("%li: %lu != 1", SPI_processed, task->id);
+        W("id = %li, %lu != 1", SPI_processed, task->id);
         exit = true;
     } else {
         task->active = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "active", false));
