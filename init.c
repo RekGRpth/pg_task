@@ -140,6 +140,7 @@ static void init_work(bool dynamic) {
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     if (init_check_ascii_all(&worker)) E("init_check_ascii_all");
     if (dynamic) {
+        worker.bgw_notify_pid = MyProcPid;
         IsUnderPostmaster = true;
         if (!RegisterDynamicBackgroundWorker(&worker, NULL)) E("!RegisterDynamicBackgroundWorker");
         IsUnderPostmaster = false;
