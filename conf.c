@@ -89,16 +89,18 @@ static void conf_check(void) {
                         EXTRACT(epoch FROM COALESCE(live, current_setting('pg_work.default_live', false)::interval))::bigint AS live,
                         NULLIF(COALESCE(partman, current_setting('pg_work.default_partman', true)), '%1$s') AS partman
                 FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout integer, count integer, live interval, partman text)
-            ) SELECT    COALESCE(pid, 0) AS pid, j.* FROM j
-            LEFT JOIN   pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text) AND pid != pg_backend_pid()
+            ) SELECT    j.* FROM j
+            LEFT JOIN   pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text)
+            WHERE       pid IS NULL
         ), "");
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
     for (uint64 row = 0; row < SPI_processed; row++) {
+        BackgroundWorker worker = {0};
+        size_t len = 0;
         Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
-        int32 pid = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "pid", false));
         work->count =  DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "count", false));
         work->live =  DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "live", false));
         work->str.data = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", false));
@@ -107,39 +109,35 @@ static void conf_check(void) {
         work->str.table = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", false));
         work->str.user = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", false));
         work->timeout =  DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "timeout", false));
-        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, pid = %i, partman = %s", row, work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout, work->count, work->live, pid, work->str.partman ? work->str.partman : default_null);
+        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, partman = %s", row, work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout, work->count, work->live, work->str.partman ? work->str.partman : default_null);
         set_ps_display_my("row");
-        if (!pid) {
-            BackgroundWorker worker = {0};
-            size_t len = 0;
-            work->quote.data = (char *)quote_identifier(work->str.data);
-            if (work->str.partman) work->quote.partman = (char *)quote_identifier(work->str.partman);
-            work->quote.schema = (char *)quote_identifier(work->str.schema);
-            work->quote.table = (char *)quote_identifier(work->str.table);
-            work->quote.user = (char *)quote_identifier(work->str.user);
-            work->oid.user = conf_user(work);
-            work->oid.data = conf_data(work);
-            if (strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
-            if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
-            if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %i", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout) >= sizeof(worker.bgw_name) - 1) E("snprintf");
+        work->quote.data = (char *)quote_identifier(work->str.data);
+        if (work->str.partman) work->quote.partman = (char *)quote_identifier(work->str.partman);
+        work->quote.schema = (char *)quote_identifier(work->str.schema);
+        work->quote.table = (char *)quote_identifier(work->str.table);
+        work->quote.user = (char *)quote_identifier(work->str.user);
+        work->oid.user = conf_user(work);
+        work->oid.data = conf_data(work);
+        if (strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
+        if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
+        if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %i", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout) >= sizeof(worker.bgw_name) - 1) E("snprintf");
 #if PG_VERSION_NUM >= 110000
-            if (strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
+        if (strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
 #endif
 #define X(name, serialize, deserialize) serialize(name);
-            WORK
+        WORK
 #undef X
-            worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-            worker.bgw_notify_pid = MyProcPid;
-            worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
-            worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-            if (init_check_ascii_all(&worker)) E("init_check_ascii_all");
-            conf_work(&worker);
-            if (work->quote.data != work->str.data) pfree(work->quote.data);
-            if (work->str.partman && work->quote.partman != work->str.partman) pfree(work->quote.partman);
-            if (work->quote.schema != work->str.schema) pfree(work->quote.schema);
-            if (work->quote.table != work->str.table) pfree(work->quote.table);
-            if (work->quote.user != work->str.user) pfree(work->quote.user);
-        }
+        worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
+        worker.bgw_notify_pid = MyProcPid;
+        worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
+        worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
+        if (init_check_ascii_all(&worker)) E("init_check_ascii_all");
+        conf_work(&worker);
+        if (work->quote.data != work->str.data) pfree(work->quote.data);
+        if (work->str.partman && work->quote.partman != work->str.partman) pfree(work->quote.partman);
+        if (work->quote.schema != work->str.schema) pfree(work->quote.schema);
+        if (work->quote.table != work->str.table) pfree(work->quote.table);
+        if (work->quote.user != work->str.user) pfree(work->quote.user);
         pfree(work->str.data);
         if (work->str.partman) pfree(work->str.partman);
         pfree(work->str.schema);
