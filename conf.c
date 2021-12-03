@@ -123,7 +123,7 @@ static void conf_check(void) {
             if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
             if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %i", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout) >= sizeof(worker.bgw_name) - 1) E("snprintf");
 #if PG_VERSION_NUM >= 110000
-            if (strlcpy(worker.bgw_type, worker.bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
+            if (strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
 #endif
 #define X(name, serialize, deserialize) serialize(name);
             WORK

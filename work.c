@@ -657,7 +657,7 @@ static void work_task(Task *task) {
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) { work_error(task, "strlcpy", NULL, false); return; }
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work->str.user, work->str.data, work->str.schema, work->str.table, task->group) >= sizeof(worker.bgw_name) - 1) { work_error(task, "snprintf", NULL, false); return; }
 #if PG_VERSION_NUM >= 110000
-    if (strlcpy(worker.bgw_type, worker.bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
+    if (strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
 #endif
 #define X(name, serialize, deserialize) serialize(name);
     TASK
@@ -743,7 +743,6 @@ static void work_init(void) {
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM >= 110000
     BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user, 0);
-    pgstat_report_appname(MyBgworkerEntry->bgw_type);
 #else
     BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user);
 #endif
@@ -760,15 +759,8 @@ static void work_init(void) {
     work->quote.schema = (char *)quote_identifier(work->str.schema);
     work->quote.table = (char *)quote_identifier(work->str.table);
     work->quote.user = (char *)quote_identifier(work->str.user);
-#if PG_VERSION_NUM >= 110000
-#else
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1);
-#endif
-#if PG_VERSION_NUM >= 110000
-    set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-#else
     set_config_option("application_name", MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-#endif
     D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, partman = %s", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout, work->count, work->live, work->str.partman ? work->str.partman : default_null);
     work_conf();
     work_reset();

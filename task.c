@@ -285,7 +285,6 @@ static void task_init(void) {
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM >= 110000
     BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user, 0);
-    pgstat_report_appname(MyBgworkerEntry->bgw_type);
 #else
     BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user);
 #endif
@@ -303,16 +302,9 @@ static void task_init(void) {
     work->quote.schema = (char *)quote_identifier(work->str.schema);
     work->quote.table = (char *)quote_identifier(work->str.table);
     work->quote.user = (char *)quote_identifier(work->str.user);
-#if PG_VERSION_NUM >= 110000
-#else
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1);
-#endif
     task->id = DatumGetInt64(MyBgworkerEntry->bgw_main_arg);
-#if PG_VERSION_NUM >= 110000
-    set_config_option("application_name", MyBgworkerEntry->bgw_type, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-#else
     set_config_option("application_name", MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-#endif
     set_config_option("pg_task.data", work->str.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.group", task->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.schema", work->str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
