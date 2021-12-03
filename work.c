@@ -43,9 +43,7 @@ static void work_check(void) {
                         NULLIF(COALESCE(partman, current_setting('pg_work.default_partman', true)), '%1$s') AS partman
                 FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout integer, count integer, live interval, partman text)
             ) SELECT    DISTINCT j.* FROM j
-            INNER JOIN  pg_user AS u ON usename = j.user
-            INNER JOIN  pg_database AS d ON datname = data AND NOT datistemplate AND datallowconn
-            WHERE       j.user = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND j.table = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::integer
+            WHERE       "user" = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND "table" = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::integer
         ), "");
     }
     SPI_connect_my(src.data);
@@ -852,5 +850,5 @@ void work_main(Datum main_arg) {
     }
     if (!unlock_data_user_table(MyDatabaseId, GetUserId(), work->oid.table)) W("!unlock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid.table);
     MyBgworkerEntry->bgw_notify_pid = MyProcPid;
-    conf_work(MyBgworkerEntry);
+    if (!ShutdownRequestPending) conf_work(MyBgworkerEntry);
 }

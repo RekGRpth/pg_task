@@ -89,7 +89,7 @@ static void conf_check(void) {
                         EXTRACT(epoch FROM COALESCE(live, current_setting('pg_work.default_live', false)::interval))::bigint AS live,
                         NULLIF(COALESCE(partman, current_setting('pg_work.default_partman', true)), '%1$s') AS partman
                 FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout integer, count integer, live interval, partman text)
-            ) SELECT    j.* FROM j
+            ) SELECT    DISTINCT j.* FROM j
             LEFT JOIN   pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text)
             WHERE       pid IS NULL
         ), "");
