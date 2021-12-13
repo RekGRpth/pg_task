@@ -62,7 +62,7 @@ void conf_work(BackgroundWorker *worker) {
     BackgroundWorkerHandle *handle;
     pid_t pid;
     set_ps_display_my("work");
-    if (!RegisterDynamicBackgroundWorker(worker, &handle)) E("!RegisterDynamicBackgroundWorker");
+    if (!RegisterDynamicBackgroundWorker(worker, &handle)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_NOT_YET_STARTED: E("WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED"); break;
         case BGWH_POSTMASTER_DIED: E("WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED"); break;

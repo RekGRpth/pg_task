@@ -158,7 +158,7 @@ static void init_work(bool dynamic) {
     if (dynamic) {
         worker.bgw_notify_pid = MyProcPid;
         IsUnderPostmaster = true;
-        if (!RegisterDynamicBackgroundWorker(&worker, NULL)) E("!RegisterDynamicBackgroundWorker");
+        if (!RegisterDynamicBackgroundWorker(&worker, NULL)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
         IsUnderPostmaster = false;
     } else RegisterBackgroundWorker(&worker);
 }

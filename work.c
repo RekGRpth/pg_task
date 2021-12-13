@@ -653,7 +653,7 @@ static void work_task(Task *task) {
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     if (init_check_ascii_all(&worker)) { work_error(task, "init_check_ascii_all", NULL, false); return; }
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) { work_error(task, "RegisterDynamicBackgroundWorker", NULL, false); if (handle) pfree(handle); return; }
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) { work_error(task, "could not register background worker", "Consider increasing configuration parameter \"max_worker_processes\".", false); if (handle) pfree(handle); return; }
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
         case BGWH_NOT_YET_STARTED: work_error(task, "WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED", NULL, false); pfree(handle); return;
         case BGWH_POSTMASTER_DIED: work_error(task, "WaitForBackgroundWorkerStartup == BGWH_POSTMASTER_DIED", NULL, false); pfree(handle); return;
