@@ -455,7 +455,7 @@ static void work_partman(void) {
         SPI_commit_my();
         SPI_start_transaction_my(create_parent.data);
         SPI_execute_with_args_my(create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT, false);
-        if (SPI_processed != 1) E("%lu != 1", SPI_processed);
+        if (SPI_processed != 1) elog(ERROR, "SPI_processed %lu != 1", SPI_processed);
         if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) E("!create_parent");
         if (values[0]) pfree((void *)values[0]);
         if (values[1]) pfree((void *)values[1]);
