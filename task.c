@@ -228,7 +228,7 @@ static void task_execute(void) {
     StatementTimeout = task->timeout;
     exec_simple_query_my(task->input);
     if (IsTransactionState()) exec_simple_query_my(SQL(COMMIT));
-    if (IsTransactionState()) E("IsTransactionState");
+    if (IsTransactionState()) ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION), errmsg("still active sql transaction")));
     StatementTimeout = StatementTimeoutMy;
 }
 
