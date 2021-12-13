@@ -654,12 +654,12 @@ static void work_task(Task *task) {
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     if (init_check_ascii_all(&worker)) { work_error(task, "init_check_ascii_all", NULL, false); return; }
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) { work_error(task, "could not register background worker", "Consider increasing configuration parameter \"max_worker_processes\".", false); if (handle) pfree(handle); return; }
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
-        case BGWH_NOT_YET_STARTED: work_error(task, "BGWH_NOT_YET_STARTED is never returned!", NULL, false); pfree(handle); return;
-        case BGWH_POSTMASTER_DIED: work_error(task, "cannot start background worker without postmaster", "Kill all remaining database processes and restart the database.", false); pfree(handle); return;
+        case BGWH_NOT_YET_STARTED: elog(ERROR, "BGWH_NOT_YET_STARTED is never returned!"); break;
+        case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
         case BGWH_STARTED: break;
-        case BGWH_STOPPED: work_error(task, "could not start background worker", "More details may be available in the server log.", false); pfree(handle); return;
+        case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     pfree(handle);
     work_free(task);
