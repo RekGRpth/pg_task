@@ -119,7 +119,6 @@ static void conf_check(void) {
         worker.bgw_notify_pid = MyProcPid;
         worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
         worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-        if (init_check_ascii_all(&worker)) E("init_check_ascii_all");
         conf_work(&worker);
         if (work->quote.data != work->str.data) pfree(work->quote.data);
         if (work->str.partman && work->quote.partman != work->str.partman) pfree(work->quote.partman);

@@ -26,23 +26,6 @@ static int task_default_max;
 static int work_default_count;
 static int work_default_timeout;
 
-static bool init_check_ascii(char *data) {
-    for (char *ch = data; *ch; ch++) {
-        if (32 <= *ch && *ch <= 127) continue;
-        if (*ch == '\n' || *ch == '\r' || *ch == '\t') continue;
-        return true;
-    }
-    return false;
-}
-
-bool init_check_ascii_all(BackgroundWorker *worker) {
-    if (init_check_ascii(worker->bgw_name)) return true;
-#if PG_VERSION_NUM >= 110000
-    if (init_check_ascii(worker->bgw_type)) return true;
-#endif
-    return false;
-}
-
 bool init_oid_is_string(Oid oid) {
     switch (oid) {
         case BITOID:
@@ -155,7 +138,6 @@ static void init_work(bool dynamic) {
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    if (init_check_ascii_all(&worker)) E("init_check_ascii_all");
     if (dynamic) {
         worker.bgw_notify_pid = MyProcPid;
         IsUnderPostmaster = true;

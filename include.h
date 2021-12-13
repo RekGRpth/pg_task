@@ -173,7 +173,6 @@ typedef struct Work {
     } str;
 } Work;
 
-bool init_check_ascii_all(BackgroundWorker *worker);
 bool init_oid_is_string(Oid oid);
 bool lock_data_user_table(Oid data, Oid user, Oid table);
 bool lock_table_id(Oid table, int64 id);
