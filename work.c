@@ -150,7 +150,7 @@ static void work_index(int count, const char *const *indexes) {
     appendStringInfo(&idx, "%s.%s", work->quote.schema, name_quote);
     names = stringToQualifiedNameList(idx.data);
     rangevar = makeRangeVarFromNameList(names);
-    D1("index = %s, schema_table = %s", idx.data, work->schema_table);
+    elog(DEBUG1, "index = %s, schema_table = %s", idx.data, work->schema_table);
     SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
@@ -218,7 +218,7 @@ static bool work_consume(Task *task) {
 static bool work_flush(Task *task) {
     switch (PQflush(task->conn)) {
         case 0: break;
-        case 1: D1("id = %li, PQflush == 1", task->id); task->event = WL_SOCKET_MASK; return false;
+        case 1: elog(DEBUG1, "id = %li, PQflush == 1", task->id); task->event = WL_SOCKET_MASK; return false;
         case -1: work_error(task, "PQflush == -1", PQerrorMessageMy(task->conn), true); return false;
     }
     return true;
@@ -252,7 +252,7 @@ static Oid work_schema(const char *schema_quote) {
     List *names;
     Oid oid;
     StringInfoData src;
-    D1("schema = %s", schema_quote);
+    elog(DEBUG1, "schema = %s", schema_quote);
     set_ps_display_my("schema");
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE SCHEMA %s), schema_quote);
@@ -309,7 +309,7 @@ static void work_result(Task *task) {
             case PGRES_COMMAND_OK: work_command(task, result); break;
             case PGRES_FATAL_ERROR: elog(WARNING, "id = %li, PQresultStatus == PGRES_FATAL_ERROR and %s", task->id, PQresultErrorMessageMy(result)); work_fatal(task, result); break;
             case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) work_success(task, result, row); break;
-            default: D1("id = %li, %s", task->id, PQresStatus(PQresultStatus(result))); break;
+            default: elog(DEBUG1, "id = %li, %s", task->id, PQresStatus(PQresultStatus(result))); break;
         }
         PQclear(result);
         if (!work_consume_flush_busy(task)) return;
@@ -321,7 +321,7 @@ static bool work_input(Task *task) {
     StringInfoData input;
     if (ShutdownRequestPending) return true;
     if (task_work(task)) return true;
-    D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
+    elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
     initStringInfoMy(TopMemoryContext, &input);
     task->skip = 0;
     appendStringInfoString(&input, SQL(BEGIN;));
@@ -360,7 +360,7 @@ static void work_query(Task *task) {
         work_done(task);
         return;
     }
-    D1("input = %s", task->input);
+    elog(DEBUG1, "input = %s", task->input);
     if (!PQsendQuery(task->conn, task->input)) { work_error(task, "!PQsendQuery", PQerrorMessageMy(task->conn), false); return; }
     task->socket = work_result;
     if (!work_flush(task)) return;
@@ -370,16 +370,16 @@ static void work_query(Task *task) {
 static void work_connect(Task *task) {
     bool connected = false;
     switch (PQstatus(task->conn)) {
-        case CONNECTION_BAD: D1("id = %li, PQstatus == CONNECTION_BAD", task->id); work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessageMy(task->conn), true); return;
-        case CONNECTION_OK: D1("id = %li, PQstatus == CONNECTION_OK", task->id); connected = true; break;
+        case CONNECTION_BAD: elog(DEBUG1, "id = %li, PQstatus == CONNECTION_BAD", task->id); work_error(task, "PQstatus == CONNECTION_BAD", PQerrorMessageMy(task->conn), true); return;
+        case CONNECTION_OK: elog(DEBUG1, "id = %li, PQstatus == CONNECTION_OK", task->id); connected = true; break;
         default: break;
     }
     if (!connected) switch (PQconnectPoll(task->conn)) {
-        case PGRES_POLLING_ACTIVE: D1("id = %li, PQconnectPoll == PGRES_POLLING_ACTIVE", task->id); break;
-        case PGRES_POLLING_FAILED: D1("id = %li, PQconnectPoll == PGRES_POLLING_FAILED", task->id); work_error(task, "PQconnectPoll == PGRES_POLLING_FAILED", PQerrorMessageMy(task->conn), true); return;
-        case PGRES_POLLING_OK: D1("id = %li, PQconnectPoll == PGRES_POLLING_OK", task->id); connected = true; break;
-        case PGRES_POLLING_READING: D1("id = %li, PQconnectPoll == PGRES_POLLING_READING", task->id); task->event = WL_SOCKET_READABLE; break;
-        case PGRES_POLLING_WRITING: D1("id = %li, PQconnectPoll == PGRES_POLLING_WRITING", task->id); task->event = WL_SOCKET_WRITEABLE; break;
+        case PGRES_POLLING_ACTIVE: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_ACTIVE", task->id); break;
+        case PGRES_POLLING_FAILED: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_FAILED", task->id); work_error(task, "PQconnectPoll == PGRES_POLLING_FAILED", PQerrorMessageMy(task->conn), true); return;
+        case PGRES_POLLING_OK: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_OK", task->id); connected = true; break;
+        case PGRES_POLLING_READING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_READING", task->id); task->event = WL_SOCKET_READABLE; break;
+        case PGRES_POLLING_WRITING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_WRITING", task->id); task->event = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
         if(!(task->pid = PQbackendPID(task->conn))) { work_error(task, "!PQbackendPID", PQerrorMessageMy(task->conn), true); return; }
@@ -390,7 +390,7 @@ static void work_connect(Task *task) {
 
 static void work_exit(int code, Datum arg) {
     dlist_mutable_iter iter;
-    D1("code = %i", code);
+    elog(DEBUG1, "code = %i", code);
     dlist_foreach_modify(iter, &work->head) {
         char errbuf[256];
         Task *task = dlist_container(Task, node, iter.cur);
@@ -408,7 +408,7 @@ static void work_extension(const char *schema_quote, const char *extension) {
     const char *extension_quote = quote_identifier(extension);
     List *names;
     StringInfoData src;
-    D1("extension = %s", extension);
+    elog(DEBUG1, "extension = %s", extension);
     set_ps_display_my("extension");
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, schema_quote);
@@ -483,11 +483,11 @@ static void work_remote(Task *task) {
     int arg = 3;
     PQconninfoOption *opts = PQconninfoParse(task->remote, &err);
     StringInfoData name, value;
-    D1("id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->oid.table);
+    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->oid.table);
     if (!opts) { work_error(task, "!PQconninfoParse", err, false); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
-        D1("%s = %s", opt->keyword, opt->val);
+        elog(DEBUG1, "%s = %s", opt->keyword, opt->val);
         if (!strcmp(opt->keyword, "password")) password = true;
         if (!strcmp(opt->keyword, "fallback_application_name")) continue;
         if (!strcmp(opt->keyword, "application_name")) continue;
@@ -547,7 +547,7 @@ static void work_table(void) {
     const RangeVar *rangevar;
     List *names;
     StringInfoData src, hash;
-    D1("schema_table = %s, schema_type = %s", work->schema_table, work->schema_type);
+    elog(DEBUG1, "schema_table = %s, schema_type = %s", work->schema_table, work->schema_type);
     set_ps_display_my("table");
     set_config_option("pg_task.table", work->str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &hash);
@@ -637,7 +637,7 @@ static void work_task(Task *task) {
     BackgroundWorker worker = {0};
     pid_t pid;
     size_t len = 0;
-    D1("id = %li, group = %s, max = %i, oid = %i", task->id, task->group, task->max, work->oid.table);
+    elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", task->id, task->group, task->max, work->oid.table);
     if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
     if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work->str.user, work->str.data, work->str.schema, work->str.table, task->group)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
@@ -692,7 +692,7 @@ static void work_conf(void) {
     initStringInfoMy(TopMemoryContext, &schema_type);
     appendStringInfo(&schema_type, "%s.state", work->quote.schema);
     work->schema_type = schema_type.data;
-    D1("timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work->timeout, work->count, work->live, work->schema_table, work->schema_type, work->str.partman ? work->str.partman : default_null);
+    elog(DEBUG1, "timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work->timeout, work->count, work->live, work->schema_table, work->schema_type, work->str.partman ? work->str.partman : default_null);
     set_ps_display_my("conf");
     work->oid.schema = work_schema(work->quote.schema);
     set_config_option("pg_task.schema", work->str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
@@ -745,7 +745,7 @@ static void work_init(void) {
     work->quote.user = (char *)quote_identifier(work->str.user);
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1);
     set_config_option("application_name", MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    D1("timeout = %i, count = %i, live = %li, partman = %s", work->timeout, work->count, work->live, work->str.partman ? work->str.partman : default_null);
+    elog(DEBUG1, "timeout = %i, count = %i, live = %li, partman = %s", work->timeout, work->count, work->live, work->str.partman ? work->str.partman : default_null);
     work_conf();
     work_reset();
 }
@@ -779,7 +779,7 @@ static void work_timeout(void) {
         task->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
         task->max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "max", false));
         task->remote = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
-        D1("row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task->id, task->hash, task->group, task->remote ? task->remote : default_null, task->max);
+        elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task->id, task->hash, task->group, task->remote ? task->remote : default_null, task->max);
         task->remote ? work_remote(task) : work_task(task);
     }
     if (work->count) work->processed += SPI_processed;

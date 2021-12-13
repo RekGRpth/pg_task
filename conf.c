@@ -6,7 +6,7 @@ static Oid conf_data(Work *work) {
     List *names;
     Oid oid;
     StringInfoData src;
-    D1("user = %s, data = %s", work->str.user, work->str.data);
+    elog(DEBUG1, "user = %s, data = %s", work->str.user, work->str.data);
     set_ps_display_my("data");
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), work->quote.data, work->quote.user);
@@ -42,7 +42,7 @@ static Oid conf_user(Work *work) {
     List *names;
     Oid oid;
     StringInfoData src;
-    D1("user = %s", work->str.user);
+    elog(DEBUG1, "user = %s", work->str.user);
     set_ps_display_my("user");
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE USER %s), work->quote.user);
@@ -96,7 +96,7 @@ static void conf_check(void) {
         work->str.table = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", false));
         work->str.user = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", false));
         work->timeout =  DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "timeout", false));
-        D1("row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, partman = %s", row, work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout, work->count, work->live, work->str.partman ? work->str.partman : default_null);
+        elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, partman = %s", row, work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout, work->count, work->live, work->str.partman ? work->str.partman : default_null);
         set_ps_display_my("row");
         work->quote.data = (char *)quote_identifier(work->str.data);
         if (work->str.partman) work->quote.partman = (char *)quote_identifier(work->str.partman);

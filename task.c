@@ -10,7 +10,7 @@ static bool task_live(Task *task) {
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    D1("id = %li, hash = %i, max = %i, count = %i, start = %s", task->id, task->hash, task->max, task->count, timestamptz_to_str(task->start));
+    elog(DEBUG1, "id = %li, hash = %i, max = %i, count = %i, start = %s", task->id, task->hash, task->max, task->count, timestamptz_to_str(task->start));
     set_ps_display_my("live");
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
@@ -27,7 +27,7 @@ static bool task_live(Task *task) {
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, false);
     task->id = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false)) : 0;
-    D1("id = %li", task->id);
+    elog(DEBUG1, "id = %li", task->id);
     set_ps_display_my("idle");
     return ShutdownRequestPending || !task->id;
 }
@@ -37,7 +37,7 @@ static void task_delete(Task *task) {
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    D1("id = %li", task->id);
+    elog(DEBUG1, "id = %li", task->id);
     set_ps_display_my("delete");
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
@@ -60,7 +60,7 @@ static void task_insert(Task *task) {
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    D1("id = %li", task->id);
+    elog(DEBUG1, "id = %li", task->id);
     set_ps_display_my("insert");
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
@@ -88,7 +88,7 @@ bool task_done(Task *task) {
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    D1("id = %li, output = %s, error = %s", task->id, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null);
+    elog(DEBUG1, "id = %li, output = %s, error = %s", task->id, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null);
     set_ps_display_my("done");
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
@@ -108,7 +108,7 @@ bool task_done(Task *task) {
         delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
         exit = !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
         insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false));
-        D1("delete = %s, exit = %s, insert = %s", delete ? "true" : "false", exit ? "true" : "false", insert ? "true" : "false");
+        elog(DEBUG1, "delete = %s, exit = %s, insert = %s", delete ? "true" : "false", exit ? "true" : "false", insert ? "true" : "false");
     }
     if (values[1]) pfree((void *)values[1]);
     if (values[2]) pfree((void *)values[2]);
@@ -134,7 +134,7 @@ bool task_work(Task *task) {
     if (!lock_table_id(work->oid.table, task->id)) { elog(WARNING, "!lock_table_id(%i, %li)", work->oid.table, task->id); return true; }
     task->lock = true;
     task->count++;
-    D1("id = %li, max = %i, oid = %i, count = %i, pid = %i", task->id, task->max, work->oid.table, task->count, task->pid);
+    elog(DEBUG1, "id = %li, max = %i, oid = %i, count = %i, pid = %i", task->id, task->max, work->oid.table, task->count, task->pid);
     set_ps_display_my("work");
     if (!task->conn) {
         StringInfoData id;
@@ -173,7 +173,7 @@ bool task_work(Task *task) {
         task->string = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "string", false));
         task->timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "timeout", false));
         if (0 < StatementTimeout && StatementTimeout < task->timeout) task->timeout = StatementTimeout;
-        D1("group = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, active = %s", task->group, task->hash, task->input, task->timeout, task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote ? task->quote : 30, task->escape ? task->escape : 30, task->active ? "true" : "false");
+        elog(DEBUG1, "group = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, active = %s", task->group, task->hash, task->input, task->timeout, task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote ? task->quote : 30, task->escape ? task->escape : 30, task->active ? "true" : "false");
     }
     SPI_finish_my();
     set_ps_display_my("idle");
@@ -233,7 +233,7 @@ static void task_execute(void) {
 }
 
 static void task_exit(int code, Datum arg) {
-    D1("code = %i, id = %li", code, task->id);
+    elog(DEBUG1, "code = %i, id = %li", code, task->id);
     if (!code) return;
 #ifdef HAVE_SETSID
     if (kill(-MyBgworkerEntry->bgw_notify_pid, SIGHUP))
@@ -311,7 +311,7 @@ static void task_init(void) {
     set_config_option("pg_task.table", work->str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work->str.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
-    D1("oid = %i, id = %li, hash = %i, group = %s, max = %i", work->oid.table, task->id, task->hash, task->group, task->max);
+    elog(DEBUG1, "oid = %i, id = %li, hash = %i, group = %s, max = %i", work->oid.table, task->id, task->hash, task->group, task->max);
     initStringInfoMy(TopMemoryContext, &schema_table);
     appendStringInfo(&schema_table, "%s.%s", work->quote.schema, work->quote.table);
     work->schema_table = schema_table.data;
@@ -334,7 +334,7 @@ static void task_latch(void) {
 
 static bool task_timeout(void) {
     if (task_work(task)) return true;
-    D1("id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
+    elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
     set_ps_display_my("timeout");
     PG_TRY();
         if (!task->active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task %li not active", task->id)));
