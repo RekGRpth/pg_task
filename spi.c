@@ -11,8 +11,8 @@ Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fnam
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     int rc;
     SPIPlanPtr plan;
-    if (!(plan = SPI_prepare(src, nargs, argtypes))) elog(ERROR, "SPI_prepare returned %s for %s", SPI_result_code_string(SPI_result), src);
-    if ((rc = SPI_keepplan(plan))) elog(ERROR, "SPI_keepplan returned %s for %s", SPI_result_code_string(rc), src);
+    if (!(plan = SPI_prepare(src, nargs, argtypes))) elog(ERROR, "SPI_prepare failed: %s for %s", SPI_result_code_string(SPI_result), src);
+    if ((rc = SPI_keepplan(plan))) elog(ERROR, "SPI_keepplan failed: %s for %s", SPI_result_code_string(rc), src);
     return plan;
 }
 
@@ -29,7 +29,7 @@ void SPI_commit_my(void) {
 void SPI_connect_my(const char *src) {
     int rc;
 #if PG_VERSION_NUM >= 110000
-    if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) E("SPI_connect_ext = %s", SPI_result_code_string(rc));
+    if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) elog(ERROR, "SPI_connect_ext failed: %s for %s", SPI_result_code_string(rc), src);
 #else
     SetCurrentStatementStartTimestamp();
     if (true) {
@@ -37,7 +37,7 @@ void SPI_connect_my(const char *src) {
         StartTransactionCommand();
         MemoryContextSwitchTo(oldcontext);
     }
-    if ((rc = SPI_connect()) != SPI_OK_CONNECT) E("SPI_connect = %s", SPI_result_code_string(rc));
+    if ((rc = SPI_connect()) != SPI_OK_CONNECT) elog(ERROR, "SPI_connect failed: %s for %s", SPI_result_code_string(rc), src);
 #endif
     SPI_start_transaction_my(src);
 }
