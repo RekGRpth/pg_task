@@ -92,7 +92,7 @@ static void work_free(Task *task) {
 static void work_finish(Task *task) {
     dlist_delete(&task->node);
     PQfinish(task->conn);
-    if (!proc_exit_inprogress && task->pid && !unlock_table_pid_hash(work->oid.table, task->pid, task->hash)) W("!unlock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash);
+    if (!proc_exit_inprogress && task->pid && !unlock_table_pid_hash(work->oid.table, task->pid, task->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash);
     work_free(task);
 }
 
@@ -101,7 +101,7 @@ static void work_error(Task *task, const char *msg, const char *err, bool finish
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     appendStringInfo(&task->error, "%s%s", task->error.len ? "\n" : "", msg);
     if (err && strlen(err)) appendStringInfo(&task->error, " and %s", err);
-    W("id = %li, error = %s", task->id, task->error.data);
+    elog(WARNING, "id = %li, error = %s", task->id, task->error.data);
     appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
     task->skip++;
     task_done(task) || finish ? work_finish(task) : work_free(task);
@@ -186,7 +186,7 @@ static void work_reset(void) {
     ), work->schema_table, work->schema_type);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING, true);
-    for (uint64 row = 0; row < SPI_processed; row++) W("row = %lu, id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
+    for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     SPI_finish_my();
     pfree(src.data);
     set_ps_display_my("idle");
@@ -206,7 +206,7 @@ static void work_latch(void) {
 }
 
 static bool work_busy(Task *task, int event) {
-    if (PQisBusy(task->conn)) { W("id = %li, PQisBusy", task->id); task->event = event; return false; }
+    if (PQisBusy(task->conn)) { elog(WARNING, "id = %li, PQisBusy", task->id); task->event = event; return false; }
     return true;
 }
 
@@ -307,7 +307,7 @@ static void work_result(Task *task) {
     for (PGresult *result; PQstatus(task->conn) == CONNECTION_OK && (result = PQgetResult(task->conn)); ) {
         switch (PQresultStatus(result)) {
             case PGRES_COMMAND_OK: work_command(task, result); break;
-            case PGRES_FATAL_ERROR: W("id = %li, PQresultStatus == PGRES_FATAL_ERROR and %s", task->id, PQresultErrorMessageMy(result)); work_fatal(task, result); break;
+            case PGRES_FATAL_ERROR: elog(WARNING, "id = %li, PQresultStatus == PGRES_FATAL_ERROR and %s", task->id, PQresultErrorMessageMy(result)); work_fatal(task, result); break;
             case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) work_success(task, result, row); break;
             default: D1("id = %li, %s", task->id, PQresStatus(PQresultStatus(result))); break;
         }
@@ -383,7 +383,7 @@ static void work_connect(Task *task) {
     }
     if (connected) {
         if(!(task->pid = PQbackendPID(task->conn))) { work_error(task, "!PQbackendPID", PQerrorMessageMy(task->conn), true); return; }
-        if (!lock_table_pid_hash(work->oid.table, task->pid, task->hash)) { W("!lock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash); work_error(task, "!lock_table_pid_hash", NULL, true); return; }
+        if (!lock_table_pid_hash(work->oid.table, task->pid, task->hash)) { elog(WARNING, "!lock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash); work_error(task, "!lock_table_pid_hash", NULL, true); return; }
         work_query(task);
     }
 }
@@ -395,9 +395,9 @@ static void work_exit(int code, Datum arg) {
         char errbuf[256];
         Task *task = dlist_container(Task, node, iter.cur);
         PGcancel *cancel = PQgetCancel(task->conn);
-        W("id = %li", task->id);
-        if (!cancel) { W("!PQgetCancel and %s", PQerrorMessageMy(task->conn)); continue; }
-        if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { W("!PQcancel and %s", errbuf); PQfreeCancel(cancel); continue; }
+        if (!cancel) { elog(WARNING, "!PQgetCancel and %s", PQerrorMessageMy(task->conn)); continue; }
+        if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { elog(WARNING, "!PQcancel and %s", errbuf); PQfreeCancel(cancel); continue; }
+        elog(WARNING, "cancel id = %li", task->id);
         PQfreeCancel(cancel);
         work_finish(task);
     }
@@ -801,7 +801,7 @@ void work_main(Datum main_arg) {
 #else
     MyStartTimestamp = GetCurrentTimestamp();
 #endif
-    if (!lock_data_user_table(MyDatabaseId, GetUserId(), work->oid.table)) { W("!lock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid.table); return; }
+    if (!lock_data_user_table(MyDatabaseId, GetUserId(), work->oid.table)) { elog(WARNING, "!lock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid.table); return; }
     while (!ShutdownRequestPending) {
         int nevents = 2 + work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
@@ -834,7 +834,7 @@ void work_main(Datum main_arg) {
         if (work->count && work->processed >= work->count) break;
         if (work->live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), work->live * 1000)) break;
     }
-    if (!unlock_data_user_table(MyDatabaseId, GetUserId(), work->oid.table)) W("!unlock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid.table);
+    if (!unlock_data_user_table(MyDatabaseId, GetUserId(), work->oid.table)) elog(WARNING, "!unlock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid.table);
     MyBgworkerEntry->bgw_notify_pid = MyProcPid;
     if (!ShutdownRequestPending) conf_work(MyBgworkerEntry);
 }

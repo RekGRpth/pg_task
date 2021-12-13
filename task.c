@@ -51,7 +51,7 @@ static void task_delete(Task *task) {
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE_RETURNING, false);
-    for (uint64 row = 0; row < SPI_processed; row++) W("row = %lu, id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
+    for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, delete id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     set_ps_display_my("idle");
 }
 
@@ -77,7 +77,7 @@ static void task_insert(Task *task) {
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING, false);
-    for (uint64 row = 0; row < SPI_processed; row++) W("row = %lu, id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
+    for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, insert id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     set_ps_display_my("idle");
 }
 
@@ -104,7 +104,7 @@ bool task_done(Task *task) {
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, false);
-    if (SPI_processed != 1) W("id = %li, %lu != 1", SPI_processed, task->id); else {
+    if (SPI_processed != 1) elog(WARNING, "id = %li, SPI_processed %lu != 1", SPI_processed, task->id); else {
         delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
         exit = !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
         insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false));
@@ -114,7 +114,7 @@ bool task_done(Task *task) {
     if (values[2]) pfree((void *)values[2]);
     if (insert) task_insert(task);
     if (delete) task_delete(task);
-    if (task->lock && !unlock_table_id(work->oid.table, task->id)) { W("!unlock_table_id(%i, %li)", work->oid.table, task->id); exit = true; }
+    if (task->lock && !unlock_table_id(work->oid.table, task->id)) { elog(WARNING, "!unlock_table_id(%i, %li)", work->oid.table, task->id); exit = true; }
     task->lock = false;
     exit = exit || task_live(task);
     SPI_commit_my();
@@ -131,7 +131,7 @@ bool task_work(Task *task) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return true;
-    if (!lock_table_id(work->oid.table, task->id)) { W("!lock_table_id(%i, %li)", work->oid.table, task->id); return true; }
+    if (!lock_table_id(work->oid.table, task->id)) { elog(WARNING, "!lock_table_id(%i, %li)", work->oid.table, task->id); return true; }
     task->lock = true;
     task->count++;
     D1("id = %li, max = %i, oid = %i, count = %i, pid = %i", task->id, task->max, work->oid.table, task->count, task->pid);
@@ -158,7 +158,7 @@ bool task_work(Task *task) {
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     if (SPI_processed != 1) {
-        W("id = %li, %lu != 1", SPI_processed, task->id);
+        elog(WARNING, "id = %li, SPI_processed %lu != 1", SPI_processed, task->id);
         exit = true;
     } else {
         task->active = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "active", false));
@@ -359,7 +359,7 @@ void task_free(Task *task) {
 
 void task_main(Datum main_arg) {
     task_init();
-    if (!lock_table_pid_hash(work->oid.table, task->pid, task->hash)) { W("!lock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash); return; }
+    if (!lock_table_pid_hash(work->oid.table, task->pid, task->hash)) { elog(WARNING, "!lock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash); return; }
     while (!ShutdownRequestPending) {
 #if PG_VERSION_NUM >= 100000
         int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
@@ -370,5 +370,5 @@ void task_main(Datum main_arg) {
         if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
     }
-    if (!unlock_table_pid_hash(work->oid.table, task->pid ? task->pid : MyProcPid, task->hash)) W("!unlock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid ? task->pid : MyProcPid, task->hash);
+    if (!unlock_table_pid_hash(work->oid.table, task->pid ? task->pid : MyProcPid, task->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid ? task->pid : MyProcPid, task->hash);
 }
