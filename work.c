@@ -655,7 +655,7 @@ static void work_task(Task *task) {
     if (init_check_ascii_all(&worker)) { work_error(task, "init_check_ascii_all", NULL, false); return; }
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) { work_error(task, "could not register background worker", "Consider increasing configuration parameter \"max_worker_processes\".", false); if (handle) pfree(handle); return; }
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
-        case BGWH_NOT_YET_STARTED: work_error(task, "WaitForBackgroundWorkerStartup == BGWH_NOT_YET_STARTED", NULL, false); pfree(handle); return;
+        case BGWH_NOT_YET_STARTED: work_error(task, "BGWH_NOT_YET_STARTED is never returned!", NULL, false); pfree(handle); return;
         case BGWH_POSTMASTER_DIED: work_error(task, "cannot start background worker without postmaster", "Kill all remaining database processes and restart the database.", false); pfree(handle); return;
         case BGWH_STARTED: break;
         case BGWH_STOPPED: work_error(task, "could not start background worker", "More details may be available in the server log.", false); pfree(handle); return;
