@@ -292,10 +292,10 @@ static void task_init(void) {
     process_session_preload_libraries();
     StartTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
-    if (!(work->str.data = get_database_name(work->oid.data))) E("!get_database_name");
-    if (!(work->str.schema = get_namespace_name(work->oid.schema))) E("!get_namespace_name");
-    if (!(work->str.table = get_rel_name(work->oid.table))) E("!get_rel_name");
-    if (!(work->str.user = GetUserNameFromId(work->oid.user, true))) E("!GetUserNameFromId");
+    if (!(work->str.data = get_database_name(work->oid.data))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", work->oid.data)));
+    if (!(work->str.schema = get_namespace_name(work->oid.schema))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema %u does not exist", work->oid.schema)));
+    if (!(work->str.table = get_rel_name(work->oid.table))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("table %u does not exist", work->oid.table)));
+    if (!(work->str.user = GetUserNameFromId(work->oid.user, true))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", work->oid.user)));
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
     work->quote.data = (char *)quote_identifier(work->str.data);
