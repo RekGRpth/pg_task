@@ -638,12 +638,13 @@ static void work_task(Task *task) {
     pid_t pid;
     size_t len = 0;
     D1("id = %li, group = %s, max = %i, oid = %i", task->id, task->group, task->max, work->oid.table);
-    if (strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) { work_error(task, "strlcpy", NULL, false); return; }
-    if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) { work_error(task, "strlcpy", NULL, false); return; }
-    if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work->str.user, work->str.data, work->str.schema, work->str.table, task->group) >= sizeof(worker.bgw_name) - 1) { work_error(task, "snprintf", NULL, false); return; }
+    if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
+    if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
+    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work->str.user, work->str.data, work->str.schema, work->str.table, task->group)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
 #if PG_VERSION_NUM >= 110000
-    if (strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
+    if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
+    len = 0;
 #define X(name, serialize, deserialize) serialize(name);
     TASK
 #undef X
