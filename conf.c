@@ -105,12 +105,13 @@ static void conf_check(void) {
         work->quote.user = (char *)quote_identifier(work->str.user);
         work->oid.user = conf_user(work);
         work->oid.data = conf_data(work);
-        if (strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) E("strlcpy");
-        if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) E("strlcpy");
-        if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %i", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout) >= sizeof(worker.bgw_name) - 1) E("snprintf");
+        if ((len = strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
+        if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
+        if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %i", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
 #if PG_VERSION_NUM >= 110000
-        if (strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type)) >= sizeof(worker.bgw_type)) E("strlcpy");
+        if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
+        len = 0;
 #define X(name, serialize, deserialize) serialize(name);
         WORK
 #undef X
