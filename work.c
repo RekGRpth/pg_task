@@ -150,7 +150,7 @@ static void work_index(int count, const char *const *indexes) {
     appendStringInfo(&idx, "%s.%s", work->quote.schema, name_quote);
     names = stringToQualifiedNameList(idx.data);
     rangevar = makeRangeVarFromNameList(names);
-    D1("user = %s, data = %s, schema = %s, table = %s, index = %s, schema_table = %s", work->str.user, work->str.data, work->str.schema, work->str.table, idx.data, work->schema_table);
+    D1("index = %s, schema_table = %s", idx.data, work->schema_table);
     SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
@@ -252,7 +252,7 @@ static Oid work_schema(const char *schema_quote) {
     List *names;
     Oid oid;
     StringInfoData src;
-    D1("user = %s, data = %s, schema = %s", work->str.user, work->str.data, schema_quote);
+    D1("schema = %s", schema_quote);
     set_ps_display_my("schema");
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE SCHEMA %s), schema_quote);
@@ -408,7 +408,7 @@ static void work_extension(const char *schema_quote, const char *extension) {
     const char *extension_quote = quote_identifier(extension);
     List *names;
     StringInfoData src;
-    D1("user = %s, data = %s, schema = %s, extension = %s", work->str.user, work->str.data, schema_quote, extension);
+    D1("extension = %s", extension);
     set_ps_display_my("extension");
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, schema_quote);
@@ -429,7 +429,6 @@ static void work_partman(void) {
     const RangeVar *rangevar;
     List *names;
     StringInfoData src, pkey, template, template_table;
-    D1("user = %s, data = %s", work->str.user, work->str.data);
     set_ps_display_my("partman");
     work->oid.partman = work_schema(work->quote.partman);
     work_extension(work->quote.partman, "pg_partman");
@@ -548,7 +547,7 @@ static void work_table(void) {
     const RangeVar *rangevar;
     List *names;
     StringInfoData src, hash;
-    D1("user = %s, data = %s, schema = %s, table = %s, schema_table = %s, schema_type = %s", work->str.user, work->str.data, work->str.schema, work->str.table, work->schema_table, work->schema_type);
+    D1("schema_table = %s, schema_type = %s", work->schema_table, work->schema_type);
     set_ps_display_my("table");
     set_config_option("pg_task.table", work->str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &hash);
@@ -638,7 +637,7 @@ static void work_task(Task *task) {
     BackgroundWorker worker = {0};
     pid_t pid;
     size_t len = 0;
-    D1("user = %s, data = %s, schema = %s, table = %s, id = %li, group = %s, max = %i, oid = %i", work->str.user, work->str.data, work->str.schema, work->str.table, task->id, task->group, task->max, work->oid.table);
+    D1("id = %li, group = %s, max = %i, oid = %i", task->id, task->group, task->max, work->oid.table);
     if (strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name)) >= sizeof(worker.bgw_function_name)) { work_error(task, "strlcpy", NULL, false); return; }
     if (strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name)) >= sizeof(worker.bgw_library_name)) { work_error(task, "strlcpy", NULL, false); return; }
     if (snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work->str.user, work->str.data, work->str.schema, work->str.table, task->group) >= sizeof(worker.bgw_name) - 1) { work_error(task, "snprintf", NULL, false); return; }
@@ -669,7 +668,6 @@ static void work_type(void) {
     int32 typmod;
     Oid type = InvalidOid;
     StringInfoData src;
-    D1("user = %s, data = %s, schema = %s, table = %s", work->str.user, work->str.data, work->str.schema, work->str.table);
     set_ps_display_my("type");
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'STOP')), work->schema_type);
@@ -694,7 +692,7 @@ static void work_conf(void) {
     initStringInfoMy(TopMemoryContext, &schema_type);
     appendStringInfo(&schema_type, "%s.state", work->quote.schema);
     work->schema_type = schema_type.data;
-    D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout, work->count, work->live, work->schema_table, work->schema_type, work->str.partman ? work->str.partman : default_null);
+    D1("timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work->timeout, work->count, work->live, work->schema_table, work->schema_type, work->str.partman ? work->str.partman : default_null);
     set_ps_display_my("conf");
     work->oid.schema = work_schema(work->quote.schema);
     set_config_option("pg_task.schema", work->str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
@@ -747,7 +745,7 @@ static void work_init(void) {
     work->quote.user = (char *)quote_identifier(work->str.user);
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1);
     set_config_option("application_name", MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    D1("user = %s, data = %s, schema = %s, table = %s, timeout = %i, count = %i, live = %li, partman = %s", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout, work->count, work->live, work->str.partman ? work->str.partman : default_null);
+    D1("timeout = %i, count = %i, live = %li, partman = %s", work->timeout, work->count, work->live, work->str.partman ? work->str.partman : default_null);
     work_conf();
     work_reset();
 }

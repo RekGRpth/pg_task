@@ -311,7 +311,7 @@ static void task_init(void) {
     set_config_option("pg_task.table", work->str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work->str.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
-    D1("user = %s, data = %s, schema = %s, table = %s, oid = %i, id = %li, hash = %i, group = %s, max = %i", work->str.user, work->str.data, work->str.schema, work->str.table, work->oid.table, task->id, task->hash, task->group, task->max);
+    D1("oid = %i, id = %li, hash = %i, group = %s, max = %i", work->oid.table, task->id, task->hash, task->group, task->max);
     initStringInfoMy(TopMemoryContext, &schema_table);
     appendStringInfo(&schema_table, "%s.%s", work->quote.schema, work->quote.table);
     work->schema_table = schema_table.data;
