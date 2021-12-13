@@ -288,7 +288,7 @@ void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf) {
 
 void _PG_init(void) {
     if (IsBinaryUpgrade) { W("IsBinaryUpgrade"); return; }
-    if (!process_shared_preload_libraries_in_progress) F("!process_shared_preload_libraries_in_progress");
+    if (!process_shared_preload_libraries_in_progress) elog(ERROR, "This module can only be loaded via shared_preload_libraries");
     init_conf();
     init_work(false);
 }
