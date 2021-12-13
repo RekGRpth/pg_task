@@ -240,7 +240,7 @@ static void task_exit(int code, Datum arg) {
 #else
     if (kill(MyBgworkerEntry->bgw_notify_pid, SIGHUP))
 #endif
-        E("could not send signal to process %d: %m", MyBgworkerEntry->bgw_notify_pid);
+        ereport(WARNING, (errmsg("could not send signal to process %d: %m", MyBgworkerEntry->bgw_notify_pid)));
 }
 
 static void task_catch(void) {
