@@ -11,7 +11,7 @@ Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fnam
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     int rc;
     SPIPlanPtr plan;
-    if (!(plan = SPI_prepare(src, nargs, argtypes))) E("SPI_prepare = %s", SPI_result_code_string(SPI_result));
+    if (!(plan = SPI_prepare(src, nargs, argtypes))) elog(ERROR, "SPI_prepare returned %s for %s", SPI_result_code_string(SPI_result), src);
     if ((rc = SPI_keepplan(plan))) E("SPI_keepplan = %s", SPI_result_code_string(rc));
     return plan;
 }
