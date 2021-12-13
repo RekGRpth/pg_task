@@ -1,18 +1,6 @@
 #ifndef _INCLUDE_H_
 #define _INCLUDE_H_
 
-#define D1(...) ereport(DEBUG1, (errmsg(__VA_ARGS__)))
-#define D2(...) ereport(DEBUG2, (errmsg(__VA_ARGS__)))
-#define D3(...) ereport(DEBUG3, (errmsg(__VA_ARGS__)))
-#define D4(...) ereport(DEBUG4, (errmsg(__VA_ARGS__)))
-#define D5(...) ereport(DEBUG5, (errmsg(__VA_ARGS__)))
-#define E(...) ereport(ERROR, (errmsg(__VA_ARGS__)))
-#define F(...) ereport(FATAL, (errmsg(__VA_ARGS__)))
-#define I(...) ereport(INFO, (errmsg(__VA_ARGS__)))
-#define L(...) ereport(LOG, (errmsg(__VA_ARGS__)))
-#define N(...) ereport(NOTICE, (errmsg(__VA_ARGS__)))
-#define W(...) ereport(WARNING, (errmsg(__VA_ARGS__)))
-
 #define countof(array) (sizeof(array)/sizeof(array[0]))
 #define SQL(...) #__VA_ARGS__
 
@@ -73,10 +61,10 @@ extern PGDLLIMPORT TimestampTz MyStartTimestamp;
 #include <utils/snapmgr.h>
 #include <utils/timeout.h>
 
-#define serialize_bool(src) if ((len += sizeof(src)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(src), &(src), sizeof(src));
+#define serialize_bool(src) if ((len += sizeof(src)) >= sizeof(worker.bgw_extra)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("sizeof %li >= %li", len, sizeof(worker.bgw_extra)))); else memcpy(worker.bgw_extra + len - sizeof(src), &(src), sizeof(src));
 #define serialize_char_null(src) serialize_char((src) ? (src) : "")
-#define serialize_char(src) if ((len += strlcpy(worker.bgw_extra + len, (src), sizeof(worker.bgw_extra)) + 1) >= sizeof(worker.bgw_extra)) E("strlcpy")
-#define serialize_int(src) if ((len += sizeof(src)) >= sizeof(worker.bgw_extra)) E("sizeof"); else memcpy(worker.bgw_extra + len - sizeof(src), &(src), sizeof(src));
+#define serialize_char(src) if ((len += strlcpy(worker.bgw_extra + len, (src), sizeof(worker.bgw_extra)) + 1) >= sizeof(worker.bgw_extra)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_extra))));
+#define serialize_int(src) if ((len += sizeof(src)) >= sizeof(worker.bgw_extra)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("sizeof %li >= %li", len, sizeof(worker.bgw_extra)))); else memcpy(worker.bgw_extra + len - sizeof(src), &(src), sizeof(src));
 
 #define deserialize_bool(dst) (dst) = *(typeof(dst) *)p; p += sizeof(dst);
 #define deserialize_char(dst) (dst) = p; p += strlen(dst) + 1;
