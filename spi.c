@@ -56,7 +56,7 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 
 void SPI_finish_my(void) {
     int rc;
-    if ((rc = SPI_finish()) != SPI_OK_FINISH) E("SPI_finish = %s", SPI_result_code_string(rc));
+    if ((rc = SPI_finish()) != SPI_OK_FINISH) elog(ERROR, "SPI_finish failed: %s", SPI_result_code_string(rc));
 #if PG_VERSION_NUM >= 110000
     if (!SPI_inside_nonatomic_context()) ProcessCompletedNotifies();
 #else
