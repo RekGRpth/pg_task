@@ -455,8 +455,8 @@ static void work_partman(void) {
         SPI_commit_my();
         SPI_start_transaction_my(create_parent.data);
         SPI_execute_with_args_my(create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT, false);
-        if (SPI_processed != 1) elog(ERROR, "SPI_processed %lu != 1", SPI_processed);
-        if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) elog(ERROR, "could not create parent");
+        if (SPI_processed != 1) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_processed %lu != 1", SPI_processed)));
+        if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("could not create parent")));
         if (values[0]) pfree((void *)values[0]);
         if (values[1]) pfree((void *)values[1]);
     }
@@ -655,7 +655,7 @@ static void work_task(Task *task) {
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
-        case BGWH_NOT_YET_STARTED: elog(ERROR, "BGWH_NOT_YET_STARTED is never returned!"); break;
+        case BGWH_NOT_YET_STARTED: ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
         case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
         case BGWH_STARTED: break;
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;

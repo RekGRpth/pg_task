@@ -64,7 +64,7 @@ void conf_work(BackgroundWorker *worker) {
     set_ps_display_my("work");
     if (!RegisterDynamicBackgroundWorker(worker, &handle)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
-        case BGWH_NOT_YET_STARTED: elog(ERROR, "BGWH_NOT_YET_STARTED is never returned!"); break;
+        case BGWH_NOT_YET_STARTED: ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
         case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
         case BGWH_STARTED: break;
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;

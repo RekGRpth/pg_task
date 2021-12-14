@@ -270,7 +270,7 @@ void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf) {
 }
 
 void _PG_init(void) {
-    if (!process_shared_preload_libraries_in_progress) elog(ERROR, "This module can only be loaded via shared_preload_libraries");
+    if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("This module can only be loaded via shared_preload_libraries")));
     init_conf();
     init_work(false);
 }
