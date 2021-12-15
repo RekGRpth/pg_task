@@ -124,7 +124,7 @@ static void work_error(Task *task, bool finish, const char *filename, int lineno
     appendStringInfo(&task->error, "%ssource_function%c%s", task->error.len ? "\n" : "", task->delimiter, funcname);
     appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
     task->skip++;
-    task_done(task) || finish ? work_finish(task) : work_free(task);
+    if (task_done(task) || finish) work_finish(task);
 }
 
 static int work_nevents(void) {
@@ -365,7 +365,11 @@ static void work_query(Task *task) {
     task->socket = work_query;
     if (!work_busy(task, WL_SOCKET_WRITEABLE)) return;
     if (work_input(task)) { work_finish(task); return; }
-    if (!task->active) return work_error(task, false, __FILE__, __LINE__, __func__, ERRCODE_QUERY_CANCELED, "task %li not active", task->id);
+    if (!task->active) {
+        work_error(task, false, __FILE__, __LINE__, __func__, ERRCODE_QUERY_CANCELED, "task %li not active", task->id);
+        if (task->id) work_query(task);
+        return;
+    }
     elog(DEBUG1, "input = %s", task->input);
     if (!PQsendQuery(task->conn, task->input)) { work_error(task, false, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQsendQuery and %s", PQerrorMessageMy(task->conn)); return; }
     task->socket = work_result;
