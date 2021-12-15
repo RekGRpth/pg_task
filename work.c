@@ -361,14 +361,14 @@ static bool work_input(Task *task) {
 }
 
 static void work_query(Task *task) {
-    if (ShutdownRequestPending) return;
-    task->socket = work_query;
-    if (!work_busy(task, WL_SOCKET_WRITEABLE)) return;
-    if (work_input(task)) { work_finish(task); return; }
-    if (!task->active) {
+    for (;;) {
+        if (ShutdownRequestPending) return;
+        task->socket = work_query;
+        if (!work_busy(task, WL_SOCKET_WRITEABLE)) return;
+        if (work_input(task)) { work_finish(task); return; }
+        if (task->active) break;
         work_error(task, false, __FILE__, __LINE__, __func__, ERRCODE_QUERY_CANCELED, "task %li not active", task->id);
-        if (task->id) work_query(task);
-        return;
+        if (!task->id) return;
     }
     elog(DEBUG1, "input = %s", task->input);
     if (!PQsendQuery(task->conn, task->input)) return work_error(task, false, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQsendQuery and %s", PQerrorMessageMy(task->conn));
