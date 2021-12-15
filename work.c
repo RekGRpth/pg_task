@@ -549,7 +549,7 @@ static void work_remote(Task *task) {
     pfree(keywords);
     pfree(values);
     PQconninfoFree(opts);
-    pfree(task->group);
+    if (task->group) pfree(task->group);
     task->group = NULL;
 }
 
