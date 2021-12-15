@@ -96,15 +96,15 @@ static void work_finish(Task *task) {
     work_free(task);
 }
 
-static void work_error(Task *task, bool finish, const char *filename, int lineno, const char *funcname, int sqlerrcode, const char *fmt, ...) pg_attribute_printf(7, 8);
+//static void work_error(Task *task, bool finish, const char *filename, int lineno, const char *funcname, int sqlerrcode, const char *fmt, ...) pg_attribute_printf(7, 8);
 static void work_error(Task *task, bool finish, const char *filename, int lineno, const char *funcname, int sqlerrcode, const char *fmt, ...) {
     int save_errno = errno;
     StringInfoData str;
     initStringInfoMy(TopMemoryContext, &str);
     for (;;) {
+        errno = save_errno;
         int needed;
         va_list args;
-        errno = save_errno;
         va_start(args, fmt);
         needed = appendStringInfoVA(&str, fmt, args);
         va_end(args);
