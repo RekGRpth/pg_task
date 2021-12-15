@@ -260,7 +260,7 @@ static void work_done(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
         task->socket = work_done;
         if (!work_busy(task, WL_SOCKET_WRITEABLE)) return;
-        if (!PQsendQuery(task->conn, SQL(COMMIT))) return work_error(task, false, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQsendQuery and %s", PQerrorMessageMy(task->conn));
+        if (!PQsendQuery(task->conn, SQL(COMMIT))) return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQsendQuery and %s", PQerrorMessageMy(task->conn));
         if (!work_flush(task)) return;
         task->event = WL_SOCKET_READABLE;
         return;
@@ -371,7 +371,7 @@ static void work_query(Task *task) {
         if (!task->id) return;
     }
     elog(DEBUG1, "input = %s", task->input);
-    if (!PQsendQuery(task->conn, task->input)) return work_error(task, false, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQsendQuery and %s", PQerrorMessageMy(task->conn));
+    if (!PQsendQuery(task->conn, task->input)) return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQsendQuery and %s", PQerrorMessageMy(task->conn));
     task->socket = work_result;
     if (!work_flush(task)) return;
     task->event = WL_SOCKET_READABLE;
@@ -494,7 +494,7 @@ static void work_remote(Task *task) {
     PQconninfoOption *opts = PQconninfoParse(task->remote, &err);
     StringInfoData name, value;
     elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->oid.table);
-    if (!opts) { work_error(task, false, __FILE__, __LINE__, __func__, ERRCODE_INVALID_PARAMETER_VALUE, "!PQconninfoParse and %s", err ? err : "nothing"); if (err) PQfreemem(err); return; }
+    if (!opts) { work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_INVALID_PARAMETER_VALUE, "!PQconninfoParse and %s", err ? err : "nothing"); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
         elog(DEBUG1, "%s = %s", opt->keyword, opt->val);
@@ -504,7 +504,7 @@ static void work_remote(Task *task) {
         if (!strcmp(opt->keyword, "options")) { options = opt->val; continue; }
         arg++;
     }
-    if (!superuser() && !password) { work_error(task, false, __FILE__, __LINE__, __func__, ERRCODE_INVALID_PARAMETER_VALUE, "!superuser && !password"); PQconninfoFree(opts); return; }
+    if (!superuser() && !password) { work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_INVALID_PARAMETER_VALUE, "!superuser && !password"); PQconninfoFree(opts); return; }
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
     initStringInfoMy(TopMemoryContext, &name);
