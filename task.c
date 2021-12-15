@@ -3,6 +3,7 @@
 extern bool xact_started;
 extern char *default_null;
 extern Work *work;
+static emit_log_hook_type emit_log_hook_prev = NULL;
 Task *task;
 
 static bool task_live(Task *task) {
@@ -181,6 +182,7 @@ bool task_work(Task *task) {
 }
 
 static void task_error(ErrorData *edata) {
+    if (emit_log_hook_prev) (*emit_log_hook_prev)(edata);
     if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (edata->elevel) appendStringInfo(&task->error, "%selevel%c%i", task->error.len ? "\n" : "", task->delimiter, edata->elevel);
@@ -244,15 +246,12 @@ static void task_exit(int code, Datum arg) {
 }
 
 static void task_catch(void) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    ErrorData *edata = CopyErrorData();
-    MemoryContextSwitchTo(oldMemoryContext);
-    task_error(edata);
-    FreeErrorData(edata);
     HOLD_INTERRUPTS();
     disable_all_timeouts(false);
     QueryCancelPending = false;
+    emit_log_hook = task_error;
     EmitErrorReport();
+    emit_log_hook = emit_log_hook_prev;
     debug_query_string = NULL;
     AbortOutOfAnyTransaction();
 #if PG_VERSION_NUM >= 110000
@@ -276,6 +275,7 @@ static void task_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
     StringInfoData oid, schema_table, schema_type;
+    emit_log_hook_prev = emit_log_hook;
     task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
     on_proc_exit(task_exit, (Datum)task);
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
