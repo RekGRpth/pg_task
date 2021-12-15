@@ -181,10 +181,11 @@ bool task_work(Task *task) {
     return exit;
 }
 
-static void task_error(ErrorData *edata) {
+void task_error(ErrorData *edata) {
     if (emit_log_hook_prev) (*emit_log_hook_prev)(edata);
     if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    if (task->remote && edata->elevel == WARNING) edata->elevel = ERROR;
     if (edata->elevel) appendStringInfo(&task->error, "%selevel%c%i", task->error.len ? "\n" : "", task->delimiter, edata->elevel);
     if (edata->output_to_server) appendStringInfo(&task->error, "%soutput_to_server%ctrue", task->error.len ? "\n" : "", task->delimiter);
     if (edata->output_to_client) appendStringInfo(&task->error, "%soutput_to_client%ctrue", task->error.len ? "\n" : "", task->delimiter);
