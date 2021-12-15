@@ -109,8 +109,8 @@ static int work_nevents(void) {
     int nevents = 0;
     dlist_foreach_modify(iter, &work->head) {
         Task *task = dlist_container(Task, node, iter.cur);
-        if (PQstatus(task->conn) == CONNECTION_BAD) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD and %s", PQerrorMessageMy(task->conn)))); continue; }
-        if (PQsocket(task->conn) == PGINVALID_SOCKET) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsocket == PGINVALID_SOCKET and %s", PQerrorMessageMy(task->conn)))); continue; }
+        if (PQstatus(task->conn) == CONNECTION_BAD) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(task->conn)))); continue; }
+        if (PQsocket(task->conn) == PGINVALID_SOCKET) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsocket == PGINVALID_SOCKET"), errdetail("%s", PQerrorMessageMy(task->conn)))); continue; }
         nevents++;
     }
     return nevents;
@@ -208,7 +208,7 @@ static bool work_busy(Task *task, int event) {
 }
 
 static bool work_consume(Task *task) {
-    if (!PQconsumeInput(task->conn)) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQconsumeInput failed: %s", PQerrorMessageMy(task->conn)))); return false; }
+    if (!PQconsumeInput(task->conn)) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQconsumeInput failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); return false; }
     return true;
 }
 
@@ -216,7 +216,7 @@ static bool work_flush(Task *task) {
     switch (PQflush(task->conn)) {
         case 0: break;
         case 1: elog(DEBUG1, "id = %li, PQflush == 1", task->id); task->event = WL_SOCKET_MASK; return false;
-        case -1: ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQflush failed: %s", PQerrorMessageMy(task->conn)))); return false;
+        case -1: ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQflush failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); return false;
     }
     return true;
 }
@@ -237,7 +237,7 @@ static void work_done(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
         task->socket = work_done;
         if (!work_busy(task, WL_SOCKET_WRITEABLE)) return;
-        if (!PQsendQuery(task->conn, SQL(COMMIT))) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed: %s", PQerrorMessageMy(task->conn)))); return; }
+        if (!PQsendQuery(task->conn, SQL(COMMIT))) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); return; }
         if (!work_flush(task)) return;
         task->event = WL_SOCKET_READABLE;
         return;
@@ -304,7 +304,7 @@ static void work_result(Task *task) {
     for (PGresult *result; PQstatus(task->conn) == CONNECTION_OK && (result = PQgetResult(task->conn)); ) {
         switch (PQresultStatus(result)) {
             case PGRES_COMMAND_OK: work_command(task, result); break;
-            case PGRES_FATAL_ERROR: elog(WARNING, "id = %li, PQresultStatus == PGRES_FATAL_ERROR and %s", task->id, PQresultErrorMessageMy(result)); work_fatal(task, result); break;
+            case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", task->id), errdetail("%s", PQresultErrorMessageMy(result)))); work_fatal(task, result); break;
             case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) work_success(task, result, row); break;
             default: elog(DEBUG1, "id = %li, %s", task->id, PQresStatus(PQresultStatus(result))); break;
         }
@@ -348,7 +348,7 @@ static void work_query(Task *task) {
         if (!task->id) return;
     }
     elog(DEBUG1, "input = %s", task->input);
-    if (!PQsendQuery(task->conn, task->input)) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed: %s", PQerrorMessageMy(task->conn)))); return; }
+    if (!PQsendQuery(task->conn, task->input)) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); return; }
     task->socket = work_result;
     if (!work_flush(task)) return;
     task->event = WL_SOCKET_READABLE;
@@ -357,19 +357,19 @@ static void work_query(Task *task) {
 static void work_connect(Task *task) {
     bool connected = false;
     switch (PQstatus(task->conn)) {
-        case CONNECTION_BAD: ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD and %s", PQerrorMessageMy(task->conn)))); return;
+        case CONNECTION_BAD: ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(task->conn)))); return;
         case CONNECTION_OK: elog(DEBUG1, "id = %li, PQstatus == CONNECTION_OK", task->id); connected = true; break;
         default: break;
     }
     if (!connected) switch (PQconnectPoll(task->conn)) {
         case PGRES_POLLING_ACTIVE: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_ACTIVE", task->id); break;
-        case PGRES_POLLING_FAILED: ereport_my(WARNING, true, (errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectPoll failed: %s", PQerrorMessageMy(task->conn)))); return;
+        case PGRES_POLLING_FAILED: ereport_my(WARNING, true, (errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectPoll failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); return;
         case PGRES_POLLING_OK: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_OK", task->id); connected = true; break;
         case PGRES_POLLING_READING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_READING", task->id); task->event = WL_SOCKET_READABLE; break;
         case PGRES_POLLING_WRITING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_WRITING", task->id); task->event = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
-        if (!(task->pid = PQbackendPID(task->conn))) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQbackendPID failed: %s", PQerrorMessageMy(task->conn)))); return; }
+        if (!(task->pid = PQbackendPID(task->conn))) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQbackendPID failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); return; }
         if (!lock_table_pid_hash(work->oid.table, task->pid, task->hash)) { ereport_my(WARNING, true, (errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash))); return; }
         work_query(task);
     }
@@ -382,8 +382,8 @@ static void work_exit(int code, Datum arg) {
         char errbuf[256];
         Task *task = dlist_container(Task, node, iter.cur);
         PGcancel *cancel = PQgetCancel(task->conn);
-        if (!cancel) { elog(WARNING, "PQgetCancel failed: %s", PQerrorMessageMy(task->conn)); continue; }
-        if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { elog(WARNING, "PQcancel failed: %s", errbuf); PQfreeCancel(cancel); continue; }
+        if (!cancel) { ereport(WARNING, (errmsg("PQgetCancel failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); continue; }
+        if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { ereport(WARNING, (errmsg("PQcancel failed"), errdetail("%s", errbuf))); PQfreeCancel(cancel); continue; }
         elog(WARNING, "cancel id = %li", task->id);
         PQfreeCancel(cancel);
         work_finish(task);
@@ -472,7 +472,7 @@ static void work_remote(Task *task) {
     StringInfoData name, value;
     elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->oid.table);
     dlist_push_head(&work->head, &task->node);
-    if (!opts) { ereport_my(WARNING, true, (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed: %s", work_errstr(err)))); if (err) PQfreemem(err); return; }
+    if (!opts) { ereport_my(WARNING, true, (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), errdetail("%s", work_errstr(err)))); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
         elog(DEBUG1, "%s = %s", opt->keyword, opt->val);
@@ -516,11 +516,11 @@ static void work_remote(Task *task) {
     task->event = WL_SOCKET_MASK;
     task->socket = work_connect;
     task->start = GetCurrentTimestamp();
-    if (!(task->conn = PQconnectStartParams(keywords, values, false))) ereport_my(WARNING, true, (errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectStartParams failed: %s", PQerrorMessageMy(task->conn))));
-    else if (PQstatus(task->conn) == CONNECTION_BAD) ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD and %s", PQerrorMessageMy(task->conn))));
-    else if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetnonblocking failed: %s", PQerrorMessageMy(task->conn))));
+    if (!(task->conn = PQconnectStartParams(keywords, values, false))) ereport_my(WARNING, true, (errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectStartParams failed"), errdetail("%s", PQerrorMessageMy(task->conn))));
+    else if (PQstatus(task->conn) == CONNECTION_BAD) ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(task->conn))));
+    else if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetnonblocking failed"), errdetail("%s", PQerrorMessageMy(task->conn))));
     else if (!superuser() && !PQconnectionUsedPassword(task->conn)) ereport_my(WARNING, true, (errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superuser cannot connect if the server does not request a password."), errhint("Target server's authentication method must be changed.")));
-    else if (PQclientEncoding(task->conn) != GetDatabaseEncoding() && !PQsetClientEncoding(task->conn, GetDatabaseEncodingName())) ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetClientEncoding failed: %s", PQerrorMessageMy(task->conn))));
+    else if (PQclientEncoding(task->conn) != GetDatabaseEncoding() && !PQsetClientEncoding(task->conn, GetDatabaseEncodingName())) ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetClientEncoding failed"), errdetail("%s", PQerrorMessageMy(task->conn))));
     pfree(name.data);
     pfree(value.data);
     pfree(keywords);
