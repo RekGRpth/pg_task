@@ -371,7 +371,7 @@ static void work_query(Task *task) {
         return;
     }
     elog(DEBUG1, "input = %s", task->input);
-    if (!PQsendQuery(task->conn, task->input)) { work_error(task, false, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQsendQuery and %s", PQerrorMessageMy(task->conn)); return; }
+    if (!PQsendQuery(task->conn, task->input)) return work_error(task, false, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQsendQuery and %s", PQerrorMessageMy(task->conn));
     task->socket = work_result;
     if (!work_flush(task)) return;
     task->event = WL_SOCKET_READABLE;
@@ -380,20 +380,20 @@ static void work_query(Task *task) {
 static void work_connect(Task *task) {
     bool connected = false;
     switch (PQstatus(task->conn)) {
-        case CONNECTION_BAD: work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_FAILURE, "PQstatus == CONNECTION_BAD and %s", PQerrorMessageMy(task->conn)); return;
+        case CONNECTION_BAD: return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_FAILURE, "PQstatus == CONNECTION_BAD and %s", PQerrorMessageMy(task->conn));
         case CONNECTION_OK: elog(DEBUG1, "id = %li, PQstatus == CONNECTION_OK", task->id); connected = true; break;
         default: break;
     }
     if (!connected) switch (PQconnectPoll(task->conn)) {
         case PGRES_POLLING_ACTIVE: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_ACTIVE", task->id); break;
-        case PGRES_POLLING_FAILED: work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION, "PQconnectPoll == PGRES_POLLING_FAILED and %s", PQerrorMessageMy(task->conn)); return;
+        case PGRES_POLLING_FAILED: return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION, "PQconnectPoll == PGRES_POLLING_FAILED and %s", PQerrorMessageMy(task->conn));
         case PGRES_POLLING_OK: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_OK", task->id); connected = true; break;
         case PGRES_POLLING_READING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_READING", task->id); task->event = WL_SOCKET_READABLE; break;
         case PGRES_POLLING_WRITING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_WRITING", task->id); task->event = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
-        if(!(task->pid = PQbackendPID(task->conn))) { work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQbackendPID and %s", PQerrorMessageMy(task->conn)); return; }
-        if (!lock_table_pid_hash(work->oid.table, task->pid, task->hash)) { work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_LOCK_NOT_AVAILABLE, "!lock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash); return; }
+        if(!(task->pid = PQbackendPID(task->conn))) return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQbackendPID and %s", PQerrorMessageMy(task->conn));
+        if (!lock_table_pid_hash(work->oid.table, task->pid, task->hash)) return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_LOCK_NOT_AVAILABLE, "!lock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash);
         work_query(task);
     }
 }
