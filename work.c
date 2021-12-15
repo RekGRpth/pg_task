@@ -111,7 +111,6 @@ static void work_error(Task *task, bool finish, const char *filename, int lineno
         if (needed == 0) break;
         enlargeStringInfo(&str, needed);
     }
-    elog(WARNING, "id = %li, error = %s", task->id, str.data);
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
     appendStringInfo(&task->error, "%sseverity%cERROR", task->error.len ? "\n" : "", task->delimiter);
@@ -124,6 +123,7 @@ static void work_error(Task *task, bool finish, const char *filename, int lineno
     appendStringInfo(&task->error, "%ssource_function%c%s", task->error.len ? "\n" : "", task->delimiter, funcname);
     appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
     task->skip++;
+    elog(WARNING, "id = %li, error = %s", task->id, task->error.data);
     if (task_done(task) || finish) work_finish(task);
 }
 
