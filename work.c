@@ -365,7 +365,7 @@ static void work_query(Task *task) {
     task->socket = work_query;
     if (!work_busy(task, WL_SOCKET_WRITEABLE)) return;
     if (work_input(task)) { work_finish(task); return; }
-    if (!task->active) return work_error(task, false, __FILE__, __LINE__, __func__, ERRCODE_INTERNAL_ERROR, "task %li not active", task->id);
+    if (!task->active) return work_error(task, false, __FILE__, __LINE__, __func__, ERRCODE_QUERY_CANCELED, "task %li not active", task->id);
     elog(DEBUG1, "input = %s", task->input);
     if (!PQsendQuery(task->conn, task->input)) { work_error(task, false, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQsendQuery and %s", PQerrorMessageMy(task->conn)); return; }
     task->socket = work_result;
