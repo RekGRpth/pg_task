@@ -392,7 +392,7 @@ static void work_connect(Task *task) {
         case PGRES_POLLING_WRITING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_WRITING", task->id); task->event = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
-        if(!(task->pid = PQbackendPID(task->conn))) return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQbackendPID and %s", PQerrorMessageMy(task->conn));
+        if (!(task->pid = PQbackendPID(task->conn))) return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQbackendPID and %s", PQerrorMessageMy(task->conn));
         if (!lock_table_pid_hash(work->oid.table, task->pid, task->hash)) return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_LOCK_NOT_AVAILABLE, "!lock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash);
         work_query(task);
     }
