@@ -231,7 +231,7 @@ static bool work_busy(Task *task, int event) {
 }
 
 static bool work_consume(Task *task) {
-    if (!PQconsumeInput(task->conn)) { work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQconsumeInput and %s", PQerrorMessageMy(task->conn)); return false; }
+    if (!PQconsumeInput(task->conn)) { work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "PQconsumeInput failed: %s", PQerrorMessageMy(task->conn)); return false; }
     return true;
 }
 
@@ -239,7 +239,7 @@ static bool work_flush(Task *task) {
     switch (PQflush(task->conn)) {
         case 0: break;
         case 1: elog(DEBUG1, "id = %li, PQflush == 1", task->id); task->event = WL_SOCKET_MASK; return false;
-        case -1: work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "PQflush == -1 and %s", PQerrorMessageMy(task->conn)); return false;
+        case -1: work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "PQflush failed: %s", PQerrorMessageMy(task->conn)); return false;
     }
     return true;
 }
@@ -260,7 +260,7 @@ static void work_done(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
         task->socket = work_done;
         if (!work_busy(task, WL_SOCKET_WRITEABLE)) return;
-        if (!PQsendQuery(task->conn, SQL(COMMIT))) return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQsendQuery and %s", PQerrorMessageMy(task->conn));
+        if (!PQsendQuery(task->conn, SQL(COMMIT))) return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "PQsendQuery failed: %s", PQerrorMessageMy(task->conn));
         if (!work_flush(task)) return;
         task->event = WL_SOCKET_READABLE;
         return;
@@ -371,7 +371,7 @@ static void work_query(Task *task) {
         if (!task->id) return;
     }
     elog(DEBUG1, "input = %s", task->input);
-    if (!PQsendQuery(task->conn, task->input)) return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQsendQuery and %s", PQerrorMessageMy(task->conn));
+    if (!PQsendQuery(task->conn, task->input)) return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "PQsendQuery failed: %s", PQerrorMessageMy(task->conn));
     task->socket = work_result;
     if (!work_flush(task)) return;
     task->event = WL_SOCKET_READABLE;
@@ -386,13 +386,13 @@ static void work_connect(Task *task) {
     }
     if (!connected) switch (PQconnectPoll(task->conn)) {
         case PGRES_POLLING_ACTIVE: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_ACTIVE", task->id); break;
-        case PGRES_POLLING_FAILED: return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION, "PQconnectPoll == PGRES_POLLING_FAILED and %s", PQerrorMessageMy(task->conn));
+        case PGRES_POLLING_FAILED: return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION, "PQconnectPoll failed: %s", PQerrorMessageMy(task->conn));
         case PGRES_POLLING_OK: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_OK", task->id); connected = true; break;
         case PGRES_POLLING_READING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_READING", task->id); task->event = WL_SOCKET_READABLE; break;
         case PGRES_POLLING_WRITING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_WRITING", task->id); task->event = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
-        if (!(task->pid = PQbackendPID(task->conn))) return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQbackendPID and %s", PQerrorMessageMy(task->conn));
+        if (!(task->pid = PQbackendPID(task->conn))) return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "PQbackendPID failed: %s", PQerrorMessageMy(task->conn));
         if (!lock_table_pid_hash(work->oid.table, task->pid, task->hash)) return work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_LOCK_NOT_AVAILABLE, "!lock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash);
         work_query(task);
     }
@@ -405,8 +405,8 @@ static void work_exit(int code, Datum arg) {
         char errbuf[256];
         Task *task = dlist_container(Task, node, iter.cur);
         PGcancel *cancel = PQgetCancel(task->conn);
-        if (!cancel) { elog(WARNING, "!PQgetCancel and %s", PQerrorMessageMy(task->conn)); continue; }
-        if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { elog(WARNING, "!PQcancel and %s", errbuf); PQfreeCancel(cancel); continue; }
+        if (!cancel) { elog(WARNING, "PQgetCancel failed: %s", PQerrorMessageMy(task->conn)); continue; }
+        if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { elog(WARNING, "PQcancel failed: %s", errbuf); PQfreeCancel(cancel); continue; }
         elog(WARNING, "cancel id = %li", task->id);
         PQfreeCancel(cancel);
         work_finish(task);
@@ -495,7 +495,7 @@ static void work_remote(Task *task) {
     StringInfoData name, value;
     elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->oid.table);
     dlist_push_head(&work->head, &task->node);
-    if (!opts) { work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_INVALID_PARAMETER_VALUE, "!PQconninfoParse and %s", err ? err : "nothing"); if (err) PQfreemem(err); return; }
+    if (!opts) { work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_INVALID_PARAMETER_VALUE, "PQconninfoParse failed: %s", err ? err : "nothing"); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
         elog(DEBUG1, "%s = %s", opt->keyword, opt->val);
@@ -539,11 +539,11 @@ static void work_remote(Task *task) {
     task->event = WL_SOCKET_MASK;
     task->socket = work_connect;
     task->start = GetCurrentTimestamp();
-    if (!(task->conn = PQconnectStartParams(keywords, values, false))) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION, "!PQconnectStartParams and %s", PQerrorMessageMy(task->conn));
+    if (!(task->conn = PQconnectStartParams(keywords, values, false))) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION, "PQconnectStartParams failed: %s", PQerrorMessageMy(task->conn));
     else if (PQstatus(task->conn) == CONNECTION_BAD) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_FAILURE, "PQstatus == CONNECTION_BAD and %s", PQerrorMessageMy(task->conn));
-    else if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "PQsetnonblocking == -1 and %s", PQerrorMessageMy(task->conn));
-    else if (!superuser() && !PQconnectionUsedPassword(task->conn)) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_INVALID_PARAMETER_VALUE, "!superuser && !PQconnectionUsedPassword == -1 and %s", PQerrorMessageMy(task->conn));
-    else if (PQclientEncoding(task->conn) != GetDatabaseEncoding() && !PQsetClientEncoding(task->conn, GetDatabaseEncodingName())) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "!PQsetClientEncoding and %s", PQerrorMessageMy(task->conn));
+    else if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "PQsetnonblocking failed: %s", PQerrorMessageMy(task->conn));
+    else if (!superuser() && !PQconnectionUsedPassword(task->conn)) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_INVALID_PARAMETER_VALUE, "!superuser && !PQconnectionUsedPassword and %s", PQerrorMessageMy(task->conn));
+    else if (PQclientEncoding(task->conn) != GetDatabaseEncoding() && !PQsetClientEncoding(task->conn, GetDatabaseEncodingName())) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "PQsetClientEncoding failed: %s", PQerrorMessageMy(task->conn));
     pfree(name.data);
     pfree(value.data);
     pfree(keywords);
