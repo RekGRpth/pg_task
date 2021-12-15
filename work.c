@@ -505,7 +505,7 @@ static void work_remote(Task *task) {
         if (!strcmp(opt->keyword, "options")) { options = opt->val; continue; }
         arg++;
     }
-    if (!superuser() && !password) { work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_INVALID_PARAMETER_VALUE, "!superuser && !password"); PQconninfoFree(opts); return; }
+    if (!superuser() && !password) { work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED, "password is required\nmessage_detail%cNon-superusers must provide a password in the connection string.", task->delimiter); PQconninfoFree(opts); return; }
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
     initStringInfoMy(TopMemoryContext, &name);
@@ -542,7 +542,7 @@ static void work_remote(Task *task) {
     if (!(task->conn = PQconnectStartParams(keywords, values, false))) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION, "PQconnectStartParams failed: %s", PQerrorMessageMy(task->conn));
     else if (PQstatus(task->conn) == CONNECTION_BAD) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_FAILURE, "PQstatus == CONNECTION_BAD and %s", PQerrorMessageMy(task->conn));
     else if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "PQsetnonblocking failed: %s", PQerrorMessageMy(task->conn));
-    else if (!superuser() && !PQconnectionUsedPassword(task->conn)) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_INVALID_PARAMETER_VALUE, "!superuser && !PQconnectionUsedPassword and %s", PQerrorMessageMy(task->conn));
+    else if (!superuser() && !PQconnectionUsedPassword(task->conn)) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED, "password is required\nmessage_detail%cNon-superuser cannot connect if the server does not request a password.\nmessage_hint%cTarget server's authentication method must be changed.", task->delimiter, task->delimiter);
     else if (PQclientEncoding(task->conn) != GetDatabaseEncoding() && !PQsetClientEncoding(task->conn, GetDatabaseEncodingName())) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "PQsetClientEncoding failed: %s", PQerrorMessageMy(task->conn));
     pfree(name.data);
     pfree(value.data);
