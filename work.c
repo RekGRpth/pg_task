@@ -494,6 +494,7 @@ static void work_remote(Task *task) {
     PQconninfoOption *opts = PQconninfoParse(task->remote, &err);
     StringInfoData name, value;
     elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", task->id, task->group, task->remote ? task->remote : default_null, task->max, work->oid.table);
+    dlist_push_head(&work->head, &task->node);
     if (!opts) { work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_INVALID_PARAMETER_VALUE, "!PQconninfoParse and %s", err ? err : "nothing"); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
@@ -538,7 +539,6 @@ static void work_remote(Task *task) {
     task->event = WL_SOCKET_MASK;
     task->socket = work_connect;
     task->start = GetCurrentTimestamp();
-    dlist_push_head(&work->head, &task->node);
     if (!(task->conn = PQconnectStartParams(keywords, values, false))) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION, "!PQconnectStartParams and %s", PQerrorMessageMy(task->conn));
     else if (PQstatus(task->conn) == CONNECTION_BAD) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_FAILURE, "PQstatus == CONNECTION_BAD and %s", PQerrorMessageMy(task->conn));
     else if (!PQisnonblocking(task->conn) && PQsetnonblocking(task->conn, true) == -1) work_error(task, true, __FILE__, __LINE__, __func__, ERRCODE_CONNECTION_EXCEPTION, "PQsetnonblocking == -1 and %s", PQerrorMessageMy(task->conn));
