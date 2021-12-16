@@ -298,3 +298,44 @@ SignalHandlerForShutdownRequest(SIGNAL_ARGS)
 	errno = save_errno;
 }
 #endif
+
+void append_with_tabs(StringInfo buf, const char *str) {
+    char ch;
+    while ((ch = *str++) != '\0') {
+        appendStringInfoCharMacro(buf, ch);
+        if (ch == '\n') appendStringInfoCharMacro(buf, '\t');
+    }
+}
+
+const char *error_severity(int elevel) {
+    const char *prefix;
+    switch (elevel) {
+        case DEBUG1: case DEBUG2: case DEBUG3: case DEBUG4: case DEBUG5: prefix = gettext_noop("DEBUG"); break;
+        case LOG: case LOG_SERVER_ONLY: prefix = gettext_noop("LOG"); break;
+        case INFO: prefix = gettext_noop("INFO"); break;
+        case NOTICE: prefix = gettext_noop("NOTICE"); break;
+        case WARNING:
+#if PG_VERSION_NUM >= 140000
+        case WARNING_CLIENT_ONLY:
+#endif
+            prefix = gettext_noop("WARNING"); break;
+        case ERROR: prefix = gettext_noop("ERROR"); break;
+        case FATAL: prefix = gettext_noop("FATAL"); break;
+        case PANIC: prefix = gettext_noop("PANIC"); break;
+        default: prefix = "???"; break;
+    }
+    return prefix;
+}
+
+bool is_log_level_output(int elevel, int log_min_level) {
+    if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
+        if (log_min_level == LOG || log_min_level <= ERROR) return true;
+#if PG_VERSION_NUM >= 140000
+    } else if (elevel == WARNING_CLIENT_ONLY) {
+        return false; // never sent to log, regardless of log_min_level
+#endif
+    } else if (log_min_level == LOG) {
+        if (elevel >= FATAL) return true; // elevel != LOG
+    } else if (elevel >= log_min_level) return true; // Neither is LOG
+    return false;
+}
