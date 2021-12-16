@@ -196,7 +196,11 @@ static const char *error_severity(int elevel) {
         case LOG: case LOG_SERVER_ONLY: prefix = gettext_noop("LOG"); break;
         case INFO: prefix = gettext_noop("INFO"); break;
         case NOTICE: prefix = gettext_noop("NOTICE"); break;
-        case WARNING: case WARNING_CLIENT_ONLY: prefix = gettext_noop("WARNING"); break;
+        case WARNING:
+#if PG_VERSION_NUM >= 140000
+        case WARNING_CLIENT_ONLY:
+#endif
+            prefix = gettext_noop("WARNING"); break;
         case ERROR: prefix = gettext_noop("ERROR"); break;
         case FATAL: prefix = gettext_noop("FATAL"); break;
         case PANIC: prefix = gettext_noop("PANIC"); break;
@@ -208,8 +212,10 @@ static const char *error_severity(int elevel) {
 static inline bool is_log_level_output(int elevel, int log_min_level) {
     if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
         if (log_min_level == LOG || log_min_level <= ERROR) return true;
+#if PG_VERSION_NUM >= 140000
     } else if (elevel == WARNING_CLIENT_ONLY) {
         return false; // never sent to log, regardless of log_min_level
+#endif
     } else if (log_min_level == LOG) {
         if (elevel >= FATAL) return true; // elevel != LOG
     } else if (elevel >= log_min_level) return true; // Neither is LOG
@@ -264,11 +270,13 @@ void task_error(ErrorData *edata) {
                 appendStringInfo(&task->error, _("LOCATION:  %s:%d"), edata->filename, edata->lineno);
             }
         }
+#if PG_VERSION_NUM >= 130000
         if (edata->backtrace) {
             if (task->error.len) appendStringInfoChar(&task->error, '\n');
             appendStringInfoString(&task->error, _("BACKTRACE:  "));
             append_with_tabs(&task->error, edata->backtrace);
         }
+#endif
     }
     if (is_log_level_output(edata->elevel, log_min_error_statement) && debug_query_string != NULL && !edata->hide_stmt) { // If the user wants the query that generated this error logged, do it.
         if (task->error.len) appendStringInfoChar(&task->error, '\n');
