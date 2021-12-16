@@ -183,7 +183,7 @@ bool task_work(Task *task) {
 }
 
 void task_error(ErrorData *edata) {
-    if (emit_log_hook_prev) (*emit_log_hook_prev)(edata);
+    if ((emit_log_hook = emit_log_hook_prev)) (*emit_log_hook)(edata);
     if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (task->remote && edata->elevel == WARNING) edata->elevel = ERROR;
@@ -279,7 +279,6 @@ static void task_catch(void) {
     QueryCancelPending = false;
     emit_log_hook = task_error;
     EmitErrorReport();
-    emit_log_hook = emit_log_hook_prev;
     debug_query_string = NULL;
     AbortOutOfAnyTransaction();
 #if PG_VERSION_NUM >= 110000

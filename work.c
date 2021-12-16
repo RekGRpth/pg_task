@@ -11,7 +11,6 @@ Work *work;
     *taskp = task; \
     emit_log_hook = task_error; \
     ereport(elevel, __VA_ARGS__); \
-    emit_log_hook = emit_log_hook_prev; \
     if (task_done(task) || finish) work_finish(task); \
 } while(0)
 
