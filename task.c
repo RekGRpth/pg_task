@@ -238,10 +238,10 @@ void task_error(ErrorData *edata) {
         }
 #endif
     }
-    if (is_log_level_output(edata->elevel, log_min_error_statement) && debug_query_string != NULL && !edata->hide_stmt) { // If the user wants the query that generated this error logged, do it.
+    if (is_log_level_output(edata->elevel, log_min_error_statement) && !edata->hide_stmt) { // If the user wants the query that generated this error logged, do it.
         if (task->error.len) appendStringInfoChar(&task->error, '\n');
         appendStringInfoString(&task->error, _("STATEMENT:  "));
-        append_with_tabs(&task->error, debug_query_string);
+        append_with_tabs(&task->error, task->input);
     }
 }
 
