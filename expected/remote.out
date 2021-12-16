@@ -27,4 +27,6 @@ c	d
 11|SELECT pg_sleep(10) AS a|||DONE|1
 11|SELECT pg_sleep(10) AS a|||DONE|1
 11|SELECT pg_sleep(10) AS a|ROLLBACK|ERROR:  task not active
-STATEMENT:  SELECT pg_sleep(10) AS a|DONE|8
+STATEMENT:  SELECT pg_sleep(10) AS a|DONE|4
+11|SELECT pg_sleep(10) AS a|ROLLBACK|ERROR:  task not active
+STATEMENT:  SELECT pg_sleep(10) AS a|DONE|4

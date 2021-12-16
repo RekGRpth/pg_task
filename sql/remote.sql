@@ -32,7 +32,7 @@ SELECT "group", input, output, error, state FROM task WHERE "group" = '5' AND pl
 SELECT "group", input, output, error, state FROM task WHERE "group" = '6' AND plan > :ct::timestamp;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '7' AND plan > :ct::timestamp;
 BEGIN;
-WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, live, remote) SELECT '8', 'SELECT pg_sleep(1) AS a', 2, '1 min', 'application_name=test' FROM s;
+WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, count, remote) SELECT '8', 'SELECT pg_sleep(1) AS a', 2, 5, 'application_name=test' FROM s;
 COMMIT;
 DO $body$ BEGIN
     WHILE true LOOP
@@ -42,8 +42,8 @@ DO $body$ BEGIN
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state, count(id) FROM task WHERE "group" = '8' AND plan > :ct::timestamp GROUP BY "group", input, output, error, state, pid;
 BEGIN;
-WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, live, remote) SELECT '9', 'SELECT pg_sleep(1) AS a', 2, '1 min', 'application_name=test' FROM s;
-INSERT INTO task ("group", input, max, live, remote) VALUES ('9', 'SELECT pg_sleep(1) AS a', 3, '1 min', 'application_name=test');
+WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, count, remote) SELECT '9', 'SELECT pg_sleep(1) AS a', 2, 6, 'application_name=test' FROM s;
+INSERT INTO task ("group", input, max, count, remote) VALUES ('9', 'SELECT pg_sleep(1) AS a', 3, 5, 'application_name=test');
 COMMIT;
 DO $body$ BEGIN
     WHILE true LOOP
@@ -63,7 +63,7 @@ DO $body$ BEGIN
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state, count(id) FROM task WHERE "group" = '10' AND plan > :ct::timestamp GROUP BY "group", input, output, error, state, pid;
 BEGIN;
-WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, live, active, remote) SELECT '11', 'SELECT pg_sleep(10) AS a', 2, '1 min', '5 sec', 'application_name=test' FROM s;
+WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, count, active, remote) SELECT '11', 'SELECT pg_sleep(10) AS a', 2, 5, '5 sec', 'application_name=test' FROM s;
 COMMIT;
 DO $body$ BEGIN
     WHILE true LOOP
