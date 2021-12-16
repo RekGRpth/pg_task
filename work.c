@@ -797,6 +797,7 @@ void work_main(Datum main_arg) {
             INSTR_TIME_SET_CURRENT(start_time);
             current_timeout = work->timeout;
         }
+        if (current_reset <= 0) current_reset = work->reset;
 #if PG_VERSION_NUM >= 100000
         nevents = WaitEventSetWait(set, current_timeout, events, nevents, PG_WAIT_EXTENSION);
 #else
