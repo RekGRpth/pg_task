@@ -155,6 +155,7 @@ typedef struct Work {
 } Work;
 
 bool init_oid_is_string(Oid oid);
+bool is_log_level_output(int elevel, int log_min_level);
 bool lock_data_user_table(Oid data, Oid user, Oid table);
 bool lock_table_id(Oid table, int64 id);
 bool lock_table_pid_hash(Oid table, int pid, int hash);
@@ -164,6 +165,7 @@ bool unlock_data_user_table(Oid data, Oid user, Oid table);
 bool unlock_table_id(Oid table, int64 id);
 bool unlock_table_pid_hash(Oid table, int pid, int hash);
 char *TextDatumGetCStringMy(MemoryContext memoryContext, Datum datum);
+const char *error_severity(int elevel);
 const char *init_check(void);
 Datum CStringGetTextDatumMy(MemoryContext memoryContext, const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
@@ -180,6 +182,7 @@ void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undeco
 #else
 void EndCommandMy(const char *commandTag, CommandDest dest);
 #endif
+void append_with_tabs(StringInfo buf, const char *str);
 void exec_simple_query_my(const char *query_string);
 void init_escape(StringInfoData *buf, const char *data, int len, char escape);
 void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf);
