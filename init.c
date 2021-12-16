@@ -327,6 +327,18 @@ const char *error_severity(int elevel) {
     return prefix;
 }
 
+int severity_error(const char *error) {
+    if (!pg_strcasecmp("DEBUG", error)) return DEBUG1;
+    if (!pg_strcasecmp("ERROR", error)) return ERROR;
+    if (!pg_strcasecmp("FATAL", error)) return FATAL;
+    if (!pg_strcasecmp("INFO", error)) return INFO;
+    if (!pg_strcasecmp("LOG", error)) return LOG;
+    if (!pg_strcasecmp("NOTICE", error)) return NOTICE;
+    if (!pg_strcasecmp("PANIC", error)) return PANIC;
+    if (!pg_strcasecmp("WARNING", error)) return WARNING;
+    return ERROR;
+}
+
 bool is_log_level_output(int elevel, int log_min_level) {
     if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
         if (log_min_level == LOG || log_min_level <= ERROR) return true;

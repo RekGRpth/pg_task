@@ -170,6 +170,7 @@ const char *init_check(void);
 Datum CStringGetTextDatumMy(MemoryContext memoryContext, const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
+int severity_error(const char *error);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 #if PG_VERSION_NUM >= 130000
 void BeginCommandMy(CommandTag commandTag, CommandDest dest);

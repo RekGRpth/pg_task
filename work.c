@@ -68,28 +68,57 @@ static void work_event(WaitEventSet *set) {
 
 static void work_fatal(Task *task, PGresult *result) {
     char *value = NULL;
+    char *value2 = NULL;
+    char *value3 = NULL;
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
-    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->error, "%sseverity%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY_NONLOCALIZED))) appendStringInfo(&task->error, "%sseverity_nonlocalized%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&task->error, "%ssqlstate%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY))) appendStringInfo(&task->error, "%smessage_primary%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL))) appendStringInfo(&task->error, "%smessage_detail%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))) appendStringInfo(&task->error, "%smessage_hint%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_STATEMENT_POSITION))) appendStringInfo(&task->error, "%sstatement_position%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_POSITION))) appendStringInfo(&task->error, "%sinternal_position%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_QUERY))) appendStringInfo(&task->error, "%sinternal_query%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_CONTEXT))) appendStringInfo(&task->error, "%scontext%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SCHEMA_NAME))) appendStringInfo(&task->error, "%sschema_name%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_TABLE_NAME))) appendStringInfo(&task->error, "%stable_name%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_COLUMN_NAME))) appendStringInfo(&task->error, "%scolumn_name%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_DATATYPE_NAME))) appendStringInfo(&task->error, "%sdatatype_name%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_CONSTRAINT_NAME))) appendStringInfo(&task->error, "%sconstraint_name%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FILE))) appendStringInfo(&task->error, "%ssource_file%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_LINE))) appendStringInfo(&task->error, "%ssource_line%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION))) appendStringInfo(&task->error, "%ssource_function%c%s", task->error.len ? "\n" : "", task->delimiter, value);
-    if (value) appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
+    appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
     task->skip++;
+    if (task->error.len) appendStringInfoChar(&task->error, '\n');
+    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&task->error, "%s:  ", _(value));
+    if (Log_error_verbosity >= PGERROR_VERBOSE && (value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&task->error, "%s: ", value);
+    if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY))) append_with_tabs(&task->error, value);
+    else append_with_tabs(&task->error, _("missing error text"));
+    if ((value = PQresultErrorField(result, PG_DIAG_STATEMENT_POSITION))) appendStringInfo(&task->error, _(" at character %s"), value);
+    else if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_POSITION))) appendStringInfo(&task->error, _(" at character %s"), value);
+    if (Log_error_verbosity >= PGERROR_DEFAULT) {
+        if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL))) {
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("DETAIL:  "));
+            append_with_tabs(&task->error, value);
+        }
+        if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))) {
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("HINT:  "));
+            append_with_tabs(&task->error, value);
+        }
+        if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_QUERY))) {
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("QUERY:  "));
+            append_with_tabs(&task->error, value);
+        }
+        if ((value = PQresultErrorField(result, PG_DIAG_CONTEXT))) {
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("CONTEXT:  "));
+            append_with_tabs(&task->error, value);
+        }
+        if (Log_error_verbosity >= PGERROR_VERBOSE) {
+            value2 = PQresultErrorField(result, PG_DIAG_SOURCE_FILE);
+            value3 = PQresultErrorField(result, PG_DIAG_SOURCE_LINE);
+            if ((value = PQresultErrorField(result, PG_DIAG_SOURCE_FUNCTION)) && value2) { // assume no newlines in funcname or filename...
+                if (task->error.len) appendStringInfoChar(&task->error, '\n');
+                appendStringInfo(&task->error, _("LOCATION:  %s, %s:%s"), value, value2, value3);
+            } else if (value2) {
+                if (task->error.len) appendStringInfoChar(&task->error, '\n');
+                appendStringInfo(&task->error, _("LOCATION:  %s:%s"), value2, value3);
+            }
+        }
+    }
+    if (is_log_level_output(severity_error(PQresultErrorField(result, PG_DIAG_SEVERITY)), log_min_error_statement)) { // If the user wants the query that generated this error logged, do it.
+        if (task->error.len) appendStringInfoChar(&task->error, '\n');
+        appendStringInfoString(&task->error, _("STATEMENT:  "));
+        append_with_tabs(&task->error, task->input);
+    }
 }
 
 static void work_free(Task *task) {
