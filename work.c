@@ -343,11 +343,17 @@ static void work_result(Task *task) {
     work_done(task);
 }
 
-static bool work_input(Task *task) {
+static void work_query(Task *task) {
     StringInfoData input;
-    if (ShutdownRequestPending) return true;
-    if (task_work(task)) return true;
-    elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
+    for (;;) {
+        if (ShutdownRequestPending) return;
+        task->socket = work_query;
+        if (!work_busy(task, WL_SOCKET_WRITEABLE)) return;
+        if (task_work(task)) { work_finish(task); return; }
+        if (task->active) break;
+        ereport_my(WARNING, false, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task %li not active", task->id)));
+        if (!task->id) return;
+    }
     initStringInfoMy(TopMemoryContext, &input);
     task->skip = 0;
     appendStringInfoString(&input, SQL(BEGIN;));
@@ -361,23 +367,9 @@ static bool work_input(Task *task) {
     appendStringInfoString(&input, SQL(COMMIT;));
     task->skip++;
     appendStringInfoString(&input, task->input);
-    pfree(task->input);
-    task->input = input.data;
-    return false;
-}
-
-static void work_query(Task *task) {
-    for (;;) {
-        if (ShutdownRequestPending) return;
-        task->socket = work_query;
-        if (!work_busy(task, WL_SOCKET_WRITEABLE)) return;
-        if (work_input(task)) { work_finish(task); return; }
-        if (task->active) break;
-        ereport_my(WARNING, false, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task %li not active", task->id)));
-        if (!task->id) return;
-    }
-    elog(DEBUG1, "input = %s", task->input);
-    if (!PQsendQuery(task->conn, task->input)) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); return; }
+    elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, input.data, task->count);
+    if (!PQsendQuery(task->conn, input.data)) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); pfree(input.data); return; }
+    pfree(input.data);
     task->socket = work_result;
     if (!work_flush(task)) return;
     task->event = WL_SOCKET_READABLE;
