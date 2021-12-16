@@ -364,7 +364,7 @@ static bool task_timeout(void) {
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task->id, task->timeout, task->input, task->count);
     set_ps_display_my("timeout");
     PG_TRY();
-        if (!task->active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task %li not active", task->id)));
+        if (!task->active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
         task_execute();
     PG_CATCH();
         task_catch();

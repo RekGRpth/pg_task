@@ -350,7 +350,7 @@ static void work_query(Task *task) {
         if (!work_busy(task, WL_SOCKET_WRITEABLE)) return;
         if (task_work(task)) { work_finish(task); return; }
         if (task->active) break;
-        ereport_my(WARNING, false, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task %li not active", task->id)));
+        ereport_my(WARNING, false, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
         if (!task->id) return;
     }
     initStringInfoMy(TopMemoryContext, &input);
