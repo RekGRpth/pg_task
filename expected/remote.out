@@ -1,27 +1,30 @@
 \unset ECHO
-1|SELECT 1/0 AS a|ROLLBACK|DONE
-2|SELECT pg_sleep(2) AS a|ROLLBACK|DONE
-3|SELECT 1 AS a|1|DONE
+1|SELECT 1/0 AS a|ROLLBACK|ERROR:  division by zero
+STATEMENT:  SELECT 1/0 AS a|DONE
+2|SELECT pg_sleep(2) AS a|ROLLBACK|ERROR:  canceling statement due to statement timeout
+STATEMENT:  SELECT pg_sleep(2) AS a|DONE
+3|SELECT 1 AS a|1||DONE
 4|SELECT 1 AS a, 2 AS b|a	b
-1	2|DONE
+1	2||DONE
 5|SELECT 1 AS a;SELECT 2 AS b|1
-2|DONE
+2||DONE
 6|SELECT 1 AS a, 2 AS b;SELECT 3 AS c|a	b
 1	2
-3|DONE
+3||DONE
 7|SELECT 1 AS a, 2 AS b;SELECT 3 AS c, 4 AS d|a	b
 1	2
 c	d
-3	4|DONE
-8|SELECT pg_sleep(1) AS a||DONE|5
-8|SELECT pg_sleep(1) AS a||DONE|5
-9|SELECT pg_sleep(1) AS a||DONE|3|1
-9|SELECT pg_sleep(1) AS a||DONE|2|6
-9|SELECT pg_sleep(1) AS a||DONE|2|4
-10|SELECT pg_sleep(1) AS a||DONE|5
-10|SELECT pg_sleep(1) AS a||DONE|5
-10|SELECT pg_sleep(1) AS a||DONE|5
-10|SELECT pg_sleep(1) AS a||DONE|5
-11|SELECT pg_sleep(10) AS a||DONE|1
-11|SELECT pg_sleep(10) AS a||DONE|1
-11|SELECT pg_sleep(10) AS a|ROLLBACK|DONE|8
+3	4||DONE
+8|SELECT pg_sleep(1) AS a|||DONE|5
+8|SELECT pg_sleep(1) AS a|||DONE|5
+9|SELECT pg_sleep(1) AS a|||DONE|3|1
+9|SELECT pg_sleep(1) AS a|||DONE|2|6
+9|SELECT pg_sleep(1) AS a|||DONE|2|4
+10|SELECT pg_sleep(1) AS a|||DONE|5
+10|SELECT pg_sleep(1) AS a|||DONE|5
+10|SELECT pg_sleep(1) AS a|||DONE|5
+10|SELECT pg_sleep(1) AS a|||DONE|5
+11|SELECT pg_sleep(10) AS a|||DONE|1
+11|SELECT pg_sleep(10) AS a|||DONE|1
+11|SELECT pg_sleep(10) AS a|ROLLBACK|ERROR:  task not active
+STATEMENT:  SELECT pg_sleep(10) AS a|DONE|8
