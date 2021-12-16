@@ -181,43 +181,102 @@ bool task_work(Task *task) {
     return exit;
 }
 
+static void append_with_tabs(StringInfo buf, const char *str) {
+    char ch;
+    while ((ch = *str++) != '\0') {
+        appendStringInfoCharMacro(buf, ch);
+        if (ch == '\n') appendStringInfoCharMacro(buf, '\t');
+    }
+}
+
+static const char *error_severity(int elevel) {
+    const char *prefix;
+    switch (elevel) {
+        case DEBUG1: case DEBUG2: case DEBUG3: case DEBUG4: case DEBUG5: prefix = gettext_noop("DEBUG"); break;
+        case LOG: case LOG_SERVER_ONLY: prefix = gettext_noop("LOG"); break;
+        case INFO: prefix = gettext_noop("INFO"); break;
+        case NOTICE: prefix = gettext_noop("NOTICE"); break;
+        case WARNING: case WARNING_CLIENT_ONLY: prefix = gettext_noop("WARNING"); break;
+        case ERROR: prefix = gettext_noop("ERROR"); break;
+        case FATAL: prefix = gettext_noop("FATAL"); break;
+        case PANIC: prefix = gettext_noop("PANIC"); break;
+        default: prefix = "???"; break;
+    }
+    return prefix;
+}
+
+static inline bool is_log_level_output(int elevel, int log_min_level) {
+    if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
+        if (log_min_level == LOG || log_min_level <= ERROR) return true;
+    } else if (elevel == WARNING_CLIENT_ONLY) {
+        return false; // never sent to log, regardless of log_min_level
+    } else if (log_min_level == LOG) {
+        if (elevel >= FATAL) return true; // elevel != LOG
+    } else if (elevel >= log_min_level) return true; // Neither is LOG
+    return false;
+}
+
 void task_error(ErrorData *edata) {
     if (emit_log_hook_prev) (*emit_log_hook_prev)(edata);
     if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (task->remote && edata->elevel == WARNING) edata->elevel = ERROR;
-    if (edata->elevel) appendStringInfo(&task->error, "%selevel%c%i", task->error.len ? "\n" : "", task->delimiter, edata->elevel);
-    if (edata->output_to_server) appendStringInfo(&task->error, "%soutput_to_server%ctrue", task->error.len ? "\n" : "", task->delimiter);
-    if (edata->output_to_client) appendStringInfo(&task->error, "%soutput_to_client%ctrue", task->error.len ? "\n" : "", task->delimiter);
-#if PG_VERSION_NUM >= 140000
-#else
-    if (edata->show_funcname) appendStringInfo(&task->error, "%sshow_funcname%ctrue", task->error.len ? "\n" : "", task->delimiter);
-#endif
-    if (edata->hide_stmt) appendStringInfo(&task->error, "%shide_stmt%ctrue", task->error.len ? "\n" : "", task->delimiter);
-    if (edata->hide_ctx) appendStringInfo(&task->error, "%shide_ctx%ctrue", task->error.len ? "\n" : "", task->delimiter);
-    if (edata->filename) appendStringInfo(&task->error, "%sfilename%c%s", task->error.len ? "\n" : "", task->delimiter, edata->filename);
-    if (edata->lineno) appendStringInfo(&task->error, "%slineno%c%i", task->error.len ? "\n" : "", task->delimiter, edata->lineno);
-    if (edata->funcname) appendStringInfo(&task->error, "%sfuncname%c%s", task->error.len ? "\n" : "", task->delimiter, edata->funcname);
-    if (edata->domain) appendStringInfo(&task->error, "%sdomain%c%s", task->error.len ? "\n" : "", task->delimiter, edata->domain);
-    if (edata->context_domain) appendStringInfo(&task->error, "%scontext_domain%c%s", task->error.len ? "\n" : "", task->delimiter, edata->context_domain);
-    if (edata->sqlerrcode) appendStringInfo(&task->error, "%ssqlerrcode%c%s", task->error.len ? "\n" : "", task->delimiter, unpack_sql_state(edata->sqlerrcode));
-    if (edata->message) appendStringInfo(&task->error, "%smessage%c%s", task->error.len ? "\n" : "", task->delimiter, edata->message);
-    if (edata->detail) appendStringInfo(&task->error, "%sdetail%c%s", task->error.len ? "\n" : "", task->delimiter, edata->detail);
-    if (edata->detail_log) appendStringInfo(&task->error, "%sdetail_log%c%s", task->error.len ? "\n" : "", task->delimiter, edata->detail_log);
-    if (edata->hint) appendStringInfo(&task->error, "%shint%c%s", task->error.len ? "\n" : "", task->delimiter, edata->hint);
-    if (edata->context) appendStringInfo(&task->error, "%scontext%c%s", task->error.len ? "\n" : "", task->delimiter, edata->context);
-    if (edata->message_id) appendStringInfo(&task->error, "%smessage_id%c%s", task->error.len ? "\n" : "", task->delimiter, edata->message_id);
-    if (edata->schema_name) appendStringInfo(&task->error, "%sschema_name%c%s", task->error.len ? "\n" : "", task->delimiter, edata->schema_name);
-    if (edata->table_name) appendStringInfo(&task->error, "%stable_name%c%s", task->error.len ? "\n" : "", task->delimiter, edata->table_name);
-    if (edata->column_name) appendStringInfo(&task->error, "%scolumn_name%c%s", task->error.len ? "\n" : "", task->delimiter, edata->column_name);
-    if (edata->datatype_name) appendStringInfo(&task->error, "%sdatatype_name%c%s", task->error.len ? "\n" : "", task->delimiter, edata->datatype_name);
-    if (edata->constraint_name) appendStringInfo(&task->error, "%sconstraint_name%c%s", task->error.len ? "\n" : "", task->delimiter, edata->constraint_name);
-    if (edata->cursorpos) appendStringInfo(&task->error, "%scursorpos%c%i", task->error.len ? "\n" : "", task->delimiter, edata->cursorpos);
-    if (edata->internalpos) appendStringInfo(&task->error, "%sinternalpos%c%i", task->error.len ? "\n" : "", task->delimiter, edata->internalpos);
-    if (edata->internalquery) appendStringInfo(&task->error, "%sinternalquery%c%s", task->error.len ? "\n" : "", task->delimiter, edata->internalquery);
-    if (edata->saved_errno) appendStringInfo(&task->error, "%ssaved_errno%c%i", task->error.len ? "\n" : "", task->delimiter, edata->saved_errno);
     appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
+    if (task->error.len) appendStringInfoChar(&task->error, '\n');
+    appendStringInfo(&task->error, "%s:  ", _(error_severity(edata->elevel)));
+    if (Log_error_verbosity >= PGERROR_VERBOSE) appendStringInfo(&task->error, "%s: ", unpack_sql_state(edata->sqlerrcode));
+    if (edata->message) append_with_tabs(&task->error, edata->message);
+    else append_with_tabs(&task->error, _("missing error text"));
+    if (edata->cursorpos > 0) appendStringInfo(&task->error, _(" at character %d"), edata->cursorpos);
+    else if (edata->internalpos > 0) appendStringInfo(&task->error, _(" at character %d"), edata->internalpos);
+    if (Log_error_verbosity >= PGERROR_DEFAULT) {
+        if (edata->detail_log) {
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("DETAIL:  "));
+            append_with_tabs(&task->error, edata->detail_log);
+        } else if (edata->detail) {
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("DETAIL:  "));
+            append_with_tabs(&task->error, edata->detail);
+        }
+        if (edata->hint) {
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("HINT:  "));
+            append_with_tabs(&task->error, edata->hint);
+        }
+        if (edata->internalquery) {
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("QUERY:  "));
+            append_with_tabs(&task->error, edata->internalquery);
+        }
+        if (edata->context && !edata->hide_ctx) {
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("CONTEXT:  "));
+            append_with_tabs(&task->error, edata->context);
+        }
+        if (Log_error_verbosity >= PGERROR_VERBOSE) {
+            /* assume no newlines in funcname or filename... */
+            if (edata->funcname && edata->filename) {
+                if (task->error.len) appendStringInfoChar(&task->error, '\n');
+                appendStringInfo(&task->error, _("LOCATION:  %s, %s:%d"), edata->funcname, edata->filename, edata->lineno);
+            } else if (edata->filename) {
+                if (task->error.len) appendStringInfoChar(&task->error, '\n');
+                appendStringInfo(&task->error, _("LOCATION:  %s:%d"), edata->filename, edata->lineno);
+            }
+        }
+        if (edata->backtrace) {
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("BACKTRACE:  "));
+            append_with_tabs(&task->error, edata->backtrace);
+        }
+    }
+    if (is_log_level_output(edata->elevel, log_min_error_statement) && debug_query_string != NULL && !edata->hide_stmt) { // If the user wants the query that generated this error logged, do it.
+        if (task->error.len) appendStringInfoChar(&task->error, '\n');
+        appendStringInfoString(&task->error, _("STATEMENT:  "));
+        append_with_tabs(&task->error, debug_query_string);
+    }
 }
+
 
 static void task_execute(void) {
     int StatementTimeoutMy = StatementTimeout;
