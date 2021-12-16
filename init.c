@@ -16,14 +16,13 @@ static char *task_default_repeat;
 static char *task_default_timeout;
 static char *work_default_active;
 static char *work_default_data;
-static char *work_default_live;
 static char *work_default_partman;
+static char *work_default_reset;
 static char *work_default_schema;
 static char *work_default_table;
 static char *work_default_user;
 static int task_default_count;
 static int task_default_max;
-static int work_default_count;
 static int work_default_timeout;
 
 bool init_oid_is_string(Oid oid) {
@@ -99,11 +98,10 @@ const char *init_check(void) {
                     COALESCE(COALESCE(data, j.user), current_setting('pg_work.default_data', false)) AS data,
                     COALESCE(schema, current_setting('pg_work.default_schema', false)) AS schema,
                     COALESCE(j.table, current_setting('pg_work.default_table', false)) AS table,
-                    COALESCE(timeout, current_setting('pg_work.default_timeout', false)::integer) AS timeout,
-                    COALESCE(count, current_setting('pg_work.default_count', false)::integer) AS count,
-                    EXTRACT(epoch FROM COALESCE(live, current_setting('pg_work.default_live', false)::interval))::bigint AS live,
+                    COALESCE(timeout, current_setting('pg_work.default_timeout', false)::bigint) AS timeout,
+                    EXTRACT(epoch FROM COALESCE(reset, current_setting('pg_work.default_reset', false)::interval))::bigint AS reset,
                     NULLIF(COALESCE(partman, current_setting('pg_work.default_partman', true)), '%1$s') AS partman
-            FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout integer, count integer, live interval, partman text)
+            FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout bigint, reset interval, partman text)
         ) SELECT    DISTINCT j.* FROM j
     );
 }
@@ -241,7 +239,6 @@ static void init_conf(void) {
     DefineCustomBoolVariable("pg_task.default_string", "pg_task default string", "quote string only", &task_default_string, true, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.default_count", "pg_task default count", "do count tasks before exit", &task_default_count, 0, 0, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.default_max", "pg_task default max", "maximum parallel tasks", &task_default_max, INT_MAX, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_work.default_count", "pg_work default count", "do count tasks before exit", &work_default_count, 1000, 0, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.default_timeout", "pg_work default timeout", "check tasks every timeout milliseconds", &work_default_timeout, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_active", "pg_task default active", "task active after plan time", &task_default_active, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_delimiter", "pg_task default delimiter", "results colums delimiter", &task_default_delimiter, "\t", PGC_SIGHUP, 0, NULL, NULL, NULL);
@@ -253,14 +250,14 @@ static void init_conf(void) {
     DefineCustomStringVariable("pg_task.json", "pg_task json", "json configuration: available keys are: user, data, schema, table, timeout, count, live and partman", &default_json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign, NULL);
     DefineCustomStringVariable("pg_work.default_active", "pg_work default active", "task active before now", &work_default_active, "1 week", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_data", "pg_work default data", "default database name", &work_default_data, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_work.default_live", "pg_work default live", "exit until timeout", &work_default_live, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
 #if PG_VERSION_NUM >= 120000
     if (extension_file_exists("pg_partman")) DefineCustomStringVariable("pg_work.default_partman", "pg_work default partman", "partman schema name, if null then do not use partman", &work_default_partman, "partman", PGC_SIGHUP, 0, NULL, NULL, NULL);
 #endif
+    DefineCustomStringVariable("pg_work.default_reset", "pg_work default reset", "reset tasks every interval", &work_default_reset, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_schema", "pg_work default schema", "schema name for tasks table", &work_default_schema, "public", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_table", "pg_work default table", "table name for tasks table", &work_default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_user", "pg_work default user", "default username", &work_default_user, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, timeout = %i, count = %i, live = %s, active = %s, partman = %s", default_json, work_default_user, work_default_data, work_default_schema, work_default_table, default_null, work_default_timeout, work_default_count, work_default_live, work_default_active, work_default_partman && work_default_partman[0] ? work_default_partman : default_null);
+    elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, timeout = %i, reset = %s, active = %s, partman = %s", default_json, work_default_user, work_default_data, work_default_schema, work_default_table, default_null, work_default_timeout, work_default_reset, work_default_active, work_default_partman && work_default_partman[0] ? work_default_partman : default_null);
 }
 
 void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf) {
@@ -274,11 +271,6 @@ void _PG_init(void) {
     init_conf();
     init_work(false);
 }
-
-#if PG_VERSION_NUM >= 120000
-#else
-TimestampTz MyStartTimestamp;
-#endif
 
 #if PG_VERSION_NUM >= 130000
 #else

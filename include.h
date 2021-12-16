@@ -38,10 +38,6 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 extern void SignalHandlerForConfigReload(SIGNAL_ARGS);
 extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #endif
-#if PG_VERSION_NUM >= 120000
-#else
-extern PGDLLIMPORT TimestampTz MyStartTimestamp;
-#endif
 #include <replication/slot.h>
 #include <storage/ipc.h>
 #if PG_VERSION_NUM >= 140000
@@ -121,10 +117,9 @@ typedef struct Task {
 } Task;
 
 #define WORK \
-    X(work->count,  serialize_int, deserialize_int) \
-    X(work->live, serialize_int, deserialize_int) \
     X(work->oid.data, serialize_int, deserialize_int) \
     X(work->oid.user, serialize_int, deserialize_int) \
+    X(work->reset, serialize_int, deserialize_int) \
     X(work->str.partman, serialize_char_null, deserialize_char_null) \
     X(work->str.schema, serialize_char, deserialize_char) \
     X(work->str.table, serialize_char, deserialize_char) \
@@ -134,10 +129,8 @@ typedef struct Work {
     char *schema_table;
     char *schema_type;
     dlist_head head;
-    int32 count;
-    int32 processed;
-    int32 timeout;
-    int64 live;
+    int64 reset;
+    int64 timeout;
     struct {
         Oid data;
         Oid partman;
@@ -182,7 +175,6 @@ void BeginCommandMy(CommandTag commandTag, CommandDest dest);
 void BeginCommandMy(const char *commandTag, CommandDest dest);
 #endif
 void conf_main(Datum main_arg);
-void conf_work(BackgroundWorker *worker);
 #if PG_VERSION_NUM >= 130000
 void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undecorated_output);
 #else

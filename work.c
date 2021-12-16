@@ -40,7 +40,7 @@ static void work_check(void) {
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, init_check(), "");
-        appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND "table" = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::integer), " ");
+        appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND "table" = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::bigint), " ");
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
@@ -679,7 +679,7 @@ static void work_conf(void) {
     initStringInfoMy(TopMemoryContext, &schema_type);
     appendStringInfo(&schema_type, "%s.state", work->quote.schema);
     work->schema_type = schema_type.data;
-    elog(DEBUG1, "timeout = %i, count = %i, live = %li, schema_table = %s, schema_type = %s, partman = %s", work->timeout, work->count, work->live, work->schema_table, work->schema_type, work->str.partman ? work->str.partman : default_null);
+    elog(DEBUG1, "timeout = %li, reset = %li, schema_table = %s, schema_type = %s, partman = %s", work->timeout, work->reset, work->schema_table, work->schema_type, work->str.partman ? work->str.partman : default_null);
     set_ps_display_my("conf");
     work->oid.schema = work_schema(work->quote.schema);
     set_config_option("pg_task.schema", work->str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
@@ -695,7 +695,7 @@ static void work_conf(void) {
     set_config_option("pg_task.data", work->str.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work->str.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(TopMemoryContext, &timeout);
-    appendStringInfo(&timeout, "%i", work->timeout);
+    appendStringInfo(&timeout, "%li", work->timeout);
     set_config_option("pg_task.timeout", timeout.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(timeout.data);
     dlist_init(&work->head);
@@ -733,7 +733,7 @@ static void work_init(void) {
     work->quote.user = (char *)quote_identifier(work->str.user);
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1);
     set_config_option("application_name", MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    elog(DEBUG1, "timeout = %i, count = %i, live = %li, partman = %s", work->timeout, work->count, work->live, work->str.partman ? work->str.partman : default_null);
+    elog(DEBUG1, "timeout = %li, reset = %li, partman = %s", work->timeout, work->reset, work->str.partman ? work->str.partman : default_null);
     work_conf();
     work_reset();
 }
@@ -771,7 +771,6 @@ static void work_timeout(void) {
         elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task->id, task->hash, task->group, task->remote ? task->remote : default_null, task->max);
         task->remote ? work_remote(task) : work_task(task);
     }
-    if (work->count) work->processed += SPI_processed;
     SPI_finish_my();
     set_ps_display_my("idle");
 }
@@ -782,28 +781,26 @@ static void work_writeable(Task *task) {
 }
 
 void work_main(Datum main_arg) {
-    instr_time cur_time;
+    instr_time current_reset_time;
+    instr_time current_timeout_time;
     instr_time start_time;
-    long cur_timeout = -1;
+    long current_reset = -1;
+    long current_timeout = -1;
     work_init();
-#if PG_VERSION_NUM >= 120000
-#else
-    MyStartTimestamp = GetCurrentTimestamp();
-#endif
     if (!lock_data_user_table(MyDatabaseId, GetUserId(), work->oid.table)) { elog(WARNING, "!lock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid.table); return; }
     while (!ShutdownRequestPending) {
         int nevents = 2 + work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
         work_event(set);
-        if (cur_timeout <= 0) {
+        if (current_timeout <= 0) {
             INSTR_TIME_SET_CURRENT(start_time);
-            cur_timeout = work->timeout;
+            current_timeout = work->timeout;
         }
 #if PG_VERSION_NUM >= 100000
-        nevents = WaitEventSetWait(set, cur_timeout, events, nevents, PG_WAIT_EXTENSION);
+        nevents = WaitEventSetWait(set, current_timeout, events, nevents, PG_WAIT_EXTENSION);
 #else
-        nevents = WaitEventSetWait(set, cur_timeout, events, nevents);
+        nevents = WaitEventSetWait(set, current_timeout, events, nevents);
 #endif
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
@@ -812,18 +809,18 @@ void work_main(Datum main_arg) {
             if (event->events & WL_SOCKET_READABLE) work_readable(event->user_data);
             if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
-        if (work->timeout >= 0) {
-            INSTR_TIME_SET_CURRENT(cur_time);
-            INSTR_TIME_SUBTRACT(cur_time, start_time);
-            cur_timeout = work->timeout - (long)INSTR_TIME_GET_MILLISEC(cur_time);
-            if (cur_timeout <= 0) work_timeout();
+        INSTR_TIME_SET_CURRENT(current_timeout_time);
+        INSTR_TIME_SUBTRACT(current_timeout_time, start_time);
+        current_timeout = work->timeout - (long)INSTR_TIME_GET_MILLISEC(current_timeout_time);
+        if (work->reset >= 0) {
+            INSTR_TIME_SET_CURRENT(current_reset_time);
+            INSTR_TIME_SUBTRACT(current_reset_time, start_time);
+            current_reset = work->reset - (long)INSTR_TIME_GET_MILLISEC(current_reset_time);
+            if (current_reset <= 0) work_reset();
         }
+        if (current_timeout <= 0) work_timeout();
         FreeWaitEventSet(set);
         pfree(events);
-        if (work->count && work->processed >= work->count) break;
-        if (work->live && TimestampDifferenceExceeds(MyStartTimestamp, GetCurrentTimestamp(), work->live * 1000)) break;
     }
     if (!unlock_data_user_table(MyDatabaseId, GetUserId(), work->oid.table)) elog(WARNING, "!unlock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid.table);
-    MyBgworkerEntry->bgw_notify_pid = MyProcPid;
-    if (!ShutdownRequestPending) conf_work(MyBgworkerEntry);
 }
