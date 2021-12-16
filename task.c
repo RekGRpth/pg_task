@@ -261,8 +261,7 @@ void task_error(ErrorData *edata) {
             append_with_tabs(&task->error, edata->context);
         }
         if (Log_error_verbosity >= PGERROR_VERBOSE) {
-            /* assume no newlines in funcname or filename... */
-            if (edata->funcname && edata->filename) {
+            if (edata->funcname && edata->filename) { // assume no newlines in funcname or filename...
                 if (task->error.len) appendStringInfoChar(&task->error, '\n');
                 appendStringInfo(&task->error, _("LOCATION:  %s, %s:%d"), edata->funcname, edata->filename, edata->lineno);
             } else if (edata->filename) {
