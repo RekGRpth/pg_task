@@ -95,7 +95,8 @@ static void task_update(Task *task) {
             WITH s AS (
                 SELECT id FROM %1$s AS t
                 WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND state = 'PLAN'::%2$s AND hash = $1 AND max < 0 FOR UPDATE OF t
-            ) UPDATE %1$s AS t SET plan = plan + concat_ws(' ', (-max)::text, 'msec')::interval FROM s WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
+            ) UPDATE %1$s AS t SET plan = CASE WHEN drift THEN CURRENT_TIMESTAMP ELSE plan END + concat_ws(' ', (-max)::text, 'msec')::interval FROM s
+            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
         ), work->schema_table, work->schema_type);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
