@@ -82,8 +82,30 @@ static void task_insert(Task *task) {
     set_ps_display_my("idle");
 }
 
+static void task_update(Task *task) {
+    Datum values[] = {Int32GetDatum(task->hash)};
+    static Oid argtypes[] = {INT4OID};
+    static SPIPlanPtr plan = NULL;
+    static StringInfoData src = {0};
+    elog(DEBUG1, "hash = %i", task->hash);
+    set_ps_display_my("update");
+    if (!src.data) {
+        initStringInfoMy(TopMemoryContext, &src);
+        appendStringInfo(&src, SQL(
+            WITH s AS (
+                SELECT id FROM %1$s AS t
+                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND state = 'PLAN'::%2$s AND hash = $1 AND max < 0 FOR UPDATE OF t
+            ) UPDATE %1$s AS t SET plan = plan + concat_ws(' ', (-max)::text, 'msec')::interval FROM s WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
+        ), work->schema_table, work->schema_type);
+    }
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, false);
+    for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, update id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
+    set_ps_display_my("idle");
+}
+
 bool task_done(Task *task) {
-    bool delete = false, exit = true, insert = false;
+    bool delete = false, exit = true, insert = false, update = false;
     char nulls[] = {' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n'};
     Datum values[] = {Int64GetDatum(task->id), CStringGetTextDatumMy(TopMemoryContext, task->output.data), CStringGetTextDatumMy(TopMemoryContext, task->error.data)};
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
@@ -99,7 +121,7 @@ bool task_done(Task *task) {
                 WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND id = $1 FOR UPDATE OF t
             ) UPDATE %1$s AS t SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = $2, error = $3 FROM s
             WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.id = s.id
-            RETURNING delete AND output IS NULL AS delete, repeat > '0 sec' AS insert, count > 0 OR live > '0 sec' AS live
+            RETURNING delete AND output IS NULL AS delete, repeat > '0 sec' AS insert, max > 0 AND (count > 0 OR live > '0 sec') AS live, max < 0 AS update
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
@@ -109,12 +131,14 @@ bool task_done(Task *task) {
         delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
         exit = !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
         insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false));
-        elog(DEBUG1, "delete = %s, exit = %s, insert = %s", delete ? "true" : "false", exit ? "true" : "false", insert ? "true" : "false");
+        update = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "update", false));
+        elog(DEBUG1, "delete = %s, exit = %s, insert = %s, update = %s", delete ? "true" : "false", exit ? "true" : "false", insert ? "true" : "false", update ? "true" : "false");
     }
     if (values[1]) pfree((void *)values[1]);
     if (values[2]) pfree((void *)values[2]);
     if (insert) task_insert(task);
     if (delete) task_delete(task);
+    if (update) task_update(task);
     if (task->lock && !unlock_table_id(work->oid.table, task->id)) { elog(WARNING, "!unlock_table_id(%i, %li)", work->oid.table, task->id); exit = true; }
     task->lock = false;
     exit = exit || task_live(task);

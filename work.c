@@ -592,7 +592,7 @@ static void work_table(void) {
             timeout interval NOT NULL DEFAULT current_setting('pg_task.default_timeout', false)::interval CHECK (timeout >= '0 sec'::interval),
             count integer NOT NULL DEFAULT current_setting('pg_task.default_count', false)::integer CHECK (count >= 0),
             hash integer NOT NULL %3$s,
-            max integer NOT NULL DEFAULT current_setting('pg_task.default_max', false)::integer CHECK (max > 0),
+            max integer NOT NULL DEFAULT current_setting('pg_task.default_max', false)::integer,
             pid integer,
             state %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
             delete boolean NOT NULL DEFAULT current_setting('pg_task.default_delete', false)::boolean,
@@ -769,10 +769,10 @@ static void work_timeout(void) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 WITH l AS (
-                    SELECT count(classid) AS classid, objid FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 GROUP BY objid
+                    SELECT count(classid) AS pid, objid AS hash FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 GROUP BY objid
                 ), s AS (
-                    SELECT t.id, t.hash, t.max - COALESCE(classid, 0) AS count FROM %1$s AS t LEFT JOIN l ON objid = t.hash
-                    WHERE t.plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.state = 'PLAN'::%2$s AND t.max > COALESCE(classid, 0) FOR UPDATE OF t SKIP LOCKED
+                    SELECT t.id, t.hash, CASE WHEN t.max > 0 THEN t.max ELSE 1 END - COALESCE(l.pid, 0) AS count FROM %1$s AS t LEFT JOIN l ON l.hash = t.hash
+                    WHERE t.plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.state = 'PLAN'::%2$s AND (t.max < 0 OR t.max > COALESCE(l.pid, 0)) FOR UPDATE OF t SKIP LOCKED
                 ) SELECT id, hash, count - row_number() OVER (PARTITION BY hash ORDER BY count DESC, id) + 1 AS count FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM s
             WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.id = s.id AND s.count > 0 RETURNING t.id, t.hash, t.group, t.remote, t.max, t.delimiter
