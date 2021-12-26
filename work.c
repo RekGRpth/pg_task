@@ -230,43 +230,14 @@ static void work_latch(void) {
     if (ConfigReloadPending) work_reload();
 }
 
-static bool work_busy(Task *task, int event) {
-    if (PQisBusy(task->conn)) { elog(WARNING, "id = %li, PQisBusy", task->id); task->event = event; return false; }
-    return true;
-}
-
-static bool work_consume(Task *task) {
-    if (!PQconsumeInput(task->conn)) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQconsumeInput failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); return false; }
-    return true;
-}
-
-static bool work_flush(Task *task) {
-    switch (PQflush(task->conn)) {
-        case 0: break;
-        case 1: elog(DEBUG1, "id = %li, PQflush == 1", task->id); task->event = WL_SOCKET_MASK; return false;
-        case -1: ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQflush failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); return false;
-    }
-    return true;
-}
-
-static bool work_consume_flush_busy(Task *task) {
-    if (!work_consume(task)) return false;
-    if (!work_flush(task)) return false;
-    if (!work_busy(task, WL_SOCKET_READABLE)) return false;
-    return true;
-}
-
 static void work_readable(Task *task) {
-    if (PQstatus(task->conn) == CONNECTION_OK) if (!work_consume_flush_busy(task)) return;
     task->socket(task);
 }
 
 static void work_done(Task *task) {
     if (PQstatus(task->conn) == CONNECTION_OK && PQtransactionStatus(task->conn) != PQTRANS_IDLE) {
         task->socket = work_done;
-        if (!work_busy(task, WL_SOCKET_WRITEABLE)) return;
         if (!PQsendQuery(task->conn, SQL(COMMIT))) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); return; }
-        if (!work_flush(task)) return;
         task->event = WL_SOCKET_READABLE;
         return;
     }
@@ -337,7 +308,6 @@ static void work_result(Task *task) {
             default: elog(DEBUG1, "id = %li, %s", task->id, PQresStatus(PQresultStatus(result))); break;
         }
         PQclear(result);
-        if (!work_consume_flush_busy(task)) return;
     }
     work_done(task);
 }
@@ -347,7 +317,6 @@ static void work_query(Task *task) {
     for (;;) {
         if (ShutdownRequestPending) return;
         task->socket = work_query;
-        if (!work_busy(task, WL_SOCKET_WRITEABLE)) return;
         if (task_work(task)) { work_finish(task); return; }
         if (task->active) break;
         ereport_my(WARNING, false, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
@@ -370,7 +339,6 @@ static void work_query(Task *task) {
     if (!PQsendQuery(task->conn, input.data)) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); pfree(input.data); return; }
     pfree(input.data);
     task->socket = work_result;
-    if (!work_flush(task)) return;
     task->event = WL_SOCKET_READABLE;
 }
 
@@ -797,7 +765,6 @@ static void work_timeout(void) {
 }
 
 static void work_writeable(Task *task) {
-    if (PQstatus(task->conn) == CONNECTION_OK) if (!work_flush(task)) return;
     task->socket(task);
 }
 
