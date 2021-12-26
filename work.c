@@ -767,15 +767,15 @@ static void work_timeout(void) {
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, SQL(
-            WITH s AS (
-                WITH l AS (
-                    SELECT count(classid) AS pid, objid AS hash FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 GROUP BY objid
-                ), s AS (
-                    SELECT t.id, t.hash, CASE WHEN t.max > 0 THEN t.max ELSE 1 END - COALESCE(l.pid, 0) AS count FROM %1$s AS t LEFT JOIN l ON l.hash = t.hash
-                    WHERE t.plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.state = 'PLAN'::%2$s AND (t.max < 0 OR t.max > COALESCE(l.pid, 0)) FOR UPDATE OF t SKIP LOCKED
-                ) SELECT id, hash, count - row_number() OVER (PARTITION BY hash ORDER BY count DESC, id) + 1 AS count FROM s ORDER BY s.count DESC, id
-            ) UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM s
-            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.id = s.id AND s.count > 0 RETURNING t.id, t.hash, t.group, t.remote, t.max, t.delimiter
+            WITH l AS (
+                SELECT count(classid) AS pid, objid AS hash FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 GROUP BY objid
+            ), s AS (
+                SELECT t.id, t.hash, CASE WHEN t.max > 0 THEN t.max ELSE 1 END - COALESCE(l.pid, 0) AS count FROM %1$s AS t LEFT JOIN l ON l.hash = t.hash
+                WHERE t.plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.state = 'PLAN'::%2$s AND (t.max < 0 OR t.max > COALESCE(l.pid, 0)) FOR UPDATE OF t SKIP LOCKED
+            ), u AS (
+                SELECT id, hash, count - row_number() OVER (PARTITION BY hash ORDER BY count DESC, id) + 1 AS count FROM s ORDER BY s.count DESC, id
+            ) UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM u
+            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.id = u.id AND u.count > 0 RETURNING t.id, t.hash, t.group, t.remote, t.max, t.delimiter
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
