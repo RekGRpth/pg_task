@@ -9,6 +9,7 @@ Work *work;
 
 #define ereport_my(elevel, finish, ...) do { \
     *taskp = task; \
+    emit_log_hook_prev = emit_log_hook; \
     emit_log_hook = task_error; \
     ereport(elevel, __VA_ARGS__); \
     if (task_done(task) || finish) work_finish(task); \
@@ -694,7 +695,6 @@ static void work_conf(void) {
 static void work_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
-    emit_log_hook_prev = emit_log_hook;
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
     on_proc_exit(work_exit, (Datum)work);
 #define X(name, serialize, deserialize) deserialize(name);

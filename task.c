@@ -302,6 +302,7 @@ static void task_catch(void) {
     HOLD_INTERRUPTS();
     disable_all_timeouts(false);
     QueryCancelPending = false;
+    emit_log_hook_prev = emit_log_hook;
     emit_log_hook = task_error;
     EmitErrorReport();
     debug_query_string = NULL;
@@ -327,7 +328,6 @@ static void task_init(void) {
     char *p = MyBgworkerEntry->bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
     StringInfoData oid, schema_table, schema_type;
-    emit_log_hook_prev = emit_log_hook;
     task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
     on_proc_exit(task_exit, (Datum)task);
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
