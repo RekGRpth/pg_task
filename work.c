@@ -766,7 +766,6 @@ static void work_timeout(void) {
 }
 
 static void work_writeable(Task *task) {
-    if (PQstatus(task->conn) == CONNECTION_OK && !PQconsumeInput(task->conn)) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("!PQconsumeInput"), errdetail("%s", PQerrorMessageMy(task->conn)))); return; }
     task->socket(task);
 }
 
