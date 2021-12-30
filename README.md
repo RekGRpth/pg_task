@@ -49,7 +49,7 @@ pg_task.default_max = 0
 ```
 tasks
 
-10) print null in output as
+10) prints null in output as
 ```conf
 pg_task.default_null = '\N'
 ```
