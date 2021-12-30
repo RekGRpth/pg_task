@@ -110,7 +110,7 @@ start timestamp - actual time of start
 
 stop timestamp - actual time of stop
 
-group text - groupping task
+group text - task groupping
 
 max int - maximum concurently tasks in group
 
