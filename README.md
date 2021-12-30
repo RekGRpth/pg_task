@@ -132,7 +132,7 @@ repeat interval - autorepeat interval
 
 drift boolean - see below
 
-count integer - maximum task executed by current worker
+count integer - maximum tasks executed by current worker
 
 live interval - maximum time of live of current worker
 
