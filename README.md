@@ -37,7 +37,7 @@ pg_task.default_group = 'group'
 ```conf
 pg_task.default_header = 'on'
 ```
-8) proceses tasks only
+8) processes tasks
 ```conf
 pg_task.default_live = '1 hour'
 ```
