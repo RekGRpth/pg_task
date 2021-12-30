@@ -93,8 +93,8 @@ to run specific database and/or specific user and/or specific schema and/or spec
 pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"data":"database3","schema":"schema3"},{"data":"database4","table":"table4"},{"data":"database5","timeout":100}]'
 ```
 
-if database and/or user and/or schema and/or table does not exist then pg_task create it
-(if using pg_partman and user does not exist then pg_task create it as superuser to create extension, then You may alter nosuperuser)
+if database and/or user and/or schema and/or table does not exist then pg_task create it/their
+(with using pg_partman if user does not exist then pg_task create it as superuser to create extension, but after that You may alter on nosuperuser)
 
 # pg_task using
 
