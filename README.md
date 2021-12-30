@@ -59,7 +59,7 @@ pg_task.default_partman = 'partman'
 ```
 for pg_partman if extension available
 
-12) user schema
+12) uses schema
 ```conf
 pg_task.default_schema = 'public'
 ```
