@@ -118,9 +118,9 @@ pid int - id of process executing task
 
 input text - sql to execute
 
-output text - result received
+output text - received result
 
-error text - error occured
+error text - occured error
 
 state state - PLAN, TAKE, WORK, DONE, FAIL or STOP
 
