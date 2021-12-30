@@ -102,13 +102,13 @@ by default pg_task create table with folowing columns
 
 id bigserial - primary key
 
-parent bigint - parent task (if need)
+parent bigint - parent task (if exists)
 
 plan timestamp - planned time of start
 
-start timestamp - actial time of start
+start timestamp - actual time of start
 
-stop timestamp - actial time of stop
+stop timestamp - actual time of stop
 
 group text - groupping task
 
