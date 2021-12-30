@@ -17,9 +17,9 @@ c	d
 3	4||DONE
 8|SELECT pg_sleep(1) AS a|||DONE|5
 8|SELECT pg_sleep(1) AS a|||DONE|5
-9|SELECT pg_sleep(1) AS a|||DONE|3|1
-9|SELECT pg_sleep(1) AS a|||DONE|2|6
-9|SELECT pg_sleep(1) AS a|||DONE|2|4
+9|SELECT pg_sleep(1) AS a|||DONE|2|1
+9|SELECT pg_sleep(1) AS a|||DONE|1|6
+9|SELECT pg_sleep(1) AS a|||DONE|1|4
 10|SELECT pg_sleep(1) AS a|||DONE|5
 10|SELECT pg_sleep(1) AS a|||DONE|5
 10|SELECT pg_sleep(1) AS a|||DONE|5

@@ -122,7 +122,7 @@ bool task_done(Task *task) {
                 WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND id = $1 FOR UPDATE OF t
             ) UPDATE %1$s AS t SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = $2, error = $3 FROM s
             WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.id = s.id
-            RETURNING delete AND output IS NULL AS delete, repeat > '0 sec' AS insert, max > 0 AND (count > 0 OR live > '0 sec') AS live, max < 0 AS update
+            RETURNING delete AND output IS NULL AS delete, repeat > '0 sec' AS insert, max >= 0 AND (count > 0 OR live > '0 sec') AS live, max < 0 AS update
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
