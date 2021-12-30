@@ -88,7 +88,7 @@ pg_task.default_user = 'postgres'
 
 by default pg_task run on default database with default user with default schema with default table with default timeout
 
-to run specific database and/or user and/or schema and/or table and/or timeout set line (in json format)
+to run specific database and/or specific user and/or specific schema and/or specific table and/or specific timeout, set config (in json format)
 ```conf
 pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"data":"database3","schema":"schema3"},{"data":"database4","table":"table4"},{"data":"database5","timeout":100}]'
 ```
