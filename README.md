@@ -65,7 +65,7 @@ pg_task.default_schema = 'public'
 ```
 for tasks
 
-13) prints only string in quotes in output
+13) prints only strings in quotes in output
 ```conf
 pg_task.default_string = 'on'
 ```
