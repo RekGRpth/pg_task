@@ -446,7 +446,6 @@ finish_xact_command(void)
 		disable_timeout(STATEMENT_TIMEOUT, false);
 
 		CommitTransactionCommand();
-//		ProcessCompletedNotifies();
 
 #ifdef MEMORY_CONTEXT_CHECKING
 		/* Check all memory contexts that weren't freed during commit */
