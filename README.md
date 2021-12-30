@@ -33,7 +33,7 @@ pg_task.default_drift = 'on'
 ```conf
 pg_task.default_group = 'group'
 ```
-7) prints in output headers
+7) prints headers in output
 ```conf
 pg_task.default_header = 'on'
 ```
