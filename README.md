@@ -122,7 +122,7 @@ output text - received result
 
 error text - occured error
 
-state state - PLAN, TAKE, WORK, DONE, FAIL or STOP
+state state - PLAN, TAKE, WORK, DONE or STOP
 
 timeout interval - allowed time to run
 
