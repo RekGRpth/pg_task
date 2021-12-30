@@ -9,7 +9,7 @@ shared_preload_libraries = 'pg_task'
 by default pg_task
 1) proceses
 ```conf
-pg_task.default_count = '1000'
+pg_task.default_count = 1000
 ```
 tasks until exit
 
@@ -45,7 +45,7 @@ before exit
 
 9) run simultaniously
 ```conf
-pg_task.default_live = '2147483647'
+pg_task.default_max = 0
 ```
 tasks
 
@@ -77,7 +77,7 @@ for tasks
 
 15) uses sleep timeout
 ```conf
-pg_task.default_timeout = '1000'
+pg_task.default_timeout = 1000
 ```
 milliseconds
 
@@ -173,12 +173,12 @@ INSERT INTO task (input) VALUES ('SELECT 1/0')
 
 if some group needs concurently run only 2 tasks then use command
 ```sql
-INSERT INTO task (group, max, input) VALUES ('group', 2, 'SELECT now()')
+INSERT INTO task (group, max, input) VALUES ('group', 1, 'SELECT now()')
 ```
 
 if in this group there are more tasks and they are executing concurently by 2 then command
 ```sql
-INSERT INTO task (group, max, input) VALUES ('group', 3, 'SELECT now()')
+INSERT INTO task (group, max, input) VALUES ('group', 2, 'SELECT now()')
 ```
 will execute task as more early in this group (as like priority)
 
