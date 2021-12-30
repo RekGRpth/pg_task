@@ -7,7 +7,7 @@ shared_preload_libraries = 'pg_task'
 ```
 
 by default pg_task
-1) proceses
+1) executes
 ```conf
 pg_task.default_count = 1000
 ```
