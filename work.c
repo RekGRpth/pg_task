@@ -740,7 +740,7 @@ static void work_timeout(void) {
                 SELECT count(classid) AS pid, objid AS hash FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 GROUP BY objid
             ), s AS (
                 SELECT t.id, t.hash, CASE WHEN t.max >= 0 THEN t.max ELSE 0 END - COALESCE(l.pid, 0) AS count FROM %1$s AS t LEFT JOIN l ON l.hash = t.hash
-                WHERE t.plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.state = 'PLAN'::%2$s AND (t.max < 0 OR t.max >= COALESCE(l.pid, 0)) FOR UPDATE OF t SKIP LOCKED
+                WHERE t.plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.state = 'PLAN'::%2$s AND CASE WHEN t.max >= 0 THEN t.max ELSE 0 END - COALESCE(l.pid, 0) >= 0 FOR UPDATE OF t SKIP LOCKED
             ), u AS (
                 SELECT id, hash, count - row_number() OVER (PARTITION BY hash ORDER BY count DESC, id) + 1 AS count FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM u
