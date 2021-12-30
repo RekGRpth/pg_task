@@ -43,7 +43,7 @@ pg_task.default_live = '1 hour'
 ```
 before exit
 
-9) run simultaniously
+9) executes simultaniously
 ```conf
 pg_task.default_max = 0
 ```
