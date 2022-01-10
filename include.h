@@ -57,6 +57,13 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <utils/snapmgr.h>
 #include <utils/timeout.h>
 
+#if PG_VERSION_NUM >= 90600
+#else
+#include <storage/latch.h>
+#include <storage/proc.h>
+#include "latch.h"
+#endif
+
 #define serialize_bool(src) if ((len += sizeof(src)) >= sizeof(worker.bgw_extra)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("sizeof %li >= %li", len, sizeof(worker.bgw_extra)))); else memcpy(worker.bgw_extra + len - sizeof(src), &(src), sizeof(src));
 #define serialize_char_null(src) serialize_char((src) ? (src) : "")
 #define serialize_char(src) if ((len += strlcpy(worker.bgw_extra + len, (src), sizeof(worker.bgw_extra)) + 1) >= sizeof(worker.bgw_extra)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_extra))));

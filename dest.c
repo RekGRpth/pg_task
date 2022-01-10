@@ -23,7 +23,13 @@ static void headers(TupleDesc typeinfo) {
     }
 }
 
-static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
+static
+#if PG_VERSION_NUM >= 90600
+bool
+#else
+void
+#endif
+receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     TupleDesc typeinfo = slot->tts_tupleDescriptor;
     if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
     if (task->header && !task->row && typeinfo->natts > 1) headers(typeinfo);
@@ -47,7 +53,9 @@ static bool receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
         if (value) pfree(value);
     }
     task->row++;
+#if PG_VERSION_NUM >= 90600
     return true;
+#endif
 }
 
 static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
@@ -85,6 +93,8 @@ void NullCommandMy(CommandDest dest) { }
 #include <dest.11.c>
 #elif PG_VERSION_NUM >= 100000
 #include <dest.10.c>
+#elif PG_VERSION_NUM >= 90600
+#include <dest.9.6.c>
 #elif PG_VERSION_NUM >= 90000
 #include <dest.9.c>
 #endif

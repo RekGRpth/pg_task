@@ -311,7 +311,11 @@ const char *error_severity(int elevel) {
     const char *prefix;
     switch (elevel) {
         case DEBUG1: case DEBUG2: case DEBUG3: case DEBUG4: case DEBUG5: prefix = gettext_noop("DEBUG"); break;
-        case LOG: case LOG_SERVER_ONLY: prefix = gettext_noop("LOG"); break;
+        case LOG:
+#if PG_VERSION_NUM >= 90600
+        case LOG_SERVER_ONLY:
+#endif
+            prefix = gettext_noop("LOG"); break;
         case INFO: prefix = gettext_noop("INFO"); break;
         case NOTICE: prefix = gettext_noop("NOTICE"); break;
         case WARNING:
@@ -340,7 +344,11 @@ int severity_error(const char *error) {
 }
 
 bool is_log_level_output(int elevel, int log_min_level) {
-    if (elevel == LOG || elevel == LOG_SERVER_ONLY) {
+    if (elevel == LOG
+#if PG_VERSION_NUM >= 90600
+        || elevel == LOG_SERVER_ONLY
+#endif
+    ) {
         if (log_min_level == LOG || log_min_level <= ERROR) return true;
 #if PG_VERSION_NUM >= 140000
     } else if (elevel == WARNING_CLIENT_ONLY) {
