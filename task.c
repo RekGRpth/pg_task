@@ -347,7 +347,11 @@ static void task_init(void) {
     if (!(work->str.data = get_database_name(work->oid.data))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", work->oid.data)));
     if (!(work->str.schema = get_namespace_name(work->oid.schema))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema %u does not exist", work->oid.schema)));
     if (!(work->str.table = get_rel_name(work->oid.table))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("table %u does not exist", work->oid.table)));
-    if (!(work->str.user = GetUserNameFromId(work->oid.user, true))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", work->oid.user)));
+#if PG_VERSION_NUM >= 90500
+    if (!(work->str.user = GetUserNameFromId(work->oid.user, false))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", work->oid.user)));
+#else
+    if (!(work->str.user = GetUserNameFromId(work->oid.user))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", work->oid.user)));
+#endif
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
     work->quote.data = (char *)quote_identifier(work->str.data);
