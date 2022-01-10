@@ -552,7 +552,7 @@ static void work_table(void) {
     appendStringInfo(&src, SQL(
         CREATE TABLE %1$s (
             id bigserial NOT NULL%4$s,
-            parent bigint DEFAULT current_setting('pg_task.id', true)::bigint,
+            parent bigint DEFAULT NULLIF(current_setting('pg_task.id')::bigint, 0),
             plan timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
             start timestamp with time zone,
             stop timestamp with time zone,
