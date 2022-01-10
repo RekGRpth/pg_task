@@ -136,7 +136,11 @@ static void conf_check(void) {
 }
 
 void conf_main(Datum main_arg) {
+#if PG_VERSION_NUM >= 90500
     set_config_option("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+#else
+    set_config_option("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+#endif
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM >= 110000
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);

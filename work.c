@@ -534,7 +534,11 @@ static void work_table(void) {
     StringInfoData src, hash;
     elog(DEBUG1, "schema_table = %s, schema_type = %s", work->schema_table, work->schema_type);
     set_ps_display_my("table");
+#if PG_VERSION_NUM >= 90500
     set_config_option("pg_task.table", work->str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+#else
+    set_config_option("pg_task.table", work->str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+#endif
     initStringInfoMy(TopMemoryContext, &hash);
 #if PG_VERSION_NUM >= 120000
     appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (hashtext("group"||COALESCE(remote, '%1$s'))) STORED), "");
@@ -608,10 +612,18 @@ static void work_table(void) {
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
+#if PG_VERSION_NUM >= 90500
     set_config_option("pg_task.table", work->str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+#else
+    set_config_option("pg_task.table", work->str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+#endif
     resetStringInfo(&src);
     appendStringInfo(&src, "%i", work->oid.table);
+#if PG_VERSION_NUM >= 90500
     set_config_option("pg_task.oid", src.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+#else
+    set_config_option("pg_task.oid", src.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+#endif
     pfree(hash.data);
     pfree(src.data);
     set_ps_display_my("idle");
@@ -680,7 +692,11 @@ static void work_conf(void) {
     elog(DEBUG1, "timeout = %li, reset = %li, schema_table = %s, schema_type = %s, partman = %s", work->timeout, work->reset, work->schema_table, work->schema_type, work->str.partman ? work->str.partman : default_null);
     set_ps_display_my("conf");
     work->oid.schema = work_schema(work->quote.schema);
+#if PG_VERSION_NUM >= 90500
     set_config_option("pg_task.schema", work->str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+#else
+    set_config_option("pg_task.schema", work->str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+#endif
     work_type();
     work_table();
     work_index(countof(index_input), index_input);
@@ -690,11 +706,20 @@ static void work_conf(void) {
 #if PG_VERSION_NUM >= 120000
     if (work->str.partman) work_partman();
 #endif
+#if PG_VERSION_NUM >= 90500
     set_config_option("pg_task.data", work->str.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.user", work->str.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+#else
+    set_config_option("pg_task.data", work->str.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+    set_config_option("pg_task.user", work->str.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+#endif
     initStringInfoMy(TopMemoryContext, &timeout);
     appendStringInfo(&timeout, "%li", work->timeout);
+#if PG_VERSION_NUM >= 90500
     set_config_option("pg_task.timeout", timeout.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+#else
+    set_config_option("pg_task.timeout", timeout.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+#endif
     pfree(timeout.data);
     dlist_init(&work->head);
     set_ps_display_my("idle");
@@ -733,7 +758,11 @@ static void work_init(void) {
     work->quote.table = (char *)quote_identifier(work->str.table);
     work->quote.user = (char *)quote_identifier(work->str.user);
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1);
+#if PG_VERSION_NUM >= 90500
     set_config_option("application_name", MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+#else
+    set_config_option("application_name", MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+#endif
     elog(DEBUG1, "timeout = %li, reset = %li, partman = %s", work->timeout, work->reset, work->str.partman ? work->str.partman : default_null);
     work_conf();
     work_reset();
