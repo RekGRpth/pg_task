@@ -333,7 +333,7 @@ static void task_catch(void) {
 }
 
 static void task_init(void) {
-    char *p = MyBgworkerEntry->bgw_extra;
+    char *p = MyBgworkerEntry_bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
     StringInfoData oid, schema_table, schema_type;
     task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));

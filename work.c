@@ -726,7 +726,7 @@ static void work_conf(void) {
 }
 
 static void work_init(void) {
-    char *p = MyBgworkerEntry->bgw_extra;
+    char *p = MyBgworkerEntry_bgw_extra;
     MemoryContext oldcontext = CurrentMemoryContext;
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
     on_proc_exit(work_exit, (Datum)work);
