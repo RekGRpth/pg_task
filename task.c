@@ -351,19 +351,16 @@ static void task_init(void) {
 #endif
     set_ps_display_my("init");
     process_session_preload_libraries();
-    if (true) {
-        MemoryContext oldcontext = CurrentMemoryContext;
-        StartTransactionCommand();
-        MemoryContextSwitchTo(oldcontext);
+    StartTransactionCommand();
+    MemoryContextSwitchTo(TopMemoryContext);
 #if PG_VERSION_NUM >= 90500
-        if (!(work->str.data = get_database_name(work->oid.data))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", work->oid.data)));
-        if (!(work->str.user = GetUserNameFromId(work->oid.user, false))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", work->oid.user)));
+    if (!(work->str.data = get_database_name(work->oid.data))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", work->oid.data)));
+    if (!(work->str.user = GetUserNameFromId(work->oid.user, false))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", work->oid.user)));
 #endif
-        if (!(work->str.schema = get_namespace_name(work->oid.schema))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema %u does not exist", work->oid.schema)));
-        if (!(work->str.table = get_rel_name(work->oid.table))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("table %u does not exist", work->oid.table)));
-        CommitTransactionCommand();
-        MemoryContextSwitchTo(oldcontext);
-    }
+    if (!(work->str.schema = get_namespace_name(work->oid.schema))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema %u does not exist", work->oid.schema)));
+    if (!(work->str.table = get_rel_name(work->oid.table))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("table %u does not exist", work->oid.table)));
+    CommitTransactionCommand();
+    MemoryContextSwitchTo(TopMemoryContext);
     work->quote.data = (char *)quote_identifier(work->str.data);
     work->quote.schema = (char *)quote_identifier(work->str.schema);
     work->quote.table = (char *)quote_identifier(work->str.table);

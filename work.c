@@ -744,15 +744,12 @@ static void work_init(void) {
     set_ps_display_my("init");
     process_session_preload_libraries();
 #if PG_VERSION_NUM >= 90500
-    if (true) {
-        MemoryContext oldcontext = CurrentMemoryContext;
-        StartTransactionCommand();
-        MemoryContextSwitchTo(oldcontext);
-        if (!(work->str.data = get_database_name(work->oid.data))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", work->oid.data)));
-        if (!(work->str.user = GetUserNameFromId(work->oid.user, false))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", work->oid.user)));
-        CommitTransactionCommand();
-        MemoryContextSwitchTo(oldcontext);
-    }
+    StartTransactionCommand();
+    MemoryContextSwitchTo(TopMemoryContext);
+    if (!(work->str.data = get_database_name(work->oid.data))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", work->oid.data)));
+    if (!(work->str.user = GetUserNameFromId(work->oid.user, false))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", work->oid.user)));
+    CommitTransactionCommand();
+    MemoryContextSwitchTo(TopMemoryContext);
 #endif
     work->quote.data = (char *)quote_identifier(work->str.data);
     if (work->str.partman) work->quote.partman = (char *)quote_identifier(work->str.partman);
