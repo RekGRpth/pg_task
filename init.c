@@ -94,14 +94,14 @@ char *TextDatumGetCStringMy(MemoryContext memoryContext, Datum datum) {
 const char *init_check(void) {
     return SQL(
         WITH j AS (
-            SELECT  COALESCE(COALESCE(j.user, data), current_setting('pg_work.default_user', false)) AS user,
-                    COALESCE(COALESCE(data, j.user), current_setting('pg_work.default_data', false)) AS data,
-                    COALESCE(schema, current_setting('pg_work.default_schema', false)) AS schema,
-                    COALESCE(j.table, current_setting('pg_work.default_table', false)) AS table,
-                    COALESCE(timeout, current_setting('pg_work.default_timeout', false)::bigint) AS timeout,
-                    EXTRACT(epoch FROM COALESCE(reset, current_setting('pg_work.default_reset', false)::interval))::bigint AS reset,
+            SELECT  COALESCE(COALESCE(j.user, data), current_setting('pg_work.default_user')) AS user,
+                    COALESCE(COALESCE(data, j.user), current_setting('pg_work.default_data')) AS data,
+                    COALESCE(schema, current_setting('pg_work.default_schema')) AS schema,
+                    COALESCE(j.table, current_setting('pg_work.default_table')) AS table,
+                    COALESCE(timeout, current_setting('pg_work.default_timeout')::bigint) AS timeout,
+                    EXTRACT(epoch FROM COALESCE(reset, current_setting('pg_work.default_reset')::interval))::bigint AS reset,
                     NULLIF(COALESCE(partman, current_setting('pg_work.default_partman', true)), '%1$s') AS partman
-            FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json', false)::json) AS j ("user" text, data text, schema text, "table" text, timeout bigint, reset interval, partman text)
+            FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json')::json) AS j ("user" text, data text, schema text, "table" text, timeout bigint, reset interval, partman text)
         ) SELECT    DISTINCT j.* FROM j
     );
 }

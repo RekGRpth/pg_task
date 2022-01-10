@@ -40,7 +40,7 @@ static void work_check(void) {
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfo(&src, init_check(), "");
-        appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema', false) AND "table" = current_setting('pg_task.table', false) AND timeout = current_setting('pg_task.timeout', false)::bigint), " ");
+        appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema') AND "table" = current_setting('pg_task.table') AND timeout = current_setting('pg_task.timeout')::bigint), " ");
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
@@ -205,10 +205,10 @@ static void work_reset(void) {
         WITH s AS (
             SELECT id FROM %1$s AS t
             LEFT JOIN pg_locks AS l ON l.locktype = 'userlock' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.objsubid = 4 AND l.database = $1 AND l.classid = t.id>>32 AND l.objid = t.id<<32>>32
-            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
+            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
             FOR UPDATE OF t SKIP LOCKED
         ) UPDATE %1$s AS t SET state = 'PLAN'::%2$s, start = NULL, stop = NULL, pid = NULL FROM s
-        WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
+        WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
     ), work->schema_table, work->schema_type);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING, true);
@@ -556,26 +556,26 @@ static void work_table(void) {
             plan timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
             start timestamp with time zone,
             stop timestamp with time zone,
-            active interval NOT NULL DEFAULT current_setting('pg_task.default_active', false)::interval CHECK (active > '0 sec'::interval),
-            live interval NOT NULL DEFAULT current_setting('pg_task.default_live', false)::interval CHECK (live >= '0 sec'::interval),
-            repeat interval NOT NULL DEFAULT current_setting('pg_task.default_repeat', false)::interval CHECK (repeat >= '0 sec'::interval),
-            timeout interval NOT NULL DEFAULT current_setting('pg_task.default_timeout', false)::interval CHECK (timeout >= '0 sec'::interval),
-            count integer NOT NULL DEFAULT current_setting('pg_task.default_count', false)::integer CHECK (count >= 0),
+            active interval NOT NULL DEFAULT current_setting('pg_task.default_active')::interval CHECK (active > '0 sec'::interval),
+            live interval NOT NULL DEFAULT current_setting('pg_task.default_live')::interval CHECK (live >= '0 sec'::interval),
+            repeat interval NOT NULL DEFAULT current_setting('pg_task.default_repeat')::interval CHECK (repeat >= '0 sec'::interval),
+            timeout interval NOT NULL DEFAULT current_setting('pg_task.default_timeout')::interval CHECK (timeout >= '0 sec'::interval),
+            count integer NOT NULL DEFAULT current_setting('pg_task.default_count')::integer CHECK (count >= 0),
             hash integer NOT NULL %3$s,
-            max integer NOT NULL DEFAULT current_setting('pg_task.default_max', false)::integer,
+            max integer NOT NULL DEFAULT current_setting('pg_task.default_max')::integer,
             pid integer,
             state %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
-            delete boolean NOT NULL DEFAULT current_setting('pg_task.default_delete', false)::boolean,
-            drift boolean NOT NULL DEFAULT current_setting('pg_task.default_drift', false)::boolean,
-            header boolean NOT NULL DEFAULT current_setting('pg_task.default_header', false)::boolean,
-            string boolean NOT NULL DEFAULT current_setting('pg_task.default_string', false)::boolean,
-            delimiter "char" NOT NULL DEFAULT current_setting('pg_task.default_delimiter', false)::"char",
+            delete boolean NOT NULL DEFAULT current_setting('pg_task.default_delete')::boolean,
+            drift boolean NOT NULL DEFAULT current_setting('pg_task.default_drift')::boolean,
+            header boolean NOT NULL DEFAULT current_setting('pg_task.default_header')::boolean,
+            string boolean NOT NULL DEFAULT current_setting('pg_task.default_string')::boolean,
+            delimiter "char" NOT NULL DEFAULT current_setting('pg_task.default_delimiter')::"char",
             escape "char",
             quote "char",
             error text,
-            "group" text NOT NULL DEFAULT current_setting('pg_task.default_group', false),
+            "group" text NOT NULL DEFAULT current_setting('pg_task.default_group'),
             input text NOT NULL,
-            "null" text NOT NULL DEFAULT current_setting('pg_task.default_null', false),
+            "null" text NOT NULL DEFAULT current_setting('pg_task.default_null'),
             output text,
             remote text
         )
@@ -740,11 +740,11 @@ static void work_timeout(void) {
                 SELECT count(classid) AS pid, objid AS hash FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 GROUP BY objid
             ), s AS (
                 SELECT t.id, t.hash, CASE WHEN t.max >= 0 THEN t.max ELSE 0 END - COALESCE(l.pid, 0) AS count FROM %1$s AS t LEFT JOIN l ON l.hash = t.hash
-                WHERE t.plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.state = 'PLAN'::%2$s AND CASE WHEN t.max >= 0 THEN t.max ELSE 0 END - COALESCE(l.pid, 0) >= 0 FOR UPDATE OF t SKIP LOCKED
+                WHERE t.plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.state = 'PLAN'::%2$s AND CASE WHEN t.max >= 0 THEN t.max ELSE 0 END - COALESCE(l.pid, 0) >= 0 FOR UPDATE OF t SKIP LOCKED
             ), u AS (
                 SELECT id, hash, count - row_number() OVER (PARTITION BY hash ORDER BY count DESC, id) + 1 AS count FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM u
-            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.id = u.id AND u.count >= 0 RETURNING t.id, t.hash, t.group, t.remote, t.max, t.delimiter
+            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = u.id AND u.count >= 0 RETURNING t.id, t.hash, t.group, t.remote, t.max, t.delimiter
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);

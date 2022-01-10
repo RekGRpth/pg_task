@@ -18,11 +18,11 @@ static bool task_live(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t
-                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND state = 'PLAN'::%2$s AND hash = $1 AND max >= $2 AND CASE
+                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND state = 'PLAN'::%2$s AND hash = $1 AND max >= $2 AND CASE
                     WHEN count > 0 AND live > '0 sec' THEN count > $3 AND $4 + live > CURRENT_TIMESTAMP ELSE count > $3 OR $4 + live > CURRENT_TIMESTAMP
                 END ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t SKIP LOCKED
             ) UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM s
-            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
+            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
         ), work->schema_table, work->schema_type);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -45,9 +45,9 @@ static void task_delete(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t
-                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND id = $1 FOR UPDATE OF t
+                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND id = $1 FOR UPDATE OF t
             ) DELETE FROM %1$s AS t WHERE
-            plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND id = $1 RETURNING t.id
+            plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND id = $1 RETURNING t.id
         ), work->schema_table);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -68,7 +68,7 @@ static void task_insert(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT * FROM %1$s AS t
-                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND id = $1 FOR UPDATE OF t
+                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND id = $1 FOR UPDATE OF t
             ) INSERT INTO %1$s AS t (parent, plan, "group", max, input, timeout, delete, repeat, drift, count, live, remote)
             SELECT id, CASE
                 WHEN drift THEN CURRENT_TIMESTAMP + repeat
@@ -94,9 +94,9 @@ static void task_update(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t
-                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND state = 'PLAN'::%2$s AND hash = $1 AND max < 0 FOR UPDATE OF t
+                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND state = 'PLAN'::%2$s AND hash = $1 AND max < 0 FOR UPDATE OF t
             ) UPDATE %1$s AS t SET plan = CASE WHEN drift THEN CURRENT_TIMESTAMP ELSE plan END + concat_ws(' ', (-max)::text, 'msec')::interval FROM s
-            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
+            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
         ), work->schema_table, work->schema_type);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -119,9 +119,9 @@ bool task_done(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t
-                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND id = $1 FOR UPDATE OF t
+                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND id = $1 FOR UPDATE OF t
             ) UPDATE %1$s AS t SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = $2, error = $3 FROM s
-            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.id = s.id
+            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id
             RETURNING delete AND output IS NULL AS delete, repeat > '0 sec' AS insert, max >= 0 AND (count > 0 OR live > '0 sec') AS live, max < 0 AS update
         ), work->schema_table, work->schema_type);
     }
@@ -174,9 +174,9 @@ bool task_work(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT id FROM %1$s AS t
-                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND id = $1 FOR UPDATE OF t
+                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND id = $1 FOR UPDATE OF t
             ) UPDATE %1$s AS t SET state = 'WORK'::%2$s, start = CURRENT_TIMESTAMP, pid = $2 FROM s
-            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active', false)::interval AND CURRENT_TIMESTAMP AND t.id = s.id
+            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id
             RETURNING "group", hash, input, EXTRACT(epoch FROM timeout)::integer * 1000 AS timeout, header, string, "null", delimiter, quote, escape, plan + active > CURRENT_TIMESTAMP AS active, remote
         ), work->schema_table, work->schema_type);
     }
