@@ -737,21 +737,21 @@ static void work_init(void) {
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM >= 110000
     BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user, 0);
-#else
+#elif PG_VERSION_NUM >= 90500
     BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user);
+#else
+    BackgroundWorkerInitializeConnection(work->str.data, work->str.user);
 #endif
     set_ps_display_my("init");
     process_session_preload_libraries();
+#if PG_VERSION_NUM >= 90500
     StartTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
     if (!(work->str.data = get_database_name(work->oid.data))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", work->oid.data)));
-#if PG_VERSION_NUM >= 90500
     if (!(work->str.user = GetUserNameFromId(work->oid.user, false))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", work->oid.user)));
-#else
-    if (!(work->str.user = GetUserNameFromId(work->oid.user))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", work->oid.user)));
-#endif
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
+#endif
     work->quote.data = (char *)quote_identifier(work->str.data);
     if (work->str.partman) work->quote.partman = (char *)quote_identifier(work->str.partman);
     work->quote.schema = (char *)quote_identifier(work->str.schema);

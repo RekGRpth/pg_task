@@ -373,26 +373,3 @@ bool is_log_level_output(int elevel, int log_min_level) {
     } else if (elevel >= log_min_level) return true; // Neither is LOG
     return false;
 }
-
-#if PG_VERSION_NUM >= 90500
-#else
-void
-BackgroundWorkerInitializeConnectionByOid(Oid dboid, Oid useroid)
-{
-	BackgroundWorker *worker = MyBgworkerEntry;
-
-	/* XXX is this the right errcode? */
-	if (!(worker->bgw_flags & BGWORKER_BACKEND_DATABASE_CONNECTION))
-		ereport(FATAL,
-				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-				 errmsg("database connection requirement not indicated during registration")));
-
-	InitPostgres(NULL, dboid, NULL, NULL);
-
-	/* it had better not gotten out of "init" mode yet */
-	if (!IsInitProcessingMode())
-		ereport(ERROR,
-				(errmsg("invalid processing mode in background worker")));
-	SetProcessingMode(NormalProcessing);
-}
-#endif

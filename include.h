@@ -65,16 +65,6 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include "latch.h"
 #endif
 
-#if PG_VERSION_NUM >= 90500
-#define MyBgworkerEntry_bgw_extra (MyBgworkerEntry->bgw_extra)
-#define sizeof_worker_bgw_extra (sizeof(worker.bgw_extra))
-#define worker_bgw_extra (worker.bgw_extra)
-#else
-#define MyBgworkerEntry_bgw_extra (MyBgworkerEntry->bgw_library_name + sizeof("pg_task"))
-#define sizeof_worker_bgw_extra (sizeof(worker.bgw_library_name) - sizeof("pg_task"))
-#define worker_bgw_extra (worker.bgw_library_name + sizeof("pg_task"))
-#endif
-
 #define serialize_bool(src) if ((len += sizeof(src)) >= sizeof_worker_bgw_extra) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("sizeof %li >= %li", len, sizeof_worker_bgw_extra))); else memcpy(worker_bgw_extra + len - sizeof(src), &(src), sizeof(src));
 #define serialize_char_null(src) serialize_char((src) ? (src) : "")
 #define serialize_char(src) if ((len += strlcpy(worker_bgw_extra + len, (src), sizeof_worker_bgw_extra) + 1) >= sizeof_worker_bgw_extra) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof_worker_bgw_extra)));
@@ -96,6 +86,10 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
 #endif
 
+#if PG_VERSION_NUM >= 90500
+#define MyBgworkerEntry_bgw_extra (MyBgworkerEntry->bgw_extra)
+#define sizeof_worker_bgw_extra (sizeof(worker.bgw_extra))
+#define worker_bgw_extra (worker.bgw_extra)
 #define TASK \
     X(task->group, serialize_char, deserialize_char) \
     X(task->hash, serialize_int, deserialize_int) \
@@ -104,6 +98,39 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
     X(work->oid.schema, serialize_int, deserialize_int) \
     X(work->oid.table, serialize_int, deserialize_int) \
     X(work->oid.user, serialize_int, deserialize_int)
+#define WORK \
+    X(work->oid.data, serialize_int, deserialize_int) \
+    X(work->oid.user, serialize_int, deserialize_int) \
+    X(work->reset, serialize_int, deserialize_int) \
+    X(work->str.partman, serialize_char_null, deserialize_char_null) \
+    X(work->str.schema, serialize_char, deserialize_char) \
+    X(work->str.table, serialize_char, deserialize_char) \
+    X(work->timeout,  serialize_int, deserialize_int)
+#else
+#define MyBgworkerEntry_bgw_extra (MyBgworkerEntry->bgw_library_name + sizeof("pg_task"))
+#define sizeof_worker_bgw_extra (sizeof(worker.bgw_library_name) - sizeof("pg_task"))
+#define worker_bgw_extra (worker.bgw_library_name + sizeof("pg_task"))
+#define TASK \
+    X(task->group, serialize_char, deserialize_char) \
+    X(task->hash, serialize_int, deserialize_int) \
+    X(task->max, serialize_int, deserialize_int) \
+    X(work->oid.data, serialize_int, deserialize_int) \
+    X(work->oid.schema, serialize_int, deserialize_int) \
+    X(work->oid.table, serialize_int, deserialize_int) \
+    X(work->oid.user, serialize_int, deserialize_int) \
+    X(work->str.data, serialize_char, deserialize_char) \
+    X(work->str.user, serialize_char, deserialize_char)
+#define WORK \
+    X(work->oid.data, serialize_int, deserialize_int) \
+    X(work->oid.user, serialize_int, deserialize_int) \
+    X(work->reset, serialize_int, deserialize_int) \
+    X(work->str.data, serialize_char, deserialize_char) \
+    X(work->str.partman, serialize_char_null, deserialize_char_null) \
+    X(work->str.schema, serialize_char, deserialize_char) \
+    X(work->str.table, serialize_char, deserialize_char) \
+    X(work->str.user, serialize_char, deserialize_char) \
+    X(work->timeout,  serialize_int, deserialize_int)
+#endif
 
 typedef struct Task {
     bool active;
@@ -133,15 +160,6 @@ typedef struct Task {
     uint64 row;
     void (*socket) (struct Task *task);
 } Task;
-
-#define WORK \
-    X(work->oid.data, serialize_int, deserialize_int) \
-    X(work->oid.user, serialize_int, deserialize_int) \
-    X(work->reset, serialize_int, deserialize_int) \
-    X(work->str.partman, serialize_char_null, deserialize_char_null) \
-    X(work->str.schema, serialize_char, deserialize_char) \
-    X(work->str.table, serialize_char, deserialize_char) \
-    X(work->timeout,  serialize_int, deserialize_int)
 
 typedef struct Work {
     char *schema_table;
@@ -190,10 +208,6 @@ Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fnam
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
 int severity_error(const char *error);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
-#if PG_VERSION_NUM >= 90500
-#else
-void BackgroundWorkerInitializeConnectionByOid(Oid dboid, Oid useroid);
-#endif
 #if PG_VERSION_NUM >= 130000
 void BeginCommandMy(CommandTag commandTag, CommandDest dest);
 #else
