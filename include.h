@@ -59,6 +59,13 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <utils/timestamp.h>
 
 #if PG_VERSION_NUM >= 90600
+#else
+#include <storage/latch.h>
+#include <storage/proc.h>
+#include "latch.h"
+#endif
+
+#if PG_VERSION_NUM >= 90500
 #define MyBgworkerEntry_bgw_extra (MyBgworkerEntry->bgw_extra)
 #define sizeof_worker_bgw_extra (sizeof(worker.bgw_extra))
 #define worker_bgw_extra (worker.bgw_extra)
@@ -66,9 +73,6 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #define MyBgworkerEntry_bgw_extra (MyBgworkerEntry->bgw_library_name + sizeof("pg_task"))
 #define sizeof_worker_bgw_extra (sizeof(worker.bgw_library_name) - sizeof("pg_task"))
 #define worker_bgw_extra (worker.bgw_library_name + sizeof("pg_task"))
-#include <storage/latch.h>
-#include <storage/proc.h>
-#include "latch.h"
 #endif
 
 #define serialize_bool(src) if ((len += sizeof(src)) >= sizeof_worker_bgw_extra) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("sizeof %li >= %li", len, sizeof_worker_bgw_extra))); else memcpy(worker_bgw_extra + len - sizeof(src), &(src), sizeof(src));
