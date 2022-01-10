@@ -83,18 +83,35 @@ void ReadyForQueryMy(CommandDest dest) { }
 
 void NullCommandMy(CommandDest dest) { }
 
-#if PG_VERSION_NUM >= 140000
-#include <dest.14.c>
-#elif PG_VERSION_NUM >= 130000
-#include <dest.13.c>
-#elif PG_VERSION_NUM >= 120000
-#include <dest.12.c>
-#elif PG_VERSION_NUM >= 110000
-#include <dest.11.c>
-#elif PG_VERSION_NUM >= 100000
-#include <dest.10.c>
-#elif PG_VERSION_NUM >= 90600
-#include <dest.9.6.c>
-#elif PG_VERSION_NUM >= 90500
-#include <dest.9.5.c>
+#if PG_VERSION_NUM >= 130000
+void BeginCommandMy(CommandTag commandTag, CommandDest dest) {
+    elog(DEBUG1, "id = %li, commandTag = %s", task->id, GetCommandTagName(commandTag));
+}
+
+void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undecorated_output) {
+    char completionTag[COMPLETION_TAG_BUFSIZE];
+    CommandTag tag = qc->commandTag;
+    const char *tagname = GetCommandTagName(tag);
+    if (command_tag_display_rowcount(tag) && !force_undecorated_output) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, tag == CMDTAG_INSERT ? "%s 0 " UINT64_FORMAT : "%s " UINT64_FORMAT, tagname, qc->nprocessed);
+    else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
+    elog(DEBUG1, "id = %li, completionTag = %s", task->id, completionTag);
+    if (task->skip) task->skip = 0; else {
+        if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+        if (task->output.len) appendStringInfoString(&task->output, "\n");
+        appendStringInfoString(&task->output, completionTag);
+    }
+}
+#else
+void BeginCommandMy(const char *commandTag, CommandDest dest) {
+    elog(DEBUG1, "id = %li, commandTag = %s", task->id, commandTag);
+}
+
+void EndCommandMy(const char *commandTag, CommandDest dest) {
+    elog(DEBUG1, "id = %li, commandTag = %s", task->id, commandTag);
+    if (task->skip) task->skip = 0; else {
+        if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+        if (task->output.len) appendStringInfoString(&task->output, "\n");
+        appendStringInfoString(&task->output, commandTag);
+    }
+}
 #endif
