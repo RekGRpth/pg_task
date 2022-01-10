@@ -245,7 +245,11 @@ void task_error(ErrorData *edata) {
             appendStringInfoString(&task->error, _("QUERY:  "));
             append_with_tabs(&task->error, edata->internalquery);
         }
-        if (edata->context && !edata->hide_ctx) {
+        if (edata->context
+#if PG_VERSION_NUM >= 90500
+            && !edata->hide_ctx
+#endif
+        ) {
             if (task->error.len) appendStringInfoChar(&task->error, '\n');
             appendStringInfoString(&task->error, _("CONTEXT:  "));
             append_with_tabs(&task->error, edata->context);
