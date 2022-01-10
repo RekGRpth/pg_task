@@ -56,6 +56,7 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <utils/rel.h>
 #include <utils/snapmgr.h>
 #include <utils/timeout.h>
+#include <utils/timestamp.h>
 
 #if PG_VERSION_NUM >= 90600
 #else

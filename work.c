@@ -58,7 +58,11 @@ static void work_command(Task *task, PGresult *result) {
 
 static void work_event(WaitEventSet *set) {
     dlist_mutable_iter iter;
+#if PG_VERSION_NUM >= 90500
     AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
+#else
+    AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, &MyProc->procLatch, NULL);
+#endif
     AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
     dlist_foreach_modify(iter, &work->head) {
         Task *task = dlist_container(Task, node, iter.cur);
@@ -226,7 +230,11 @@ static void work_reload(void) {
 }
 
 static void work_latch(void) {
+#if PG_VERSION_NUM >= 90500
     ResetLatch(MyLatch);
+#else
+    ResetLatch(&MyProc->procLatch);
+#endif
     CHECK_FOR_INTERRUPTS();
     if (ConfigReloadPending) work_reload();
 }

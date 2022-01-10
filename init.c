@@ -288,7 +288,11 @@ SignalHandlerForConfigReload(SIGNAL_ARGS)
 	int			save_errno = errno;
 
 	ConfigReloadPending = true;
+#if PG_VERSION_NUM >= 90500
 	SetLatch(MyLatch);
+#else
+	SetLatch(&MyProc->procLatch);
+#endif
 
 	errno = save_errno;
 }
@@ -299,7 +303,11 @@ SignalHandlerForShutdownRequest(SIGNAL_ARGS)
 	int			save_errno = errno;
 
 	ShutdownRequestPending = true;
+#if PG_VERSION_NUM >= 90500
 	SetLatch(MyLatch);
+#else
+	SetLatch(&MyProc->procLatch);
+#endif
 
 	errno = save_errno;
 }
