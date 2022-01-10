@@ -180,6 +180,10 @@ Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fnam
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
 int severity_error(const char *error);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
+#if PG_VERSION_NUM >= 90500
+#else
+void BackgroundWorkerInitializeConnectionByOid(Oid dboid, Oid useroid);
+#endif
 #if PG_VERSION_NUM >= 130000
 void BeginCommandMy(CommandTag commandTag, CommandDest dest);
 #else
