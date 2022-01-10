@@ -100,7 +100,7 @@ const char *init_check(void) {
                     COALESCE(j.table, current_setting('pg_work.default_table')) AS table,
                     COALESCE(timeout, current_setting('pg_work.default_timeout')::bigint) AS timeout,
                     EXTRACT(epoch FROM COALESCE(reset, current_setting('pg_work.default_reset')::interval))::bigint AS reset,
-                    NULLIF(COALESCE(partman, current_setting('pg_work.default_partman', true)), '%1$s') AS partman
+                    NULLIF(COALESCE(partman, current_setting('pg_work.default_partman')), '%1$s') AS partman
             FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json')::json) AS j ("user" text, data text, schema text, "table" text, timeout bigint, reset interval, partman text)
         ) SELECT    DISTINCT j.* FROM j
     );
@@ -250,9 +250,13 @@ static void init_conf(void) {
     DefineCustomStringVariable("pg_task.json", "pg_task json", "json configuration: available keys are: user, data, schema, table, timeout, count, live and partman", &default_json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign, NULL);
     DefineCustomStringVariable("pg_work.default_active", "pg_work default active", "task active before now", &work_default_active, "1 week", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_data", "pg_work default data", "default database name", &work_default_data, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_work.default_partman", "pg_work default partman", "partman schema name, if empty then do not use partman", &work_default_partman,
 #if PG_VERSION_NUM >= 120000
-    if (extension_file_exists("pg_partman")) DefineCustomStringVariable("pg_work.default_partman", "pg_work default partman", "partman schema name, if null then do not use partman", &work_default_partman, "partman", PGC_SIGHUP, 0, NULL, NULL, NULL);
+        extension_file_exists("pg_partman") ? "partman" : "",
+#else
+        "",
 #endif
+        PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_reset", "pg_work default reset", "reset tasks every interval", &work_default_reset, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_schema", "pg_work default schema", "schema name for tasks table", &work_default_schema, "public", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_table", "pg_work default table", "table name for tasks table", &work_default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
