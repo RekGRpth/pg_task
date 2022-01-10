@@ -727,7 +727,6 @@ static void work_conf(void) {
 
 static void work_init(void) {
     char *p = MyBgworkerEntry_bgw_extra;
-    MemoryContext oldcontext = CurrentMemoryContext;
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
     on_proc_exit(work_exit, (Datum)work);
 #define X(name, serialize, deserialize) deserialize(name);
@@ -745,12 +744,15 @@ static void work_init(void) {
     set_ps_display_my("init");
     process_session_preload_libraries();
 #if PG_VERSION_NUM >= 90500
-    StartTransactionCommand();
-    MemoryContextSwitchTo(oldcontext);
-    if (!(work->str.data = get_database_name(work->oid.data))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", work->oid.data)));
-    if (!(work->str.user = GetUserNameFromId(work->oid.user, false))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", work->oid.user)));
-    CommitTransactionCommand();
-    MemoryContextSwitchTo(oldcontext);
+    if (true) {
+        MemoryContext oldcontext = CurrentMemoryContext;
+        StartTransactionCommand();
+        MemoryContextSwitchTo(oldcontext);
+        if (!(work->str.data = get_database_name(work->oid.data))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", work->oid.data)));
+        if (!(work->str.user = GetUserNameFromId(work->oid.user, false))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", work->oid.user)));
+        CommitTransactionCommand();
+        MemoryContextSwitchTo(oldcontext);
+    }
 #endif
     work->quote.data = (char *)quote_identifier(work->str.data);
     if (work->str.partman) work->quote.partman = (char *)quote_identifier(work->str.partman);
