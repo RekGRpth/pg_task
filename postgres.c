@@ -14,4 +14,6 @@
 #include <postgres.9.6.c>
 #elif PG_VERSION_NUM >= 90500
 #include <postgres.9.5.c>
+#elif PG_VERSION_NUM >= 90400
+#include <postgres.9.4.c>
 #endif
