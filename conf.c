@@ -80,18 +80,6 @@ static void conf_check(void) {
         shm_toc *toc;
         Size segsize;
         size_t len = 0;
-        typeof(work->oid.data) *oid_data;
-        typeof(work->oid.user) *oid_user;
-        typeof(work->reset) *reset;
-        typeof(work->str.partman) str_partman;
-        typeof(work->str.schema) str_schema;
-        typeof(work->str.table) str_table;
-        typeof(work->timeout) *timeout;
-#if PG_VERSION_NUM >= 90500
-#else
-        typeof(work->str.data) str_data;
-        typeof(work->str.user) str_user;
-#endif
         work->reset =  DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "reset", false));
         work->str.data = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", false));
         work->str.partman = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "partman", true));
@@ -139,17 +127,17 @@ static void conf_check(void) {
         seg = dsm_create(segsize);
 #endif
         toc = shm_toc_create(PG_WORK_MAGIC, dsm_segment_address(seg), segsize);
-        oid_data = shm_toc_allocate(toc, sizeof(work->oid.data)); *oid_data = work->oid.data; shm_toc_insert(toc, PG_WORK_KEY_OID_DATA, oid_data);
-        oid_user = shm_toc_allocate(toc, sizeof(work->oid.user)); *oid_user = work->oid.user; shm_toc_insert(toc, PG_WORK_KEY_OID_USER, oid_user);
-        reset = shm_toc_allocate(toc, sizeof(work->reset)); *reset = work->reset; shm_toc_insert(toc, PG_WORK_KEY_RESET, reset);
-        str_partman = shm_toc_allocate(toc, strlen(work->str.partman ? work->str.partman : "") + 1); strcpy(str_partman, work->str.partman ? work->str.partman : ""); shm_toc_insert(toc, PG_WORK_KEY_STR_PARTMAN, str_partman);
-        str_schema = shm_toc_allocate(toc, strlen(work->str.schema) + 1); strcpy(str_schema, work->str.schema); shm_toc_insert(toc, PG_WORK_KEY_STR_SCHEMA, str_schema);
-        str_table = shm_toc_allocate(toc, strlen(work->str.table) + 1); strcpy(str_table, work->str.table); shm_toc_insert(toc, PG_WORK_KEY_STR_TABLE, str_table);
-        timeout = shm_toc_allocate(toc, sizeof(work->timeout)); *timeout = work->timeout; shm_toc_insert(toc, PG_WORK_KEY_TIMEOUT, timeout);
+        { typeof(work->oid.data) *oid_data = shm_toc_allocate(toc, sizeof(work->oid.data)); *oid_data = work->oid.data; shm_toc_insert(toc, PG_WORK_KEY_OID_DATA, oid_data); }
+        { typeof(work->oid.user) *oid_user = shm_toc_allocate(toc, sizeof(work->oid.user)); *oid_user = work->oid.user; shm_toc_insert(toc, PG_WORK_KEY_OID_USER, oid_user); }
+        { typeof(work->reset) *reset = shm_toc_allocate(toc, sizeof(work->reset)); *reset = work->reset; shm_toc_insert(toc, PG_WORK_KEY_RESET, reset); }
+        { typeof(work->str.partman) str_partman = shm_toc_allocate(toc, strlen(work->str.partman ? work->str.partman : "") + 1); strcpy(str_partman, work->str.partman ? work->str.partman : ""); shm_toc_insert(toc, PG_WORK_KEY_STR_PARTMAN, str_partman); }
+        { typeof(work->str.schema) str_schema = shm_toc_allocate(toc, strlen(work->str.schema) + 1); strcpy(str_schema, work->str.schema); shm_toc_insert(toc, PG_WORK_KEY_STR_SCHEMA, str_schema); }
+        { typeof(work->str.table) str_table = shm_toc_allocate(toc, strlen(work->str.table) + 1); strcpy(str_table, work->str.table); shm_toc_insert(toc, PG_WORK_KEY_STR_TABLE, str_table); }
+        { typeof(work->timeout) *timeout = shm_toc_allocate(toc, sizeof(work->timeout)); *timeout = work->timeout; shm_toc_insert(toc, PG_WORK_KEY_TIMEOUT, timeout); }
 #if PG_VERSION_NUM >= 90500
 #else
-        str_data = shm_toc_allocate(toc, strlen(work->str.data) + 1); strcpy(str_data, work->str.data); shm_toc_insert(toc, PG_WORK_KEY_STR_DATA, str_data);
-        str_user = shm_toc_allocate(toc, strlen(work->str.user) + 1); strcpy(str_user, work->str.user); shm_toc_insert(toc, PG_WORK_KEY_STR_USER, str_user);
+        { typeof(work->str.data) str_data = shm_toc_allocate(toc, strlen(work->str.data) + 1); strcpy(str_data, work->str.data); shm_toc_insert(toc, PG_WORK_KEY_STR_DATA, str_data); }
+        { typeof(work->str.user) str_user = shm_toc_allocate(toc, strlen(work->str.user) + 1); strcpy(str_user, work->str.user); shm_toc_insert(toc, PG_WORK_KEY_STR_USER, str_user); }
 #endif
         worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
         worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
