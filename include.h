@@ -112,9 +112,11 @@ enum {
 
 #if PG_VERSION_NUM >= 100000
 #define createdb_my(pstate, stmt) createdb(pstate, stmt)
+#define makeDefElemMy(name, arg, location) makeDefElem(name, arg, location)
 #define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key, noError)
 #else
 #define createdb_my(pstate, stmt) createdb(stmt)
+#define makeDefElemMy(name, arg, location) makeDefElem(name, arg)
 #define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key)
 #define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
 #endif

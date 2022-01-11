@@ -16,11 +16,7 @@ static Oid conf_data(Work *work) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
         stmt->dbname = (char *)work->str.data;
-#if PG_VERSION_NUM >= 100000
-        stmt->options = list_make1(makeDefElem("owner", (Node *)makeString((char *)work->str.user), -1));
-#else
-        stmt->options = list_make1(makeDefElem("owner", (Node *)makeString((char *)work->str.user)));
-#endif
+        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString((char *)work->str.user), -1));
         pstate->p_sourcetext = src.data;
         oid = createdb_my(pstate, stmt);
         list_free_deep(stmt->options);
