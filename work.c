@@ -652,11 +652,10 @@ static void work_task(Task *task) {
     shm_toc_estimate_chunk(&e, sizeof(work->oid.table));
     shm_toc_estimate_chunk(&e, sizeof(work->oid.user));
     shm_toc_estimate_chunk(&e, strlen(task->group) + 1);
-#if PG_VERSION_NUM >= 90500
-#else
     shm_toc_estimate_chunk(&e, strlen(work->str.data) + 1);
+    shm_toc_estimate_chunk(&e, strlen(work->str.schema) + 1);
+    shm_toc_estimate_chunk(&e, strlen(work->str.table) + 1);
     shm_toc_estimate_chunk(&e, strlen(work->str.user) + 1);
-#endif
     shm_toc_estimate_keys(&e, PG_TASK_NKEYS);
     segsize = shm_toc_estimate(&e);
     seg = dsm_create_my(segsize, 0);
@@ -670,6 +669,8 @@ static void work_task(Task *task) {
     { typeof(work->oid.table) *oid_table = shm_toc_allocate(toc, sizeof(work->oid.table)); *oid_table = work->oid.table; shm_toc_insert(toc, PG_TASK_KEY_OID_TABLE, oid_table); }
     { typeof(work->oid.user) *oid_user = shm_toc_allocate(toc, sizeof(work->oid.user)); *oid_user = work->oid.user; shm_toc_insert(toc, PG_TASK_KEY_OID_USER, oid_user); }
     { typeof(work->str.data) str_data = shm_toc_allocate(toc, strlen(work->str.data) + 1); strcpy(str_data, work->str.data); shm_toc_insert(toc, PG_TASK_KEY_STR_DATA, str_data); }
+    { typeof(work->str.schema) str_schema = shm_toc_allocate(toc, strlen(work->str.schema) + 1); strcpy(str_schema, work->str.schema); shm_toc_insert(toc, PG_TASK_KEY_STR_SCHEMA, str_schema); }
+    { typeof(work->str.table) str_table = shm_toc_allocate(toc, strlen(work->str.table) + 1); strcpy(str_table, work->str.table); shm_toc_insert(toc, PG_TASK_KEY_STR_TABLE, str_table); }
     { typeof(work->str.user) str_user = shm_toc_allocate(toc, strlen(work->str.user) + 1); strcpy(str_user, work->str.user); shm_toc_insert(toc, PG_TASK_KEY_STR_USER, str_user); }
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
