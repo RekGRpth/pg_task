@@ -22,11 +22,7 @@ static Oid conf_data(Work *work) {
         stmt->options = list_make1(makeDefElem("owner", (Node *)makeString((char *)work->str.user)));
 #endif
         pstate->p_sourcetext = src.data;
-#if PG_VERSION_NUM >= 100000
-        oid = createdb(pstate, stmt);
-#else
-        oid = createdb(stmt);
-#endif
+        oid = createdb_my(pstate, stmt);
         list_free_deep(stmt->options);
         free_parsestate(pstate);
         pfree(stmt);
