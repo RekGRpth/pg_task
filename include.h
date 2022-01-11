@@ -39,7 +39,9 @@ extern void SignalHandlerForConfigReload(SIGNAL_ARGS);
 extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #endif
 #include <replication/slot.h>
+#include <storage/dsm.h>
 #include <storage/ipc.h>
+#include <storage/shm_toc.h>
 #if PG_VERSION_NUM >= 140000
 #include <storage/proc.h>
 #endif
@@ -65,9 +67,29 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include "latch.h"
 #endif
 
+#define PG_WORK_MAGIC 0x776f726b
+
+enum {
+    PG_WORK_KEY_OID_DATA,
+    PG_WORK_KEY_OID_USER,
+    PG_WORK_KEY_RESET,
+    PG_WORK_KEY_TIMEOUT,
+    PG_WORK_KEY_STR_PARTMAN,
+    PG_WORK_KEY_STR_SCHEMA,
+    PG_WORK_KEY_STR_TABLE,
+#if PG_VERSION_NUM >= 90500
+#else
+    PG_WORK_KEY_STR_DATA,
+    PG_WORK_KEY_STR_USER,
+#endif
+    PG_WORK_NKEYS,
+};
+
+#define PG_TASK_MAGIC 0x7461736b
+
 #define serialize_bool(src) if ((len += sizeof(src)) >= sizeof_worker_bgw_extra) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("sizeof %li >= %li", len, sizeof_worker_bgw_extra))); else memcpy(worker_bgw_extra + len - sizeof(src), &(src), sizeof(src));
 #define serialize_char_null(src) serialize_char((src) ? (src) : "")
-#define serialize_char(src) if ((len += strlcpy(worker_bgw_extra + len, (src), sizeof_worker_bgw_extra) + 1) >= sizeof_worker_bgw_extra) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof_worker_bgw_extra)));
+#define serialize_char(src) if ((len += strlcpy(worker_bgw_extra + len, (src), sizeof_worker_bgw_extra - len) + 1) >= sizeof_worker_bgw_extra) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof_worker_bgw_extra)));
 #define serialize_int(src) if ((len += sizeof(src)) >= sizeof_worker_bgw_extra) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("sizeof %li >= %li", len, sizeof_worker_bgw_extra))); else memcpy(worker_bgw_extra + len - sizeof(src), &(src), sizeof(src));
 
 #define deserialize_bool(dst) (dst) = *(typeof(dst) *)p; p += sizeof(dst);

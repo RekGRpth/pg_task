@@ -20,10 +20,16 @@ static bool task_live(Task *task) {
                 SELECT id FROM %1$s AS t
                 WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND state = 'PLAN'::%2$s AND hash = $1 AND max >= $2 AND CASE
                     WHEN count > 0 AND live > '0 sec' THEN count > $3 AND $4 + live > CURRENT_TIMESTAMP ELSE count > $3 OR $4 + live > CURRENT_TIMESTAMP
-                END ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t SKIP LOCKED
+                END ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t %3$s
             ) UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM s
             WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
-        ), work->schema_table, work->schema_type);
+        ), work->schema_table, work->schema_type,
+#if PG_VERSION_NUM >= 90500
+        "SKIP LOCKED"
+#else
+        ""
+#endif
+        );
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, false);

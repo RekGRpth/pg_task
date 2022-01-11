@@ -210,10 +210,16 @@ static void work_reset(void) {
             SELECT id FROM %1$s AS t
             LEFT JOIN pg_locks AS l ON l.locktype = 'userlock' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.objsubid = 4 AND l.database = $1 AND l.classid = t.id>>32 AND l.objid = t.id<<32>>32
             WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
-            FOR UPDATE OF t SKIP LOCKED
+            FOR UPDATE OF t %3$s
         ) UPDATE %1$s AS t SET state = 'PLAN'::%2$s, start = NULL, stop = NULL, pid = NULL FROM s
         WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
-    ), work->schema_table, work->schema_type);
+    ), work->schema_table, work->schema_type,
+#if PG_VERSION_NUM >= 90500
+        "SKIP LOCKED"
+#else
+        ""
+#endif
+    );
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
@@ -725,15 +731,43 @@ static void work_conf(void) {
     set_ps_display_my("idle");
 }
 
-static void work_init(void) {
-    char *p = MyBgworkerEntry_bgw_extra;
+static void work_init(Datum main_arg) {
+    dsm_segment *seg;
+    shm_toc *toc;
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
     on_proc_exit(work_exit, (Datum)work);
-#define X(name, serialize, deserialize) deserialize(name);
-    WORK
-#undef X
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
+#if PG_VERSION_NUM >= 100000
+#else
+    CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
+#endif
+    if (!(seg = dsm_attach(DatumGetUInt32(main_arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
+    if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
+#if PG_VERSION_NUM >= 100000
+    work->oid.data = *(typeof(work->oid.data) *)shm_toc_lookup(toc, PG_WORK_KEY_OID_DATA, false);
+    work->oid.user = *(typeof(work->oid.user) *)shm_toc_lookup(toc, PG_WORK_KEY_OID_USER, false);
+    work->reset = *(typeof(work->reset) *)shm_toc_lookup(toc, PG_WORK_KEY_RESET, false);
+    work->timeout = *(typeof(work->timeout) *)shm_toc_lookup(toc, PG_WORK_KEY_TIMEOUT, false);
+    work->str.partman = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_PARTMAN, false));
+    work->str.schema = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_SCHEMA, false));
+    work->str.table = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_TABLE, false));
+#else
+    work->oid.data = *(typeof(work->oid.data) *)shm_toc_lookup(toc, PG_WORK_KEY_OID_DATA);
+    work->oid.user = *(typeof(work->oid.user) *)shm_toc_lookup(toc, PG_WORK_KEY_OID_USER);
+    work->reset = *(typeof(work->reset) *)shm_toc_lookup(toc, PG_WORK_KEY_RESET);
+    work->timeout = *(typeof(work->timeout) *)shm_toc_lookup(toc, PG_WORK_KEY_TIMEOUT);
+    work->str.partman = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_PARTMAN));
+    work->str.schema = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_SCHEMA));
+    work->str.table = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_TABLE));
+#if PG_VERSION_NUM >= 90500
+#else
+    work->str.data = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_DATA));
+    work->str.user = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_USER));
+#endif
+#endif
+    dsm_detach(seg);
+    if (!strlen(work->str.partman)) work->str.partman = NULL;
 #if PG_VERSION_NUM >= 110000
     BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user, 0);
 #elif PG_VERSION_NUM >= 90500
@@ -780,12 +814,18 @@ static void work_timeout(void) {
                 SELECT count(classid) AS pid, objid AS hash FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 GROUP BY objid
             ), s AS (
                 SELECT t.id, t.hash, CASE WHEN t.max >= 0 THEN t.max ELSE 0 END - COALESCE(l.pid, 0) AS count FROM %1$s AS t LEFT JOIN l ON l.hash = t.hash
-                WHERE t.plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.state = 'PLAN'::%2$s AND CASE WHEN t.max >= 0 THEN t.max ELSE 0 END - COALESCE(l.pid, 0) >= 0 FOR UPDATE OF t SKIP LOCKED
+                WHERE t.plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.state = 'PLAN'::%2$s AND CASE WHEN t.max >= 0 THEN t.max ELSE 0 END - COALESCE(l.pid, 0) >= 0 FOR UPDATE OF t %3$s
             ), u AS (
                 SELECT id, hash, count - row_number() OVER (PARTITION BY hash ORDER BY count DESC, id) + 1 AS count FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM u
             WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = u.id AND u.count >= 0 RETURNING t.id, t.hash, t.group, t.remote, t.max, t.delimiter
-        ), work->schema_table, work->schema_type);
+        ), work->schema_table, work->schema_type,
+#if PG_VERSION_NUM >= 90500
+        "SKIP LOCKED"
+#else
+        ""
+#endif
+        );
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -815,7 +855,7 @@ void work_main(Datum main_arg) {
     instr_time start_time;
     long current_reset = -1;
     long current_timeout = -1;
-    work_init();
+    work_init(main_arg);
     if (!lock_data_user_table(MyDatabaseId, GetUserId(), work->oid.table)) { elog(WARNING, "!lock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->oid.table); return; }
     while (!ShutdownRequestPending) {
         int nevents = 2 + work_nevents();
