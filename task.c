@@ -352,29 +352,18 @@ static void task_init(Datum main_arg) {
 #endif
     if (!(seg = dsm_attach(DatumGetUInt32(main_arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
     if (!(toc = shm_toc_attach(PG_TASK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
-#if PG_VERSION_NUM >= 100000
-    task->group = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_TASK_KEY_GROUP, false));
-    task->hash = *(typeof(task->hash) *)shm_toc_lookup(toc, PG_TASK_KEY_HASH, false);
-    task->id = *(typeof(task->id) *)shm_toc_lookup(toc, PG_TASK_KEY_ID, false);
-    task->max = *(typeof(task->max) *)shm_toc_lookup(toc, PG_TASK_KEY_MAX, false);
-    work->oid.data = *(typeof(work->oid.data) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_DATA, false);
-    work->oid.schema = *(typeof(work->oid.schema) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_SCHEMA, false);
-    work->oid.table = *(typeof(work->oid.table) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_TABLE, false);
-    work->oid.user = *(typeof(work->oid.user) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_USER, false);
-#else
-    task->group = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_TASK_KEY_GROUP));
-    task->hash = *(typeof(task->hash) *)shm_toc_lookup(toc, PG_TASK_KEY_HASH);
-    task->id = *(typeof(task->id) *)shm_toc_lookup(toc, PG_TASK_KEY_ID);
-    task->max = *(typeof(task->max) *)shm_toc_lookup(toc, PG_TASK_KEY_MAX);
-    work->oid.data = *(typeof(work->oid.data) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_DATA);
-    work->oid.schema = *(typeof(work->oid.schema) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_SCHEMA);
-    work->oid.table = *(typeof(work->oid.table) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_TABLE);
-    work->oid.user = *(typeof(work->oid.user) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_USER);
+    task->group = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_TASK_KEY_GROUP, false));
+    task->hash = *(typeof(task->hash) *)shm_toc_lookup_my(toc, PG_TASK_KEY_HASH, false);
+    task->id = *(typeof(task->id) *)shm_toc_lookup_my(toc, PG_TASK_KEY_ID, false);
+    task->max = *(typeof(task->max) *)shm_toc_lookup_my(toc, PG_TASK_KEY_MAX, false);
+    work->oid.data = *(typeof(work->oid.data) *)shm_toc_lookup_my(toc, PG_TASK_KEY_OID_DATA, false);
+    work->oid.schema = *(typeof(work->oid.schema) *)shm_toc_lookup_my(toc, PG_TASK_KEY_OID_SCHEMA, false);
+    work->oid.table = *(typeof(work->oid.table) *)shm_toc_lookup_my(toc, PG_TASK_KEY_OID_TABLE, false);
+    work->oid.user = *(typeof(work->oid.user) *)shm_toc_lookup_my(toc, PG_TASK_KEY_OID_USER, false);
 #if PG_VERSION_NUM >= 90500
 #else
-    work->str.data = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_TASK_KEY_STR_DATA));
-    work->str.user = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_TASK_KEY_STR_USER));
-#endif
+    work->str.data = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_TASK_KEY_STR_DATA, false));
+    work->str.user = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_TASK_KEY_STR_USER, false));
 #endif
     dsm_detach(seg);
 #if PG_VERSION_NUM >= 110000

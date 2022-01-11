@@ -785,27 +785,17 @@ static void work_init(Datum main_arg) {
 #endif
     if (!(seg = dsm_attach(DatumGetUInt32(main_arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
-#if PG_VERSION_NUM >= 100000
-    work->oid.data = *(typeof(work->oid.data) *)shm_toc_lookup(toc, PG_WORK_KEY_OID_DATA, false);
-    work->oid.user = *(typeof(work->oid.user) *)shm_toc_lookup(toc, PG_WORK_KEY_OID_USER, false);
-    work->reset = *(typeof(work->reset) *)shm_toc_lookup(toc, PG_WORK_KEY_RESET, false);
-    work->timeout = *(typeof(work->timeout) *)shm_toc_lookup(toc, PG_WORK_KEY_TIMEOUT, false);
-    work->str.partman = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_PARTMAN, false));
-    work->str.schema = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_SCHEMA, false));
-    work->str.table = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_TABLE, false));
-#else
-    work->oid.data = *(typeof(work->oid.data) *)shm_toc_lookup(toc, PG_WORK_KEY_OID_DATA);
-    work->oid.user = *(typeof(work->oid.user) *)shm_toc_lookup(toc, PG_WORK_KEY_OID_USER);
-    work->reset = *(typeof(work->reset) *)shm_toc_lookup(toc, PG_WORK_KEY_RESET);
-    work->timeout = *(typeof(work->timeout) *)shm_toc_lookup(toc, PG_WORK_KEY_TIMEOUT);
-    work->str.partman = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_PARTMAN));
-    work->str.schema = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_SCHEMA));
-    work->str.table = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_TABLE));
+    work->oid.data = *(typeof(work->oid.data) *)shm_toc_lookup_my(toc, PG_WORK_KEY_OID_DATA, false);
+    work->oid.user = *(typeof(work->oid.user) *)shm_toc_lookup_my(toc, PG_WORK_KEY_OID_USER, false);
+    work->reset = *(typeof(work->reset) *)shm_toc_lookup_my(toc, PG_WORK_KEY_RESET, false);
+    work->timeout = *(typeof(work->timeout) *)shm_toc_lookup_my(toc, PG_WORK_KEY_TIMEOUT, false);
+    work->str.partman = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_PARTMAN, false));
+    work->str.schema = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_SCHEMA, false));
+    work->str.table = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_TABLE, false));
 #if PG_VERSION_NUM >= 90500
 #else
-    work->str.data = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_DATA));
-    work->str.user = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_WORK_KEY_STR_USER));
-#endif
+    work->str.data = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_DATA, false));
+    work->str.user = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_USER, false));
 #endif
     dsm_detach(seg);
     if (!strlen(work->str.partman)) work->str.partman = NULL;
