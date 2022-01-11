@@ -601,8 +601,7 @@ static void work_table(void) {
 #endif
         work->str.partman ? "" : " PRIMARY KEY");
     if (work->str.partman) appendStringInfoString(&src, " PARTITION BY RANGE (plan)");
-#if PG_VERSION_NUM >= 120000
-#else
+#if PG_VERSION_NUM < 120000
     appendStringInfoString(&src, hash.data);
 #endif
     names = stringToQualifiedNameList(work->schema_table);
@@ -639,8 +638,7 @@ static void work_task(Task *task) {
 #if PG_VERSION_NUM >= 110000
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
-#if PG_VERSION_NUM >= 100000
-#else
+#if PG_VERSION_NUM < 100000
     CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
 #endif
     shm_toc_initialize_estimator(&e);
@@ -845,11 +843,7 @@ void work_main(Datum main_arg) {
             current_timeout = work->timeout;
         }
         if (current_reset <= 0) current_reset = work->reset;
-#if PG_VERSION_NUM >= 100000
-        nevents = WaitEventSetWait(set, current_timeout, events, nevents, PG_WAIT_EXTENSION);
-#else
-        nevents = WaitEventSetWait(set, current_timeout, events, nevents);
-#endif
+        nevents = WaitEventSetWaitMy(set, current_timeout, events, nevents, PG_WAIT_EXTENSION);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) work_latch();

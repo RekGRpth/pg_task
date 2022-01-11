@@ -111,11 +111,13 @@ enum {
 #define createdb_my(pstate, stmt) createdb(pstate, stmt)
 #define makeDefElemMy(name, arg, location) makeDefElem(name, arg, location)
 #define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key, noError)
+#define WaitEventSetWaitMy(set, timeout, occurred_events, nevents, wait_event_info) WaitEventSetWait(set, timeout, occurred_events, nevents, wait_event_info)
 #else
 #define createdb_my(pstate, stmt) createdb(stmt)
 #define makeDefElemMy(name, arg, location) makeDefElem(name, arg)
 #define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key)
 #define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
+#define WaitEventSetWaitMy(set, timeout, occurred_events, nevents, wait_event_info) WaitEventSetWait(set, timeout, occurred_events, nevents)
 #endif
 
 #if PG_VERSION_NUM >= 110000
