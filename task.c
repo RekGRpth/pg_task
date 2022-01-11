@@ -392,11 +392,7 @@ static void task_init(Datum main_arg) {
 }
 
 static void task_latch(void) {
-#if PG_VERSION_NUM >= 90500
     ResetLatch(MyLatch);
-#else
-    ResetLatch(&MyProc->procLatch);
-#endif
     CHECK_FOR_INTERRUPTS();
 }
 
@@ -429,13 +425,7 @@ void task_main(Datum main_arg) {
     task_init(main_arg);
     if (!lock_table_pid_hash(work->oid.table, task->pid, task->hash)) { elog(WARNING, "!lock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash); return; }
     while (!ShutdownRequestPending) {
-#if PG_VERSION_NUM >= 100000
-        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
-#elif PG_VERSION_NUM >= 90500
-        int rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0);
-#else
-        int rc = WaitLatch(&MyProc->procLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0);
-#endif
+        int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
         if (rc & WL_TIMEOUT) if (task_timeout()) ShutdownRequestPending = true;
         if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;

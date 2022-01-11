@@ -104,6 +104,7 @@ enum {
 #define set_config_option_my(name, value, context, source, action, changeVal, elevel, is_reload) set_config_option(name, value, context, source, action, changeVal, elevel, is_reload)
 #else
 #define dsm_create_my(size, flags) dsm_create(size)
+#define MyLatch (&MyProc->procLatch)
 #define set_config_option_my(name, value, context, source, action, changeVal, elevel, is_reload) set_config_option(name, value, context, source, action, changeVal, elevel)
 #endif
 
@@ -112,12 +113,14 @@ enum {
 #define makeDefElemMy(name, arg, location) makeDefElem(name, arg, location)
 #define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key, noError)
 #define WaitEventSetWaitMy(set, timeout, occurred_events, nevents, wait_event_info) WaitEventSetWait(set, timeout, occurred_events, nevents, wait_event_info)
+#define WaitLatchMy(latch, wakeEvents, timeout, wait_event_info) WaitLatch(latch, wakeEvents, timeout, wait_event_info)
 #else
 #define createdb_my(pstate, stmt) createdb(stmt)
 #define makeDefElemMy(name, arg, location) makeDefElem(name, arg)
 #define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key)
 #define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
 #define WaitEventSetWaitMy(set, timeout, occurred_events, nevents, wait_event_info) WaitEventSetWait(set, timeout, occurred_events, nevents)
+#define WaitLatchMy(latch, wakeEvents, timeout, wait_event_info) WaitLatch(latch, wakeEvents, timeout)
 #endif
 
 #if PG_VERSION_NUM >= 110000
