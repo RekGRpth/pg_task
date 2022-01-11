@@ -671,11 +671,7 @@ static void work_task(Task *task) {
 #endif
     shm_toc_estimate_keys(&e, PG_TASK_NKEYS);
     segsize = shm_toc_estimate(&e);
-#if PG_VERSION_NUM >= 90500
-    seg = dsm_create(segsize, 0);
-#else
-    seg = dsm_create(segsize);
-#endif
+    seg = dsm_create_my(segsize, 0);
     toc = shm_toc_create(PG_TASK_MAGIC, dsm_segment_address(seg), segsize);
     { typeof(task->group) group = shm_toc_allocate(toc, strlen(task->group) + 1); strcpy(group, task->group); shm_toc_insert(toc, PG_TASK_KEY_GROUP, group); }
     { typeof(task->hash) *hash = shm_toc_allocate(toc, sizeof(task->hash)); *hash = task->hash; shm_toc_insert(toc, PG_TASK_KEY_HASH, hash); }

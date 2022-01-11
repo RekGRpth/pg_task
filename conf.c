@@ -65,8 +65,7 @@ static void conf_work(Work *work) {
 #if PG_VERSION_NUM >= 110000
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
-#if PG_VERSION_NUM >= 100000
-#else
+#if PG_VERSION_NUM < 100000
     CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
 #endif
     shm_toc_initialize_estimator(&e);
@@ -77,18 +76,13 @@ static void conf_work(Work *work) {
     shm_toc_estimate_chunk(&e, strlen(work->str.partman ? work->str.partman : "") + 1);
     shm_toc_estimate_chunk(&e, strlen(work->str.schema) + 1);
     shm_toc_estimate_chunk(&e, strlen(work->str.table) + 1);
-#if PG_VERSION_NUM >= 90500
-#else
+#if PG_VERSION_NUM < 90500
     shm_toc_estimate_chunk(&e, strlen(work->str.data) + 1);
     shm_toc_estimate_chunk(&e, strlen(work->str.user) + 1);
 #endif
     shm_toc_estimate_keys(&e, PG_WORK_NKEYS);
     segsize = shm_toc_estimate(&e);
-#if PG_VERSION_NUM >= 90500
-    seg = dsm_create(segsize, 0);
-#else
-    seg = dsm_create(segsize);
-#endif
+    seg = dsm_create_my(segsize, 0);
     toc = shm_toc_create(PG_WORK_MAGIC, dsm_segment_address(seg), segsize);
     { typeof(work->oid.data) *oid_data = shm_toc_allocate(toc, sizeof(work->oid.data)); *oid_data = work->oid.data; shm_toc_insert(toc, PG_WORK_KEY_OID_DATA, oid_data); }
     { typeof(work->oid.user) *oid_user = shm_toc_allocate(toc, sizeof(work->oid.user)); *oid_user = work->oid.user; shm_toc_insert(toc, PG_WORK_KEY_OID_USER, oid_user); }

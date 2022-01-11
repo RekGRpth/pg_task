@@ -60,8 +60,7 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <utils/timeout.h>
 #include <utils/timestamp.h>
 
-#if PG_VERSION_NUM >= 90600
-#else
+#if PG_VERSION_NUM < 90600
 #include <storage/latch.h>
 #include <storage/proc.h>
 #include "latch.h"
@@ -108,6 +107,12 @@ enum {
 #define set_ps_display_my(activity) set_ps_display(activity)
 #else
 #define set_ps_display_my(activity) set_ps_display(activity, false)
+#endif
+
+#if PG_VERSION_NUM >= 90500
+#define dsm_create_my(size, flags) dsm_create(size, flags)
+#else
+#define dsm_create_my(size, flags) dsm_create(size)
 #endif
 
 #if PG_VERSION_NUM >= 100000
