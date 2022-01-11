@@ -1,7 +1,6 @@
 #include "include.h"
 
-#if PG_VERSION_NUM >= 90600
-#else
+#if PG_VERSION_NUM < 90600
 #include "postgres.h"
 
 #include <fcntl.h>
