@@ -163,11 +163,7 @@ static void conf_check(void) {
 void conf_main(Datum main_arg) {
     set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     BackgroundWorkerUnblockSignals();
-#if PG_VERSION_NUM >= 110000
-    BackgroundWorkerInitializeConnection("postgres", "postgres", 0);
-#else
-    BackgroundWorkerInitializeConnection("postgres", "postgres");
-#endif
+    BackgroundWorkerInitializeConnectionMy("postgres", "postgres", 0);
     pgstat_report_appname("pg_conf");
     set_ps_display_my("main");
     process_session_preload_libraries();

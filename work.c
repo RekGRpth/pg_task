@@ -775,7 +775,7 @@ static void work_init(Datum main_arg) {
 #elif PG_VERSION_NUM >= 90500
     BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user);
 #else
-    BackgroundWorkerInitializeConnection(work->str.data, work->str.user);
+    BackgroundWorkerInitializeConnectionMy(work->str.data, work->str.user, 0);
 #endif
     set_ps_display_my("init");
     process_session_preload_libraries();

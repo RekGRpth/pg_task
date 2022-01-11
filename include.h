@@ -103,12 +103,6 @@ enum {
     PG_TASK_NKEYS,
 };
 
-#if PG_VERSION_NUM >= 130000
-#define set_ps_display_my(activity) set_ps_display(activity)
-#else
-#define set_ps_display_my(activity) set_ps_display(activity, false)
-#endif
-
 #if PG_VERSION_NUM >= 90500
 #define dsm_create_my(size, flags) dsm_create(size, flags)
 #define set_config_option_my(name, value, context, source, action, changeVal, elevel, is_reload) set_config_option(name, value, context, source, action, changeVal, elevel, is_reload)
@@ -126,6 +120,18 @@ enum {
 #define makeDefElemMy(name, arg, location) makeDefElem(name, arg)
 #define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key)
 #define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
+#endif
+
+#if PG_VERSION_NUM >= 110000
+#define BackgroundWorkerInitializeConnectionMy(dbname, username, flags) BackgroundWorkerInitializeConnection(dbname, username, flags)
+#else
+#define BackgroundWorkerInitializeConnectionMy(dbname, username, flags) BackgroundWorkerInitializeConnection(dbname, username)
+#endif
+
+#if PG_VERSION_NUM >= 130000
+#define set_ps_display_my(activity) set_ps_display(activity)
+#else
+#define set_ps_display_my(activity) set_ps_display(activity, false)
 #endif
 
 typedef struct Task {
