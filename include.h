@@ -87,6 +87,23 @@ enum {
 
 #define PG_TASK_MAGIC 0x7461736b
 
+enum {
+    PG_TASK_KEY_GROUP,
+    PG_TASK_KEY_HASH,
+    PG_TASK_KEY_ID,
+    PG_TASK_KEY_MAX,
+    PG_TASK_KEY_OID_DATA,
+    PG_TASK_KEY_OID_SCHEMA,
+    PG_TASK_KEY_OID_TABLE,
+    PG_TASK_KEY_OID_USER,
+#if PG_VERSION_NUM >= 90500
+#else
+    PG_TASK_KEY_STR_DATA,
+    PG_TASK_KEY_STR_USER,
+#endif
+    PG_TASK_NKEYS,
+};
+
 #define serialize_bool(src) if ((len += sizeof(src)) >= sizeof_worker_bgw_extra) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("sizeof %li >= %li", len, sizeof_worker_bgw_extra))); else memcpy(worker_bgw_extra + len - sizeof(src), &(src), sizeof(src));
 #define serialize_char_null(src) serialize_char((src) ? (src) : "")
 #define serialize_char(src) if ((len += strlcpy(worker_bgw_extra + len, (src), sizeof_worker_bgw_extra - len) + 1) >= sizeof_worker_bgw_extra) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof_worker_bgw_extra)));

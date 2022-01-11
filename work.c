@@ -638,8 +638,25 @@ static void work_table(void) {
 static void work_task(Task *task) {
     BackgroundWorkerHandle *handle = NULL;
     BackgroundWorker worker = {0};
+    dsm_segment *seg;
     pid_t pid;
+    shm_toc_estimator e;
+    shm_toc *toc;
+    Size segsize;
     size_t len = 0;
+    typeof(task->group) group;
+    typeof(task->hash) *hash;
+    typeof(task->id) *id;
+    typeof(task->max) *max;
+    typeof(work->oid.data) *oid_data;
+    typeof(work->oid.schema) *oid_schema;
+    typeof(work->oid.table) *oid_table;
+    typeof(work->oid.user) *oid_user;
+#if PG_VERSION_NUM >= 90500
+#else
+    typeof(work->str.data) str_data;
+    typeof(work->str.user) str_user;
+#endif
     elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", task->id, task->group, task->max, work->oid.table);
     if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
@@ -647,12 +664,47 @@ static void work_task(Task *task) {
 #if PG_VERSION_NUM >= 110000
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
-    len = 0;
-#define X(name, serialize, deserialize) serialize(name);
-    TASK
-#undef X
+#if PG_VERSION_NUM >= 100000
+#else
+    CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
+#endif
+    shm_toc_initialize_estimator(&e);
+    shm_toc_estimate_chunk(&e, sizeof(task->hash));
+    shm_toc_estimate_chunk(&e, sizeof(task->id));
+    shm_toc_estimate_chunk(&e, sizeof(task->max));
+    shm_toc_estimate_chunk(&e, sizeof(work->oid.data));
+    shm_toc_estimate_chunk(&e, sizeof(work->oid.schema));
+    shm_toc_estimate_chunk(&e, sizeof(work->oid.table));
+    shm_toc_estimate_chunk(&e, sizeof(work->oid.user));
+    shm_toc_estimate_chunk(&e, strlen(task->group) + 1);
+#if PG_VERSION_NUM >= 90500
+#else
+    shm_toc_estimate_chunk(&e, strlen(work->str.data) + 1);
+    shm_toc_estimate_chunk(&e, strlen(work->str.user) + 1);
+#endif
+    shm_toc_estimate_keys(&e, PG_TASK_NKEYS);
+    segsize = shm_toc_estimate(&e);
+#if PG_VERSION_NUM >= 90500
+    seg = dsm_create(segsize, 0);
+#else
+    seg = dsm_create(segsize);
+#endif
+    toc = shm_toc_create(PG_TASK_MAGIC, dsm_segment_address(seg), segsize);
+    group = shm_toc_allocate(toc, strlen(task->group) + 1); strcpy(group, task->group); shm_toc_insert(toc, PG_TASK_KEY_GROUP, group);
+    hash = shm_toc_allocate(toc, sizeof(task->hash)); *hash = task->hash; shm_toc_insert(toc, PG_TASK_KEY_HASH, hash);
+    id = shm_toc_allocate(toc, sizeof(task->id)); *id = task->id; shm_toc_insert(toc, PG_TASK_KEY_ID, id);
+    max = shm_toc_allocate(toc, sizeof(task->max)); *max = task->max; shm_toc_insert(toc, PG_TASK_KEY_MAX, max);
+    oid_data = shm_toc_allocate(toc, sizeof(work->oid.data)); *oid_data = work->oid.data; shm_toc_insert(toc, PG_TASK_KEY_OID_DATA, oid_data);
+    oid_schema = shm_toc_allocate(toc, sizeof(work->oid.schema)); *oid_schema = work->oid.schema; shm_toc_insert(toc, PG_TASK_KEY_OID_SCHEMA, oid_schema);
+    oid_table = shm_toc_allocate(toc, sizeof(work->oid.table)); *oid_table = work->oid.table; shm_toc_insert(toc, PG_TASK_KEY_OID_TABLE, oid_table);
+    oid_user = shm_toc_allocate(toc, sizeof(work->oid.user)); *oid_user = work->oid.user; shm_toc_insert(toc, PG_TASK_KEY_OID_USER, oid_user);
+#if PG_VERSION_NUM >= 90500
+#else
+    str_data = shm_toc_allocate(toc, strlen(work->str.data) + 1); strcpy(str_data, work->str.data); shm_toc_insert(toc, PG_TASK_KEY_STR_DATA, str_data);
+    str_user = shm_toc_allocate(toc, strlen(work->str.user) + 1); strcpy(str_user, work->str.user); shm_toc_insert(toc, PG_TASK_KEY_STR_USER, str_user);
+#endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    worker.bgw_main_arg = Int64GetDatum(task->id);
+    worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -664,6 +716,8 @@ static void work_task(Task *task) {
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     pfree(handle);
+    dsm_pin_segment(seg);
+    dsm_detach(seg);
     work_free(task);
 }
 

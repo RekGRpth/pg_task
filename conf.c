@@ -139,35 +139,17 @@ static void conf_check(void) {
         seg = dsm_create(segsize);
 #endif
         toc = shm_toc_create(PG_WORK_MAGIC, dsm_segment_address(seg), segsize);
-        oid_data = shm_toc_allocate(toc, sizeof(work->oid.data));
-        *oid_data = work->oid.data;
-        shm_toc_insert(toc, PG_WORK_KEY_OID_DATA, oid_data);
-        oid_user = shm_toc_allocate(toc, sizeof(work->oid.user));
-        *oid_user = work->oid.user;
-        shm_toc_insert(toc, PG_WORK_KEY_OID_USER, oid_user);
-        reset = shm_toc_allocate(toc, sizeof(work->reset));
-        *reset = work->reset;
-        shm_toc_insert(toc, PG_WORK_KEY_RESET, reset);
-        timeout = shm_toc_allocate(toc, sizeof(work->timeout));
-        *timeout = work->timeout;
-        shm_toc_insert(toc, PG_WORK_KEY_TIMEOUT, timeout);
-        str_partman = shm_toc_allocate(toc, strlen(work->str.partman ? work->str.partman : "") + 1);
-        strcpy(str_partman, work->str.partman ? work->str.partman : "");
-        shm_toc_insert(toc, PG_WORK_KEY_STR_PARTMAN, str_partman);
-        str_schema = shm_toc_allocate(toc, strlen(work->str.schema) + 1);
-        strcpy(str_schema, work->str.schema);
-        shm_toc_insert(toc, PG_WORK_KEY_STR_SCHEMA, str_schema);
-        str_table = shm_toc_allocate(toc, strlen(work->str.table) + 1);
-        strcpy(str_table, work->str.table);
-        shm_toc_insert(toc, PG_WORK_KEY_STR_TABLE, str_table);
+        oid_data = shm_toc_allocate(toc, sizeof(work->oid.data)); *oid_data = work->oid.data; shm_toc_insert(toc, PG_WORK_KEY_OID_DATA, oid_data);
+        oid_user = shm_toc_allocate(toc, sizeof(work->oid.user)); *oid_user = work->oid.user; shm_toc_insert(toc, PG_WORK_KEY_OID_USER, oid_user);
+        reset = shm_toc_allocate(toc, sizeof(work->reset)); *reset = work->reset; shm_toc_insert(toc, PG_WORK_KEY_RESET, reset);
+        str_partman = shm_toc_allocate(toc, strlen(work->str.partman ? work->str.partman : "") + 1); strcpy(str_partman, work->str.partman ? work->str.partman : ""); shm_toc_insert(toc, PG_WORK_KEY_STR_PARTMAN, str_partman);
+        str_schema = shm_toc_allocate(toc, strlen(work->str.schema) + 1); strcpy(str_schema, work->str.schema); shm_toc_insert(toc, PG_WORK_KEY_STR_SCHEMA, str_schema);
+        str_table = shm_toc_allocate(toc, strlen(work->str.table) + 1); strcpy(str_table, work->str.table); shm_toc_insert(toc, PG_WORK_KEY_STR_TABLE, str_table);
+        timeout = shm_toc_allocate(toc, sizeof(work->timeout)); *timeout = work->timeout; shm_toc_insert(toc, PG_WORK_KEY_TIMEOUT, timeout);
 #if PG_VERSION_NUM >= 90500
 #else
-        str_data = shm_toc_allocate(toc, strlen(work->str.data) + 1);
-        strcpy(str_data, work->str.data);
-        shm_toc_insert(toc, PG_WORK_KEY_STR_DATA, str_data);
-        str_user = shm_toc_allocate(toc, strlen(work->str.user) + 1);
-        strcpy(str_user, work->str.user);
-        shm_toc_insert(toc, PG_WORK_KEY_STR_USER, str_user);
+        str_data = shm_toc_allocate(toc, strlen(work->str.data) + 1); strcpy(str_data, work->str.data); shm_toc_insert(toc, PG_WORK_KEY_STR_DATA, str_data);
+        str_user = shm_toc_allocate(toc, strlen(work->str.user) + 1); strcpy(str_user, work->str.user); shm_toc_insert(toc, PG_WORK_KEY_STR_USER, str_user);
 #endif
         worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
         worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
@@ -183,7 +165,6 @@ static void conf_check(void) {
             case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
         }
         pfree(handle);
-//        dsm_pin_mapping(seg);
         dsm_pin_segment(seg);
         dsm_detach(seg);
         if (work->quote.data != work->str.data) pfree(work->quote.data);

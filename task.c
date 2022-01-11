@@ -338,16 +338,45 @@ static void task_catch(void) {
     RESUME_INTERRUPTS();
 }
 
-static void task_init(void) {
-    char *p = MyBgworkerEntry_bgw_extra;
+static void task_init(Datum main_arg) {
+    dsm_segment *seg;
+    shm_toc *toc;
     StringInfoData oid, schema_table, schema_type;
     task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
     on_proc_exit(task_exit, (Datum)task);
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
-#define X(name, serialize, deserialize) deserialize(name);
-    TASK
-#undef X
     BackgroundWorkerUnblockSignals();
+#if PG_VERSION_NUM >= 100000
+#else
+    CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
+#endif
+    if (!(seg = dsm_attach(DatumGetUInt32(main_arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
+    if (!(toc = shm_toc_attach(PG_TASK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
+#if PG_VERSION_NUM >= 100000
+    task->group = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_TASK_KEY_GROUP, false));
+    task->hash = *(typeof(task->hash) *)shm_toc_lookup(toc, PG_TASK_KEY_HASH, false);
+    task->id = *(typeof(task->id) *)shm_toc_lookup(toc, PG_TASK_KEY_ID, false);
+    task->max = *(typeof(task->max) *)shm_toc_lookup(toc, PG_TASK_KEY_MAX, false);
+    work->oid.data = *(typeof(work->oid.data) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_DATA, false);
+    work->oid.schema = *(typeof(work->oid.schema) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_SCHEMA, false);
+    work->oid.table = *(typeof(work->oid.table) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_TABLE, false);
+    work->oid.user = *(typeof(work->oid.user) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_USER, false);
+#else
+    task->group = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_TASK_KEY_GROUP));
+    task->hash = *(typeof(task->hash) *)shm_toc_lookup(toc, PG_TASK_KEY_HASH);
+    task->id = *(typeof(task->id) *)shm_toc_lookup(toc, PG_TASK_KEY_ID);
+    task->max = *(typeof(task->max) *)shm_toc_lookup(toc, PG_TASK_KEY_MAX);
+    work->oid.data = *(typeof(work->oid.data) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_DATA);
+    work->oid.schema = *(typeof(work->oid.schema) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_SCHEMA);
+    work->oid.table = *(typeof(work->oid.table) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_TABLE);
+    work->oid.user = *(typeof(work->oid.user) *)shm_toc_lookup(toc, PG_TASK_KEY_OID_USER);
+#if PG_VERSION_NUM >= 90500
+#else
+    work->str.data = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_TASK_KEY_STR_DATA));
+    work->str.user = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup(toc, PG_TASK_KEY_STR_USER));
+#endif
+#endif
+    dsm_detach(seg);
 #if PG_VERSION_NUM >= 110000
     BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user, 0);
 #elif PG_VERSION_NUM >= 90500
@@ -372,7 +401,6 @@ static void task_init(void) {
     work->quote.table = (char *)quote_identifier(work->str.table);
     work->quote.user = (char *)quote_identifier(work->str.user);
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1);
-    task->id = DatumGetInt64(MyBgworkerEntry->bgw_main_arg);
 #if PG_VERSION_NUM >= 90500
     set_config_option("application_name", MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option("pg_task.data", work->str.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
@@ -444,7 +472,7 @@ void task_free(Task *task) {
 }
 
 void task_main(Datum main_arg) {
-    task_init();
+    task_init(main_arg);
     if (!lock_table_pid_hash(work->oid.table, task->pid, task->hash)) { elog(WARNING, "!lock_table_pid_hash(%i, %i, %i)", work->oid.table, task->pid, task->hash); return; }
     while (!ShutdownRequestPending) {
 #if PG_VERSION_NUM >= 100000
