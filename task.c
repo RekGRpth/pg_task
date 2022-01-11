@@ -342,8 +342,7 @@ static void task_init(Datum main_arg) {
     on_proc_exit(task_exit, (Datum)task);
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
     BackgroundWorkerUnblockSignals();
-#if PG_VERSION_NUM >= 100000
-#else
+#if PG_VERSION_NUM < 100000
     CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
 #endif
     if (!(seg = dsm_attach(DatumGetUInt32(main_arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
@@ -356,27 +355,14 @@ static void task_init(Datum main_arg) {
     work->oid.schema = *(typeof(work->oid.schema) *)shm_toc_lookup_my(toc, PG_TASK_KEY_OID_SCHEMA, false);
     work->oid.table = *(typeof(work->oid.table) *)shm_toc_lookup_my(toc, PG_TASK_KEY_OID_TABLE, false);
     work->oid.user = *(typeof(work->oid.user) *)shm_toc_lookup_my(toc, PG_TASK_KEY_OID_USER, false);
-#if PG_VERSION_NUM >= 90500
-#else
     work->str.data = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_TASK_KEY_STR_DATA, false));
     work->str.user = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_TASK_KEY_STR_USER, false));
-#endif
     dsm_detach(seg);
-#if PG_VERSION_NUM >= 110000
-    BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user, 0);
-#elif PG_VERSION_NUM >= 90500
-    BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user);
-#else
     BackgroundWorkerInitializeConnectionMy(work->str.data, work->str.user, 0);
-#endif
     set_ps_display_my("init");
     process_session_preload_libraries();
     StartTransactionCommand();
     MemoryContextSwitchTo(TopMemoryContext);
-#if PG_VERSION_NUM >= 90500
-    if (!(work->str.data = get_database_name(work->oid.data))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", work->oid.data)));
-    if (!(work->str.user = GetUserNameFromId(work->oid.user, false))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", work->oid.user)));
-#endif
     if (!(work->str.schema = get_namespace_name(work->oid.schema))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema %u does not exist", work->oid.schema)));
     if (!(work->str.table = get_rel_name(work->oid.table))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("table %u does not exist", work->oid.table)));
     CommitTransactionCommand();

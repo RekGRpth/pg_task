@@ -669,11 +669,8 @@ static void work_task(Task *task) {
     { typeof(work->oid.schema) *oid_schema = shm_toc_allocate(toc, sizeof(work->oid.schema)); *oid_schema = work->oid.schema; shm_toc_insert(toc, PG_TASK_KEY_OID_SCHEMA, oid_schema); }
     { typeof(work->oid.table) *oid_table = shm_toc_allocate(toc, sizeof(work->oid.table)); *oid_table = work->oid.table; shm_toc_insert(toc, PG_TASK_KEY_OID_TABLE, oid_table); }
     { typeof(work->oid.user) *oid_user = shm_toc_allocate(toc, sizeof(work->oid.user)); *oid_user = work->oid.user; shm_toc_insert(toc, PG_TASK_KEY_OID_USER, oid_user); }
-#if PG_VERSION_NUM >= 90500
-#else
     { typeof(work->str.data) str_data = shm_toc_allocate(toc, strlen(work->str.data) + 1); strcpy(str_data, work->str.data); shm_toc_insert(toc, PG_TASK_KEY_STR_DATA, str_data); }
     { typeof(work->str.user) str_user = shm_toc_allocate(toc, strlen(work->str.user) + 1); strcpy(str_user, work->str.user); shm_toc_insert(toc, PG_TASK_KEY_STR_USER, str_user); }
-#endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
     worker.bgw_notify_pid = MyProcPid;
@@ -750,8 +747,7 @@ static void work_init(Datum main_arg) {
     on_proc_exit(work_exit, (Datum)work);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
-#if PG_VERSION_NUM >= 100000
-#else
+#if PG_VERSION_NUM < 100000
     CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
 #endif
     if (!(seg = dsm_attach(DatumGetUInt32(main_arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
@@ -759,34 +755,17 @@ static void work_init(Datum main_arg) {
     work->oid.data = *(typeof(work->oid.data) *)shm_toc_lookup_my(toc, PG_WORK_KEY_OID_DATA, false);
     work->oid.user = *(typeof(work->oid.user) *)shm_toc_lookup_my(toc, PG_WORK_KEY_OID_USER, false);
     work->reset = *(typeof(work->reset) *)shm_toc_lookup_my(toc, PG_WORK_KEY_RESET, false);
-    work->timeout = *(typeof(work->timeout) *)shm_toc_lookup_my(toc, PG_WORK_KEY_TIMEOUT, false);
+    work->str.data = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_DATA, false));
     work->str.partman = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_PARTMAN, false));
     work->str.schema = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_SCHEMA, false));
     work->str.table = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_TABLE, false));
-#if PG_VERSION_NUM >= 90500
-#else
-    work->str.data = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_DATA, false));
     work->str.user = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_USER, false));
-#endif
+    work->timeout = *(typeof(work->timeout) *)shm_toc_lookup_my(toc, PG_WORK_KEY_TIMEOUT, false);
     dsm_detach(seg);
     if (!strlen(work->str.partman)) work->str.partman = NULL;
-#if PG_VERSION_NUM >= 110000
-    BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user, 0);
-#elif PG_VERSION_NUM >= 90500
-    BackgroundWorkerInitializeConnectionByOid(work->oid.data, work->oid.user);
-#else
     BackgroundWorkerInitializeConnectionMy(work->str.data, work->str.user, 0);
-#endif
     set_ps_display_my("init");
     process_session_preload_libraries();
-#if PG_VERSION_NUM >= 90500
-    StartTransactionCommand();
-    MemoryContextSwitchTo(TopMemoryContext);
-    if (!(work->str.data = get_database_name(work->oid.data))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", work->oid.data)));
-    if (!(work->str.user = GetUserNameFromId(work->oid.user, false))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", work->oid.user)));
-    CommitTransactionCommand();
-    MemoryContextSwitchTo(TopMemoryContext);
-#endif
     work->quote.data = (char *)quote_identifier(work->str.data);
     if (work->str.partman) work->quote.partman = (char *)quote_identifier(work->str.partman);
     work->quote.schema = (char *)quote_identifier(work->str.schema);
