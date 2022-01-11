@@ -644,19 +644,6 @@ static void work_task(Task *task) {
     shm_toc *toc;
     Size segsize;
     size_t len = 0;
-    typeof(task->group) group;
-    typeof(task->hash) *hash;
-    typeof(task->id) *id;
-    typeof(task->max) *max;
-    typeof(work->oid.data) *oid_data;
-    typeof(work->oid.schema) *oid_schema;
-    typeof(work->oid.table) *oid_table;
-    typeof(work->oid.user) *oid_user;
-#if PG_VERSION_NUM >= 90500
-#else
-    typeof(work->str.data) str_data;
-    typeof(work->str.user) str_user;
-#endif
     elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", task->id, task->group, task->max, work->oid.table);
     if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
@@ -690,18 +677,18 @@ static void work_task(Task *task) {
     seg = dsm_create(segsize);
 #endif
     toc = shm_toc_create(PG_TASK_MAGIC, dsm_segment_address(seg), segsize);
-    group = shm_toc_allocate(toc, strlen(task->group) + 1); strcpy(group, task->group); shm_toc_insert(toc, PG_TASK_KEY_GROUP, group);
-    hash = shm_toc_allocate(toc, sizeof(task->hash)); *hash = task->hash; shm_toc_insert(toc, PG_TASK_KEY_HASH, hash);
-    id = shm_toc_allocate(toc, sizeof(task->id)); *id = task->id; shm_toc_insert(toc, PG_TASK_KEY_ID, id);
-    max = shm_toc_allocate(toc, sizeof(task->max)); *max = task->max; shm_toc_insert(toc, PG_TASK_KEY_MAX, max);
-    oid_data = shm_toc_allocate(toc, sizeof(work->oid.data)); *oid_data = work->oid.data; shm_toc_insert(toc, PG_TASK_KEY_OID_DATA, oid_data);
-    oid_schema = shm_toc_allocate(toc, sizeof(work->oid.schema)); *oid_schema = work->oid.schema; shm_toc_insert(toc, PG_TASK_KEY_OID_SCHEMA, oid_schema);
-    oid_table = shm_toc_allocate(toc, sizeof(work->oid.table)); *oid_table = work->oid.table; shm_toc_insert(toc, PG_TASK_KEY_OID_TABLE, oid_table);
-    oid_user = shm_toc_allocate(toc, sizeof(work->oid.user)); *oid_user = work->oid.user; shm_toc_insert(toc, PG_TASK_KEY_OID_USER, oid_user);
+    { typeof(task->group) group = shm_toc_allocate(toc, strlen(task->group) + 1); strcpy(group, task->group); shm_toc_insert(toc, PG_TASK_KEY_GROUP, group); }
+    { typeof(task->hash) *hash = shm_toc_allocate(toc, sizeof(task->hash)); *hash = task->hash; shm_toc_insert(toc, PG_TASK_KEY_HASH, hash); }
+    { typeof(task->id) *id = shm_toc_allocate(toc, sizeof(task->id)); *id = task->id; shm_toc_insert(toc, PG_TASK_KEY_ID, id); }
+    { typeof(task->max) *max = shm_toc_allocate(toc, sizeof(task->max)); *max = task->max; shm_toc_insert(toc, PG_TASK_KEY_MAX, max); }
+    { typeof(work->oid.data) *oid_data = shm_toc_allocate(toc, sizeof(work->oid.data)); *oid_data = work->oid.data; shm_toc_insert(toc, PG_TASK_KEY_OID_DATA, oid_data); }
+    { typeof(work->oid.schema) *oid_schema = shm_toc_allocate(toc, sizeof(work->oid.schema)); *oid_schema = work->oid.schema; shm_toc_insert(toc, PG_TASK_KEY_OID_SCHEMA, oid_schema); }
+    { typeof(work->oid.table) *oid_table = shm_toc_allocate(toc, sizeof(work->oid.table)); *oid_table = work->oid.table; shm_toc_insert(toc, PG_TASK_KEY_OID_TABLE, oid_table); }
+    { typeof(work->oid.user) *oid_user = shm_toc_allocate(toc, sizeof(work->oid.user)); *oid_user = work->oid.user; shm_toc_insert(toc, PG_TASK_KEY_OID_USER, oid_user); }
 #if PG_VERSION_NUM >= 90500
 #else
-    str_data = shm_toc_allocate(toc, strlen(work->str.data) + 1); strcpy(str_data, work->str.data); shm_toc_insert(toc, PG_TASK_KEY_STR_DATA, str_data);
-    str_user = shm_toc_allocate(toc, strlen(work->str.user) + 1); strcpy(str_user, work->str.user); shm_toc_insert(toc, PG_TASK_KEY_STR_USER, str_user);
+    { typeof(work->str.data) str_data = shm_toc_allocate(toc, strlen(work->str.data) + 1); strcpy(str_data, work->str.data); shm_toc_insert(toc, PG_TASK_KEY_STR_DATA, str_data); }
+    { typeof(work->str.user) str_user = shm_toc_allocate(toc, strlen(work->str.user) + 1); strcpy(str_user, work->str.user); shm_toc_insert(toc, PG_TASK_KEY_STR_USER, str_user); }
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
