@@ -91,8 +91,7 @@ static void conf_work(Work *work) {
     { typeof(work->str.schema) str_schema = shm_toc_allocate(toc, strlen(work->str.schema) + 1); strcpy(str_schema, work->str.schema); shm_toc_insert(toc, PG_WORK_KEY_STR_SCHEMA, str_schema); }
     { typeof(work->str.table) str_table = shm_toc_allocate(toc, strlen(work->str.table) + 1); strcpy(str_table, work->str.table); shm_toc_insert(toc, PG_WORK_KEY_STR_TABLE, str_table); }
     { typeof(work->timeout) *timeout = shm_toc_allocate(toc, sizeof(work->timeout)); *timeout = work->timeout; shm_toc_insert(toc, PG_WORK_KEY_TIMEOUT, timeout); }
-#if PG_VERSION_NUM >= 90500
-#else
+#if PG_VERSION_NUM < 90500
     { typeof(work->str.data) str_data = shm_toc_allocate(toc, strlen(work->str.data) + 1); strcpy(str_data, work->str.data); shm_toc_insert(toc, PG_WORK_KEY_STR_DATA, str_data); }
     { typeof(work->str.user) str_user = shm_toc_allocate(toc, strlen(work->str.user) + 1); strcpy(str_user, work->str.user); shm_toc_insert(toc, PG_WORK_KEY_STR_USER, str_user); }
 #endif
@@ -162,11 +161,7 @@ static void conf_check(void) {
 }
 
 void conf_main(Datum main_arg) {
-#if PG_VERSION_NUM >= 90500
-    set_config_option("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-#else
-    set_config_option("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
-#endif
+    set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM >= 110000
     BackgroundWorkerInitializeConnection("postgres", "postgres", 0);

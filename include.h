@@ -111,8 +111,10 @@ enum {
 
 #if PG_VERSION_NUM >= 90500
 #define dsm_create_my(size, flags) dsm_create(size, flags)
+#define set_config_option_my(name, value, context, source, action, changeVal, elevel, is_reload) set_config_option(name, value, context, source, action, changeVal, elevel, is_reload)
 #else
 #define dsm_create_my(size, flags) dsm_create(size)
+#define set_config_option_my(name, value, context, source, action, changeVal, elevel, is_reload) set_config_option(name, value, context, source, action, changeVal, elevel)
 #endif
 
 #if PG_VERSION_NUM >= 100000
