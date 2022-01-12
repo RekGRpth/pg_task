@@ -386,9 +386,8 @@ void task_main(Datum main_arg) {
     work->shared = shm_toc_lookup_my(toc, 0, false);
     CurrentResourceOwner = oldowner;
     BackgroundWorkerInitializeConnectionMy(work->shared->data.str, work->shared->user.str, 0);
-    pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->shared->user.str) + 1 + strlen(work->shared->data.str) + 1);
     set_config_option_my("application_name", MyBgworkerEntry->bgw_name + strlen(work->shared->user.str) + 1 + strlen(work->shared->data.str) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pgstat_report_appname("pg_task");
+    pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->shared->user.str) + 1 + strlen(work->shared->data.str) + 1);
     set_ps_display_my("main");
     process_session_preload_libraries();
     elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", work->shared->table.oid, task->shared.id, task->shared.hash, task->shared.max);
