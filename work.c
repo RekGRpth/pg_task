@@ -384,6 +384,8 @@ static void work_exit(int code, Datum arg) {
         PQfreeCancel(cancel);
         work_finish(task);
     }
+    if (!code) return;
+    if ((dsm_segment *)arg) dsm_detach((dsm_segment *)arg);
 }
 
 #if PG_VERSION_NUM >= 120000
@@ -676,7 +678,7 @@ static void work_task(Task *task) {
     }
     pfree(handle);
     dsm_pin_segment(seg);
-    dsm_detach(seg);
+//    dsm_detach(seg);
     work_free(task);
 }
 
@@ -732,10 +734,10 @@ static void work_conf(void) {
 }
 
 static void work_init(Datum main_arg) {
-    dsm_segment *seg;
+    dsm_segment *seg = NULL;
     shm_toc *toc;
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
-    on_proc_exit(work_exit, (Datum)work);
+    on_proc_exit(work_exit, (Datum)seg);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM < 100000
