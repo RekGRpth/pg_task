@@ -19,7 +19,7 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
 void SPI_commit_my(void) {
 #if PG_VERSION_NUM < 110000
     MemoryContext oldcontext = CurrentMemoryContext;
-    ResourceOwner oldowner = CurrentResourceOwner;
+//    ResourceOwner oldowner = CurrentResourceOwner;
 #endif
     disable_timeout(STATEMENT_TIMEOUT, false);
 #if PG_VERSION_NUM >= 110000
@@ -28,7 +28,7 @@ void SPI_commit_my(void) {
 #else
     ReleaseCurrentSubTransaction();
     MemoryContextSwitchTo(oldcontext);
-    CurrentResourceOwner = oldowner;
+//    CurrentResourceOwner = oldowner;
 #endif
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
@@ -43,9 +43,9 @@ void SPI_connect_my(const char *src) {
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect_ext failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
 #else
     StartTransactionCommand();
+    if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
     PushActiveSnapshot(GetTransactionSnapshot());
     MemoryContextSwitchTo(oldcontext);
-    if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
 #endif
     SPI_start_transaction_my(src);
 }
@@ -81,7 +81,7 @@ void SPI_finish_my(void) {
 void SPI_start_transaction_my(const char *src) {
 #if PG_VERSION_NUM < 110000
     MemoryContext oldcontext = CurrentMemoryContext;
-    ResourceOwner oldowner = CurrentResourceOwner;
+//    ResourceOwner oldowner = CurrentResourceOwner;
 #endif
     pgstat_report_activity(STATE_RUNNING, src);
     SetCurrentStatementStartTimestamp();
@@ -91,7 +91,7 @@ void SPI_start_transaction_my(const char *src) {
 #else
     BeginInternalSubTransaction((char *)src);
     MemoryContextSwitchTo(oldcontext);
-    CurrentResourceOwner = oldowner;
+//    CurrentResourceOwner = oldowner;
 #endif
     StatementTimeout > 0 ? enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout) : disable_timeout(STATEMENT_TIMEOUT, false);
 }
