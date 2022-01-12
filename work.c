@@ -438,7 +438,7 @@ static void work_partman(void) {
         SPI_commit_my();
         SPI_start_transaction_my(create_parent.data);
         SPI_execute_with_args_my(create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT, false);
-        if (SPI_processed != 1) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_processed %lu != 1", SPI_processed)));
+        if (SPI_processed != 1) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_processed %lu != 1", (long)SPI_processed)));
         if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("could not create parent")));
         if (values[0]) pfree((void *)values[0]);
         if (values[1]) pfree((void *)values[1]);
@@ -641,7 +641,7 @@ static void work_task(Task *task) {
     shm_toc_estimate_chunk(&e, sizeof(work->oid.schema));
     shm_toc_estimate_chunk(&e, sizeof(work->oid.table));
     shm_toc_estimate_chunk(&e, sizeof(work->oid.user));
-    shm_toc_estimate_chunk(&e, strlen(task->group) + 1);
+//    shm_toc_estimate_chunk(&e, strlen(task->group) + 1);
     shm_toc_estimate_chunk(&e, strlen(work->str.data) + 1);
     shm_toc_estimate_chunk(&e, strlen(work->str.schema) + 1);
     shm_toc_estimate_chunk(&e, strlen(work->str.table) + 1);
@@ -650,7 +650,7 @@ static void work_task(Task *task) {
     segsize = shm_toc_estimate(&e);
     seg = dsm_create_my(segsize, 0);
     toc = shm_toc_create(PG_TASK_MAGIC, dsm_segment_address(seg), segsize);
-    { typeof(task->group) group = shm_toc_allocate(toc, strlen(task->group) + 1); strcpy(group, task->group); shm_toc_insert(toc, PG_TASK_KEY_GROUP, group); }
+//    { typeof(task->group) group = shm_toc_allocate(toc, strlen(task->group) + 1); strcpy(group, task->group); shm_toc_insert(toc, PG_TASK_KEY_GROUP, group); }
     { typeof(task->hash) *hash = shm_toc_allocate(toc, sizeof(task->hash)); *hash = task->hash; shm_toc_insert(toc, PG_TASK_KEY_HASH, hash); }
     { typeof(task->id) *id = shm_toc_allocate(toc, sizeof(task->id)); *id = task->id; shm_toc_insert(toc, PG_TASK_KEY_ID, id); }
     { typeof(task->max) *max = shm_toc_allocate(toc, sizeof(task->max)); *max = task->max; shm_toc_insert(toc, PG_TASK_KEY_MAX, max); }
@@ -746,13 +746,14 @@ static void work_init(Datum main_arg) {
     work->oid.data = *(typeof(work->oid.data) *)shm_toc_lookup_my(toc, PG_WORK_KEY_OID_DATA, false);
     work->oid.user = *(typeof(work->oid.user) *)shm_toc_lookup_my(toc, PG_WORK_KEY_OID_USER, false);
     work->reset = *(typeof(work->reset) *)shm_toc_lookup_my(toc, PG_WORK_KEY_RESET, false);
-    work->str.data = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_DATA, false));
-    work->str.partman = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_PARTMAN, false));
-    work->str.schema = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_SCHEMA, false));
-    work->str.table = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_TABLE, false));
-    work->str.user = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_WORK_KEY_STR_USER, false));
+    work->str.data = shm_toc_lookup_my(toc, PG_WORK_KEY_STR_DATA, false);
+    work->str.partman = shm_toc_lookup_my(toc, PG_WORK_KEY_STR_PARTMAN, false);
+    work->str.schema = shm_toc_lookup_my(toc, PG_WORK_KEY_STR_SCHEMA, false);
+    work->str.table = shm_toc_lookup_my(toc, PG_WORK_KEY_STR_TABLE, false);
+    work->str.user = shm_toc_lookup_my(toc, PG_WORK_KEY_STR_USER, false);
     work->timeout = *(typeof(work->timeout) *)shm_toc_lookup_my(toc, PG_WORK_KEY_TIMEOUT, false);
-    dsm_detach(seg);
+//    dsm_pin_segment(seg);
+//    dsm_detach(seg);
     if (!strlen(work->str.partman)) work->str.partman = NULL;
     BackgroundWorkerInitializeConnectionMy(work->str.data, work->str.user, 0);
     set_ps_display_my("init");

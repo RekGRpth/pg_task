@@ -134,7 +134,7 @@ bool task_done(Task *task) {
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, false);
-    if (SPI_processed != 1) elog(WARNING, "id = %li, SPI_processed %lu != 1", (long)SPI_processed, task->id); else {
+    if (SPI_processed != 1) elog(WARNING, "id = %li, SPI_processed %lu != 1", task->id, (long)SPI_processed); else {
         delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
         exit = !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
         insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false));
@@ -190,7 +190,7 @@ bool task_work(Task *task) {
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     if (SPI_processed != 1) {
-        elog(WARNING, "id = %li, SPI_processed %lu != 1", (long)SPI_processed, task->id);
+        elog(WARNING, "id = %li, SPI_processed %lu != 1", task->id, (long)SPI_processed);
         exit = true;
     } else {
         task->active = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "active", false));
@@ -206,7 +206,8 @@ bool task_work(Task *task) {
         task->string = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "string", false));
         task->timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "timeout", false));
         if (0 < StatementTimeout && StatementTimeout < task->timeout) task->timeout = StatementTimeout;
-        elog(DEBUG1, "group = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, active = %s", task->group, task->hash, task->input, task->timeout, task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote ? task->quote : 30, task->escape ? task->escape : 30, task->active ? "true" : "false");
+        elog(DEBUG1, "group = %s, remote = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, active = %s", task->group, task->remote ? task->remote : default_null, task->hash, task->input, task->timeout, task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote ? task->quote : 30, task->escape ? task->escape : 30, task->active ? "true" : "false");
+        if (!task->remote) set_config_option_my("pg_task.group", task->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     }
     SPI_finish_my();
     set_ps_display_my("idle");
@@ -347,7 +348,7 @@ static void task_init(Datum main_arg) {
 #endif
     if (!(seg = dsm_attach(DatumGetUInt32(main_arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
     if (!(toc = shm_toc_attach(PG_TASK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
-    task->group = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_TASK_KEY_GROUP, false));
+//    task->group = shm_toc_lookup_my(toc, PG_TASK_KEY_GROUP, false);
     task->hash = *(typeof(task->hash) *)shm_toc_lookup_my(toc, PG_TASK_KEY_HASH, false);
     task->id = *(typeof(task->id) *)shm_toc_lookup_my(toc, PG_TASK_KEY_ID, false);
     task->max = *(typeof(task->max) *)shm_toc_lookup_my(toc, PG_TASK_KEY_MAX, false);
@@ -355,11 +356,11 @@ static void task_init(Datum main_arg) {
     work->oid.schema = *(typeof(work->oid.schema) *)shm_toc_lookup_my(toc, PG_TASK_KEY_OID_SCHEMA, false);
     work->oid.table = *(typeof(work->oid.table) *)shm_toc_lookup_my(toc, PG_TASK_KEY_OID_TABLE, false);
     work->oid.user = *(typeof(work->oid.user) *)shm_toc_lookup_my(toc, PG_TASK_KEY_OID_USER, false);
-    work->str.data = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_TASK_KEY_STR_DATA, false));
-    work->str.schema = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_TASK_KEY_STR_SCHEMA, false));
-    work->str.table = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_TASK_KEY_STR_TABLE, false));
-    work->str.user = MemoryContextStrdup(TopMemoryContext, shm_toc_lookup_my(toc, PG_TASK_KEY_STR_USER, false));
-    dsm_detach(seg);
+    work->str.data = shm_toc_lookup_my(toc, PG_TASK_KEY_STR_DATA, false);
+    work->str.schema = shm_toc_lookup_my(toc, PG_TASK_KEY_STR_SCHEMA, false);
+    work->str.table = shm_toc_lookup_my(toc, PG_TASK_KEY_STR_TABLE, false);
+    work->str.user = shm_toc_lookup_my(toc, PG_TASK_KEY_STR_USER, false);
+//    dsm_detach(seg);
     BackgroundWorkerInitializeConnectionMy(work->str.data, work->str.user, 0);
     set_ps_display_my("init");
     process_session_preload_libraries();
@@ -370,12 +371,12 @@ static void task_init(Datum main_arg) {
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1);
     set_config_option_my("application_name", MyBgworkerEntry->bgw_name + strlen(work->str.user) + 1 + strlen(work->str.data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option_my("pg_task.data", work->str.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option_my("pg_task.group", task->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+//    set_config_option_my("pg_task.group", task->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option_my("pg_task.schema", work->str.schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option_my("pg_task.table", work->str.table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option_my("pg_task.user", work->str.user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
-    elog(DEBUG1, "oid = %i, id = %li, hash = %i, group = %s, max = %i", work->oid.table, task->id, task->hash, task->group, task->max);
+    elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", work->oid.table, task->id, task->hash, task->max);
     initStringInfoMy(TopMemoryContext, &schema_table);
     appendStringInfo(&schema_table, "%s.%s", work->quote.schema, work->quote.table);
     work->schema_table = schema_table.data;

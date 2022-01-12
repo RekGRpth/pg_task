@@ -2,6 +2,8 @@
 #define _LATCH_H_
 
 #include <signal.h>
+#include <storage/latch.h>
+#include <storage/proc.h>
 
 /*
  * Bitmasks for events that may wake-up WaitLatch(), WaitLatchOrSocket(), or

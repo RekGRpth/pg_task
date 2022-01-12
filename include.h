@@ -23,6 +23,9 @@
 #if PG_VERSION_NUM >= 110000
 #include <jit/jit.h>
 #endif
+#if PG_VERSION_NUM < 90600
+#include "latch.h"
+#endif
 #include <libpq-fe.h>
 #include <libpq/libpq-be.h>
 #include <miscadmin.h>
@@ -41,10 +44,11 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <replication/slot.h>
 #include <storage/dsm.h>
 #include <storage/ipc.h>
-#include <storage/shm_toc.h>
-#if PG_VERSION_NUM >= 140000
+#include <storage/latch.h>
+//#if PG_VERSION_NUM >= 140000
 #include <storage/proc.h>
-#endif
+//#endif
+#include <storage/shm_toc.h>
 #include <tcop/pquery.h>
 #include <tcop/utility.h>
 #include <utils/acl.h>
@@ -59,12 +63,6 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <utils/snapmgr.h>
 #include <utils/timeout.h>
 #include <utils/timestamp.h>
-
-#if PG_VERSION_NUM < 90600
-#include <storage/latch.h>
-#include <storage/proc.h>
-#include "latch.h"
-#endif
 
 #define PG_WORK_MAGIC 0x776f726b
 
