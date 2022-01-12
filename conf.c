@@ -54,13 +54,13 @@ static Oid conf_user(WorkShared *workshared) {
 
 void conf_main(Datum main_arg) {
     StringInfoData src;
-    set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     BackgroundWorkerUnblockSignals();
+    TopResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
     BackgroundWorkerInitializeConnectionMy("postgres", "postgres", 0);
+    set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pgstat_report_appname("pg_conf");
     set_ps_display_my("main");
     process_session_preload_libraries();
-    TopResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfoString(&src, init_check());
     appendStringInfo(&src, SQL(%1$sLEFT JOIN pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text) WHERE pid IS NULL), " ");
