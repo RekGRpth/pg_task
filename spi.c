@@ -49,7 +49,7 @@ void SPI_connect_my(MemoryContext memoryContext, const char *src) {
 //    MemoryContextSwitchTo(oldcontext);
 //    CurrentResourceOwner = oldowner;
 #endif
-    MemoryContextSwitchTo(memoryContext);
+//    MemoryContextSwitchTo(memoryContext);
     SPI_start_transaction_my(memoryContext, src);
 }
 
