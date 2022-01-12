@@ -4,6 +4,7 @@ PG_MODULE_MAGIC;
 
 char *default_null;
 int work_default_restart;
+ResourceOwner TopResourceOwner;
 static bool task_default_delete;
 static bool task_default_drift;
 static bool task_default_header;

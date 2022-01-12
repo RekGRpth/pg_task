@@ -2,9 +2,9 @@
 
 extern bool xact_started;
 extern char *default_null;
+extern ResourceOwner TopResourceOwner;
 extern Work *work;
 static emit_log_hook_type emit_log_hook_prev = NULL;
-static ResourceOwner TopResourceOwner;
 Task *task;
 
 static bool task_live(Task *task) {
@@ -374,7 +374,7 @@ void task_main(Datum main_arg) {
     shm_toc *toc;
     StringInfoData oid, schema_table, schema_type;
     BackgroundWorkerUnblockSignals();
-    TopResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
+    CurrentResourceOwner = TopResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
     task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
     on_proc_exit(task_proc_exit, (Datum)seg);
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
