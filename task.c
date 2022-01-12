@@ -300,6 +300,7 @@ static void task_execute(void) {
 
 static void task_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i, id = %li", code, task->id);
+    if ((dsm_segment *)arg) dsm_detach((dsm_segment *)arg);
     if (!code) return;
 #ifdef HAVE_SETSID
     if (kill(-MyBgworkerEntry->bgw_notify_pid, SIGHUP))
@@ -336,11 +337,11 @@ static void task_catch(void) {
 }
 
 static void task_init(Datum main_arg) {
-    dsm_segment *seg;
+    dsm_segment *seg = NULL;
     shm_toc *toc;
     StringInfoData oid, schema_table, schema_type;
     task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
-    on_proc_exit(task_exit, (Datum)task);
+    on_proc_exit(task_exit, (Datum)seg);
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM < 100000
