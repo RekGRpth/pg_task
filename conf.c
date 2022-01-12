@@ -53,8 +53,7 @@ static Oid conf_user(WorkShared *workshared) {
 }
 
 void conf_main(Datum main_arg) {
-    static SPIPlanPtr plan = NULL;
-    static StringInfoData src = {0};
+    StringInfoData src;
     set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnectionMy("postgres", "postgres", 0);
@@ -62,14 +61,11 @@ void conf_main(Datum main_arg) {
     set_ps_display_my("main");
     process_session_preload_libraries();
     TopResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
-    if (!src.data) {
-        initStringInfoMy(TopMemoryContext, &src);
-        appendStringInfoString(&src, init_check());
-        appendStringInfo(&src, SQL(%1$sLEFT JOIN pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text) WHERE pid IS NULL), " ");
-    }
+    initStringInfoMy(TopMemoryContext, &src);
+    appendStringInfoString(&src, init_check());
+    appendStringInfo(&src, SQL(%1$sLEFT JOIN pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text) WHERE pid IS NULL), " ");
     SPI_connect_my(src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
-    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
+    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_SELECT, true);
     for (uint64 row = 0; row < SPI_processed; row++) {
         BackgroundWorkerHandle *handle;
         BackgroundWorker worker = {0};
@@ -133,4 +129,5 @@ void conf_main(Datum main_arg) {
     }
     SPI_finish_my();
     set_ps_display_my("idle");
+    pfree(src.data);
 }
