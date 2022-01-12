@@ -127,7 +127,7 @@ void conf_main(Datum main_arg) {
         dsm_pin_segment(seg);
         dsm_detach(seg);
     }
-    SPI_finish_my();
+    SPI_finish_my(TopMemoryContext);
     set_ps_display_my("idle");
     pfree(src.data);
 }

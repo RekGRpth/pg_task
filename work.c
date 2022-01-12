@@ -47,7 +47,7 @@ static void work_check(void) {
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
     if (!SPI_processed) ShutdownRequestPending = true;
-    SPI_finish_my();
+    SPI_finish_my(TopMemoryContext);
     set_ps_display_my("idle");
 }
 
@@ -186,7 +186,7 @@ static void work_index(int count, const char *const *indexes) {
         relation_close(relation, AccessShareLock);
     }
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(TopMemoryContext);
     pfree((void *)rangevar);
     list_free_deep(names);
     if (name_quote != name.data) pfree((void *)name_quote);
@@ -220,7 +220,7 @@ static void work_reset(void) {
     SPI_connect_my(TopMemoryContext, src.data);
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
-    SPI_finish_my();
+    SPI_finish_my(TopMemoryContext);
     pfree(src.data);
     set_ps_display_my("idle");
 }
@@ -266,7 +266,7 @@ static Oid work_schema(const char *schema_quote) {
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     oid = get_namespace_oid(strVal(linitial(names)), false);
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(TopMemoryContext);
     list_free_deep(names);
     pfree(src.data);
     set_ps_display_my("idle");
@@ -402,7 +402,7 @@ static void work_extension(const char *schema_quote, const char *extension) {
     SPI_connect_my(TopMemoryContext, src.data);
     if (!OidIsValid(get_extension_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(TopMemoryContext);
     list_free_deep(names);
     if (extension_quote != extension) pfree((void *)extension_quote);
     pfree(src.data);
@@ -447,7 +447,7 @@ static void work_partman(void) {
         if (values[1]) pfree((void *)values[1]);
     }
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(TopMemoryContext);
     pfree((void *)rangevar);
     list_free_deep(names);
     if (pkey_quote != pkey.data) pfree((void *)pkey_quote);
@@ -605,7 +605,7 @@ static void work_table(void) {
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     work->shared->table.oid = RangeVarGetRelid(rangevar, NoLock, false);
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(TopMemoryContext);
     pfree((void *)rangevar);
     list_free_deep(names);
     set_config_option_my("pg_task.table", work->shared->table.str, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
@@ -678,7 +678,7 @@ static void work_type(void) {
     parseTypeString(work->schema_type, &type, &typmod, true);
     if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(TopMemoryContext);
     pfree(src.data);
     set_ps_display_my("idle");
 }
@@ -723,7 +723,7 @@ static void work_timeout(void) {
         elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task->shared.id, task->shared.hash, task->group, task->remote ? task->remote : default_null, task->shared.max);
         task->remote ? work_remote(task) : work_task(task);
     }
-    SPI_finish_my();
+    SPI_finish_my(TopMemoryContext);
     set_ps_display_my("idle");
 }
 

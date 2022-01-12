@@ -151,7 +151,7 @@ bool task_done(Task *task) {
     task->lock = false;
     exit = exit || task_live(task);
     SPI_commit_my();
-    SPI_finish_my();
+    SPI_finish_my(TopMemoryContext);
     task_free(task);
     set_ps_display_my("idle");
     return ShutdownRequestPending || exit;
@@ -210,7 +210,7 @@ bool task_work(Task *task) {
         elog(DEBUG1, "group = %s, remote = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, active = %s", task->group, task->remote ? task->remote : default_null, task->shared.hash, task->input, task->timeout, task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote ? task->quote : 30, task->escape ? task->escape : 30, task->active ? "true" : "false");
         if (!task->remote) set_config_option_my("pg_task.group", task->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     }
-    SPI_finish_my();
+    SPI_finish_my(TopMemoryContext);
     set_ps_display_my("idle");
     return exit;
 }

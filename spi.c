@@ -65,12 +65,12 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
     if (commit) SPI_commit_my();
 }
 
-void SPI_finish_my(void) {
+void SPI_finish_my(MemoryContext memoryContext) {
     int rc;
-#if PG_VERSION_NUM < 110000
-    MemoryContext oldcontext = CurrentMemoryContext;
+//#if PG_VERSION_NUM < 110000
+//    MemoryContext oldcontext = CurrentMemoryContext;
 //    ResourceOwner oldowner = CurrentResourceOwner;
-#endif
+//#endif
     if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_finish failed"), errdetail("%s", SPI_result_code_string(rc))));
 #if PG_VERSION_NUM >= 110000
     if (!SPI_inside_nonatomic_context()) ProcessCompletedNotifies();
@@ -78,9 +78,10 @@ void SPI_finish_my(void) {
 //    PopActiveSnapshot();
     ProcessCompletedNotifies();
     CommitTransactionCommand();
-    MemoryContextSwitchTo(oldcontext);
+//    MemoryContextSwitchTo(oldcontext);
 //    CurrentResourceOwner = oldowner;
 #endif
+    MemoryContextSwitchTo(memoryContext);
 }
 
 void SPI_start_transaction_my(const char *src) {
