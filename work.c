@@ -43,7 +43,7 @@ static void work_check(void) {
         appendStringInfoString(&src, init_check());
         appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema') AND "table" = current_setting('pg_task.table') AND timeout = current_setting('pg_task.timeout')::bigint), " ");
     }
-    SPI_connect_my(src.data);
+    SPI_connect_my(TopMemoryContext, src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT, true);
     if (!SPI_processed) ShutdownRequestPending = true;
@@ -178,7 +178,7 @@ static void work_index(int count, const char *const *indexes) {
     names = stringToQualifiedNameList(idx.data);
     rangevar = makeRangeVarFromNameList(names);
     elog(DEBUG1, "index = %s, schema_table = %s", idx.data, work->schema_table);
-    SPI_connect_my(src.data);
+    SPI_connect_my(TopMemoryContext, src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     } else if ((relation = relation_openrv_extended(rangevar, AccessShareLock, true))) {
@@ -217,7 +217,7 @@ static void work_reset(void) {
         ""
 #endif
     );
-    SPI_connect_my(src.data);
+    SPI_connect_my(TopMemoryContext, src.data);
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     SPI_finish_my();
@@ -262,7 +262,7 @@ static Oid work_schema(const char *schema_quote) {
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE SCHEMA %s), schema_quote);
     names = stringToQualifiedNameList(schema_quote);
-    SPI_connect_my(src.data);
+    SPI_connect_my(TopMemoryContext, src.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     oid = get_namespace_oid(strVal(linitial(names)), false);
     SPI_commit_my();
@@ -399,7 +399,7 @@ static void work_extension(const char *schema_quote, const char *extension) {
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, schema_quote);
     names = stringToQualifiedNameList(extension_quote);
-    SPI_connect_my(src.data);
+    SPI_connect_my(TopMemoryContext, src.data);
     if (!OidIsValid(get_extension_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
     SPI_finish_my();
@@ -430,7 +430,7 @@ static void work_partman(void) {
     appendStringInfo(&src, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))), template_table.data, work->schema_table, pkey_quote);
     names = stringToQualifiedNameList(template_table.data);
     rangevar = makeRangeVarFromNameList(names);
-    SPI_connect_my(src.data);
+    SPI_connect_my(TopMemoryContext, src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, work->schema_table), CStringGetTextDatumMy(TopMemoryContext, template_table.data)};
         static Oid argtypes[] = {TEXTOID, TEXTOID};
@@ -601,7 +601,7 @@ static void work_table(void) {
 #endif
     names = stringToQualifiedNameList(work->schema_table);
     rangevar = makeRangeVarFromNameList(names);
-    SPI_connect_my(src.data);
+    SPI_connect_my(TopMemoryContext, src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     work->shared->table.oid = RangeVarGetRelid(rangevar, NoLock, false);
     SPI_commit_my();
@@ -674,7 +674,7 @@ static void work_type(void) {
     set_ps_display_my("type");
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'STOP')), work->schema_type);
-    SPI_connect_my(src.data);
+    SPI_connect_my(TopMemoryContext, src.data);
     parseTypeString(work->schema_type, &type, &typmod, true);
     if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     SPI_commit_my();
@@ -709,7 +709,7 @@ static void work_timeout(void) {
 #endif
         );
     }
-    SPI_connect_my(src.data);
+    SPI_connect_my(TopMemoryContext, src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     for (uint64 row = 0; row < SPI_processed; row++) {

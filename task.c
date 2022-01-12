@@ -132,7 +132,7 @@ bool task_done(Task *task) {
             RETURNING delete AND output IS NULL AS delete, repeat > '0 sec' AS insert, max >= 0 AND (count > 0 OR live > '0 sec') AS live, max < 0 AS update
         ), work->schema_table, work->schema_type);
     }
-    SPI_connect_my(src.data);
+    SPI_connect_my(TopMemoryContext, src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, false);
     if (SPI_processed != 1) elog(WARNING, "id = %li, SPI_processed %lu != 1", task->shared.id, (long)SPI_processed); else {
@@ -187,7 +187,7 @@ bool task_work(Task *task) {
             RETURNING "group", hash, input, EXTRACT(epoch FROM timeout)::integer * 1000 AS timeout, header, string, "null", delimiter, quote, escape, plan + active > CURRENT_TIMESTAMP AS active, remote
         ), work->schema_table, work->schema_type);
     }
-    SPI_connect_my(src.data);
+    SPI_connect_my(TopMemoryContext, src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
     if (SPI_processed != 1) {

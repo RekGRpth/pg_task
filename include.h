@@ -210,7 +210,7 @@ void NullCommandMy(CommandDest dest);
 void _PG_init(void);
 void ReadyForQueryMy(CommandDest dest);
 void SPI_commit_my(void);
-void SPI_connect_my(const char *src);
+void SPI_connect_my(MemoryContext memoryContext, const char *src);
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res, bool commit);
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res, bool commit);
 void SPI_finish_my(void);

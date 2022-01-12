@@ -34,21 +34,22 @@ void SPI_commit_my(void) {
     pgstat_report_activity(STATE_IDLE, NULL);
 }
 
-void SPI_connect_my(const char *src) {
+void SPI_connect_my(MemoryContext memoryContext, const char *src) {
     int rc;
-#if PG_VERSION_NUM < 110000
-    MemoryContext oldcontext = CurrentMemoryContext;
+//#if PG_VERSION_NUM < 110000
+//    MemoryContext oldcontext = CurrentMemoryContext;
 //    ResourceOwner oldowner = CurrentResourceOwner;
-#endif
+//#endif
 #if PG_VERSION_NUM >= 110000
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect_ext failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
 #else
     StartTransactionCommand();
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
 //    PushActiveSnapshot(GetTransactionSnapshot());
-    MemoryContextSwitchTo(oldcontext);
+//    MemoryContextSwitchTo(oldcontext);
 //    CurrentResourceOwner = oldowner;
 #endif
+    MemoryContextSwitchTo(memoryContext);
     SPI_start_transaction_my(src);
 }
 
