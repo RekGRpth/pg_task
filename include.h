@@ -131,6 +131,12 @@ enum {
 #define set_ps_display_my(activity) set_ps_display(activity, false)
 #endif
 
+typedef struct TaskShared {
+    int64 id;
+    int hash;
+    int max;
+} TaskShared;
+
 typedef struct Task {
     bool active;
     bool header;
@@ -160,6 +166,36 @@ typedef struct Task {
     void (*socket) (struct Task *task);
 } Task;
 
+typedef struct WorkShared {
+    int64 reset;
+    int64 timeout;
+    struct {
+        char quote[NAMEDATALEN];
+        char str[NAMEDATALEN];
+        Oid oid;
+    } data;
+    struct {
+        char quote[NAMEDATALEN];
+        char str[NAMEDATALEN];
+        Oid oid;
+    } partman;
+    struct {
+        char quote[NAMEDATALEN];
+        char str[NAMEDATALEN];
+        Oid oid;
+    } schema;
+    struct {
+        char quote[NAMEDATALEN];
+        char str[NAMEDATALEN];
+        Oid oid;
+    } table;
+    struct {
+        char quote[NAMEDATALEN];
+        char str[NAMEDATALEN];
+        Oid oid;
+    } user;
+} WorkShared;
+
 typedef struct Work {
     char *schema_table;
     char *schema_type;
@@ -167,26 +203,30 @@ typedef struct Work {
     int64 reset;
     int64 timeout;
     struct {
-        Oid data;
-        Oid partman;
-        Oid schema;
-        Oid table;
-        Oid user;
-    } oid;
+        char *quote;
+        char *str;
+        Oid oid;
+    } data;
     struct {
-        char *data;
-        char *partman;
-        char *schema;
-        char *table;
-        char *user;
-    } quote;
+        char *quote;
+        char *str;
+        Oid oid;
+    } partman;
     struct {
-        char *data;
-        char *partman;
-        char *schema;
-        char *table;
-        char *user;
-    } str;
+        char *quote;
+        char *str;
+        Oid oid;
+    } schema;
+    struct {
+        char *quote;
+        char *str;
+        Oid oid;
+    } table;
+    struct {
+        char *quote;
+        char *str;
+        Oid oid;
+    } user;
 } Work;
 
 bool init_oid_is_string(Oid oid);

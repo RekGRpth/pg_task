@@ -6,17 +6,17 @@ static Oid conf_data(Work *work) {
     List *names;
     Oid oid;
     StringInfoData src;
-    elog(DEBUG1, "user = %s, data = %s", work->str.user, work->str.data);
+    elog(DEBUG1, "user = %s, data = %s", work->user.str, work->data.str);
     set_ps_display_my("data");
     initStringInfoMy(TopMemoryContext, &src);
-    appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), work->quote.data, work->quote.user);
-    names = stringToQualifiedNameList(work->quote.data);
+    appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), work->data.quote, work->user.quote);
+    names = stringToQualifiedNameList(work->data.quote);
     SPI_start_transaction_my(src.data);
     if (!OidIsValid(oid = get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
-        stmt->dbname = (char *)work->str.data;
-        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString((char *)work->str.user), -1));
+        stmt->dbname = (char *)work->data.str;
+        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString((char *)work->user.str), -1));
         pstate->p_sourcetext = src.data;
         oid = createdb_my(pstate, stmt);
         list_free_deep(stmt->options);
@@ -34,12 +34,12 @@ static Oid conf_user(Work *work) {
     List *names;
     Oid oid;
     StringInfoData src;
-    elog(DEBUG1, "user = %s", work->str.user);
+    elog(DEBUG1, "user = %s", work->user.str);
     set_ps_display_my("user");
     initStringInfoMy(TopMemoryContext, &src);
-    appendStringInfo(&src, SQL(CREATE USER %s), work->quote.user);
-    if (work->str.partman) appendStringInfoString(&src, " SUPERUSER");
-    names = stringToQualifiedNameList(work->quote.user);
+    appendStringInfo(&src, SQL(CREATE USER %s), work->user.quote);
+    if (work->partman.str) appendStringInfoString(&src, " SUPERUSER");
+    names = stringToQualifiedNameList(work->user.quote);
     SPI_start_transaction_my(src.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY, false);
     oid = get_role_oid(strVal(linitial(names)), false);
@@ -61,7 +61,7 @@ static void conf_work(Work *work) {
     size_t len = 0;
     if ((len = strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
-    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %li", work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
+    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %li", work->user.str, work->data.str, work->schema.str, work->table.str, work->timeout)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
 #if PG_VERSION_NUM >= 110000
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
@@ -69,27 +69,27 @@ static void conf_work(Work *work) {
     CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
 #endif
     shm_toc_initialize_estimator(&e);
-    shm_toc_estimate_chunk(&e, sizeof(work->oid.data));
-    shm_toc_estimate_chunk(&e, sizeof(work->oid.user));
+    shm_toc_estimate_chunk(&e, sizeof(work->data.oid));
+    shm_toc_estimate_chunk(&e, sizeof(work->user.oid));
     shm_toc_estimate_chunk(&e, sizeof(work->reset));
     shm_toc_estimate_chunk(&e, sizeof(work->timeout));
-    shm_toc_estimate_chunk(&e, strlen(work->str.data) + 1);
-    shm_toc_estimate_chunk(&e, strlen(work->str.partman ? work->str.partman : "") + 1);
-    shm_toc_estimate_chunk(&e, strlen(work->str.schema) + 1);
-    shm_toc_estimate_chunk(&e, strlen(work->str.table) + 1);
-    shm_toc_estimate_chunk(&e, strlen(work->str.user) + 1);
+    shm_toc_estimate_chunk(&e, strlen(work->data.str) + 1);
+    shm_toc_estimate_chunk(&e, strlen(work->partman.str ? work->partman.str : "") + 1);
+    shm_toc_estimate_chunk(&e, strlen(work->schema.str) + 1);
+    shm_toc_estimate_chunk(&e, strlen(work->table.str) + 1);
+    shm_toc_estimate_chunk(&e, strlen(work->user.str) + 1);
     shm_toc_estimate_keys(&e, PG_WORK_NKEYS);
     segsize = shm_toc_estimate(&e);
     seg = dsm_create_my(segsize, 0);
     toc = shm_toc_create(PG_WORK_MAGIC, dsm_segment_address(seg), segsize);
-    { typeof(work->oid.data) *oid_data = shm_toc_allocate(toc, sizeof(work->oid.data)); *oid_data = work->oid.data; shm_toc_insert(toc, PG_WORK_KEY_OID_DATA, oid_data); }
-    { typeof(work->oid.user) *oid_user = shm_toc_allocate(toc, sizeof(work->oid.user)); *oid_user = work->oid.user; shm_toc_insert(toc, PG_WORK_KEY_OID_USER, oid_user); }
+    { typeof(work->data.oid) *oid_data = shm_toc_allocate(toc, sizeof(work->data.oid)); *oid_data = work->data.oid; shm_toc_insert(toc, PG_WORK_KEY_OID_DATA, oid_data); }
+    { typeof(work->user.oid) *oid_user = shm_toc_allocate(toc, sizeof(work->user.oid)); *oid_user = work->user.oid; shm_toc_insert(toc, PG_WORK_KEY_OID_USER, oid_user); }
     { typeof(work->reset) *reset = shm_toc_allocate(toc, sizeof(work->reset)); *reset = work->reset; shm_toc_insert(toc, PG_WORK_KEY_RESET, reset); }
-    { typeof(work->str.data) str_data = shm_toc_allocate(toc, strlen(work->str.data) + 1); strcpy(str_data, work->str.data); shm_toc_insert(toc, PG_WORK_KEY_STR_DATA, str_data); }
-    { typeof(work->str.partman) str_partman = shm_toc_allocate(toc, strlen(work->str.partman ? work->str.partman : "") + 1); strcpy(str_partman, work->str.partman ? work->str.partman : ""); shm_toc_insert(toc, PG_WORK_KEY_STR_PARTMAN, str_partman); }
-    { typeof(work->str.schema) str_schema = shm_toc_allocate(toc, strlen(work->str.schema) + 1); strcpy(str_schema, work->str.schema); shm_toc_insert(toc, PG_WORK_KEY_STR_SCHEMA, str_schema); }
-    { typeof(work->str.table) str_table = shm_toc_allocate(toc, strlen(work->str.table) + 1); strcpy(str_table, work->str.table); shm_toc_insert(toc, PG_WORK_KEY_STR_TABLE, str_table); }
-    { typeof(work->str.user) str_user = shm_toc_allocate(toc, strlen(work->str.user) + 1); strcpy(str_user, work->str.user); shm_toc_insert(toc, PG_WORK_KEY_STR_USER, str_user); }
+    { typeof(work->data.str) str_data = shm_toc_allocate(toc, strlen(work->data.str) + 1); strcpy(str_data, work->data.str); shm_toc_insert(toc, PG_WORK_KEY_STR_DATA, str_data); }
+    { typeof(work->partman.str) str_partman = shm_toc_allocate(toc, strlen(work->partman.str ? work->partman.str : "") + 1); strcpy(str_partman, work->partman.str ? work->partman.str : ""); shm_toc_insert(toc, PG_WORK_KEY_STR_PARTMAN, str_partman); }
+    { typeof(work->schema.str) str_schema = shm_toc_allocate(toc, strlen(work->schema.str) + 1); strcpy(str_schema, work->schema.str); shm_toc_insert(toc, PG_WORK_KEY_STR_SCHEMA, str_schema); }
+    { typeof(work->table.str) str_table = shm_toc_allocate(toc, strlen(work->table.str) + 1); strcpy(str_table, work->table.str); shm_toc_insert(toc, PG_WORK_KEY_STR_TABLE, str_table); }
+    { typeof(work->user.str) str_user = shm_toc_allocate(toc, strlen(work->user.str) + 1); strcpy(str_user, work->user.str); shm_toc_insert(toc, PG_WORK_KEY_STR_USER, str_user); }
     { typeof(work->timeout) *timeout = shm_toc_allocate(toc, sizeof(work->timeout)); *timeout = work->timeout; shm_toc_insert(toc, PG_WORK_KEY_TIMEOUT, timeout); }
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
@@ -124,32 +124,32 @@ static void conf_check(void) {
     for (uint64 row = 0; row < SPI_processed; row++) {
         Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
         work->reset =  DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "reset", false));
-        work->str.data = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", false));
-        work->str.partman = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "partman", true));
-        work->str.schema = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schema", false));
-        work->str.table = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", false));
-        work->str.user = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", false));
+        work->data.str = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", false));
+        work->partman.str = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "partman", true));
+        work->schema.str = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schema", false));
+        work->table.str = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", false));
+        work->user.str = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", false));
         work->timeout =  DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "timeout", false));
-        elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li, partman = %s", row, work->str.user, work->str.data, work->str.schema, work->str.table, work->timeout, work->reset, work->str.partman ? work->str.partman : default_null);
+        elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li, partman = %s", row, work->user.str, work->data.str, work->schema.str, work->table.str, work->timeout, work->reset, work->partman.str ? work->partman.str : default_null);
         set_ps_display_my("row");
-        work->quote.data = (char *)quote_identifier(work->str.data);
-        if (work->str.partman) work->quote.partman = (char *)quote_identifier(work->str.partman);
-        work->quote.schema = (char *)quote_identifier(work->str.schema);
-        work->quote.table = (char *)quote_identifier(work->str.table);
-        work->quote.user = (char *)quote_identifier(work->str.user);
-        work->oid.user = conf_user(work);
-        work->oid.data = conf_data(work);
+        work->data.quote = (char *)quote_identifier(work->data.str);
+        if (work->partman.str) work->partman.quote = (char *)quote_identifier(work->partman.str);
+        work->schema.quote = (char *)quote_identifier(work->schema.str);
+        work->table.quote = (char *)quote_identifier(work->table.str);
+        work->user.quote = (char *)quote_identifier(work->user.str);
+        work->user.oid = conf_user(work);
+        work->data.oid = conf_data(work);
         conf_work(work);
-        if (work->quote.data != work->str.data) pfree(work->quote.data);
-        if (work->str.partman && work->quote.partman != work->str.partman) pfree(work->quote.partman);
-        if (work->quote.schema != work->str.schema) pfree(work->quote.schema);
-        if (work->quote.table != work->str.table) pfree(work->quote.table);
-        if (work->quote.user != work->str.user) pfree(work->quote.user);
-        pfree(work->str.data);
-        if (work->str.partman) pfree(work->str.partman);
-        pfree(work->str.schema);
-        pfree(work->str.table);
-        pfree(work->str.user);
+        if (work->data.quote != work->data.str) pfree(work->data.quote);
+        if (work->partman.str && work->partman.quote != work->partman.str) pfree(work->partman.quote);
+        if (work->schema.quote != work->schema.str) pfree(work->schema.quote);
+        if (work->table.quote != work->table.str) pfree(work->table.quote);
+        if (work->user.quote != work->user.str) pfree(work->user.quote);
+        pfree(work->data.str);
+        if (work->partman.str) pfree(work->partman.str);
+        pfree(work->schema.str);
+        pfree(work->table.str);
+        pfree(work->user.str);
         pfree(work);
     }
     SPI_finish_my();
