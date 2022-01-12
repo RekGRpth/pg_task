@@ -16,7 +16,7 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     return plan;
 }
 
-void SPI_commit_my(void) {
+void SPI_commit_my(MemoryContext memoryContext) {
 #if PG_VERSION_NUM < 110000
     MemoryContext oldcontext = CurrentMemoryContext;
 //    ResourceOwner oldowner = CurrentResourceOwner;

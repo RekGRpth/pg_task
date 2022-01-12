@@ -209,7 +209,7 @@ void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf);
 void NullCommandMy(CommandDest dest);
 void _PG_init(void);
 void ReadyForQueryMy(CommandDest dest);
-void SPI_commit_my(void);
+void SPI_commit_my(MemoryContext memoryContext);
 void SPI_connect_my(MemoryContext memoryContext, const char *src);
 void SPI_execute_plan_my(MemoryContext memoryContext, SPIPlanPtr plan, Datum *values, const char *nulls, int res);
 void SPI_execute_with_args_my(MemoryContext memoryContext, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res);

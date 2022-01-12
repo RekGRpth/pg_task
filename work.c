@@ -46,7 +46,7 @@ static void work_check(void) {
     SPI_connect_my(TopMemoryContext, src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(TopMemoryContext, plan, NULL, NULL, SPI_OK_SELECT);
-    SPI_commit_my();
+    SPI_commit_my(TopMemoryContext);
     if (!SPI_processed) ShutdownRequestPending = true;
     SPI_finish_my(TopMemoryContext);
     set_ps_display_my("idle");
@@ -186,7 +186,7 @@ static void work_index(int count, const char *const *indexes) {
         if (relation->rd_index && relation->rd_index->indrelid != work->shared->table.oid) SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         relation_close(relation, AccessShareLock);
     }
-    SPI_commit_my();
+    SPI_commit_my(TopMemoryContext);
     SPI_finish_my(TopMemoryContext);
     pfree((void *)rangevar);
     list_free_deep(names);
@@ -220,7 +220,7 @@ static void work_reset(void) {
     );
     SPI_connect_my(TopMemoryContext, src.data);
     SPI_execute_with_args_my(TopMemoryContext, src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING);
-    SPI_commit_my();
+    SPI_commit_my(TopMemoryContext);
     for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     SPI_finish_my(TopMemoryContext);
     pfree(src.data);
@@ -267,7 +267,7 @@ static Oid work_schema(const char *schema_quote) {
     SPI_connect_my(TopMemoryContext, src.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     oid = get_namespace_oid(strVal(linitial(names)), false);
-    SPI_commit_my();
+    SPI_commit_my(TopMemoryContext);
     SPI_finish_my(TopMemoryContext);
     list_free_deep(names);
     pfree(src.data);
@@ -403,7 +403,7 @@ static void work_extension(const char *schema_quote, const char *extension) {
     names = stringToQualifiedNameList(extension_quote);
     SPI_connect_my(TopMemoryContext, src.data);
     if (!OidIsValid(get_extension_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_commit_my();
+    SPI_commit_my(TopMemoryContext);
     SPI_finish_my(TopMemoryContext);
     list_free_deep(names);
     if (extension_quote != extension) pfree((void *)extension_quote);
@@ -440,7 +440,7 @@ static void work_partman(void) {
         initStringInfoMy(TopMemoryContext, &create_parent);
         appendStringInfo(&create_parent, SQL(SELECT %1$s.create_parent(p_parent_table := $1, p_control := 'plan', p_type := 'native', p_interval := 'monthly', p_template_table := $2)), work->shared->partman.quote);
         SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_commit_my();
+        SPI_commit_my(TopMemoryContext);
         SPI_start_transaction_my(create_parent.data);
         SPI_execute_with_args_my(TopMemoryContext, create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
         if (SPI_processed != 1) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_processed %lu != 1", (long)SPI_processed)));
@@ -448,7 +448,7 @@ static void work_partman(void) {
         if (values[0]) pfree((void *)values[0]);
         if (values[1]) pfree((void *)values[1]);
     }
-    SPI_commit_my();
+    SPI_commit_my(TopMemoryContext);
     SPI_finish_my(TopMemoryContext);
     pfree((void *)rangevar);
     list_free_deep(names);
@@ -606,7 +606,7 @@ static void work_table(void) {
     SPI_connect_my(TopMemoryContext, src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     work->shared->table.oid = RangeVarGetRelid(rangevar, NoLock, false);
-    SPI_commit_my();
+    SPI_commit_my(TopMemoryContext);
     SPI_finish_my(TopMemoryContext);
     pfree((void *)rangevar);
     list_free_deep(names);
@@ -679,7 +679,7 @@ static void work_type(void) {
     SPI_connect_my(TopMemoryContext, src.data);
     parseTypeString(work->schema_type, &type, &typmod, true);
     if (!OidIsValid(type)) SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_commit_my();
+    SPI_commit_my(TopMemoryContext);
     SPI_finish_my(TopMemoryContext);
     pfree(src.data);
     set_ps_display_my("idle");
@@ -714,7 +714,7 @@ static void work_timeout(void) {
     SPI_connect_my(TopMemoryContext, src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(TopMemoryContext, plan, values, NULL, SPI_OK_UPDATE_RETURNING);
-    SPI_commit_my();
+    SPI_commit_my(TopMemoryContext);
     for (uint64 row = 0; row < SPI_processed; row++) {
         Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
         task->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false));

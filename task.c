@@ -150,7 +150,7 @@ bool task_done(Task *task) {
     if (task->lock && !unlock_table_id(work->shared->table.oid, task->shared.id)) { elog(WARNING, "!unlock_table_id(%i, %li)", work->shared->table.oid, task->shared.id); exit = true; }
     task->lock = false;
     exit = exit || task_live(task);
-    SPI_commit_my();
+    SPI_commit_my(TopMemoryContext);
     SPI_finish_my(TopMemoryContext);
     task_free(task);
     set_ps_display_my("idle");
@@ -190,7 +190,7 @@ bool task_work(Task *task) {
     SPI_connect_my(TopMemoryContext, src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(TopMemoryContext, plan, values, NULL, SPI_OK_UPDATE_RETURNING);
-    SPI_commit_my();
+    SPI_commit_my(TopMemoryContext);
     if (SPI_processed != 1) {
         elog(WARNING, "id = %li, SPI_processed %lu != 1", task->shared.id, (long)SPI_processed);
         exit = true;
