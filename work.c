@@ -634,7 +634,7 @@ static void work_task(Task *task) {
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
 #if PG_VERSION_NUM < 100000
-    CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
+//    CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
 #endif
     shm_toc_initialize_estimator(&e);
     shm_toc_estimate_chunk(&e, sizeof(*taskshared));

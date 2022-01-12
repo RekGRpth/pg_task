@@ -38,6 +38,7 @@ void SPI_connect_my(const char *src) {
     int rc;
 #if PG_VERSION_NUM < 110000
     MemoryContext oldcontext = CurrentMemoryContext;
+//    ResourceOwner oldowner = CurrentResourceOwner;
 #endif
 #if PG_VERSION_NUM >= 110000
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect_ext failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
@@ -46,6 +47,7 @@ void SPI_connect_my(const char *src) {
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
 //    PushActiveSnapshot(GetTransactionSnapshot());
     MemoryContextSwitchTo(oldcontext);
+//    CurrentResourceOwner = oldowner;
 #endif
     SPI_start_transaction_my(src);
 }
@@ -66,6 +68,7 @@ void SPI_finish_my(void) {
     int rc;
 #if PG_VERSION_NUM < 110000
     MemoryContext oldcontext = CurrentMemoryContext;
+//    ResourceOwner oldowner = CurrentResourceOwner;
 #endif
     if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_finish failed"), errdetail("%s", SPI_result_code_string(rc))));
 #if PG_VERSION_NUM >= 110000
@@ -75,6 +78,7 @@ void SPI_finish_my(void) {
     ProcessCompletedNotifies();
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
+//    CurrentResourceOwner = oldowner;
 #endif
 }
 

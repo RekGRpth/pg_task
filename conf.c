@@ -80,7 +80,7 @@ void conf_main(Datum main_arg) {
         WorkShared *workshared;
         set_ps_display_my("row");
 #if PG_VERSION_NUM < 100000
-        CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
+//        CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
 #endif
         shm_toc_initialize_estimator(&e);
         shm_toc_estimate_chunk(&e, sizeof(*workshared));
