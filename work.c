@@ -669,6 +669,7 @@ static void work_task(Task *task) {
     }
     pfree(handle);
     dsm_pin_segment(seg);
+    dsm_detach(seg);
     work_free(task);
 }
 
