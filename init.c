@@ -83,15 +83,15 @@ bool unlock_table_pid_hash(Oid table, int pid, int hash) {
     return LockRelease(&tag, AccessShareLock, true);
 }
 
-static char *text_to_cstring_my(MemoryContext memoryContext, const text *t) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(memoryContext);
+static char *text_to_cstring_my(const text *t) {
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     char *result = text_to_cstring(t);
     MemoryContextSwitchTo(oldMemoryContext);
     return result;
 }
 
-char *TextDatumGetCStringMy(MemoryContext memoryContext, Datum datum) {
-    return datum ? text_to_cstring_my(memoryContext, (text *)DatumGetPointer(datum)) : NULL;
+char *TextDatumGetCStringMy(Datum datum) {
+    return datum ? text_to_cstring_my((text *)DatumGetPointer(datum)) : NULL;
 }
 
 const char *init_check(void) {
@@ -109,15 +109,15 @@ const char *init_check(void) {
     );
 }
 
-static text *cstring_to_text_my(MemoryContext memoryContext, const char *s) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(memoryContext);
+static text *cstring_to_text_my(const char *s) {
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     text *result = cstring_to_text(s);
     MemoryContextSwitchTo(oldMemoryContext);
     return result;
 }
 
-Datum CStringGetTextDatumMy(MemoryContext memoryContext, const char *s) {
-    return s ? PointerGetDatum(cstring_to_text_my(memoryContext, s)) : (Datum)NULL;
+Datum CStringGetTextDatumMy(const char *s) {
+    return s ? PointerGetDatum(cstring_to_text_my(s)) : (Datum)NULL;
 }
 
 void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
@@ -235,8 +235,8 @@ extension_file_exists(const char *extensionName)
 }
 #endif
 
-void initStringInfoMy(MemoryContext memoryContext, StringInfoData *buf) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(memoryContext);
+void initStringInfoMy(StringInfoData *buf) {
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     initStringInfo(buf);
     MemoryContextSwitchTo(oldMemoryContext);
 }

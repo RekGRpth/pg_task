@@ -39,22 +39,22 @@ static void work_check(void) {
     if (ShutdownRequestPending) return;
     set_ps_display_my("check");
     if (!src.data) {
-        initStringInfoMy(TopMemoryContext, &src);
+        initStringInfoMy(&src);
         appendStringInfoString(&src, init_check());
         appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema') AND "table" = current_setting('pg_task.table') AND timeout = current_setting('pg_task.timeout')::bigint), " ");
     }
-    SPI_connect_my(TopMemoryContext, src.data);
-    if (!plan) plan = SPI_prepare_my(TopMemoryContext, src.data, 0, NULL);
-    SPI_execute_plan_my(TopMemoryContext, plan, NULL, NULL, SPI_OK_SELECT);
-    SPI_commit_my(TopMemoryContext);
+    SPI_connect_my(src.data);
+    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
+    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
+    SPI_commit_my();
     if (!SPI_processed) ShutdownRequestPending = true;
-    SPI_finish_my(TopMemoryContext);
+    SPI_finish_my();
     set_ps_display_my("idle");
 }
 
 static void work_command(Task *task, PGresult *result) {
     if (task->skip) { task->skip--; return; }
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    if (!task->output.data) initStringInfoMy(&task->output);
     appendStringInfo(&task->output, "%s%s", task->output.len ? "\n" : "", PQcmdStatus(result));
 }
 
@@ -72,8 +72,8 @@ static void work_fatal(Task *task, PGresult *result) {
     char *value = NULL;
     char *value2 = NULL;
     char *value3 = NULL;
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
-    if (!task->error.data) initStringInfoMy(TopMemoryContext, &task->error);
+    if (!task->output.data) initStringInfoMy(&task->output);
+    if (!task->error.data) initStringInfoMy(&task->error);
     appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
     task->skip++;
     if (task->error.len) appendStringInfoChar(&task->error, '\n');
@@ -154,7 +154,7 @@ static void work_index(int count, const char *const *indexes) {
     RelationData *relation;
     StringInfoData src, name, idx;
     set_ps_display_my("index");
-    initStringInfoMy(TopMemoryContext, &name);
+    initStringInfoMy(&name);
     appendStringInfoString(&name, work->shared->table.str);
     for (int i = 0; i < count; i++) {
         const char *index = indexes[i];
@@ -163,7 +163,7 @@ static void work_index(int count, const char *const *indexes) {
     }
     appendStringInfoString(&name, "_idx");
     name_quote = quote_identifier(name.data);
-    initStringInfoMy(TopMemoryContext, &src);
+    initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE INDEX %s ON %s USING btree ), name_quote, work->schema_table);
     appendStringInfoString(&src, "(");
     for (int i = 0; i < count; i++) {
@@ -174,20 +174,20 @@ static void work_index(int count, const char *const *indexes) {
         if (index_quote != index) pfree((void *)index_quote);
     }
     appendStringInfoString(&src, ")");
-    initStringInfoMy(TopMemoryContext, &idx);
+    initStringInfoMy(&idx);
     appendStringInfo(&idx, "%s.%s", work->shared->schema.quote, name_quote);
     names = stringToQualifiedNameList(idx.data);
     rangevar = makeRangeVarFromNameList(names);
     elog(DEBUG1, "index = %s, schema_table = %s", idx.data, work->schema_table);
-    SPI_connect_my(TopMemoryContext, src.data);
+    SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
-        SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     } else if ((relation = relation_openrv_extended(rangevar, AccessShareLock, true))) {
-        if (relation->rd_index && relation->rd_index->indrelid != work->shared->table.oid) SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        if (relation->rd_index && relation->rd_index->indrelid != work->shared->table.oid) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         relation_close(relation, AccessShareLock);
     }
-    SPI_commit_my(TopMemoryContext);
-    SPI_finish_my(TopMemoryContext);
+    SPI_commit_my();
+    SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
     if (name_quote != name.data) pfree((void *)name_quote);
@@ -202,7 +202,7 @@ static void work_reset(void) {
     static Oid argtypes[] = {OIDOID};
     StringInfoData src;
     set_ps_display_my("reset");
-    initStringInfoMy(TopMemoryContext, &src);
+    initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         WITH s AS (
             SELECT id FROM %1$s AS t
@@ -218,11 +218,11 @@ static void work_reset(void) {
         ""
 #endif
     );
-    SPI_connect_my(TopMemoryContext, src.data);
-    SPI_execute_with_args_my(TopMemoryContext, src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING);
-    SPI_commit_my(TopMemoryContext);
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING);
+    SPI_commit_my();
     for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
-    SPI_finish_my(TopMemoryContext);
+    SPI_finish_my();
     pfree(src.data);
     set_ps_display_my("idle");
 }
@@ -261,14 +261,14 @@ static Oid work_schema(const char *schema_quote) {
     StringInfoData src;
     elog(DEBUG1, "schema = %s", schema_quote);
     set_ps_display_my("schema");
-    initStringInfoMy(TopMemoryContext, &src);
+    initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE SCHEMA %s), schema_quote);
     names = stringToQualifiedNameList(schema_quote);
-    SPI_connect_my(TopMemoryContext, src.data);
-    if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_connect_my(src.data);
+    if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     oid = get_namespace_oid(strVal(linitial(names)), false);
-    SPI_commit_my(TopMemoryContext);
-    SPI_finish_my(TopMemoryContext);
+    SPI_commit_my();
+    SPI_finish_my();
     list_free_deep(names);
     pfree(src.data);
     set_ps_display_my("idle");
@@ -288,7 +288,7 @@ static void work_headers(Task *task, PGresult *result) {
 }
 
 static void work_success(Task *task, PGresult *result, int row) {
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    if (!task->output.data) initStringInfoMy(&task->output);
     if (task->header && !row && PQnfields(result) > 1) work_headers(task, result);
     if (task->output.len) appendStringInfoString(&task->output, "\n");
     for (int col = 0; col < PQnfields(result); col++) {
@@ -333,7 +333,7 @@ static void work_query(Task *task) {
         ereport_my(WARNING, false, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
         if (!task->shared.id) return;
     }
-    initStringInfoMy(TopMemoryContext, &input);
+    initStringInfoMy(&input);
     task->skip = 0;
     appendStringInfoString(&input, SQL(BEGIN;));
     task->skip++;
@@ -398,13 +398,13 @@ static void work_extension(const char *schema_quote, const char *extension) {
     StringInfoData src;
     elog(DEBUG1, "extension = %s", extension);
     set_ps_display_my("extension");
-    initStringInfoMy(TopMemoryContext, &src);
+    initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, schema_quote);
     names = stringToQualifiedNameList(extension_quote);
-    SPI_connect_my(TopMemoryContext, src.data);
-    if (!OidIsValid(get_extension_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_commit_my(TopMemoryContext);
-    SPI_finish_my(TopMemoryContext);
+    SPI_connect_my(src.data);
+    if (!OidIsValid(get_extension_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_commit_my();
+    SPI_finish_my();
     list_free_deep(names);
     if (extension_quote != extension) pfree((void *)extension_quote);
     pfree(src.data);
@@ -420,36 +420,36 @@ static void work_partman(void) {
     set_ps_display_my("partman");
     work->shared->partman.oid = work_schema(work->shared->partman.quote);
     work_extension(work->shared->partman.quote, "pg_partman");
-    initStringInfoMy(TopMemoryContext, &pkey);
+    initStringInfoMy(&pkey);
     appendStringInfo(&pkey, "%s_pkey", work->shared->table.str);
-    initStringInfoMy(TopMemoryContext, &template);
+    initStringInfoMy(&template);
     appendStringInfo(&template, "template_%s_%s", work->shared->schema.str, work->shared->table.str);
     pkey_quote = quote_identifier(pkey.data);
     template_quote = quote_identifier(template.data);
-    initStringInfoMy(TopMemoryContext, &template_table);
+    initStringInfoMy(&template_table);
     appendStringInfo(&template_table, "%s.%s", work->shared->partman.quote, template_quote);
-    initStringInfoMy(TopMemoryContext, &src);
+    initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))), template_table.data, work->schema_table, pkey_quote);
     names = stringToQualifiedNameList(template_table.data);
     rangevar = makeRangeVarFromNameList(names);
-    SPI_connect_my(TopMemoryContext, src.data);
+    SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
-        Datum values[] = {CStringGetTextDatumMy(TopMemoryContext, work->schema_table), CStringGetTextDatumMy(TopMemoryContext, template_table.data)};
+        Datum values[] = {CStringGetTextDatumMy(work->schema_table), CStringGetTextDatumMy(template_table.data)};
         static Oid argtypes[] = {TEXTOID, TEXTOID};
         StringInfoData create_parent;
-        initStringInfoMy(TopMemoryContext, &create_parent);
+        initStringInfoMy(&create_parent);
         appendStringInfo(&create_parent, SQL(SELECT %1$s.create_parent(p_parent_table := $1, p_control := 'plan', p_type := 'native', p_interval := 'monthly', p_template_table := $2)), work->shared->partman.quote);
-        SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_commit_my(TopMemoryContext);
-        SPI_start_transaction_my(TopMemoryContext, create_parent.data);
-        SPI_execute_with_args_my(TopMemoryContext, create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_commit_my();
+        SPI_start_transaction_my(create_parent.data);
+        SPI_execute_with_args_my(create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
         if (SPI_processed != 1) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_processed %lu != 1", (long)SPI_processed)));
         if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("could not create parent")));
         if (values[0]) pfree((void *)values[0]);
         if (values[1]) pfree((void *)values[1]);
     }
-    SPI_commit_my(TopMemoryContext);
-    SPI_finish_my(TopMemoryContext);
+    SPI_commit_my();
+    SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
     if (pkey_quote != pkey.data) pfree((void *)pkey_quote);
@@ -486,12 +486,12 @@ static void work_remote(Task *task) {
     if (!superuser() && !password) { ereport_my(WARNING, true, (errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superusers must provide a password in the connection string."))); PQconninfoFree(opts); return; }
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
-    initStringInfoMy(TopMemoryContext, &name);
+    initStringInfoMy(&name);
     appendStringInfo(&name, "pg_task %s %s %s", work->shared->schema.str, work->shared->table.str, task->group);
     arg = 0;
     keywords[arg] = "application_name";
     values[arg] = name.data;
-    initStringInfoMy(TopMemoryContext, &value);
+    initStringInfoMy(&value);
     if (options) appendStringInfoString(&value, options);
     appendStringInfo(&value, "%s-c pg_task.data=%s", value.len ? " " : "", work->shared->data.str);
     appendStringInfo(&value, " -c pg_task.user=%s", work->shared->user.str);
@@ -542,11 +542,11 @@ static void work_table(void) {
     elog(DEBUG1, "schema_table = %s, schema_type = %s", work->schema_table, work->schema_type);
     set_ps_display_my("table");
     set_config_option_my("pg_task.table", work->shared->table.str, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    initStringInfoMy(TopMemoryContext, &hash);
+    initStringInfoMy(&hash);
 #if PG_VERSION_NUM >= 120000
     appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (hashtext("group"||COALESCE(remote, '%1$s'))) STORED), "");
 #else
-    initStringInfoMy(TopMemoryContext, &function);
+    initStringInfoMy(&function);
     appendStringInfo(&function, "%1$s_hash_generate", work->shared->table.str);
     function_quote = quote_identifier(function.data);
     appendStringInfo(&hash, SQL(;CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
@@ -559,7 +559,7 @@ static void work_table(void) {
     if (function_quote != function.data) pfree((void *)function_quote);
     pfree(function.data);
 #endif
-    initStringInfoMy(TopMemoryContext, &src);
+    initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         CREATE TABLE %1$s (
             id bigserial NOT NULL%4$s,
@@ -603,11 +603,11 @@ static void work_table(void) {
 #endif
     names = stringToQualifiedNameList(work->schema_table);
     rangevar = makeRangeVarFromNameList(names);
-    SPI_connect_my(TopMemoryContext, src.data);
-    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_connect_my(src.data);
+    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     work->shared->table.oid = RangeVarGetRelid(rangevar, NoLock, false);
-    SPI_commit_my(TopMemoryContext);
-    SPI_finish_my(TopMemoryContext);
+    SPI_commit_my();
+    SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
     set_config_option_my("pg_task.table", work->shared->table.str, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
@@ -674,13 +674,13 @@ static void work_type(void) {
     Oid type = InvalidOid;
     StringInfoData src;
     set_ps_display_my("type");
-    initStringInfoMy(TopMemoryContext, &src);
+    initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'STOP')), work->schema_type);
-    SPI_connect_my(TopMemoryContext, src.data);
+    SPI_connect_my(src.data);
     parseTypeString(work->schema_type, &type, &typmod, true);
-    if (!OidIsValid(type)) SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_commit_my(TopMemoryContext);
-    SPI_finish_my(TopMemoryContext);
+    if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_commit_my();
+    SPI_finish_my();
     pfree(src.data);
     set_ps_display_my("idle");
 }
@@ -692,7 +692,7 @@ static void work_timeout(void) {
     static StringInfoData src = {0};
     set_ps_display_my("timeout");
     if (!src.data) {
-        initStringInfoMy(TopMemoryContext, &src);
+        initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH l AS (
                 SELECT count(classid) AS pid, objid AS hash FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 GROUP BY objid
@@ -711,22 +711,22 @@ static void work_timeout(void) {
 #endif
         );
     }
-    SPI_connect_my(TopMemoryContext, src.data);
-    if (!plan) plan = SPI_prepare_my(TopMemoryContext, src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(TopMemoryContext, plan, values, NULL, SPI_OK_UPDATE_RETURNING);
-    SPI_commit_my(TopMemoryContext);
+    SPI_connect_my(src.data);
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
+    SPI_commit_my();
     for (uint64 row = 0; row < SPI_processed; row++) {
         Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
         task->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false));
-        task->group = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
+        task->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
         task->shared.hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "hash", false));
         task->shared.id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
         task->shared.max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "max", false));
-        task->remote = TextDatumGetCStringMy(TopMemoryContext, SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
+        task->remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
         elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task->shared.id, task->shared.hash, task->group, task->remote ? task->remote : default_null, task->shared.max);
         task->remote ? work_remote(task) : work_task(task);
     }
-    SPI_finish_my(TopMemoryContext);
+    SPI_finish_my();
     set_ps_display_my("idle");
 }
 
@@ -763,10 +763,10 @@ void work_main(Datum main_arg) {
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->shared->user.str) + 1 + strlen(work->shared->data.str) + 1);
     set_ps_display_my("main");
     process_session_preload_libraries();
-    initStringInfoMy(TopMemoryContext, &schema_table);
+    initStringInfoMy(&schema_table);
     appendStringInfo(&schema_table, "%s.%s", work->shared->schema.quote, work->shared->table.quote);
     work->schema_table = schema_table.data;
-    initStringInfoMy(TopMemoryContext, &schema_type);
+    initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work->shared->schema.quote);
     work->schema_type = schema_type.data;
     elog(DEBUG1, "timeout = %li, reset = %li, schema_table = %s, schema_type = %s, partman = %s", work->shared->timeout, work->shared->reset, work->schema_table, work->schema_type, work->shared->partman.str[0] ? work->shared->partman.str : default_null);
@@ -783,7 +783,7 @@ void work_main(Datum main_arg) {
 #endif
     set_config_option_my("pg_task.data", work->shared->data.str, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option_my("pg_task.user", work->shared->user.str, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    initStringInfoMy(TopMemoryContext, &timeout);
+    initStringInfoMy(&timeout);
     appendStringInfo(&timeout, "%li", work->shared->timeout);
     set_config_option_my("pg_task.timeout", timeout.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(timeout.data);

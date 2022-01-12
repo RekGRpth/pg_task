@@ -31,7 +31,7 @@ void
 #endif
 receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     TupleDesc typeinfo = slot->tts_tupleDescriptor;
-    if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+    if (!task->output.data) initStringInfoMy(&task->output);
     if (task->header && !task->row && typeinfo->natts > 1) headers(typeinfo);
     if (task->output.len) appendStringInfoString(&task->output, "\n");
     for (int col = 1; col <= typeinfo->natts; col++) {
@@ -96,7 +96,7 @@ void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undeco
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
     elog(DEBUG1, "id = %li, completionTag = %s", task->shared.id, completionTag);
     if (task->skip) task->skip = 0; else {
-        if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+        if (!task->output.data) initStringInfoMy(&task->output);
         if (task->output.len) appendStringInfoString(&task->output, "\n");
         appendStringInfoString(&task->output, completionTag);
     }
@@ -109,7 +109,7 @@ void BeginCommandMy(const char *commandTag, CommandDest dest) {
 void EndCommandMy(const char *commandTag, CommandDest dest) {
     elog(DEBUG1, "id = %li, commandTag = %s", task->shared.id, commandTag);
     if (task->skip) task->skip = 0; else {
-        if (!task->output.data) initStringInfoMy(TopMemoryContext, &task->output);
+        if (!task->output.data) initStringInfoMy(&task->output);
         if (task->output.len) appendStringInfoString(&task->output, "\n");
         appendStringInfoString(&task->output, commandTag);
     }

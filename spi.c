@@ -8,16 +8,16 @@ Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fnam
     return datum;
 }
 
-SPIPlanPtr SPI_prepare_my(MemoryContext memoryContext, const char *src, int nargs, Oid *argtypes) {
+SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     int rc;
     SPIPlanPtr plan;
     if (!(plan = SPI_prepare(src, nargs, argtypes))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_prepare failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
     if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_keepplan failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
     return plan;
-    MemoryContextSwitchTo(memoryContext);
+    MemoryContextSwitchTo(TopMemoryContext);
 }
 
-void SPI_commit_my(MemoryContext memoryContext) {
+void SPI_commit_my(void) {
 //#if PG_VERSION_NUM < 110000
 //    MemoryContext oldcontext = CurrentMemoryContext;
 //    ResourceOwner oldowner = CurrentResourceOwner;
@@ -33,10 +33,10 @@ void SPI_commit_my(MemoryContext memoryContext) {
 #endif
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
-    MemoryContextSwitchTo(memoryContext);
+    MemoryContextSwitchTo(TopMemoryContext);
 }
 
-void SPI_connect_my(MemoryContext memoryContext, const char *src) {
+void SPI_connect_my(const char *src) {
     int rc;
 //#if PG_VERSION_NUM < 110000
 //    MemoryContext oldcontext = CurrentMemoryContext;
@@ -51,23 +51,23 @@ void SPI_connect_my(MemoryContext memoryContext, const char *src) {
 //    MemoryContextSwitchTo(oldcontext);
 //    CurrentResourceOwner = oldowner;
 #endif
-//    MemoryContextSwitchTo(memoryContext);
-    SPI_start_transaction_my(memoryContext, src);
+//    MemoryContextSwitchTo(TopMemoryContext);
+    SPI_start_transaction_my(src);
 }
 
-void SPI_execute_plan_my(MemoryContext memoryContext, SPIPlanPtr plan, Datum *values, const char *nulls, int res) {
+void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res) {
     int rc;
     if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != res) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_execute_plan failed"), errdetail("%s while expecting %s", SPI_result_code_string(rc), SPI_result_code_string(res))));
-    MemoryContextSwitchTo(memoryContext);
+    MemoryContextSwitchTo(TopMemoryContext);
 }
 
-void SPI_execute_with_args_my(MemoryContext memoryContext, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res) {
+void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res) {
     int rc;
     if ((rc = SPI_execute_with_args(src, nargs, argtypes, values, nulls, false, 0)) != res) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_execute_with_args failed"), errdetail("%s while expecting %s", SPI_result_code_string(rc), SPI_result_code_string(res)), errcontext("%s", src)));
-    MemoryContextSwitchTo(memoryContext);
+    MemoryContextSwitchTo(TopMemoryContext);
 }
 
-void SPI_finish_my(MemoryContext memoryContext) {
+void SPI_finish_my(void) {
     int rc;
 //#if PG_VERSION_NUM < 110000
 //    MemoryContext oldcontext = CurrentMemoryContext;
@@ -83,10 +83,10 @@ void SPI_finish_my(MemoryContext memoryContext) {
 //    MemoryContextSwitchTo(oldcontext);
 //    CurrentResourceOwner = oldowner;
 #endif
-    MemoryContextSwitchTo(memoryContext);
+    MemoryContextSwitchTo(TopMemoryContext);
 }
 
-void SPI_start_transaction_my(MemoryContext memoryContext, const char *src) {
+void SPI_start_transaction_my(const char *src) {
 //#if PG_VERSION_NUM < 110000
 //    MemoryContext oldcontext = CurrentMemoryContext;
 //    ResourceOwner oldowner = CurrentResourceOwner;
@@ -102,5 +102,5 @@ void SPI_start_transaction_my(MemoryContext memoryContext, const char *src) {
 #endif
     PushActiveSnapshot(GetTransactionSnapshot());
     StatementTimeout > 0 ? enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout) : disable_timeout(STATEMENT_TIMEOUT, false);
-    MemoryContextSwitchTo(memoryContext);
+    MemoryContextSwitchTo(TopMemoryContext);
 }
