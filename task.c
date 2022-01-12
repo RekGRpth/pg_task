@@ -33,7 +33,7 @@ static bool task_live(Task *task) {
         );
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, false);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     task->shared.id = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false)) : 0;
     elog(DEBUG1, "id = %li", task->shared.id);
     set_ps_display_my("idle");
@@ -58,7 +58,7 @@ static void task_delete(Task *task) {
         ), work->schema_table);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE_RETURNING, false);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE_RETURNING);
     for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, delete id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     set_ps_display_my("idle");
 }
@@ -84,7 +84,7 @@ static void task_insert(Task *task) {
         ), work->schema_table);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING, false);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING);
     for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, insert id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     set_ps_display_my("idle");
 }
@@ -107,7 +107,7 @@ static void task_update(Task *task) {
         ), work->schema_table, work->schema_type);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, false);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, update id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     set_ps_display_my("idle");
 }
@@ -134,7 +134,7 @@ bool task_done(Task *task) {
     }
     SPI_connect_my(TopMemoryContext, src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING, false);
+    SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) elog(WARNING, "id = %li, SPI_processed %lu != 1", task->shared.id, (long)SPI_processed); else {
         delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
         exit = !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
@@ -189,7 +189,8 @@ bool task_work(Task *task) {
     }
     SPI_connect_my(TopMemoryContext, src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING, true);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
+    SPI_commit_my();
     if (SPI_processed != 1) {
         elog(WARNING, "id = %li, SPI_processed %lu != 1", task->shared.id, (long)SPI_processed);
         exit = true;
