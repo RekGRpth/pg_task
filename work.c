@@ -1,7 +1,6 @@
 #include "include.h"
 
 extern char *default_null;
-extern ResourceOwner TopResourceOwner;
 extern Task *task;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 static Task **taskp = &task;
@@ -624,14 +623,12 @@ static void work_task(Task *task) {
     BackgroundWorker worker = {0};
     dsm_segment *seg;
     pid_t pid;
-//    ResourceOwner oldowner = CurrentResourceOwner;
     shm_toc_estimator e;
     shm_toc *toc;
     Size segsize;
     size_t len;
     TaskShared *taskshared;
     elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", task->shared.id, task->group, task->shared.max, work->shared->table.oid);
-//    CurrentResourceOwner = TopResourceOwner;
     shm_toc_initialize_estimator(&e);
     shm_toc_estimate_chunk(&e, sizeof(*taskshared));
     shm_toc_estimate_keys(&e, 1);
@@ -644,7 +641,6 @@ static void work_task(Task *task) {
     taskshared->id = task->shared.id;
     taskshared->max = task->shared.max;
     shm_toc_insert(toc, 0, taskshared);
-//    CurrentResourceOwner = oldowner;
     if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
     if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work->shared->user.str, work->shared->data.str, work->shared->schema.str, work->shared->table.str, task->group)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
@@ -745,20 +741,16 @@ void work_main(Datum main_arg) {
     instr_time start_time;
     long current_reset = -1;
     long current_timeout = -1;
-//    ResourceOwner oldowner = CurrentResourceOwner;
     shm_toc *toc;
     StringInfoData schema_table, schema_type, timeout;
     on_proc_exit(work_proc_exit, (Datum)seg);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
-//    CurrentResourceOwner = TopResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
-//    CurrentResourceOwner = TopResourceOwner;
     if (!(seg = dsm_attach(DatumGetUInt32(main_arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     work->shared = shm_toc_lookup_my(toc, 0, false);
-//    CurrentResourceOwner = oldowner;
     BackgroundWorkerInitializeConnectionMy(work->shared->data.str, work->shared->user.str, 0);
     set_config_option_my("application_name", MyBgworkerEntry->bgw_name + strlen(work->shared->user.str) + 1 + strlen(work->shared->data.str) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->shared->user.str) + 1 + strlen(work->shared->data.str) + 1);

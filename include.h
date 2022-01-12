@@ -206,6 +206,7 @@ void append_with_tabs(StringInfo buf, const char *str);
 #if PG_VERSION_NUM < 120000
 extern PGDLLIMPORT ResourceOwner AuxProcessResourceOwner;
 void CreateAuxProcessResourceOwner(void);
+void ReleaseAuxProcessResources(bool isCommit);
 #endif
 void exec_simple_query_my(const char *query_string);
 void init_escape(StringInfoData *buf, const char *data, int len, char escape);
@@ -213,9 +214,6 @@ void initStringInfoMy(StringInfoData *buf);
 void NullCommandMy(CommandDest dest);
 void _PG_init(void);
 void ReadyForQueryMy(CommandDest dest);
-#if PG_VERSION_NUM < 120000
-void ReleaseAuxProcessResources(bool isCommit);
-#endif
 void SPI_commit_my(void);
 void SPI_connect_my(const char *src);
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res);

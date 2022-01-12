@@ -1,7 +1,5 @@
 #include "include.h"
 
-//extern ResourceOwner TopResourceOwner;
-
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null) {
     bool isnull;
     Datum datum = SPI_getbinval(tuple, tupdesc, SPI_fnumber(tupdesc, fname), &isnull);
@@ -21,18 +19,12 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
 }
 
 void SPI_commit_my(void) {
-//#if PG_VERSION_NUM < 110000
-//    MemoryContext oldcontext = CurrentMemoryContext;
-//    ResourceOwner oldowner = CurrentResourceOwner;
-//#endif
     disable_timeout(STATEMENT_TIMEOUT, false);
     PopActiveSnapshot();
 #if PG_VERSION_NUM >= 110000
     SPI_commit();
 #else
     ReleaseCurrentSubTransaction();
-//    MemoryContextSwitchTo(oldcontext);
-//    CurrentResourceOwner = oldowner;
 #endif
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
@@ -42,20 +34,12 @@ void SPI_commit_my(void) {
 
 void SPI_connect_my(const char *src) {
     int rc;
-//#if PG_VERSION_NUM < 110000
-//    MemoryContext oldcontext = CurrentMemoryContext;
-//    ResourceOwner oldowner = CurrentResourceOwner;
-//#endif
 #if PG_VERSION_NUM >= 110000
     if ((rc = SPI_connect_ext(SPI_OPT_NONATOMIC)) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect_ext failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
 #else
     StartTransactionCommand();
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
-//    PushActiveSnapshot(GetTransactionSnapshot());
-//    MemoryContextSwitchTo(oldcontext);
-//    CurrentResourceOwner = oldowner;
 #endif
-//    MemoryContextSwitchTo(TopMemoryContext);
     SPI_start_transaction_my(src);
 }
 
@@ -74,37 +58,24 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 
 void SPI_finish_my(void) {
     int rc;
-//#if PG_VERSION_NUM < 110000
-//    MemoryContext oldcontext = CurrentMemoryContext;
-//    ResourceOwner oldowner = CurrentResourceOwner;
-//#endif
     if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_finish failed"), errdetail("%s", SPI_result_code_string(rc))));
 #if PG_VERSION_NUM >= 110000
     if (!SPI_inside_nonatomic_context()) ProcessCompletedNotifies();
 #else
-//    PopActiveSnapshot();
     ProcessCompletedNotifies();
     CommitTransactionCommand();
-//    MemoryContextSwitchTo(oldcontext);
-//    CurrentResourceOwner = oldowner;
 #endif
     MemoryContextSwitchTo(TopMemoryContext);
     CurrentResourceOwner = AuxProcessResourceOwner;
 }
 
 void SPI_start_transaction_my(const char *src) {
-//#if PG_VERSION_NUM < 110000
-//    MemoryContext oldcontext = CurrentMemoryContext;
-//    ResourceOwner oldowner = CurrentResourceOwner;
-//#endif
     pgstat_report_activity(STATE_RUNNING, src);
     SetCurrentStatementStartTimestamp();
 #if PG_VERSION_NUM >= 110000
     SPI_start_transaction();
 #else
     BeginInternalSubTransaction((char *)src);
-//    MemoryContextSwitchTo(oldcontext);
-//    CurrentResourceOwner = oldowner;
 #endif
     PushActiveSnapshot(GetTransactionSnapshot());
     StatementTimeout > 0 ? enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout) : disable_timeout(STATEMENT_TIMEOUT, false);
