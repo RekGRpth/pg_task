@@ -3,6 +3,7 @@
 extern char *default_null;
 extern Task *task;
 static emit_log_hook_type emit_log_hook_prev = NULL;
+static ResourceOwner TopResourceOwner;
 static Task **taskp = &task;
 static void work_query(Task *task);
 Work *work;
@@ -628,7 +629,7 @@ static void work_task(Task *task) {
     size_t len;
     TaskShared *taskshared;
     elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", task->shared.id, task->group, task->shared.max, work->shared->table.oid);
-    CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
+    CurrentResourceOwner = TopResourceOwner;
     shm_toc_initialize_estimator(&e);
     shm_toc_estimate_chunk(&e, sizeof(*taskshared));
     shm_toc_estimate_keys(&e, 1);
@@ -744,11 +745,12 @@ void work_main(Datum main_arg) {
     ResourceOwner oldowner = CurrentResourceOwner;
     shm_toc *toc;
     StringInfoData schema_table, schema_type, timeout;
+    TopResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
     on_proc_exit(work_proc_exit, (Datum)seg);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
-    CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
+    CurrentResourceOwner = TopResourceOwner;
     if (!(seg = dsm_attach(DatumGetUInt32(main_arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     work->shared = shm_toc_lookup_my(toc, 0, false);

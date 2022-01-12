@@ -2,6 +2,7 @@
 
 extern char *default_null;
 extern int work_default_restart;
+static ResourceOwner TopResourceOwner;
 
 static Oid conf_data(WorkShared *workshared) {
     List *names;
@@ -60,6 +61,7 @@ void conf_main(Datum main_arg) {
     pgstat_report_appname("pg_conf");
     set_ps_display_my("main");
     process_session_preload_libraries();
+    TopResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfoString(&src, init_check());
@@ -80,7 +82,7 @@ void conf_main(Datum main_arg) {
         size_t len;
         WorkShared *workshared;
         set_ps_display_my("row");
-        CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
+        CurrentResourceOwner = TopResourceOwner;
         shm_toc_initialize_estimator(&e);
         shm_toc_estimate_chunk(&e, sizeof(*workshared));
         shm_toc_estimate_keys(&e, 1);
