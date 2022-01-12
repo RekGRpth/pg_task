@@ -740,6 +740,9 @@ void work_main(Datum main_arg) {
     instr_time start_time;
     long current_reset = -1;
     long current_timeout = -1;
+#if PG_VERSION_NUM < 100000
+    ResourceOwner oldowner = CurrentResourceOwner;
+#endif
     shm_toc *toc;
     StringInfoData schema_table, schema_type, timeout;
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
@@ -752,6 +755,9 @@ void work_main(Datum main_arg) {
     if (!(seg = dsm_attach(DatumGetUInt32(main_arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     work->shared = shm_toc_lookup_my(toc, 0, false);
+#if PG_VERSION_NUM < 100000
+    CurrentResourceOwner = oldowner;
+#endif
     BackgroundWorkerInitializeConnectionMy(work->shared->data.str, work->shared->user.str, 0);
     set_ps_display_my("main");
     process_session_preload_libraries();
