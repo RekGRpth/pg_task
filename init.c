@@ -4,7 +4,7 @@ PG_MODULE_MAGIC;
 
 char *default_null;
 int work_default_restart;
-ResourceOwner TopResourceOwner;
+//ResourceOwner TopResourceOwner;
 static bool task_default_delete;
 static bool task_default_drift;
 static bool task_default_header;
@@ -365,3 +365,63 @@ bool is_log_level_output(int elevel, int log_min_level) {
     } else if (elevel >= log_min_level) return true; // Neither is LOG
     return false;
 }
+
+#if PG_VERSION_NUM < 120000
+ResourceOwner AuxProcessResourceOwner = NULL;
+
+static void ReleaseAuxProcessResourcesCallback(int code, Datum arg);
+
+/*
+ * Establish an AuxProcessResourceOwner for the current process.
+ */
+void
+CreateAuxProcessResourceOwner(void)
+{
+	Assert(AuxProcessResourceOwner == NULL);
+	Assert(CurrentResourceOwner == NULL);
+	AuxProcessResourceOwner = ResourceOwnerCreate(NULL, "AuxiliaryProcess");
+	CurrentResourceOwner = AuxProcessResourceOwner;
+
+	/*
+	 * Register a shmem-exit callback for cleanup of aux-process resource
+	 * owner.  (This needs to run after, e.g., ShutdownXLOG.)
+	 */
+	on_shmem_exit(ReleaseAuxProcessResourcesCallback, 0);
+
+}
+
+/*
+ * Convenience routine to release all resources tracked in
+ * AuxProcessResourceOwner (but that resowner is not destroyed here).
+ * Warn about leaked resources if isCommit is true.
+ */
+void
+ReleaseAuxProcessResources(bool isCommit)
+{
+	/*
+	 * At this writing, the only thing that could actually get released is
+	 * buffer pins; but we may as well do the full release protocol.
+	 */
+	ResourceOwnerRelease(AuxProcessResourceOwner,
+						 RESOURCE_RELEASE_BEFORE_LOCKS,
+						 isCommit, true);
+	ResourceOwnerRelease(AuxProcessResourceOwner,
+						 RESOURCE_RELEASE_LOCKS,
+						 isCommit, true);
+	ResourceOwnerRelease(AuxProcessResourceOwner,
+						 RESOURCE_RELEASE_AFTER_LOCKS,
+						 isCommit, true);
+}
+
+/*
+ * Shmem-exit callback for the same.
+ * Warn about leaked resources if process exit code is zero (ie normal).
+ */
+static void
+ReleaseAuxProcessResourcesCallback(int code, Datum arg)
+{
+	bool		isCommit = (code == 0);
+
+	ReleaseAuxProcessResources(isCommit);
+}
+#endif

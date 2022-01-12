@@ -751,7 +751,8 @@ void work_main(Datum main_arg) {
     on_proc_exit(work_proc_exit, (Datum)seg);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
-    CurrentResourceOwner = TopResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
+    CreateAuxProcessResourceOwner();
+//    CurrentResourceOwner = TopResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
 //    CurrentResourceOwner = TopResourceOwner;
     if (!(seg = dsm_attach(DatumGetUInt32(main_arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
