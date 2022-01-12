@@ -44,7 +44,7 @@ static void work_check(void) {
         appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema') AND "table" = current_setting('pg_task.table') AND timeout = current_setting('pg_task.timeout')::bigint), " ");
     }
     SPI_connect_my(TopMemoryContext, src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
+    if (!plan) plan = SPI_prepare_my(TopMemoryContext, src.data, 0, NULL);
     SPI_execute_plan_my(TopMemoryContext, plan, NULL, NULL, SPI_OK_SELECT);
     SPI_commit_my(TopMemoryContext);
     if (!SPI_processed) ShutdownRequestPending = true;
@@ -712,7 +712,7 @@ static void work_timeout(void) {
         );
     }
     SPI_connect_my(TopMemoryContext, src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    if (!plan) plan = SPI_prepare_my(TopMemoryContext, src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(TopMemoryContext, plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     SPI_commit_my(TopMemoryContext);
     for (uint64 row = 0; row < SPI_processed; row++) {

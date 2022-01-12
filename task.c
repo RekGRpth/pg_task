@@ -32,7 +32,7 @@ static bool task_live(Task *task) {
 #endif
         );
     }
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    if (!plan) plan = SPI_prepare_my(TopMemoryContext, src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(TopMemoryContext, plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     task->shared.id = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false)) : 0;
     elog(DEBUG1, "id = %li", task->shared.id);
@@ -57,7 +57,7 @@ static void task_delete(Task *task) {
             plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND id = $1 RETURNING t.id
         ), work->schema_table);
     }
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    if (!plan) plan = SPI_prepare_my(TopMemoryContext, src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(TopMemoryContext, plan, values, NULL, SPI_OK_DELETE_RETURNING);
     for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, delete id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     set_ps_display_my("idle");
@@ -83,7 +83,7 @@ static void task_insert(Task *task) {
             END AS plan, "group", max, input, timeout, delete, repeat, drift, count, live, remote FROM s WHERE repeat > '0 sec' LIMIT 1 RETURNING t.id
         ), work->schema_table);
     }
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    if (!plan) plan = SPI_prepare_my(TopMemoryContext, src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(TopMemoryContext, plan, values, NULL, SPI_OK_INSERT_RETURNING);
     for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, insert id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     set_ps_display_my("idle");
@@ -106,7 +106,7 @@ static void task_update(Task *task) {
             WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
         ), work->schema_table, work->schema_type);
     }
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    if (!plan) plan = SPI_prepare_my(TopMemoryContext, src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(TopMemoryContext, plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, update id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     set_ps_display_my("idle");
@@ -133,7 +133,7 @@ bool task_done(Task *task) {
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(TopMemoryContext, src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    if (!plan) plan = SPI_prepare_my(TopMemoryContext, src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(TopMemoryContext, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) elog(WARNING, "id = %li, SPI_processed %lu != 1", task->shared.id, (long)SPI_processed); else {
         delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
@@ -188,7 +188,7 @@ bool task_work(Task *task) {
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(TopMemoryContext, src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    if (!plan) plan = SPI_prepare_my(TopMemoryContext, src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(TopMemoryContext, plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     SPI_commit_my(TopMemoryContext);
     if (SPI_processed != 1) {

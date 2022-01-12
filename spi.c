@@ -8,7 +8,7 @@ Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fnam
     return datum;
 }
 
-SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
+SPIPlanPtr SPI_prepare_my(MemoryContext memoryContext, const char *src, int nargs, Oid *argtypes) {
     int rc;
     SPIPlanPtr plan;
     if (!(plan = SPI_prepare(src, nargs, argtypes))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_prepare failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
