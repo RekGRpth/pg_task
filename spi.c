@@ -13,8 +13,8 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     SPIPlanPtr plan;
     if (!(plan = SPI_prepare(src, nargs, argtypes))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_prepare failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
     if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_keepplan failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
-    return plan;
     MemoryContextSwitchTo(TopMemoryContext);
+    return plan;
 }
 
 void SPI_commit_my(void) {
