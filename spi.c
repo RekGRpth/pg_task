@@ -17,17 +17,17 @@ SPIPlanPtr SPI_prepare_my(MemoryContext memoryContext, const char *src, int narg
 }
 
 void SPI_commit_my(MemoryContext memoryContext) {
-#if PG_VERSION_NUM < 110000
-    MemoryContext oldcontext = CurrentMemoryContext;
+//#if PG_VERSION_NUM < 110000
+//    MemoryContext oldcontext = CurrentMemoryContext;
 //    ResourceOwner oldowner = CurrentResourceOwner;
-#endif
+//#endif
     disable_timeout(STATEMENT_TIMEOUT, false);
     PopActiveSnapshot();
 #if PG_VERSION_NUM >= 110000
     SPI_commit();
 #else
     ReleaseCurrentSubTransaction();
-    MemoryContextSwitchTo(oldcontext);
+//    MemoryContextSwitchTo(oldcontext);
 //    CurrentResourceOwner = oldowner;
 #endif
     pgstat_report_stat(false);
@@ -85,19 +85,20 @@ void SPI_finish_my(MemoryContext memoryContext) {
 }
 
 void SPI_start_transaction_my(MemoryContext memoryContext, const char *src) {
-#if PG_VERSION_NUM < 110000
-    MemoryContext oldcontext = CurrentMemoryContext;
+//#if PG_VERSION_NUM < 110000
+//    MemoryContext oldcontext = CurrentMemoryContext;
 //    ResourceOwner oldowner = CurrentResourceOwner;
-#endif
+//#endif
     pgstat_report_activity(STATE_RUNNING, src);
     SetCurrentStatementStartTimestamp();
 #if PG_VERSION_NUM >= 110000
     SPI_start_transaction();
 #else
     BeginInternalSubTransaction((char *)src);
-    MemoryContextSwitchTo(oldcontext);
+//    MemoryContextSwitchTo(oldcontext);
 //    CurrentResourceOwner = oldowner;
 #endif
     PushActiveSnapshot(GetTransactionSnapshot());
     StatementTimeout > 0 ? enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout) : disable_timeout(STATEMENT_TIMEOUT, false);
+    MemoryContextSwitchTo(memoryContext);
 }
