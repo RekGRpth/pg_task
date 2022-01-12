@@ -14,6 +14,7 @@ SPIPlanPtr SPI_prepare_my(MemoryContext memoryContext, const char *src, int narg
     if (!(plan = SPI_prepare(src, nargs, argtypes))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_prepare failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
     if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_keepplan failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
     return plan;
+    MemoryContextSwitchTo(memoryContext);
 }
 
 void SPI_commit_my(MemoryContext memoryContext) {
@@ -32,6 +33,7 @@ void SPI_commit_my(MemoryContext memoryContext) {
 #endif
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
+    MemoryContextSwitchTo(memoryContext);
 }
 
 void SPI_connect_my(MemoryContext memoryContext, const char *src) {
