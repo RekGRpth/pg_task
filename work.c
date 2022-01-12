@@ -388,12 +388,12 @@ static void work_proc_exit(int code, Datum arg) {
     if ((dsm_segment *)arg) dsm_detach((dsm_segment *)arg);
 }
 
-/*#if PG_VERSION_NUM < 100000
+#if PG_VERSION_NUM < 100000
 static void work_shmem_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
     ResourceOwnerDelete((ResourceOwner)arg);
 }
-#endif*/
+#endif
 
 #if PG_VERSION_NUM >= 120000
 static void work_extension(const char *schema_quote, const char *extension) {
@@ -640,9 +640,6 @@ static void work_task(Task *task) {
 #if PG_VERSION_NUM >= 110000
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
-#if PG_VERSION_NUM < 100000
-//    CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
-#endif
     shm_toc_initialize_estimator(&e);
     shm_toc_estimate_chunk(&e, sizeof(*taskshared));
     shm_toc_estimate_keys(&e, 1);
@@ -759,13 +756,13 @@ void work_main(Datum main_arg) {
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM < 100000
     CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
+    on_shmem_exit(work_shmem_exit, (Datum)CurrentResourceOwner);
 #endif
     if (!(seg = dsm_attach(DatumGetUInt32(main_arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     work->shared = shm_toc_lookup_my(toc, 0, false);
 #if PG_VERSION_NUM < 100000
     CurrentResourceOwner = oldowner;
-//    on_shmem_exit(work_shmem_exit, (Datum)CurrentResourceOwner);
 #endif
     BackgroundWorkerInitializeConnectionMy(work->shared->data.str, work->shared->user.str, 0);
     set_ps_display_my("main");

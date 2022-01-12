@@ -310,12 +310,12 @@ static void task_proc_exit(int code, Datum arg) {
         ereport(WARNING, (errmsg("could not send signal to process %d: %m", MyBgworkerEntry->bgw_notify_pid)));
 }
 
-/*#if PG_VERSION_NUM < 100000
+#if PG_VERSION_NUM < 100000
 static void task_shmem_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i, id = %li", code, task->shared.id);
     ResourceOwnerDelete((ResourceOwner)arg);
 }
-#endif*/
+#endif
 
 static void task_catch(void) {
     HOLD_INTERRUPTS();
@@ -386,7 +386,7 @@ void task_main(Datum main_arg) {
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM < 100000
     CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
-//    on_shmem_exit(task_shmem_exit, (Datum)CurrentResourceOwner);
+    on_shmem_exit(task_shmem_exit, (Datum)CurrentResourceOwner);
 #endif
     if (!(seg = dsm_attach(DatumGetUInt32(main_arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
     if (!(toc = shm_toc_attach(PG_TASK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
