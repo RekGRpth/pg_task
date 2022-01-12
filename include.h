@@ -45,9 +45,7 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <storage/dsm.h>
 #include <storage/ipc.h>
 #include <storage/latch.h>
-//#if PG_VERSION_NUM >= 140000
 #include <storage/proc.h>
-//#endif
 #include <storage/shm_toc.h>
 #include <tcop/pquery.h>
 #include <tcop/utility.h>
