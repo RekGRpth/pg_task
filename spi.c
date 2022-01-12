@@ -50,7 +50,7 @@ void SPI_connect_my(MemoryContext memoryContext, const char *src) {
 //    CurrentResourceOwner = oldowner;
 #endif
     MemoryContextSwitchTo(memoryContext);
-    SPI_start_transaction_my(src);
+    SPI_start_transaction_my(memoryContext, src);
 }
 
 void SPI_execute_plan_my(MemoryContext memoryContext, SPIPlanPtr plan, Datum *values, const char *nulls, int res) {
@@ -84,7 +84,7 @@ void SPI_finish_my(MemoryContext memoryContext) {
     MemoryContextSwitchTo(memoryContext);
 }
 
-void SPI_start_transaction_my(const char *src) {
+void SPI_start_transaction_my(MemoryContext memoryContext, const char *src) {
 #if PG_VERSION_NUM < 110000
     MemoryContext oldcontext = CurrentMemoryContext;
 //    ResourceOwner oldowner = CurrentResourceOwner;

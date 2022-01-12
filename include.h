@@ -214,7 +214,7 @@ void SPI_connect_my(MemoryContext memoryContext, const char *src);
 void SPI_execute_plan_my(MemoryContext memoryContext, SPIPlanPtr plan, Datum *values, const char *nulls, int res);
 void SPI_execute_with_args_my(MemoryContext memoryContext, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res);
 void SPI_finish_my(MemoryContext memoryContext);
-void SPI_start_transaction_my(const char *src);
+void SPI_start_transaction_my(MemoryContext memoryContext, const char *src);
 void task_error(ErrorData *edata);
 void task_free(Task *task);
 void task_main(Datum main_arg);

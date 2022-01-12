@@ -441,7 +441,7 @@ static void work_partman(void) {
         appendStringInfo(&create_parent, SQL(SELECT %1$s.create_parent(p_parent_table := $1, p_control := 'plan', p_type := 'native', p_interval := 'monthly', p_template_table := $2)), work->shared->partman.quote);
         SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         SPI_commit_my(TopMemoryContext);
-        SPI_start_transaction_my(create_parent.data);
+        SPI_start_transaction_my(TopMemoryContext, create_parent.data);
         SPI_execute_with_args_my(TopMemoryContext, create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
         if (SPI_processed != 1) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_processed %lu != 1", (long)SPI_processed)));
         if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("could not create parent")));

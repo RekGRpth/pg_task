@@ -13,7 +13,7 @@ static Oid conf_data(WorkShared *workshared) {
     initStringInfoMy(TopMemoryContext, &src);
     appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), workshared->data.quote, workshared->user.quote);
     names = stringToQualifiedNameList(workshared->data.quote);
-    SPI_start_transaction_my(src.data);
+    SPI_start_transaction_my(TopMemoryContext, src.data);
     if (!OidIsValid(oid = get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
@@ -42,7 +42,7 @@ static Oid conf_user(WorkShared *workshared) {
     appendStringInfo(&src, SQL(CREATE USER %s), workshared->user.quote);
     if (workshared->partman.str[0]) appendStringInfoString(&src, " SUPERUSER");
     names = stringToQualifiedNameList(workshared->user.quote);
-    SPI_start_transaction_my(src.data);
+    SPI_start_transaction_my(TopMemoryContext, src.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     oid = get_role_oid(strVal(linitial(names)), false);
     SPI_commit_my(TopMemoryContext);
