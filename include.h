@@ -62,39 +62,6 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <utils/timeout.h>
 #include <utils/timestamp.h>
 
-#define PG_WORK_MAGIC 0x776f726b
-
-enum {
-    PG_WORK_KEY_OID_DATA,
-    PG_WORK_KEY_OID_USER,
-    PG_WORK_KEY_RESET,
-    PG_WORK_KEY_STR_DATA,
-    PG_WORK_KEY_STR_PARTMAN,
-    PG_WORK_KEY_STR_SCHEMA,
-    PG_WORK_KEY_STR_TABLE,
-    PG_WORK_KEY_STR_USER,
-    PG_WORK_KEY_TIMEOUT,
-    PG_WORK_NKEYS,
-};
-
-#define PG_TASK_MAGIC 0x7461736b
-
-enum {
-    PG_TASK_KEY_GROUP,
-    PG_TASK_KEY_HASH,
-    PG_TASK_KEY_ID,
-    PG_TASK_KEY_MAX,
-    PG_TASK_KEY_OID_DATA,
-    PG_TASK_KEY_OID_SCHEMA,
-    PG_TASK_KEY_OID_TABLE,
-    PG_TASK_KEY_OID_USER,
-    PG_TASK_KEY_STR_DATA,
-    PG_TASK_KEY_STR_SCHEMA,
-    PG_TASK_KEY_STR_TABLE,
-    PG_TASK_KEY_STR_USER,
-    PG_TASK_NKEYS,
-};
-
 #if PG_VERSION_NUM >= 90500
 #define dsm_create_my(size, flags) dsm_create(size, flags)
 #define set_config_option_my(name, value, context, source, action, changeVal, elevel, is_reload) set_config_option(name, value, context, source, action, changeVal, elevel, is_reload)
@@ -131,6 +98,8 @@ enum {
 #define set_ps_display_my(activity) set_ps_display(activity, false)
 #endif
 
+#define PG_TASK_MAGIC 0x7461736b
+
 typedef struct TaskShared {
     dsm_handle handle;
     int64 id;
@@ -164,6 +133,8 @@ typedef struct Task {
     uint64 row;
     void (*socket) (struct Task *task);
 } Task;
+
+#define PG_WORK_MAGIC 0x776f726b
 
 typedef struct WorkShared {
     int64 reset;
