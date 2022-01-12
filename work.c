@@ -628,18 +628,14 @@ static void work_task(Task *task) {
     BackgroundWorker worker = {0};
     dsm_segment *seg;
     pid_t pid;
+    ResourceOwner oldowner = CurrentResourceOwner;
     shm_toc_estimator e;
     shm_toc *toc;
     Size segsize;
     size_t len;
     TaskShared *taskshared;
     elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", task->shared.id, task->group, task->shared.max, work->shared->table.oid);
-    if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
-    if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
-    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work->shared->user.str, work->shared->data.str, work->shared->schema.str, work->shared->table.str, task->group)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
-#if PG_VERSION_NUM >= 110000
-    if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
-#endif
+    CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_task");
     shm_toc_initialize_estimator(&e);
     shm_toc_estimate_chunk(&e, sizeof(*taskshared));
     shm_toc_estimate_keys(&e, 1);
@@ -652,6 +648,13 @@ static void work_task(Task *task) {
     taskshared->id = task->shared.id;
     taskshared->max = task->shared.max;
     shm_toc_insert(toc, 0, taskshared);
+    CurrentResourceOwner = oldowner;
+    if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
+    if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
+    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work->shared->user.str, work->shared->data.str, work->shared->schema.str, work->shared->table.str, task->group)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
+#if PG_VERSION_NUM >= 110000
+    if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
+#endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
     worker.bgw_notify_pid = MyProcPid;
