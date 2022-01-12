@@ -59,7 +59,6 @@ void conf_main(Datum main_arg) {
     pgstat_report_appname("pg_conf");
     set_ps_display_my("main");
     process_session_preload_libraries();
-//    proc_exit(0);
     if (!src.data) {
         initStringInfoMy(TopMemoryContext, &src);
         appendStringInfoString(&src, init_check());
