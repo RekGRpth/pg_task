@@ -22,8 +22,8 @@ void SPI_commit_my(void) {
 //    ResourceOwner oldowner = CurrentResourceOwner;
 #endif
     disable_timeout(STATEMENT_TIMEOUT, false);
-#if PG_VERSION_NUM >= 110000
     PopActiveSnapshot();
+#if PG_VERSION_NUM >= 110000
     SPI_commit();
 #else
     ReleaseCurrentSubTransaction();
@@ -44,7 +44,7 @@ void SPI_connect_my(const char *src) {
 #else
     StartTransactionCommand();
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
-    PushActiveSnapshot(GetTransactionSnapshot());
+//    PushActiveSnapshot(GetTransactionSnapshot());
     MemoryContextSwitchTo(oldcontext);
 #endif
     SPI_start_transaction_my(src);
@@ -71,7 +71,7 @@ void SPI_finish_my(void) {
 #if PG_VERSION_NUM >= 110000
     if (!SPI_inside_nonatomic_context()) ProcessCompletedNotifies();
 #else
-    PopActiveSnapshot();
+//    PopActiveSnapshot();
     ProcessCompletedNotifies();
     CommitTransactionCommand();
     MemoryContextSwitchTo(oldcontext);
@@ -87,11 +87,11 @@ void SPI_start_transaction_my(const char *src) {
     SetCurrentStatementStartTimestamp();
 #if PG_VERSION_NUM >= 110000
     SPI_start_transaction();
-    PushActiveSnapshot(GetTransactionSnapshot());
 #else
     BeginInternalSubTransaction((char *)src);
     MemoryContextSwitchTo(oldcontext);
 //    CurrentResourceOwner = oldowner;
 #endif
+    PushActiveSnapshot(GetTransactionSnapshot());
     StatementTimeout > 0 ? enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout) : disable_timeout(STATEMENT_TIMEOUT, false);
 }
