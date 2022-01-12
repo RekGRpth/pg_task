@@ -1,6 +1,7 @@
 #include "include.h"
 
 extern char *default_null;
+extern int work_default_restart;
 
 static Oid conf_data(WorkShared *workshared) {
     List *names;
@@ -114,7 +115,7 @@ void conf_main(Datum main_arg) {
         worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
         worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
         worker.bgw_notify_pid = MyProcPid;
-        worker.bgw_restart_time = BGW_DEFAULT_RESTART_INTERVAL;
+        worker.bgw_restart_time = work_default_restart;
         worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
         set_ps_display_my("work");
         if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
