@@ -53,14 +53,16 @@ void SPI_connect_my(MemoryContext memoryContext, const char *src) {
     SPI_start_transaction_my(src);
 }
 
-void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res) {
+void SPI_execute_plan_my(MemoryContext memoryContext, SPIPlanPtr plan, Datum *values, const char *nulls, int res) {
     int rc;
     if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != res) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_execute_plan failed"), errdetail("%s while expecting %s", SPI_result_code_string(rc), SPI_result_code_string(res))));
+    MemoryContextSwitchTo(memoryContext);
 }
 
-void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res) {
+void SPI_execute_with_args_my(MemoryContext memoryContext, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res) {
     int rc;
     if ((rc = SPI_execute_with_args(src, nargs, argtypes, values, nulls, false, 0)) != res) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_execute_with_args failed"), errdetail("%s while expecting %s", SPI_result_code_string(rc), SPI_result_code_string(res)), errcontext("%s", src)));
+    MemoryContextSwitchTo(memoryContext);
 }
 
 void SPI_finish_my(MemoryContext memoryContext) {

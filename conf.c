@@ -43,7 +43,7 @@ static Oid conf_user(WorkShared *workshared) {
     if (workshared->partman.str[0]) appendStringInfoString(&src, " SUPERUSER");
     names = stringToQualifiedNameList(workshared->user.quote);
     SPI_start_transaction_my(src.data);
-    if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     oid = get_role_oid(strVal(linitial(names)), false);
     SPI_commit_my();
     list_free_deep(names);
@@ -65,7 +65,7 @@ void conf_main(Datum main_arg) {
     appendStringInfoString(&src, init_check());
     appendStringInfo(&src, SQL(%1$sLEFT JOIN pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text) WHERE pid IS NULL), " ");
     SPI_connect_my(TopMemoryContext, src.data);
-    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_SELECT);
+    SPI_execute_with_args_my(TopMemoryContext, src.data, 0, NULL, NULL, NULL, SPI_OK_SELECT);
     SPI_commit_my();
     for (uint64 row = 0; row < SPI_processed; row++) {
         BackgroundWorkerHandle *handle;
