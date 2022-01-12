@@ -371,7 +371,7 @@ static void work_connect(Task *task) {
     }
 }
 
-static void work_exit(int code, Datum arg) {
+static void work_proc_exit(int code, Datum arg) {
     dlist_mutable_iter iter;
     elog(DEBUG1, "code = %i", code);
     dlist_foreach_modify(iter, &work->head) {
@@ -387,6 +387,13 @@ static void work_exit(int code, Datum arg) {
     if (!code) return;
     if ((dsm_segment *)arg) dsm_detach((dsm_segment *)arg);
 }
+
+#if PG_VERSION_NUM < 100000
+static void work_shmem_exit(int code, Datum arg) {
+    elog(DEBUG1, "code = %i", code);
+    ResourceOwnerDelete((ResourceOwner)arg);
+}
+#endif
 
 #if PG_VERSION_NUM >= 120000
 static void work_extension(const char *schema_quote, const char *extension) {
@@ -746,7 +753,7 @@ void work_main(Datum main_arg) {
     shm_toc *toc;
     StringInfoData schema_table, schema_type, timeout;
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
-    on_proc_exit(work_exit, (Datum)seg);
+    on_proc_exit(work_proc_exit, (Datum)seg);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM < 100000
@@ -757,6 +764,7 @@ void work_main(Datum main_arg) {
     work->shared = shm_toc_lookup_my(toc, 0, false);
 #if PG_VERSION_NUM < 100000
     CurrentResourceOwner = oldowner;
+    on_shmem_exit(work_shmem_exit, (Datum)CurrentResourceOwner);
 #endif
     BackgroundWorkerInitializeConnectionMy(work->shared->data.str, work->shared->user.str, 0);
     set_ps_display_my("main");
