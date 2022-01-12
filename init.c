@@ -101,7 +101,7 @@ const char *init_check(void) {
                     COALESCE(j.table, current_setting('pg_work.default_table')) AS table,
                     COALESCE(timeout, current_setting('pg_work.default_timeout')::bigint) AS timeout,
                     EXTRACT(epoch FROM COALESCE(reset, current_setting('pg_work.default_reset')::interval))::bigint AS reset,
-                    NULLIF(COALESCE(partman, current_setting('pg_work.default_partman')), '%1$s') AS partman
+                    COALESCE(partman, current_setting('pg_work.default_partman')) AS partman
             FROM    json_populate_recordset(NULL::record, current_setting('pg_task.json')::json) AS j ("user" text, data text, schema text, "table" text, timeout bigint, reset interval, partman text)
         ) SELECT    DISTINCT j.* FROM j
     );

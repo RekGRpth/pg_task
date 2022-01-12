@@ -132,6 +132,7 @@ enum {
 #endif
 
 typedef struct TaskShared {
+    dsm_handle handle;
     int64 id;
     int hash;
     int max;
@@ -150,17 +151,15 @@ typedef struct Task {
     char quote;
     char *remote;
     dlist_node node;
-    int64 id;
     int count;
     int event;
-    int hash;
-    int max;
     int pid;
     int skip;
     int timeout;
     PGconn *conn;
     StringInfoData error;
     StringInfoData output;
+    TaskShared shared;
     TimestampTz start;
     uint64 row;
     void (*socket) (struct Task *task);
@@ -200,33 +199,7 @@ typedef struct Work {
     char *schema_table;
     char *schema_type;
     dlist_head head;
-    int64 reset;
-    int64 timeout;
-    struct {
-        char *quote;
-        char *str;
-        Oid oid;
-    } data;
-    struct {
-        char *quote;
-        char *str;
-        Oid oid;
-    } partman;
-    struct {
-        char *quote;
-        char *str;
-        Oid oid;
-    } schema;
-    struct {
-        char *quote;
-        char *str;
-        Oid oid;
-    } table;
-    struct {
-        char *quote;
-        char *str;
-        Oid oid;
-    } user;
+    WorkShared *shared;
 } Work;
 
 bool init_oid_is_string(Oid oid);
