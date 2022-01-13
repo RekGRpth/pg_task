@@ -3,20 +3,20 @@
 extern char *default_null;
 extern int work_default_restart;
 
-static void conf_data(WorkShared *workshared) {
+static void conf_data(WorkShared *ws) {
     List *names;
     StringInfoData src;
-    elog(DEBUG1, "user = %s, data = %s", workshared->user.str, workshared->data.str);
+    elog(DEBUG1, "user = %s, data = %s", ws->user.str, ws->data.str);
     set_ps_display_my("data");
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), workshared->data.quote, workshared->user.quote);
-    names = stringToQualifiedNameList(workshared->data.quote);
+    appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), ws->data.quote, ws->user.quote);
+    names = stringToQualifiedNameList(ws->data.quote);
     SPI_start_transaction_my(src.data);
     if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
-        stmt->dbname = (char *)workshared->data.str;
-        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString((char *)workshared->user.str), -1));
+        stmt->dbname = (char *)ws->data.str;
+        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString((char *)ws->user.str), -1));
         pstate->p_sourcetext = src.data;
         createdb_my(pstate, stmt);
         list_free_deep(stmt->options);
@@ -29,15 +29,15 @@ static void conf_data(WorkShared *workshared) {
     set_ps_display_my("idle");
 }
 
-static void conf_user(WorkShared *workshared) {
+static void conf_user(WorkShared *ws) {
     List *names;
     StringInfoData src;
-    elog(DEBUG1, "user = %s", workshared->user.str);
+    elog(DEBUG1, "user = %s", ws->user.str);
     set_ps_display_my("user");
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE USER %s), workshared->user.quote);
-    if (workshared->partman.str[0]) appendStringInfoString(&src, " SUPERUSER");
-    names = stringToQualifiedNameList(workshared->user.quote);
+    appendStringInfo(&src, SQL(CREATE USER %s), ws->user.quote);
+    if (ws->partman.str[0]) appendStringInfoString(&src, " SUPERUSER");
+    names = stringToQualifiedNameList(ws->user.quote);
     SPI_start_transaction_my(src.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_commit_my();
@@ -73,45 +73,45 @@ void conf_main(Datum main_arg) {
         shm_toc *toc;
         Size segsize;
         size_t len;
-        WorkShared *workshared;
+        WorkShared *ws;
         set_ps_display_my("row");
         shm_toc_initialize_estimator(&e);
-        shm_toc_estimate_chunk(&e, sizeof(*workshared));
+        shm_toc_estimate_chunk(&e, sizeof(*ws));
         shm_toc_estimate_keys(&e, 1);
         segsize = shm_toc_estimate(&e);
         seg = dsm_create_my(segsize, 0);
         toc = shm_toc_create(PG_WORK_MAGIC, dsm_segment_address(seg), segsize);
-        workshared = shm_toc_allocate(toc, sizeof(*workshared));
-        memset(workshared, 0, sizeof(*workshared));
-        workshared->reset = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "reset", false));
-        workshared->timeout = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "timeout", false));
-        if ((len = strlcpy(workshared->data.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", false)), sizeof(workshared->data.str))) >= sizeof(workshared->data.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->data.str))));
+        ws = shm_toc_allocate(toc, sizeof(*ws));
+        memset(ws, 0, sizeof(*ws));
+        ws->reset = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "reset", false));
+        ws->timeout = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "timeout", false));
+        if ((len = strlcpy(ws->data.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", false)), sizeof(ws->data.str))) >= sizeof(ws->data.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->data.str))));
         pfree(str);
-        if ((len = strlcpy(workshared->partman.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "partman", false)), sizeof(workshared->partman.str))) >= sizeof(workshared->partman.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->partman.str))));
+        if ((len = strlcpy(ws->partman.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "partman", false)), sizeof(ws->partman.str))) >= sizeof(ws->partman.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->partman.str))));
         pfree(str);
-        if ((len = strlcpy(workshared->schema.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schema", false)), sizeof(workshared->schema.str))) >= sizeof(workshared->schema.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->schema.str))));
+        if ((len = strlcpy(ws->schema.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schema", false)), sizeof(ws->schema.str))) >= sizeof(ws->schema.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->schema.str))));
         pfree(str);
-        if ((len = strlcpy(workshared->table.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", false)), sizeof(workshared->table.str))) >= sizeof(workshared->table.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->table.str))));
+        if ((len = strlcpy(ws->table.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", false)), sizeof(ws->table.str))) >= sizeof(ws->table.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->table.str))));
         pfree(str);
-        if ((len = strlcpy(workshared->user.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", false)), sizeof(workshared->user.str))) >= sizeof(workshared->user.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->user.str))));
+        if ((len = strlcpy(ws->user.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", false)), sizeof(ws->user.str))) >= sizeof(ws->user.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->user.str))));
         pfree(str);
-        elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li, partman = %s", row, workshared->user.str, workshared->data.str, workshared->schema.str, workshared->table.str, workshared->timeout, workshared->reset, workshared->partman.str[0] ? workshared->partman.str : default_null);
-        shm_toc_insert(toc, 0, workshared);
-        if ((len = strlcpy(workshared->data.quote, quote = quote_identifier(workshared->data.str), sizeof(workshared->data.quote))) >= sizeof(workshared->data.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->data.quote))));
-        if (quote != workshared->data.str) pfree((void *)quote);
-        if (workshared->partman.str[0] && (len = strlcpy(workshared->partman.quote, quote = quote_identifier(workshared->partman.str), sizeof(workshared->partman.quote))) >= sizeof(workshared->partman.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->partman.quote))));
-        if (workshared->partman.str[0] && quote != workshared->partman.str) pfree((void *)quote);
-        if ((len = strlcpy(workshared->schema.quote, quote = quote_identifier(workshared->schema.str), sizeof(workshared->schema.quote))) >= sizeof(workshared->schema.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->schema.quote))));
-        if (quote != workshared->schema.str) pfree((void *)quote);
-        if ((len = strlcpy(workshared->table.quote, quote = quote_identifier(workshared->table.str), sizeof(workshared->table.quote))) >= sizeof(workshared->table.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->table.quote))));
-        if (quote != workshared->table.str) pfree((void *)quote);
-        if ((len = strlcpy(workshared->user.quote, quote = quote_identifier(workshared->user.str), sizeof(workshared->user.quote))) >= sizeof(workshared->user.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->user.quote))));
-        if (quote != workshared->user.str) pfree((void *)quote);
-        conf_user(workshared);
-        conf_data(workshared);
+        elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li, partman = %s", row, ws->user.str, ws->data.str, ws->schema.str, ws->table.str, ws->timeout, ws->reset, ws->partman.str[0] ? ws->partman.str : default_null);
+        shm_toc_insert(toc, 0, ws);
+        if ((len = strlcpy(ws->data.quote, quote = quote_identifier(ws->data.str), sizeof(ws->data.quote))) >= sizeof(ws->data.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->data.quote))));
+        if (quote != ws->data.str) pfree((void *)quote);
+        if (ws->partman.str[0] && (len = strlcpy(ws->partman.quote, quote = quote_identifier(ws->partman.str), sizeof(ws->partman.quote))) >= sizeof(ws->partman.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->partman.quote))));
+        if (ws->partman.str[0] && quote != ws->partman.str) pfree((void *)quote);
+        if ((len = strlcpy(ws->schema.quote, quote = quote_identifier(ws->schema.str), sizeof(ws->schema.quote))) >= sizeof(ws->schema.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->schema.quote))));
+        if (quote != ws->schema.str) pfree((void *)quote);
+        if ((len = strlcpy(ws->table.quote, quote = quote_identifier(ws->table.str), sizeof(ws->table.quote))) >= sizeof(ws->table.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->table.quote))));
+        if (quote != ws->table.str) pfree((void *)quote);
+        if ((len = strlcpy(ws->user.quote, quote = quote_identifier(ws->user.str), sizeof(ws->user.quote))) >= sizeof(ws->user.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->user.quote))));
+        if (quote != ws->user.str) pfree((void *)quote);
+        conf_user(ws);
+        conf_data(ws);
         if ((len = strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
         if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
-        if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %li", workshared->user.str, workshared->data.str, workshared->schema.str, workshared->table.str, workshared->timeout)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
+        if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %li", ws->user.str, ws->data.str, ws->schema.str, ws->table.str, ws->timeout)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
 #if PG_VERSION_NUM >= 110000
         if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
