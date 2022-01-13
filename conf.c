@@ -3,9 +3,8 @@
 extern char *default_null;
 extern int work_default_restart;
 
-static Oid conf_data(WorkShared *workshared) {
+static void conf_data(WorkShared *workshared) {
     List *names;
-    Oid oid;
     StringInfoData src;
     elog(DEBUG1, "user = %s, data = %s", workshared->user.str, workshared->data.str);
     set_ps_display_my("data");
@@ -13,13 +12,13 @@ static Oid conf_data(WorkShared *workshared) {
     appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), workshared->data.quote, workshared->user.quote);
     names = stringToQualifiedNameList(workshared->data.quote);
     SPI_start_transaction_my(src.data);
-    if (!OidIsValid(oid = get_database_oid(strVal(linitial(names)), true))) {
+    if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
         stmt->dbname = (char *)workshared->data.str;
         stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString((char *)workshared->user.str), -1));
         pstate->p_sourcetext = src.data;
-        oid = createdb_my(pstate, stmt);
+        createdb_my(pstate, stmt);
         list_free_deep(stmt->options);
         free_parsestate(pstate);
         pfree(stmt);
@@ -28,12 +27,10 @@ static Oid conf_data(WorkShared *workshared) {
     list_free_deep(names);
     pfree(src.data);
     set_ps_display_my("idle");
-    return oid;
 }
 
-static Oid conf_user(WorkShared *workshared) {
+static void conf_user(WorkShared *workshared) {
     List *names;
-    Oid oid;
     StringInfoData src;
     elog(DEBUG1, "user = %s", workshared->user.str);
     set_ps_display_my("user");
@@ -43,12 +40,10 @@ static Oid conf_user(WorkShared *workshared) {
     names = stringToQualifiedNameList(workshared->user.quote);
     SPI_start_transaction_my(src.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    oid = get_role_oid(strVal(linitial(names)), false);
     SPI_commit_my();
     list_free_deep(names);
     pfree(src.data);
     set_ps_display_my("idle");
-    return oid;
 }
 
 void conf_main(Datum main_arg) {
@@ -100,8 +95,8 @@ void conf_main(Datum main_arg) {
         if ((len = strlcpy(workshared->schema.quote, quote_identifier(workshared->schema.str), sizeof(workshared->schema.quote))) >= sizeof(workshared->schema.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->schema.quote))));
         if ((len = strlcpy(workshared->table.quote, quote_identifier(workshared->table.str), sizeof(workshared->table.quote))) >= sizeof(workshared->table.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->table.quote))));
         if ((len = strlcpy(workshared->user.quote, quote_identifier(workshared->user.str), sizeof(workshared->user.quote))) >= sizeof(workshared->user.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->user.quote))));
-        workshared->user.oid = conf_user(workshared);
-        workshared->data.oid = conf_data(workshared);
+        conf_user(workshared);
+        conf_data(workshared);
         if ((len = strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
         if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
         if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %li", workshared->user.str, workshared->data.str, workshared->schema.str, workshared->table.str, workshared->timeout)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
