@@ -12,7 +12,6 @@ static void conf_data(WorkShared *ws) {
     appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), ws->data.quote, ws->user.quote);
     names = stringToQualifiedNameList(ws->data.quote);
     SPI_connect_my(src.data);
-    SPI_start_transaction_my(src.data);
     if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
@@ -24,7 +23,6 @@ static void conf_data(WorkShared *ws) {
         free_parsestate(pstate);
         pfree(stmt);
     }
-    SPI_commit_my();
     SPI_finish_my();
     list_free_deep(names);
     pfree(src.data);
@@ -41,9 +39,7 @@ static void conf_user(WorkShared *ws) {
     if (ws->partman.str[0]) appendStringInfoString(&src, " SUPERUSER");
     names = stringToQualifiedNameList(ws->user.quote);
     SPI_connect_my(src.data);
-    SPI_start_transaction_my(src.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_commit_my();
     SPI_finish_my();
     list_free_deep(names);
     pfree(src.data);
@@ -64,10 +60,8 @@ void conf_main(Datum arg) {
     appendStringInfoString(&src, init_check());
     appendStringInfo(&src, SQL(%1$sLEFT JOIN pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text) WHERE pid IS NULL), " ");
     SPI_connect_my(src.data);
-    SPI_start_transaction_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_SELECT);
     SPI_tuptable_copy(&SPI_tuptable_my);
-    SPI_commit_my();
     SPI_finish_my();
     for (uint64 row = 0; row < SPI_tuptable_my.numvals; row++) {
         BackgroundWorkerHandle *handle;

@@ -43,11 +43,9 @@ static void work_check(void) {
         appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema') AND "table" = current_setting('pg_task.table') AND timeout = current_setting('pg_task.timeout')::bigint), " ");
     }
     SPI_connect_my(src.data);
-    SPI_start_transaction_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     if (!SPI_processed) ShutdownRequestPending = true;
-    SPI_commit_my();
     SPI_finish_my();
     set_ps_display_my("idle");
 }
@@ -180,14 +178,12 @@ static void work_index(int count, const char *const *indexes) {
     rangevar = makeRangeVarFromNameList(names);
     elog(DEBUG1, "index = %s, schema_table = %s", idx.data, work->schema_table);
     SPI_connect_my(src.data);
-    SPI_start_transaction_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     } else if ((relation = relation_openrv_extended(rangevar, AccessShareLock, true))) {
         if (relation->rd_index && relation->rd_index->indrelid != work->shared->oid) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         relation_close(relation, AccessShareLock);
     }
-    SPI_commit_my();
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
@@ -220,10 +216,8 @@ static void work_reset(void) {
 #endif
     );
     SPI_connect_my(src.data);
-    SPI_start_transaction_my(src.data);
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING);
     for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
-    SPI_commit_my();
     SPI_finish_my();
     pfree(src.data);
     set_ps_display_my("idle");
@@ -266,9 +260,7 @@ static void work_schema(const char *schema_quote) {
     appendStringInfo(&src, SQL(CREATE SCHEMA %s), schema_quote);
     names = stringToQualifiedNameList(schema_quote);
     SPI_connect_my(src.data);
-    SPI_start_transaction_my(src.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_commit_my();
     SPI_finish_my();
     list_free_deep(names);
     pfree(src.data);
@@ -402,9 +394,7 @@ static void work_extension(const char *schema_quote, const char *extension) {
     appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, schema_quote);
     names = stringToQualifiedNameList(extension_quote);
     SPI_connect_my(src.data);
-    SPI_start_transaction_my(src.data);
     if (!OidIsValid(get_extension_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_commit_my();
     SPI_finish_my();
     list_free_deep(names);
     if (extension_quote != extension) pfree((void *)extension_quote);
@@ -434,7 +424,6 @@ static void work_partman(void) {
     names = stringToQualifiedNameList(template_table.data);
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(src.data);
-    SPI_start_transaction_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         Datum values[] = {CStringGetTextDatumMy(work->schema_table), CStringGetTextDatumMy(template_table.data)};
         static Oid argtypes[] = {TEXTOID, TEXTOID};
@@ -450,7 +439,6 @@ static void work_partman(void) {
         if (values[0]) pfree((void *)values[0]);
         if (values[1]) pfree((void *)values[1]);
     }
-    SPI_commit_my();
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
@@ -606,10 +594,8 @@ static void work_table(void) {
     names = stringToQualifiedNameList(work->schema_table);
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(src.data);
-    SPI_start_transaction_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     work->shared->oid = RangeVarGetRelid(rangevar, NoLock, false);
-    SPI_commit_my();
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
@@ -677,10 +663,8 @@ static void work_type(void) {
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'STOP')), work->schema_type);
     SPI_connect_my(src.data);
-    SPI_start_transaction_my(src.data);
     parseTypeString(work->schema_type, &type, &typmod, true);
     if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_commit_my();
     SPI_finish_my();
     pfree(src.data);
     set_ps_display_my("idle");
@@ -714,11 +698,9 @@ static void work_timeout(void) {
         );
     }
     SPI_connect_my(src.data);
-    SPI_start_transaction_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     SPI_tuptable_copy(&SPI_tuptable_my);
-    SPI_commit_my();
     SPI_finish_my();
     for (uint64 row = 0; row < SPI_tuptable_my.numvals; row++) {
         Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));

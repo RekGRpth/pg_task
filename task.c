@@ -132,7 +132,6 @@ bool task_done(Task *task) {
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
-    SPI_start_transaction_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) elog(WARNING, "id = %li, SPI_processed %lu != 1", task->shared.id, (long)SPI_processed); else {
@@ -150,7 +149,6 @@ bool task_done(Task *task) {
     if (task->lock && !unlock_table_id(work->shared->oid, task->shared.id)) { elog(WARNING, "!unlock_table_id(%i, %li)", work->shared->oid, task->shared.id); exit = true; }
     task->lock = false;
     exit = exit || task_live(task);
-    SPI_commit_my();
     SPI_finish_my();
     task_free(task);
     set_ps_display_my("idle");
@@ -188,7 +186,6 @@ bool task_work(Task *task) {
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
-    SPI_start_transaction_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) {
@@ -211,7 +208,6 @@ bool task_work(Task *task) {
         elog(DEBUG1, "group = %s, remote = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, active = %s", task->group, task->remote ? task->remote : default_null, task->shared.hash, task->input, task->timeout, task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote ? task->quote : 30, task->escape ? task->escape : 30, task->active ? "true" : "false");
         if (!task->remote) set_config_option_my("pg_task.group", task->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     }
-    SPI_commit_my();
     SPI_finish_my();
     set_ps_display_my("idle");
     return exit;
