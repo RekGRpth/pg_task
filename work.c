@@ -46,8 +46,8 @@ static void work_check(void) {
     SPI_start_transaction_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
-    SPI_commit_my();
     if (!SPI_processed) ShutdownRequestPending = true;
+    SPI_commit_my();
     SPI_finish_my();
     set_ps_display_my("idle");
 }
@@ -222,8 +222,8 @@ static void work_reset(void) {
     SPI_connect_my(src.data);
     SPI_start_transaction_my(src.data);
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING);
-    SPI_commit_my();
     for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
+    SPI_commit_my();
     SPI_finish_my();
     pfree(src.data);
     set_ps_display_my("idle");
@@ -442,8 +442,8 @@ static void work_partman(void) {
         initStringInfoMy(&create_parent);
         appendStringInfo(&create_parent, SQL(SELECT %1$s.create_parent(p_parent_table := $1, p_control := 'plan', p_type := 'native', p_interval := 'monthly', p_template_table := $2)), work->shared->partman.quote);
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_commit_my();
-        SPI_start_transaction_my(create_parent.data);
+//        SPI_commit_my();
+//        SPI_start_transaction_my(create_parent.data);
         SPI_execute_with_args_my(create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
         if (SPI_processed != 1) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_processed %lu != 1", (long)SPI_processed)));
         if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("could not create parent")));
@@ -688,6 +688,7 @@ static void work_type(void) {
 
 static void work_timeout(void) {
     Datum values[] = {ObjectIdGetDatum(work->shared->oid)};
+    SPITupleTableMy SPI_tuptable_my;
     static Oid argtypes[] = {OIDOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
@@ -716,19 +717,20 @@ static void work_timeout(void) {
     SPI_start_transaction_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
+    SPI_tuptable_copy(&SPI_tuptable_my);
     SPI_commit_my();
-    for (uint64 row = 0; row < SPI_processed; row++) {
+    SPI_finish_my();
+    for (uint64 row = 0; row < SPI_tuptable_my.numvals; row++) {
         Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
-        task->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false));
-        task->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "group", false));
-        task->shared.hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "hash", false));
-        task->shared.id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false));
-        task->shared.max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "max", false));
-        task->remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "remote", true));
+        task->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable_my.vals[0], SPI_tuptable_my.tupdesc, "delimiter", false));
+        task->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "group", false));
+        task->shared.hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "hash", false));
+        task->shared.id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "id", false));
+        task->shared.max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "max", false));
+        task->remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "remote", true));
         elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task->shared.id, task->shared.hash, task->group, task->remote ? task->remote : default_null, task->shared.max);
         task->remote ? work_remote(task) : work_task(task);
     }
-    SPI_finish_my();
     set_ps_display_my("idle");
 }
 

@@ -84,3 +84,10 @@ void SPI_start_transaction_my(const char *src) {
     MemoryContextSwitchTo(TopMemoryContext);
     CurrentResourceOwner = AuxProcessResourceOwner;
 }
+
+void SPI_tuptable_copy(SPITupleTableMy *tuptablemy) {
+    tuptablemy->numvals = SPI_processed;
+    tuptablemy->tupdesc = CreateTupleDescCopy(SPI_tuptable->tupdesc);
+    tuptablemy->vals = MemoryContextAlloc(TopMemoryContext, SPI_processed * sizeof(tuptablemy->vals));
+    for (uint64 row = 0; row < SPI_processed; row++) tuptablemy->vals[row] = heap_copytuple(SPI_tuptable->vals[row]);
+}

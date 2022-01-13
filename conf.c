@@ -11,6 +11,7 @@ static void conf_data(WorkShared *ws) {
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), ws->data.quote, ws->user.quote);
     names = stringToQualifiedNameList(ws->data.quote);
+    SPI_connect_my(src.data);
     SPI_start_transaction_my(src.data);
     if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
@@ -24,6 +25,7 @@ static void conf_data(WorkShared *ws) {
         pfree(stmt);
     }
     SPI_commit_my();
+    SPI_finish_my();
     list_free_deep(names);
     pfree(src.data);
     set_ps_display_my("idle");
@@ -38,15 +40,18 @@ static void conf_user(WorkShared *ws) {
     appendStringInfo(&src, SQL(CREATE USER %s), ws->user.quote);
     if (ws->partman.str[0]) appendStringInfoString(&src, " SUPERUSER");
     names = stringToQualifiedNameList(ws->user.quote);
+    SPI_connect_my(src.data);
     SPI_start_transaction_my(src.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_commit_my();
+    SPI_finish_my();
     list_free_deep(names);
     pfree(src.data);
     set_ps_display_my("idle");
 }
 
 void conf_main(Datum arg) {
+    SPITupleTableMy SPI_tuptable_my;
     StringInfoData src;
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
@@ -61,8 +66,10 @@ void conf_main(Datum arg) {
     SPI_connect_my(src.data);
     SPI_start_transaction_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_SELECT);
+    SPI_tuptable_copy(&SPI_tuptable_my);
     SPI_commit_my();
-    for (uint64 row = 0; row < SPI_processed; row++) {
+    SPI_finish_my();
+    for (uint64 row = 0; row < SPI_tuptable_my.numvals; row++) {
         BackgroundWorkerHandle *handle;
         BackgroundWorker worker = {0};
         char *str;
@@ -83,17 +90,17 @@ void conf_main(Datum arg) {
         toc = shm_toc_create(PG_WORK_MAGIC, dsm_segment_address(seg), segsize);
         ws = shm_toc_allocate(toc, sizeof(*ws));
         memset(ws, 0, sizeof(*ws));
-        ws->reset = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "reset", false));
-        ws->timeout = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "timeout", false));
-        if ((len = strlcpy(ws->data.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "data", false)), sizeof(ws->data.str))) >= sizeof(ws->data.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->data.str))));
+        ws->reset = DatumGetInt64(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "reset", false));
+        ws->timeout = DatumGetInt64(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "timeout", false));
+        if ((len = strlcpy(ws->data.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "data", false)), sizeof(ws->data.str))) >= sizeof(ws->data.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->data.str))));
         pfree(str);
-        if ((len = strlcpy(ws->partman.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "partman", false)), sizeof(ws->partman.str))) >= sizeof(ws->partman.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->partman.str))));
+        if ((len = strlcpy(ws->partman.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "partman", false)), sizeof(ws->partman.str))) >= sizeof(ws->partman.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->partman.str))));
         pfree(str);
-        if ((len = strlcpy(ws->schema.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "schema", false)), sizeof(ws->schema.str))) >= sizeof(ws->schema.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->schema.str))));
+        if ((len = strlcpy(ws->schema.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "schema", false)), sizeof(ws->schema.str))) >= sizeof(ws->schema.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->schema.str))));
         pfree(str);
-        if ((len = strlcpy(ws->table.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "table", false)), sizeof(ws->table.str))) >= sizeof(ws->table.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->table.str))));
+        if ((len = strlcpy(ws->table.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "table", false)), sizeof(ws->table.str))) >= sizeof(ws->table.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->table.str))));
         pfree(str);
-        if ((len = strlcpy(ws->user.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", false)), sizeof(ws->user.str))) >= sizeof(ws->user.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->user.str))));
+        if ((len = strlcpy(ws->user.str, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "user", false)), sizeof(ws->user.str))) >= sizeof(ws->user.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(ws->user.str))));
         pfree(str);
         elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li, partman = %s", row, ws->user.str, ws->data.str, ws->schema.str, ws->table.str, ws->timeout, ws->reset, ws->partman.str[0] ? ws->partman.str : default_null);
         shm_toc_insert(toc, 0, ws);
@@ -132,7 +139,6 @@ void conf_main(Datum arg) {
         dsm_pin_segment(seg);
         dsm_detach(seg);
     }
-    SPI_finish_my();
     set_ps_display_my("idle");
     pfree(src.data);
 }

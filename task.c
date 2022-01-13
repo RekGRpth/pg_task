@@ -191,7 +191,6 @@ bool task_work(Task *task) {
     SPI_start_transaction_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
-    SPI_commit_my();
     if (SPI_processed != 1) {
         elog(WARNING, "id = %li, SPI_processed %lu != 1", task->shared.id, (long)SPI_processed);
         exit = true;
@@ -212,6 +211,7 @@ bool task_work(Task *task) {
         elog(DEBUG1, "group = %s, remote = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, active = %s", task->group, task->remote ? task->remote : default_null, task->shared.hash, task->input, task->timeout, task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote ? task->quote : 30, task->escape ? task->escape : 30, task->active ? "true" : "false");
         if (!task->remote) set_config_option_my("pg_task.group", task->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     }
+    SPI_commit_my();
     SPI_finish_my();
     set_ps_display_my("idle");
     return exit;

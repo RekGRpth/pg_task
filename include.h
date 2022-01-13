@@ -6,6 +6,7 @@
 
 #include <postgres.h>
 
+#include <access/htup_details.h>
 #include <access/printtup.h>
 #if PG_VERSION_NUM >= 120000
 #include <access/relation.h>
@@ -169,6 +170,12 @@ typedef struct Work {
     WorkShared *shared;
 } Work;
 
+typedef struct SPITupleTableMy {
+    HeapTuple *vals;
+    TupleDesc tupdesc;
+    typeof(SPI_processed) numvals;
+} SPITupleTableMy;
+
 bool init_oid_is_string(Oid oid);
 bool is_log_level_output(int elevel, int log_min_level);
 bool lock_data_user_table(Oid data, Oid user, Oid table);
@@ -216,6 +223,7 @@ void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int 
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res);
 void SPI_finish_my(void);
 void SPI_start_transaction_my(const char *src);
+void SPI_tuptable_copy(SPITupleTableMy *tuptablemy);
 void task_error(ErrorData *edata);
 void task_free(Task *task);
 void task_main(Datum main_arg);
