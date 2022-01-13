@@ -132,6 +132,7 @@ bool task_done(Task *task) {
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
+    SPI_start_transaction_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) elog(WARNING, "id = %li, SPI_processed %lu != 1", task->shared.id, (long)SPI_processed); else {
@@ -187,6 +188,7 @@ bool task_work(Task *task) {
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
+    SPI_start_transaction_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     SPI_commit_my();

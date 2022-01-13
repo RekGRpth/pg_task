@@ -40,13 +40,15 @@ void SPI_connect_my(const char *src) {
     StartTransactionCommand();
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
 #endif
-    SPI_start_transaction_my(src);
+    MemoryContextSwitchTo(TopMemoryContext);
+    CurrentResourceOwner = AuxProcessResourceOwner;
 }
 
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res) {
     int rc;
     if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != res) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_execute_plan failed"), errdetail("%s while expecting %s", SPI_result_code_string(rc), SPI_result_code_string(res))));
     MemoryContextSwitchTo(TopMemoryContext);
+    CurrentResourceOwner = AuxProcessResourceOwner;
 }
 
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res) {
