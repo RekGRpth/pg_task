@@ -65,6 +65,7 @@ void conf_main(Datum main_arg) {
     for (uint64 row = 0; row < SPI_processed; row++) {
         BackgroundWorkerHandle *handle;
         BackgroundWorker worker = {0};
+        const char *quote;
         dsm_segment *seg;
         pid_t pid;
         shm_toc_estimator e;
@@ -90,11 +91,16 @@ void conf_main(Datum main_arg) {
         if ((len = strlcpy(workshared->user.str, TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "user", false)), sizeof(workshared->user.str))) >= sizeof(workshared->user.str)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->user.str))));
         elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li, partman = %s", row, workshared->user.str, workshared->data.str, workshared->schema.str, workshared->table.str, workshared->timeout, workshared->reset, workshared->partman.str[0] ? workshared->partman.str : default_null);
         shm_toc_insert(toc, 0, workshared);
-        if ((len = strlcpy(workshared->data.quote, quote_identifier(workshared->data.str), sizeof(workshared->data.quote))) >= sizeof(workshared->data.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->data.quote))));
-        if (workshared->partman.str[0] && (len = strlcpy(workshared->partman.quote, quote_identifier(workshared->partman.str), sizeof(workshared->partman.quote))) >= sizeof(workshared->partman.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->partman.quote))));
-        if ((len = strlcpy(workshared->schema.quote, quote_identifier(workshared->schema.str), sizeof(workshared->schema.quote))) >= sizeof(workshared->schema.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->schema.quote))));
-        if ((len = strlcpy(workshared->table.quote, quote_identifier(workshared->table.str), sizeof(workshared->table.quote))) >= sizeof(workshared->table.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->table.quote))));
-        if ((len = strlcpy(workshared->user.quote, quote_identifier(workshared->user.str), sizeof(workshared->user.quote))) >= sizeof(workshared->user.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->user.quote))));
+        if ((len = strlcpy(workshared->data.quote, quote = quote_identifier(workshared->data.str), sizeof(workshared->data.quote))) >= sizeof(workshared->data.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->data.quote))));
+        if (quote != workshared->data.str) pfree((void *)quote);
+        if (workshared->partman.str[0] && (len = strlcpy(workshared->partman.quote, quote = quote_identifier(workshared->partman.str), sizeof(workshared->partman.quote))) >= sizeof(workshared->partman.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->partman.quote))));
+        if (workshared->partman.str[0] && quote != workshared->partman.str) pfree((void *)quote);
+        if ((len = strlcpy(workshared->schema.quote, quote = quote_identifier(workshared->schema.str), sizeof(workshared->schema.quote))) >= sizeof(workshared->schema.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->schema.quote))));
+        if (quote != workshared->schema.str) pfree((void *)quote);
+        if ((len = strlcpy(workshared->table.quote, quote = quote_identifier(workshared->table.str), sizeof(workshared->table.quote))) >= sizeof(workshared->table.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->table.quote))));
+        if (quote != workshared->table.str) pfree((void *)quote);
+        if ((len = strlcpy(workshared->user.quote, quote = quote_identifier(workshared->user.str), sizeof(workshared->user.quote))) >= sizeof(workshared->user.quote)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(workshared->user.quote))));
+        if (quote != workshared->user.str) pfree((void *)quote);
         conf_user(workshared);
         conf_data(workshared);
         if ((len = strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
