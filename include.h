@@ -139,6 +139,7 @@ typedef struct Task {
 typedef struct WorkShared {
     int64 reset;
     int64 timeout;
+    Oid oid;
     struct {
         char quote[NAMEDATALEN];
         char str[NAMEDATALEN];
@@ -154,7 +155,6 @@ typedef struct WorkShared {
     struct {
         char quote[NAMEDATALEN];
         char str[NAMEDATALEN];
-        Oid oid;
     } table;
     struct {
         char quote[NAMEDATALEN];

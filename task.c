@@ -147,7 +147,7 @@ bool task_done(Task *task) {
     if (insert) task_insert(task);
     if (delete) task_delete(task);
     if (update) task_update(task);
-    if (task->lock && !unlock_table_id(work->shared->table.oid, task->shared.id)) { elog(WARNING, "!unlock_table_id(%i, %li)", work->shared->table.oid, task->shared.id); exit = true; }
+    if (task->lock && !unlock_table_id(work->shared->oid, task->shared.id)) { elog(WARNING, "!unlock_table_id(%i, %li)", work->shared->oid, task->shared.id); exit = true; }
     task->lock = false;
     exit = exit || task_live(task);
     SPI_commit_my();
@@ -164,10 +164,10 @@ bool task_work(Task *task) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return true;
-    if (!lock_table_id(work->shared->table.oid, task->shared.id)) { elog(WARNING, "!lock_table_id(%i, %li)", work->shared->table.oid, task->shared.id); return true; }
+    if (!lock_table_id(work->shared->oid, task->shared.id)) { elog(WARNING, "!lock_table_id(%i, %li)", work->shared->oid, task->shared.id); return true; }
     task->lock = true;
     task->count++;
-    elog(DEBUG1, "id = %li, max = %i, oid = %i, count = %i, pid = %i", task->shared.id, task->shared.max, work->shared->table.oid, task->count, task->pid);
+    elog(DEBUG1, "id = %li, max = %i, oid = %i, count = %i, pid = %i", task->shared.id, task->shared.max, work->shared->oid, task->count, task->pid);
     set_ps_display_my("work");
     if (!task->conn) {
         StringInfoData id;
@@ -389,7 +389,7 @@ void task_main(Datum main_arg) {
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->shared->user.str) + 1 + strlen(work->shared->data.str) + 1);
     set_ps_display_my("main");
     process_session_preload_libraries();
-    elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", work->shared->table.oid, task->shared.id, task->shared.hash, task->shared.max);
+    elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", work->shared->oid, task->shared.id, task->shared.hash, task->shared.max);
     set_config_option_my("pg_task.data", work->shared->data.str, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option_my("pg_task.schema", work->shared->schema.str, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option_my("pg_task.table", work->shared->table.str, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
@@ -402,18 +402,18 @@ void task_main(Datum main_arg) {
     appendStringInfo(&schema_type, "%s.state", work->shared->schema.quote);
     work->schema_type = schema_type.data;
     initStringInfoMy(&oid);
-    appendStringInfo(&oid, "%i", work->shared->table.oid);
+    appendStringInfo(&oid, "%i", work->shared->oid);
     set_config_option_my("pg_task.oid", oid.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(oid.data);
     task->pid = MyProcPid;
     task->start = GetCurrentTimestamp();
     set_ps_display_my("idle");
-    if (!lock_table_pid_hash(work->shared->table.oid, task->pid, task->shared.hash)) { elog(WARNING, "!lock_table_pid_hash(%i, %i, %i)", work->shared->table.oid, task->pid, task->shared.hash); return; }
+    if (!lock_table_pid_hash(work->shared->oid, task->pid, task->shared.hash)) { elog(WARNING, "!lock_table_pid_hash(%i, %i, %i)", work->shared->oid, task->pid, task->shared.hash); return; }
     while (!ShutdownRequestPending) {
         int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
         if (rc & WL_TIMEOUT) if (task_timeout()) ShutdownRequestPending = true;
         if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
     }
-    if (!unlock_table_pid_hash(work->shared->table.oid, task->pid ? task->pid : MyProcPid, task->shared.hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work->shared->table.oid, task->pid ? task->pid : MyProcPid, task->shared.hash);
+    if (!unlock_table_pid_hash(work->shared->oid, task->pid ? task->pid : MyProcPid, task->shared.hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work->shared->oid, task->pid ? task->pid : MyProcPid, task->shared.hash);
 }

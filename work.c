@@ -131,7 +131,7 @@ static void work_free(Task *task) {
 static void work_finish(Task *task) {
     dlist_delete(&task->node);
     PQfinish(task->conn);
-    if (!proc_exit_inprogress && task->pid && !unlock_table_pid_hash(work->shared->table.oid, task->pid, task->shared.hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work->shared->table.oid, task->pid, task->shared.hash);
+    if (!proc_exit_inprogress && task->pid && !unlock_table_pid_hash(work->shared->oid, task->pid, task->shared.hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work->shared->oid, task->pid, task->shared.hash);
     work_free(task);
 }
 
@@ -184,7 +184,7 @@ static void work_index(int count, const char *const *indexes) {
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     } else if ((relation = relation_openrv_extended(rangevar, AccessShareLock, true))) {
-        if (relation->rd_index && relation->rd_index->indrelid != work->shared->table.oid) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        if (relation->rd_index && relation->rd_index->indrelid != work->shared->oid) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         relation_close(relation, AccessShareLock);
     }
     SPI_commit_my();
@@ -199,7 +199,7 @@ static void work_index(int count, const char *const *indexes) {
 }
 
 static void work_reset(void) {
-    Datum values[] = {ObjectIdGetDatum(work->shared->table.oid)};
+    Datum values[] = {ObjectIdGetDatum(work->shared->oid)};
     static Oid argtypes[] = {OIDOID};
     StringInfoData src;
     set_ps_display_my("reset");
@@ -369,7 +369,7 @@ static void work_connect(Task *task) {
     }
     if (connected) {
         if (!(task->pid = PQbackendPID(task->conn))) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQbackendPID failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); return; }
-        if (!lock_table_pid_hash(work->shared->table.oid, task->pid, task->shared.hash)) { ereport_my(WARNING, true, (errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", work->shared->table.oid, task->pid, task->shared.hash))); return; }
+        if (!lock_table_pid_hash(work->shared->oid, task->pid, task->shared.hash)) { ereport_my(WARNING, true, (errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", work->shared->oid, task->pid, task->shared.hash))); return; }
         work_query(task);
     }
 }
@@ -473,7 +473,7 @@ static void work_remote(Task *task) {
     int arg = 3;
     PQconninfoOption *opts = PQconninfoParse(task->remote, &err);
     StringInfoData name, value;
-    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", task->shared.id, task->group, task->remote ? task->remote : default_null, task->shared.max, work->shared->table.oid);
+    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", task->shared.id, task->group, task->remote ? task->remote : default_null, task->shared.max, work->shared->oid);
     dlist_push_head(&work->head, &task->node);
     if (!opts) { ereport_my(WARNING, true, (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), errdetail("%s", work_errstr(err)))); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
@@ -499,7 +499,7 @@ static void work_remote(Task *task) {
     appendStringInfo(&value, " -c pg_task.user=%s", work->shared->user.str);
     appendStringInfo(&value, " -c pg_task.schema=%s", work->shared->schema.str);
     appendStringInfo(&value, " -c pg_task.table=%s", work->shared->table.str);
-    appendStringInfo(&value, " -c pg_task.oid=%i", work->shared->table.oid);
+    appendStringInfo(&value, " -c pg_task.oid=%i", work->shared->oid);
     appendStringInfo(&value, " -c pg_task.group=%s", task->group);
     arg++;
     keywords[arg] = "options";
@@ -608,14 +608,14 @@ static void work_table(void) {
     SPI_connect_my(src.data);
     SPI_start_transaction_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    work->shared->table.oid = RangeVarGetRelid(rangevar, NoLock, false);
+    work->shared->oid = RangeVarGetRelid(rangevar, NoLock, false);
     SPI_commit_my();
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
     set_config_option_my("pg_task.table", work->shared->table.str, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     resetStringInfo(&src);
-    appendStringInfo(&src, "%i", work->shared->table.oid);
+    appendStringInfo(&src, "%i", work->shared->oid);
     set_config_option_my("pg_task.oid", src.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(hash.data);
     pfree(src.data);
@@ -632,7 +632,7 @@ static void work_task(Task *task) {
     Size segsize;
     size_t len;
     TaskShared *taskshared;
-    elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", task->shared.id, task->group, task->shared.max, work->shared->table.oid);
+    elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", task->shared.id, task->group, task->shared.max, work->shared->oid);
     shm_toc_initialize_estimator(&e);
     shm_toc_estimate_chunk(&e, sizeof(*taskshared));
     shm_toc_estimate_keys(&e, 1);
@@ -687,7 +687,7 @@ static void work_type(void) {
 }
 
 static void work_timeout(void) {
-    Datum values[] = {ObjectIdGetDatum(work->shared->table.oid)};
+    Datum values[] = {ObjectIdGetDatum(work->shared->oid)};
     static Oid argtypes[] = {OIDOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
@@ -789,7 +789,7 @@ void work_main(Datum main_arg) {
     dlist_init(&work->head);
     set_ps_display_my("idle");
     work_reset();
-    if (!lock_data_user_table(MyDatabaseId, GetUserId(), work->shared->table.oid)) { elog(WARNING, "!lock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->shared->table.oid); return; }
+    if (!lock_data_user_table(MyDatabaseId, GetUserId(), work->shared->oid)) { elog(WARNING, "!lock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->shared->oid); return; }
     while (!ShutdownRequestPending) {
         int nevents = 2 + work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
@@ -821,5 +821,5 @@ void work_main(Datum main_arg) {
         FreeWaitEventSet(set);
         pfree(events);
     }
-    if (!unlock_data_user_table(MyDatabaseId, GetUserId(), work->shared->table.oid)) elog(WARNING, "!unlock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->shared->table.oid);
+    if (!unlock_data_user_table(MyDatabaseId, GetUserId(), work->shared->oid)) elog(WARNING, "!unlock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->shared->oid);
 }
