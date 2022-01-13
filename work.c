@@ -736,7 +736,7 @@ static void work_writeable(Task *task) {
     task->socket(task);
 }
 
-void work_main(Datum main_arg) {
+void work_main(Datum arg) {
     const char *index_input[] = {"input"};
     const char *index_parent[] = {"parent"};
     const char *index_plan[] = {"plan"};
@@ -754,7 +754,7 @@ void work_main(Datum main_arg) {
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
     work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
-    if (!(seg = dsm_attach(DatumGetUInt32(main_arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
+    if (!(seg = dsm_attach(DatumGetUInt32(arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     work->shared = shm_toc_lookup_my(toc, 0, false);
     BackgroundWorkerInitializeConnectionMy(work->shared->data.str, work->shared->user.str, 0);

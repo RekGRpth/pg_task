@@ -46,7 +46,7 @@ static void conf_user(WorkShared *ws) {
     set_ps_display_my("idle");
 }
 
-void conf_main(Datum main_arg) {
+void conf_main(Datum arg) {
     StringInfoData src;
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
