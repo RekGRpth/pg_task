@@ -146,12 +146,10 @@ typedef struct WorkShared {
     struct {
         char quote[NAMEDATALEN];
         char str[NAMEDATALEN];
-        Oid oid;
     } partman;
     struct {
         char quote[NAMEDATALEN];
         char str[NAMEDATALEN];
-        Oid oid;
     } schema;
     struct {
         char quote[NAMEDATALEN];

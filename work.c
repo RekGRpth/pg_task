@@ -257,9 +257,8 @@ static void work_done(Task *task) {
     task_done(task) || PQstatus(task->conn) != CONNECTION_OK ? work_finish(task) : work_query(task);
 }
 
-static Oid work_schema(const char *schema_quote) {
+static void work_schema(const char *schema_quote) {
     List *names;
-    Oid oid;
     StringInfoData src;
     elog(DEBUG1, "schema = %s", schema_quote);
     set_ps_display_my("schema");
@@ -269,13 +268,11 @@ static Oid work_schema(const char *schema_quote) {
     SPI_connect_my(src.data);
     SPI_start_transaction_my(src.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    oid = get_namespace_oid(strVal(linitial(names)), false);
     SPI_commit_my();
     SPI_finish_my();
     list_free_deep(names);
     pfree(src.data);
     set_ps_display_my("idle");
-    return oid;
 }
 
 static void work_headers(Task *task, PGresult *result) {
@@ -422,7 +419,7 @@ static void work_partman(void) {
     List *names;
     StringInfoData src, pkey, template, template_table;
     set_ps_display_my("partman");
-    work->shared->partman.oid = work_schema(work->shared->partman.quote);
+    work_schema(work->shared->partman.quote);
     work_extension(work->shared->partman.quote, "pg_partman");
     initStringInfoMy(&pkey);
     appendStringInfo(&pkey, "%s_pkey", work->shared->table.str);
@@ -772,7 +769,7 @@ void work_main(Datum main_arg) {
     appendStringInfo(&schema_type, "%s.state", work->shared->schema.quote);
     work->schema_type = schema_type.data;
     elog(DEBUG1, "timeout = %li, reset = %li, schema_table = %s, schema_type = %s, partman = %s", work->shared->timeout, work->shared->reset, work->schema_table, work->schema_type, work->shared->partman.str[0] ? work->shared->partman.str : default_null);
-    work->shared->schema.oid = work_schema(work->shared->schema.quote);
+    work_schema(work->shared->schema.quote);
     set_config_option_my("pg_task.schema", work->shared->schema.str, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
     work_table();
