@@ -713,6 +713,7 @@ static void work_timeout(void) {
         elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task->shared.id, task->shared.hash, task->group, task->remote ? task->remote : default_null, task->shared.max);
         task->remote ? work_remote(task) : work_task(task);
     }
+    SPI_tuptable_free(&SPI_tuptable_my);
     set_ps_display_my("idle");
 }
 

@@ -133,6 +133,7 @@ void conf_main(Datum arg) {
         dsm_pin_segment(seg);
         dsm_detach(seg);
     }
+    SPI_tuptable_free(&SPI_tuptable_my);
     set_ps_display_my("idle");
     pfree(src.data);
 }

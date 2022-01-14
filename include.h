@@ -222,6 +222,7 @@ void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int 
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res);
 void SPI_finish_my(void);
 void SPI_tuptable_copy(SPITupleTableMy *tuptablemy);
+void SPI_tuptable_free(SPITupleTableMy *tuptablemy);
 void task_error(ErrorData *edata);
 void task_free(Task *task);
 void task_main(Datum main_arg);

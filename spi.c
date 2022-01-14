@@ -63,3 +63,9 @@ void SPI_tuptable_copy(SPITupleTableMy *tuptablemy) {
     tuptablemy->vals = MemoryContextAlloc(TopMemoryContext, SPI_processed * sizeof(tuptablemy->vals));
     for (uint64 row = 0; row < SPI_processed; row++) tuptablemy->vals[row] = heap_copytuple(SPI_tuptable->vals[row]);
 }
+
+void SPI_tuptable_free(SPITupleTableMy *tuptablemy) {
+    for (uint64 row = 0; row < SPI_processed; row++) heap_freetuple(tuptablemy->vals[row]);
+    pfree(tuptablemy->vals);
+    FreeTupleDesc(tuptablemy->tupdesc);
+}
