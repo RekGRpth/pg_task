@@ -7,25 +7,17 @@
 #include <limits.h>
 #include <signal.h>
 #include <unistd.h>
-#include <sys/time.h>
-#include <sys/types.h>
 #ifdef HAVE_SYS_EPOLL_H
 #include <sys/epoll.h>
 #endif
 #ifdef HAVE_POLL_H
 #include <poll.h>
 #endif
-#ifdef HAVE_SYS_POLL_H
-#include <sys/poll.h>
-#endif
-#ifdef HAVE_SYS_SELECT_H
-#include <sys/select.h>
-#endif
 
 #include "miscadmin.h"
 #include "portability/instr_time.h"
 #include "postmaster/postmaster.h"
-#include "storage/barrier.h"
+//#include "storage/barrier.h"
 #include "storage/latch.h"
 #include "storage/pmsignal.h"
 #include "storage/shmem.h"
@@ -37,14 +29,12 @@
  * define somewhere before this block.
  */
 #if defined(WAIT_USE_EPOLL) || defined(WAIT_USE_POLL) || \
-	defined(WAIT_USE_SELECT) || defined(WAIT_USE_WIN32)
+	defined(WAIT_USE_WIN32)
 /* don't overwrite manual choice */
 #elif defined(HAVE_SYS_EPOLL_H)
 #define WAIT_USE_EPOLL
 #elif defined(HAVE_POLL)
 #define WAIT_USE_POLL
-#elif HAVE_SYS_SELECT_H
-#define WAIT_USE_SELECT
 #elif WIN32
 #define WAIT_USE_WIN32
 #else
@@ -99,7 +89,7 @@ static int	selfpipe_readfd = -1;
 
 /* Private function prototypes */
 static void drainSelfPipe(void);
-#endif   /* WIN32 */
+#endif							/* WIN32 */
 
 #if defined(WAIT_USE_EPOLL)
 static void WaitEventAdjustEpoll(WaitEventSet *set, WaitEvent *event, int action);
@@ -177,7 +167,7 @@ CreateWaitEventSet(MemoryContext context, int nevents)
 		elog(ERROR, "epoll_create failed: %m");
 	if (fcntl(set->epoll_fd, F_SETFD, FD_CLOEXEC) == -1)
 		elog(ERROR, "fcntl(F_SETFD) failed on epoll descriptor: %m");
-#endif   /* EPOLL_CLOEXEC */
+#endif							/* EPOLL_CLOEXEC */
 #elif defined(WAIT_USE_WIN32)
 
 	/*
@@ -241,10 +231,13 @@ FreeWaitEventSet(WaitEventSet *set)
  * Add an event to the set. Possible events are:
  * - WL_LATCH_SET: Wait for the latch to be set
  * - WL_POSTMASTER_DEATH: Wait for postmaster to die
- * - WL_SOCKET_READABLE: Wait for socket to become readable
- *	 can be combined in one event with WL_SOCKET_WRITEABLE
- * - WL_SOCKET_WRITEABLE: Wait for socket to become writeable
- *	 can be combined with WL_SOCKET_READABLE
+ * - WL_SOCKET_READABLE: Wait for socket to become readable,
+ *	 can be combined in one event with other WL_SOCKET_* events
+ * - WL_SOCKET_WRITEABLE: Wait for socket to become writeable,
+ *	 can be combined with other WL_SOCKET_* events
+ * - WL_SOCKET_CONNECTED: Wait for socket connection to be established,
+ *	 can be combined with other WL_SOCKET_* events (on non-Windows
+ *	 platforms, this is the same as WL_SOCKET_WRITEABLE)
  *
  * Returns the offset in WaitEventSet->events (starting from 0), which can be
  * used to modify previously added wait events using ModifyWaitEvent().
@@ -253,9 +246,9 @@ FreeWaitEventSet(WaitEventSet *set)
  * i.e. it must be a process-local latch initialized with InitLatch, or a
  * shared latch associated with the current process by calling OwnLatch.
  *
- * In the WL_SOCKET_READABLE/WRITEABLE case, EOF and error conditions are
- * reported by returning the socket as readable/writable or both, depending on
- * WL_SOCKET_READABLE/WRITEABLE being specified.
+ * In the WL_SOCKET_READABLE/WRITEABLE/CONNECTED cases, EOF and error
+ * conditions cause the socket to be reported as readable/writable/connected,
+ * so that the caller can deal with the condition.
  *
  * The user_data pointer specified here will be set for the events returned
  * by WaitEventSetWait(), allowing to easily associate additional data with
@@ -286,8 +279,7 @@ AddWaitEventToSet(WaitEventSet *set, uint32 events, pgsocket fd, Latch *latch,
 	}
 
 	/* waiting for socket readiness without a socket indicates a bug */
-	if (fd == PGINVALID_SOCKET &&
-		(events & (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)))
+	if (fd == PGINVALID_SOCKET && (events & WL_SOCKET_MASK))
 		elog(ERROR, "cannot wait on socket event without a socket");
 
 	event = &set->events[set->nevents];
@@ -319,8 +311,6 @@ AddWaitEventToSet(WaitEventSet *set, uint32 events, pgsocket fd, Latch *latch,
 	WaitEventAdjustEpoll(set, event, EPOLL_CTL_ADD);
 #elif defined(WAIT_USE_POLL)
 	WaitEventAdjustPoll(set, event);
-#elif defined(WAIT_USE_SELECT)
-	/* nothing to do */
 #elif defined(WAIT_USE_WIN32)
 	WaitEventAdjustWin32(set, event);
 #endif
@@ -377,8 +367,6 @@ ModifyWaitEvent(WaitEventSet *set, int pos, uint32 events, Latch *latch)
 	WaitEventAdjustEpoll(set, event, EPOLL_CTL_MOD);
 #elif defined(WAIT_USE_POLL)
 	WaitEventAdjustPoll(set, event);
-#elif defined(WAIT_USE_SELECT)
-	/* nothing to do */
 #elif defined(WAIT_USE_WIN32)
 	WaitEventAdjustWin32(set, event);
 #endif
@@ -490,6 +478,8 @@ WaitEventAdjustWin32(WaitEventSet *set, WaitEvent *event)
 			flags |= FD_READ;
 		if (event->events & WL_SOCKET_WRITEABLE)
 			flags |= FD_WRITE;
+		if (event->events & WL_SOCKET_CONNECTED)
+			flags |= FD_CONNECT;
 
 		if (*handle == WSA_INVALID_EVENT)
 		{
@@ -703,9 +693,11 @@ WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 			 * because we don't expect the pipe to become readable or to have
 			 * any errors either, treat those cases as postmaster death, too.
 			 *
-			 * As explained in the WAIT_USE_SELECT implementation, select(2)
-			 * may spuriously return. Be paranoid about that here too, a
-			 * spurious WL_POSTMASTER_DEATH would be painful.
+			 * Be paranoid about a spurious event signalling the postmaster as
+			 * being dead.  There have been reports about that happening with
+			 * older primitives (select(2) to be specific), and a spurious
+			 * WL_POSTMASTER_DEATH event would be painful. Re-checking doesn't
+			 * cost much.
 			 */
 			if (!PostmasterIsAlive())
 			{
@@ -812,16 +804,18 @@ WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 			}
 		}
 		else if (cur_event->events == WL_POSTMASTER_DEATH &&
-			 (cur_pollfd->revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL)))
+				 (cur_pollfd->revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL)))
 		{
 			/*
 			 * We expect an POLLHUP when the remote end is closed, but because
 			 * we don't expect the pipe to become readable or to have any
 			 * errors either, treat those cases as postmaster death, too.
 			 *
-			 * As explained in the WAIT_USE_SELECT implementation, select(2)
-			 * may spuriously return. Be paranoid about that here too, a
-			 * spurious WL_POSTMASTER_DEATH would be painful.
+			 * Be paranoid about a spurious event signalling the postmaster as
+			 * being dead.  There have been reports about that happening with
+			 * older primitives (select(2) to be specific), and a spurious
+			 * WL_POSTMASTER_DEATH event would be painful. Re-checking doesn't
+			 * cost much.
 			 */
 			if (!PostmasterIsAlive())
 			{
@@ -848,163 +842,6 @@ WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 				(cur_pollfd->revents & (POLLOUT | errflags)))
 			{
 				/* writeable, or EOF */
-				occurred_events->events |= WL_SOCKET_WRITEABLE;
-			}
-
-			if (occurred_events->events != 0)
-			{
-				occurred_events->fd = cur_event->fd;
-				occurred_events++;
-				returned_events++;
-			}
-		}
-	}
-	return returned_events;
-}
-
-#elif defined(WAIT_USE_SELECT)
-
-/*
- * Wait using select(2).
- *
- * XXX: On at least older linux kernels select(), in violation of POSIX,
- * doesn't reliably return a socket as writable if closed - but we rely on
- * that. So far all the known cases of this problem are on platforms that also
- * provide a poll() implementation without that bug.  If we find one where
- * that's not the case, we'll need to add a workaround.
- */
-static inline int
-WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
-					  WaitEvent *occurred_events, int nevents)
-{
-	int			returned_events = 0;
-	int			rc;
-	WaitEvent  *cur_event;
-	fd_set		input_mask;
-	fd_set		output_mask;
-	int			hifd;
-	struct timeval tv;
-	struct timeval *tvp = NULL;
-
-	FD_ZERO(&input_mask);
-	FD_ZERO(&output_mask);
-
-	/*
-	 * Prepare input/output masks. We do so every loop iteration as there's no
-	 * entirely portable way to copy fd_sets.
-	 */
-	for (cur_event = set->events;
-		 cur_event < (set->events + set->nevents);
-		 cur_event++)
-	{
-		if (cur_event->events == WL_LATCH_SET)
-			FD_SET(cur_event->fd, &input_mask);
-		else if (cur_event->events == WL_POSTMASTER_DEATH)
-			FD_SET(cur_event->fd, &input_mask);
-		else
-		{
-			Assert(cur_event->events & (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE));
-			if (cur_event->events == WL_SOCKET_READABLE)
-				FD_SET(cur_event->fd, &input_mask);
-			else if (cur_event->events == WL_SOCKET_WRITEABLE)
-				FD_SET(cur_event->fd, &output_mask);
-		}
-
-		if (cur_event->fd > hifd)
-			hifd = cur_event->fd;
-	}
-
-	/* Sleep */
-	if (cur_timeout >= 0)
-	{
-		tv.tv_sec = cur_timeout / 1000L;
-		tv.tv_usec = (cur_timeout % 1000L) * 1000L;
-		tvp = &tv;
-	}
-	rc = select(hifd + 1, &input_mask, &output_mask, NULL, tvp);
-
-	/* Check return code */
-	if (rc < 0)
-	{
-		/* EINTR is okay, otherwise complain */
-		if (errno != EINTR)
-		{
-			waiting = false;
-			ereport(ERROR,
-					(errcode_for_socket_access(),
-					 errmsg("select() failed: %m")));
-		}
-		return 0;				/* retry */
-	}
-	else if (rc == 0)
-	{
-		/* timeout exceeded */
-		return -1;
-	}
-
-	/*
-	 * To associate events with select's masks, we have to check the status of
-	 * the file descriptors associated with an event; by looping through all
-	 * events.
-	 */
-	for (cur_event = set->events;
-		 cur_event < (set->events + set->nevents)
-		 && returned_events < nevents;
-		 cur_event++)
-	{
-		occurred_events->pos = cur_event->pos;
-		occurred_events->user_data = cur_event->user_data;
-		occurred_events->events = 0;
-
-		if (cur_event->events == WL_LATCH_SET &&
-			FD_ISSET(cur_event->fd, &input_mask))
-		{
-			/* There's data in the self-pipe, clear it. */
-			drainSelfPipe();
-
-			if (set->latch->is_set)
-			{
-				occurred_events->fd = PGINVALID_SOCKET;
-				occurred_events->events = WL_LATCH_SET;
-				occurred_events++;
-				returned_events++;
-			}
-		}
-		else if (cur_event->events == WL_POSTMASTER_DEATH &&
-				 FD_ISSET(cur_event->fd, &input_mask))
-		{
-			/*
-			 * According to the select(2) man page on Linux, select(2) may
-			 * spuriously return and report a file descriptor as readable,
-			 * when it's not; and presumably so can poll(2).  It's not clear
-			 * that the relevant cases would ever apply to the postmaster
-			 * pipe, but since the consequences of falsely returning
-			 * WL_POSTMASTER_DEATH could be pretty unpleasant, we take the
-			 * trouble to positively verify EOF with PostmasterIsAlive().
-			 */
-			if (!PostmasterIsAlive())
-			{
-				occurred_events->fd = PGINVALID_SOCKET;
-				occurred_events->events = WL_POSTMASTER_DEATH;
-				occurred_events++;
-				returned_events++;
-			}
-		}
-		else if (cur_event->events & (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE))
-		{
-			Assert(cur_event->fd != PGINVALID_SOCKET);
-
-			if ((cur_event->events & WL_SOCKET_READABLE) &&
-				FD_ISSET(cur_event->fd, &input_mask))
-			{
-				/* data available in socket, or EOF */
-				occurred_events->events |= WL_SOCKET_READABLE;
-			}
-
-			if ((cur_event->events & WL_SOCKET_WRITEABLE) &&
-				FD_ISSET(cur_event->fd, &output_mask))
-			{
-				/* socket is writeable, or EOF */
 				occurred_events->events |= WL_SOCKET_WRITEABLE;
 			}
 
@@ -1148,7 +985,7 @@ WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 			returned_events++;
 		}
 	}
-	else if (cur_event->events & (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE))
+	else if (cur_event->events & WL_SOCKET_MASK)
 	{
 		WSANETWORKEVENTS resEvents;
 		HANDLE		handle = set->handles[cur_event->pos + 1];
@@ -1185,13 +1022,16 @@ WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 			/* writeable */
 			occurred_events->events |= WL_SOCKET_WRITEABLE;
 		}
+		if ((cur_event->events & WL_SOCKET_CONNECTED) &&
+			(resEvents.lNetworkEvents & FD_CONNECT))
+		{
+			/* connected */
+			occurred_events->events |= WL_SOCKET_CONNECTED;
+		}
 		if (resEvents.lNetworkEvents & FD_CLOSE)
 		{
-			/* EOF */
-			if (cur_event->events & WL_SOCKET_READABLE)
-				occurred_events->events |= WL_SOCKET_READABLE;
-			if (cur_event->events & WL_SOCKET_WRITEABLE)
-				occurred_events->events |= WL_SOCKET_WRITEABLE;
+			/* EOF/error, so signal all caller-requested socket flags */
+			occurred_events->events |= (cur_event->events & WL_SOCKET_MASK);
 		}
 
 		if (occurred_events->events != 0)
@@ -1251,5 +1091,5 @@ drainSelfPipe(void)
 		/* else buffer wasn't big enough, so read again */
 	}
 }
-#endif   /* !WIN32 */
+#endif							/* !WIN32 */
 #endif
