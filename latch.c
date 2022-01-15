@@ -1,6 +1,37 @@
 #include "include.h"
-
 #if PG_VERSION_NUM < 90600
+/*-------------------------------------------------------------------------
+ *
+ * latch.c
+ *	  Routines for inter-process latches
+ *
+ * The Unix implementation uses the so-called self-pipe trick to overcome the
+ * race condition involved with poll() (or epoll_wait() on linux) and setting
+ * a global flag in the signal handler. When a latch is set and the current
+ * process is waiting for it, the signal handler wakes up the poll() in
+ * WaitLatch by writing a byte to a pipe. A signal by itself doesn't interrupt
+ * poll() on all platforms, and even on platforms where it does, a signal that
+ * arrives just before the poll() call does not prevent poll() from entering
+ * sleep. An incoming byte on a pipe however reliably interrupts the sleep,
+ * and causes poll() to return immediately even if the signal arrives before
+ * poll() begins.
+ *
+ * When SetLatch is called from the same process that owns the latch,
+ * SetLatch writes the byte directly to the pipe. If it's owned by another
+ * process, SIGUSR1 is sent and the signal handler in the waiting process
+ * writes the byte to the pipe on behalf of the signaling process.
+ *
+ * The Windows implementation uses Windows events that are inherited by all
+ * postmaster child processes. There's no need for the self-pipe trick there.
+ *
+ * Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
+ *
+ * IDENTIFICATION
+ *	  src/backend/storage/ipc/latch.c
+ *
+ *-------------------------------------------------------------------------
+ */
 #include "postgres.h"
 
 #include <fcntl.h>
@@ -15,9 +46,9 @@
 #endif
 
 #include "miscadmin.h"
+#include "pgstat.h"
 #include "portability/instr_time.h"
 #include "postmaster/postmaster.h"
-//#include "storage/barrier.h"
 #include "storage/latch.h"
 #include "storage/pmsignal.h"
 #include "storage/shmem.h"
