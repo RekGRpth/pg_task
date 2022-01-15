@@ -49,7 +49,9 @@ void SPI_finish_my(void) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     PopActiveSnapshot();
     if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_finish failed"), errdetail("%s", SPI_result_code_string(rc))));
+#if PG_VERSION_NUM < 150000
     ProcessCompletedNotifies();
+#endif
     CommitTransactionCommand();
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
