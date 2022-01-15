@@ -71,4 +71,4 @@ DO $body$ BEGIN
         IF (SELECT count(*) FROM task WHERE state != 'DONE') = 0 THEN EXIT; END IF;
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
-SELECT "group", input, output, error, state, count(id) FROM task WHERE "group" = '11' AND plan > :ct::timestamp GROUP BY "group", input, output, error, state, pid;
+SELECT "group", input, output, error, state, count(id) FROM task WHERE "group" = '11' AND plan > :ct::timestamp GROUP BY "group", input, output, error, state;
