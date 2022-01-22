@@ -379,8 +379,11 @@ static void work_proc_exit(int code, Datum arg) {
         PQfreeCancel(cancel);
         work_finish(task);
     }
-    if (!code) init_work(true);
-    else if ((dsm_segment *)arg) dsm_detach((dsm_segment *)arg);
+    if (!code) {
+        if (!ShutdownRequestPending) init_work(true);
+    } else {
+        if ((dsm_segment *)arg) dsm_detach((dsm_segment *)arg);
+    }
 }
 
 #if PG_VERSION_NUM >= 120000
