@@ -214,6 +214,7 @@ void ReleaseAuxProcessResources(bool isCommit);
 void exec_simple_query_my(const char *query_string);
 void init_escape(StringInfoData *buf, const char *data, int len, char escape);
 void initStringInfoMy(StringInfoData *buf);
+void init_work(bool dynamic);
 void NullCommandMy(CommandDest dest);
 void _PG_init(void);
 void ReadyForQueryMy(CommandDest dest);

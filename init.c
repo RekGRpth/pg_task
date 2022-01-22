@@ -127,7 +127,7 @@ void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
     }
 }
 
-static void init_work(bool dynamic) {
+void init_work(bool dynamic) {
     BackgroundWorker worker = {0};
     size_t len;
     if ((len = strlcpy(worker.bgw_function_name, "conf_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
