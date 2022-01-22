@@ -777,7 +777,7 @@ void work_main(Datum arg) {
     dlist_init(&work->head);
     set_ps_display_my("idle");
     work_reset();
-    if (!lock_data_user_table(MyDatabaseId, GetUserId(), work->shared->oid)) { elog(WARNING, "!lock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->shared->oid); return; }
+    if (!lock_data_user_table(MyDatabaseId, GetUserId(), work->shared->oid)) { elog(WARNING, "!lock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->shared->oid); ShutdownRequestPending = true; }
     while (!ShutdownRequestPending) {
         int nevents = 2 + work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
