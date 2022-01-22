@@ -56,6 +56,7 @@ void conf_main(Datum arg) {
     pgstat_report_appname("pg_conf");
     set_ps_display_my("main");
     process_session_preload_libraries();
+    if (!lock_data_user(MyDatabaseId, GetUserId())) { elog(WARNING, "!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()); return; }
     initStringInfoMy(&src);
     appendStringInfoString(&src, init_check());
     appendStringInfo(&src, SQL(%1$sLEFT JOIN pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text) WHERE pid IS NULL), " ");
@@ -136,4 +137,5 @@ void conf_main(Datum arg) {
     SPI_tuptable_free(&SPI_tuptable_my);
     set_ps_display_my("idle");
     pfree(src.data);
+    if (!unlock_data_user(MyDatabaseId, GetUserId())) elog(WARNING, "!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId());
 }

@@ -53,6 +53,12 @@ bool lock_data_user_table(Oid data, Oid user, Oid table) {
     return LockAcquire(&tag, AccessExclusiveLock, true, true) == LOCKACQUIRE_OK;
 }
 
+bool lock_data_user(Oid data, Oid user) {
+    LOCKTAG tag = {data, data, user, 6, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "data = %i, user = %i", data, user);
+    return LockAcquire(&tag, AccessExclusiveLock, true, true) == LOCKACQUIRE_OK;
+}
+
 bool lock_table_id(Oid table, int64 id) {
     LOCKTAG tag = {table, (uint32)(id >> 32), (uint32)id, 4, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
     elog(DEBUG1, "table = %i, id = %li", table, id);
@@ -68,6 +74,12 @@ bool lock_table_pid_hash(Oid table, int pid, int hash) {
 bool unlock_data_user_table(Oid data, Oid user, Oid table) {
     LOCKTAG tag = {data, user, table, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
     elog(DEBUG1, "data = %i, user = %i, table = %i", data, user, table);
+    return LockRelease(&tag, AccessExclusiveLock, true);
+}
+
+bool unlock_data_user(Oid data, Oid user) {
+    LOCKTAG tag = {data, data, user, 6, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "data = %i, user = %i", data, user);
     return LockRelease(&tag, AccessExclusiveLock, true);
 }
 
