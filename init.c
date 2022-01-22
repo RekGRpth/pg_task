@@ -148,7 +148,8 @@ static void init_work(bool dynamic) {
 }
 
 static void init_assign(const char *newval, void *extra) {
-    bool new_isnull, old_isnull;
+    bool new_isnull;
+    bool old_isnull;
     const char *oldval;
     if (PostmasterPid != MyProcPid) return;
     if (process_shared_preload_libraries_in_progress) return;
