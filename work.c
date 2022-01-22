@@ -750,6 +750,7 @@ void work_main(Datum arg) {
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->shared->user.str) + 1 + strlen(work->shared->data.str) + 1);
     set_ps_display_my("main");
     process_session_preload_libraries();
+    if (!lock_data_user_table(MyDatabaseId, GetUserId(), work->shared->oid)) { elog(WARNING, "!lock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->shared->oid); ShutdownRequestPending = true; return; }
     initStringInfoMy(&schema_table);
     appendStringInfo(&schema_table, "%s.%s", work->shared->schema.quote, work->shared->table.quote);
     work->schema_table = schema_table.data;
@@ -777,7 +778,6 @@ void work_main(Datum arg) {
     dlist_init(&work->head);
     set_ps_display_my("idle");
     work_reset();
-    if (!lock_data_user_table(MyDatabaseId, GetUserId(), work->shared->oid)) { elog(WARNING, "!lock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->shared->oid); ShutdownRequestPending = true; }
     while (!ShutdownRequestPending) {
         int nevents = 2 + work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
