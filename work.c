@@ -761,7 +761,7 @@ void work_main(Datum arg) {
     initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work->shared->schema.quote);
     work->schema_type = schema_type.data;
-    elog(DEBUG1, "timeout = %li, reset = %li, schema_table = %s, schema_type = %s, partman = %s", work->shared->timeout, work->shared->reset, work->schema_table, work->schema_type, work->shared->partman.str[0] ? work->shared->partman.str : default_null);
+    elog(DEBUG1, "timeout = %li, reset = %li, schema_table = %s, schema_type = %s, partman = %s, hash = %i", work->shared->timeout, work->shared->reset, work->schema_table, work->schema_type, work->shared->partman.str[0] ? work->shared->partman.str : default_null, work->hash);
     work_schema(work->shared->schema.quote);
     set_config_option_my("pg_task.schema", work->shared->schema.str, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();

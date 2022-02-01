@@ -59,7 +59,13 @@ void conf_main(Datum arg) {
     if (!lock_data_user(MyDatabaseId, GetUserId())) { elog(WARNING, "!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()); return; }
     initStringInfoMy(&src);
     appendStringInfoString(&src, init_check());
-    appendStringInfo(&src, SQL(%1$sLEFT JOIN pg_stat_activity AS a ON a.usename = j.user AND a.datname = data AND application_name = concat_ws(' ', 'pg_work', schema, j.table, timeout::text) WHERE pid IS NULL), " ");
+    appendStringInfo(&src, SQL(%1$s
+        LEFT JOIN pg_locks AS l ON l.locktype = 'userlock' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.objsubid = 3
+        AND l.database = (SELECT oid FROM pg_database WHERE datname = data)
+        AND l.classid = (SELECT oid FROM pg_authid WHERE rolname = j.user)
+        AND l.objid = hashtext(quote_ident(schema)||'.'||quote_ident(j.table))::oid
+        WHERE pid IS NULL)
+    , " ");
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_SELECT);
     SPI_tuptable_copy(&SPI_tuptable_my);
