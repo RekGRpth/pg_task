@@ -14,6 +14,7 @@
 #include <access/xact.h>
 #include <catalog/heap.h>
 #include <catalog/namespace.h>
+#include <catalog/pg_collation.h>
 #include <catalog/pg_type.h>
 #include <commands/async.h>
 #include <commands/dbcommands.h>
@@ -167,6 +168,7 @@ typedef struct Work {
     char *schema_table;
     char *schema_type;
     dlist_head head;
+    int hash;
     WorkShared *shared;
 } Work;
 
@@ -179,13 +181,13 @@ typedef struct SPITupleTableMy {
 bool init_oid_is_string(Oid oid);
 bool is_log_level_output(int elevel, int log_min_level);
 bool lock_data_user(Oid data, Oid user);
-bool lock_data_user_table(Oid data, Oid user, Oid table);
+bool lock_data_user_hash(Oid data, Oid user, int hash);
 bool lock_table_id(Oid table, int64 id);
 bool lock_table_pid_hash(Oid table, int pid, int hash);
 bool task_done(Task *task);
 bool task_work(Task *task);
 bool unlock_data_user(Oid data, Oid user);
-bool unlock_data_user_table(Oid data, Oid user, Oid table);
+bool unlock_data_user_hash(Oid data, Oid user, int hash);
 bool unlock_table_id(Oid table, int64 id);
 bool unlock_table_pid_hash(Oid table, int pid, int hash);
 char *TextDatumGetCStringMy(Datum datum);

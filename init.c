@@ -47,9 +47,9 @@ bool init_oid_is_string(Oid oid) {
     }
 }
 
-bool lock_data_user_table(Oid data, Oid user, Oid table) {
-    LOCKTAG tag = {data, user, table, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    elog(DEBUG1, "data = %i, user = %i, table = %i", data, user, table);
+bool lock_data_user_hash(Oid data, Oid user, int hash) {
+    LOCKTAG tag = {data, user, (uint32)hash, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "data = %i, user = %i, hash = %i", data, user, hash);
     return LockAcquire(&tag, AccessExclusiveLock, true, true) == LOCKACQUIRE_OK;
 }
 
@@ -71,9 +71,9 @@ bool lock_table_pid_hash(Oid table, int pid, int hash) {
     return LockAcquire(&tag, AccessShareLock, true, true) == LOCKACQUIRE_OK;
 }
 
-bool unlock_data_user_table(Oid data, Oid user, Oid table) {
-    LOCKTAG tag = {data, user, table, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    elog(DEBUG1, "data = %i, user = %i, table = %i", data, user, table);
+bool unlock_data_user_hash(Oid data, Oid user, int hash) {
+    LOCKTAG tag = {data, user, (uint32)hash, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "data = %i, user = %i, hash = %i", data, user, hash);
     return LockRelease(&tag, AccessExclusiveLock, true);
 }
 

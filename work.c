@@ -729,6 +729,7 @@ void work_main(Datum arg) {
     const char *index_parent[] = {"parent"};
     const char *index_plan[] = {"plan"};
     const char *index_state[] = {"state"};
+    Datum datum;
     dsm_segment *seg = NULL;
     instr_time current_reset_time;
     instr_time current_timeout_time;
@@ -750,10 +751,13 @@ void work_main(Datum arg) {
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->shared->user.str) + 1 + strlen(work->shared->data.str) + 1);
     set_ps_display_my("main");
     process_session_preload_libraries();
-    if (!lock_data_user_table(MyDatabaseId, GetUserId(), work->shared->oid)) { elog(WARNING, "!lock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->shared->oid); ShutdownRequestPending = true; return; }
     initStringInfoMy(&schema_table);
     appendStringInfo(&schema_table, "%s.%s", work->shared->schema.quote, work->shared->table.quote);
     work->schema_table = schema_table.data;
+    datum = CStringGetTextDatumMy(work->schema_table);
+    work->hash = DatumGetInt32(DirectFunctionCall1Coll(hashtext, DEFAULT_COLLATION_OID, datum));
+    pfree((void *)datum);
+    if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work->hash)) { elog(WARNING, "!lock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->hash); ShutdownRequestPending = true; return; }
     initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work->shared->schema.quote);
     work->schema_type = schema_type.data;
@@ -809,5 +813,5 @@ void work_main(Datum arg) {
         FreeWaitEventSet(set);
         pfree(events);
     }
-    if (!unlock_data_user_table(MyDatabaseId, GetUserId(), work->shared->oid)) elog(WARNING, "!unlock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->shared->oid);
+    if (!unlock_data_user_hash(MyDatabaseId, GetUserId(), work->hash)) elog(WARNING, "!unlock_data_user_table(%i, %i, %i)", MyDatabaseId, GetUserId(), work->hash);
 }
