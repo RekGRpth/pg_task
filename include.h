@@ -8,6 +8,7 @@
 
 #include <access/htup_details.h>
 #include <access/printtup.h>
+#include <access/hash.h>
 #if PG_VERSION_NUM >= 120000
 #include <access/relation.h>
 #endif
