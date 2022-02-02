@@ -30,6 +30,7 @@ static int task_default_count;
 static int task_default_max;
 static int task_id;
 static int work_default_timeout;
+
 bool init_oid_is_string(Oid oid) {
     switch (oid) {
         case BITOID:
