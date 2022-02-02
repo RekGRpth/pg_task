@@ -99,10 +99,10 @@ static void task_update(Task *task) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH s AS (
-                SELECT id FROM %1$s AS t
-                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND state = 'PLAN'::%2$s AND hash = $1 AND max < 0 FOR UPDATE OF t
-            ) UPDATE %1$s AS t SET plan = CASE WHEN drift THEN CURRENT_TIMESTAMP ELSE plan END + concat_ws(' ', (-max)::text, 'msec')::interval FROM s
-            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
+                SELECT "id" FROM %1$s AS t
+                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN'::%2$s AND "hash" = $1 AND "max" < 0 FOR UPDATE OF t
+            ) UPDATE %1$s AS t SET "plan" = CASE WHEN "drift" THEN CURRENT_TIMESTAMP ELSE "plan" END + concat_ws(' ', (-"max")::text, 'msec')::interval FROM s
+            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
         ), work->schema_table, work->schema_type);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -124,11 +124,11 @@ bool task_done(Task *task) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH s AS (
-                SELECT id FROM %1$s AS t
-                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND id = $1 FOR UPDATE OF t
-            ) UPDATE %1$s AS t SET state = 'DONE'::%2$s, stop = CURRENT_TIMESTAMP, output = $2, error = $3 FROM s
-            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id
-            RETURNING delete AND output IS NULL AS delete, repeat > '0 sec' AS insert, max >= 0 AND (count > 0 OR live > '0 sec') AS live, max < 0 AS update
+                SELECT "id" FROM %1$s AS t
+                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 FOR UPDATE OF t
+            ) UPDATE %1$s AS t SET "state" = 'DONE'::%2$s, "stop" = CURRENT_TIMESTAMP, "output" = $2, "error" = $3 FROM s
+            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id
+            RETURNING "delete" AND "output" IS NULL AS "delete", "repeat" > '0 sec' AS "insert", "max" >= 0 AND ("count" > 0 OR "live" > '0 sec') AS "live", "max" < 0 AS "update"
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
