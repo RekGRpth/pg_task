@@ -2,6 +2,7 @@
 
 PG_MODULE_MAGIC;
 
+
 char *default_null;
 int work_default_restart;
 static bool task_default_delete;
@@ -11,8 +12,10 @@ static bool task_default_string;
 static char *default_json;
 static char *task_default_active;
 static char *task_default_delimiter;
+static char *task_default_escape;
 static char *task_default_group;
 static char *task_default_live;
+static char *task_default_quote;
 static char *task_default_repeat;
 static char *task_default_timeout;
 static char *work_default_active;
@@ -27,7 +30,6 @@ static int task_default_count;
 static int task_default_max;
 static int task_id;
 static int work_default_timeout;
-
 bool init_oid_is_string(Oid oid) {
     switch (oid) {
         case BITOID:
@@ -272,9 +274,11 @@ void _PG_init(void) {
     DefineCustomIntVariable("pg_work.default_timeout", "pg_work default timeout", "check tasks every timeout milliseconds", &work_default_timeout, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_active", "pg_task default active", "task active after plan time", &task_default_active, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_delimiter", "pg_task default delimiter", "results colums delimiter", &task_default_delimiter, "\t", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.default_escape", "pg_task default escape", "results colums escape", &task_default_escape, "\"", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_group", "pg_task default group", "group tasks name", &task_default_group, "group", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_live", "pg_task default live", "exit until timeout", &task_default_live, "0 sec", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_null", "pg_task default null", "text null representation", &default_null, "\\N", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.default_quote", "pg_task default quote", "results colums quote", &task_default_quote, "\"", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_repeat", "pg_task default repeat", "repeat task", &task_default_repeat, "0 sec", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_timeout", "pg_task default timeout", "task timeout", &task_default_timeout, "0 sec", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.json", "pg_task json", "json configuration: available keys are: user, data, schema, table, timeout, count, live and partman", &default_json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign, NULL);
