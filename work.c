@@ -674,7 +674,7 @@ static void work_timeout(void) {
             ), u AS (
                 SELECT "id", "hash", "count" - row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") + 1 AS "count" FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS t SET "state" = 'TAKE'::%2$s FROM u
-            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = u.id AND u.count >= 0 RETURNING t.id, t.hash, "group", "remote", "max", "delimiter"
+            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = u.id AND u.count >= 0 RETURNING t.id, t.hash, "group", "remote", "max"
         ), work->schema_table, work->schema_type,
 #if PG_VERSION_NUM >= 90500
         "SKIP LOCKED"
@@ -690,7 +690,6 @@ static void work_timeout(void) {
     SPI_finish_my();
     for (uint64 row = 0; row < SPI_tuptable_my.numvals; row++) {
         Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
-        task->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable_my.vals[0], SPI_tuptable_my.tupdesc, "delimiter", false));
         task->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "group", false));
         task->shared.hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "hash", false));
         task->shared.id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "id", false));
