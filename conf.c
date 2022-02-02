@@ -58,11 +58,11 @@ void conf_main(Datum arg) {
     initStringInfoMy(&src);
     appendStringInfoString(&src, init_check());
     appendStringInfo(&src, SQL(%1$s
-        LEFT JOIN pg_locks AS l ON l.locktype = 'userlock' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.objsubid = 3
-        AND l.database = (SELECT oid FROM pg_database WHERE datname = data)
-        AND l.classid = (SELECT oid FROM pg_authid WHERE rolname = j.user)
-        AND l.objid = hashtext(quote_ident(schema)||'.'||quote_ident(j.table))::oid
-        WHERE pid IS NULL)
+        LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3
+        AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = "data")
+        AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = "user")
+        AND "objid" = hashtext(quote_ident("schema")||'.'||quote_ident("table"))::oid
+        WHERE "pid" IS NULL)
     , " ");
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_SELECT);
