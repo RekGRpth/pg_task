@@ -272,7 +272,7 @@ static void work_headers(Task *task, PGresult *result) {
     for (int col = 0; col < PQnfields(result); col++) {
         const char *value = PQfname(result, col);
         if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
-        appendBinaryStringInfoEscapeQuote(&task->output, value, -1, task->escape, task->quote);
+        appendBinaryStringInfoEscapeQuote(&task->output, value, strlen(value), task->escape, task->quote);
     }
 }
 

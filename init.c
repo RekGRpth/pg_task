@@ -133,7 +133,6 @@ Datum CStringGetTextDatumMy(const char *s) {
 }
 
 void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, char escape, char quote) {
-    if (len < 0) len = strlen(data);
     if (quote) appendStringInfoChar(buf, quote);
     if (len) {
         if (escape && quote) for (int i = 0; len-- > 0; i++) {

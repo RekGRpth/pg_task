@@ -17,7 +17,7 @@ static void headers(TupleDesc tupdesc) {
     for (int col = 1; col <= tupdesc->natts; col++) {
         const char *value = SPI_fname(tupdesc, col);
         if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
-        appendBinaryStringInfoEscapeQuote(&task->output, value, -1, task->escape, task->quote);
+        appendBinaryStringInfoEscapeQuote(&task->output, value, strlen(value), task->escape, task->quote);
     }
 }
 
