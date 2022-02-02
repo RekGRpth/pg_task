@@ -408,7 +408,7 @@ static void work_partman(void) {
     initStringInfoMy(&template_table);
     appendStringInfo(&template_table, "%s.%s", work->shared->partman.quote, template_quote);
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY (id))), template_table.data, work->schema_table, pkey_quote);
+    appendStringInfo(&src, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY ("id"))), template_table.data, work->schema_table, pkey_quote);
     names = stringToQualifiedNameList(template_table.data);
     rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(src.data);
@@ -419,8 +419,6 @@ static void work_partman(void) {
         initStringInfoMy(&create_parent);
         appendStringInfo(&create_parent, SQL(SELECT %1$s.create_parent(p_parent_table := $1, p_control := 'plan', p_type := 'native', p_interval := 'monthly', p_template_table := $2)), work->shared->partman.quote);
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-//        SPI_commit_my();
-//        SPI_start_transaction_my(create_parent.data);
         SPI_execute_with_args_my(create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
         if (SPI_processed != 1) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_processed %lu != 1", (long)SPI_processed)));
         if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("could not create parent")));
@@ -522,7 +520,7 @@ static void work_table(void) {
     set_config_option_my("pg_task.table", work->shared->table.str, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(&hash);
 #if PG_VERSION_NUM >= 120000
-    appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (hashtext("group"||COALESCE(remote, '%1$s'))) STORED), "");
+    appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (hashtext("group"||COALESCE("remote", '%1$s'))) STORED), "");
 #else
     initStringInfoMy(&function);
     appendStringInfo(&function, "%1$s_hash_generate", work->shared->table.str);
@@ -540,33 +538,33 @@ static void work_table(void) {
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         CREATE TABLE %1$s (
-            id bigserial NOT NULL%4$s,
-            parent bigint DEFAULT NULLIF(current_setting('pg_task.id')::bigint, 0),
-            plan timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            start timestamp with time zone,
-            stop timestamp with time zone,
-            active interval NOT NULL DEFAULT current_setting('pg_task.default_active')::interval CHECK (active > '0 sec'::interval),
-            live interval NOT NULL DEFAULT current_setting('pg_task.default_live')::interval CHECK (live >= '0 sec'::interval),
-            repeat interval NOT NULL DEFAULT current_setting('pg_task.default_repeat')::interval CHECK (repeat >= '0 sec'::interval),
-            timeout interval NOT NULL DEFAULT current_setting('pg_task.default_timeout')::interval CHECK (timeout >= '0 sec'::interval),
-            count integer NOT NULL DEFAULT current_setting('pg_task.default_count')::integer CHECK (count >= 0),
-            hash integer NOT NULL %3$s,
-            max integer NOT NULL DEFAULT current_setting('pg_task.default_max')::integer,
-            pid integer,
-            state %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
-            delete boolean NOT NULL DEFAULT current_setting('pg_task.default_delete')::boolean,
-            drift boolean NOT NULL DEFAULT current_setting('pg_task.default_drift')::boolean,
-            header boolean NOT NULL DEFAULT current_setting('pg_task.default_header')::boolean,
-            string boolean NOT NULL DEFAULT current_setting('pg_task.default_string')::boolean,
-            delimiter "char" NOT NULL DEFAULT current_setting('pg_task.default_delimiter')::"char",
-            escape "char" NOT NULL DEFAULT current_setting('pg_task.default_escape')::"char",
-            quote "char" NOT NULL DEFAULT current_setting('pg_task.default_quote')::"char",
-            error text,
+            "id" bigserial NOT NULL%4$s,
+            "parent" bigint DEFAULT NULLIF(current_setting('pg_task.id')::bigint, 0),
+            "plan" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "start" timestamp with time zone,
+            "stop" timestamp with time zone,
+            "active" interval NOT NULL DEFAULT current_setting('pg_task.default_active')::interval CHECK ("active" > '0 sec'::interval),
+            "live" interval NOT NULL DEFAULT current_setting('pg_task.default_live')::interval CHECK ("live" >= '0 sec'::interval),
+            "repeat" interval NOT NULL DEFAULT current_setting('pg_task.default_repeat')::interval CHECK ("repeat" >= '0 sec'::interval),
+            "timeout" interval NOT NULL DEFAULT current_setting('pg_task.default_timeout')::interval CHECK ("timeout" >= '0 sec'::interval),
+            "count" integer NOT NULL DEFAULT current_setting('pg_task.default_count')::integer CHECK ("count" >= 0),
+            "hash" integer NOT NULL %3$s,
+            "max" integer NOT NULL DEFAULT current_setting('pg_task.default_max')::integer,
+            "pid" integer,
+            "state" %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
+            "delete" boolean NOT NULL DEFAULT current_setting('pg_task.default_delete')::boolean,
+            "drift" boolean NOT NULL DEFAULT current_setting('pg_task.default_drift')::boolean,
+            "header" boolean NOT NULL DEFAULT current_setting('pg_task.default_header')::boolean,
+            "string" boolean NOT NULL DEFAULT current_setting('pg_task.default_string')::boolean,
+            "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.default_delimiter')::"char",
+            "escape" "char" NOT NULL DEFAULT current_setting('pg_task.default_escape')::"char",
+            "quote" "char" NOT NULL DEFAULT current_setting('pg_task.default_quote')::"char",
+            "error" text,
             "group" text NOT NULL DEFAULT current_setting('pg_task.default_group'),
-            input text NOT NULL,
+            "input" text NOT NULL,
             "null" text NOT NULL DEFAULT current_setting('pg_task.default_null'),
-            output text,
-            remote text
+            "output" text,
+            "remote" text
         )
     ), work->schema_table, work->schema_type,
 #if PG_VERSION_NUM >= 120000
