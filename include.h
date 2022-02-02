@@ -199,7 +199,7 @@ Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fnam
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
 int severity_error(const char *error);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
-void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, char escape, char quote);
+void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote);
 #if PG_VERSION_NUM >= 130000
 void BeginCommandMy(CommandTag commandTag, CommandDest dest);
 #else

@@ -272,7 +272,7 @@ static void work_headers(Task *task, PGresult *result) {
     for (int col = 0; col < PQnfields(result); col++) {
         const char *value = PQfname(result, col);
         if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
-        appendBinaryStringInfoEscapeQuote(&task->output, value, strlen(value), task->escape, task->quote);
+        appendBinaryStringInfoEscapeQuote(&task->output, value, strlen(value), false, task->escape, task->quote);
     }
 }
 
@@ -281,16 +281,9 @@ static void work_success(Task *task, PGresult *result, int row) {
     if (task->header && !row && PQnfields(result) > 1) work_headers(task, result);
     if (task->output.len) appendStringInfoString(&task->output, "\n");
     for (int col = 0; col < PQnfields(result); col++) {
-        const char *value = PQgetvalue(result, row, col);
         if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
-        if (PQgetisnull(result, row, col)) appendStringInfoString(&task->output, task->null); else {
-            int len = PQgetlength(result, row, col);
-            if (!init_oid_is_string(PQftype(result, col)) && task->string) {
-                if (len) appendBinaryStringInfo(&task->output, value, len);
-            } else {
-                appendBinaryStringInfoEscapeQuote(&task->output, value, len, task->escape, task->quote);
-            }
-        }
+        if (PQgetisnull(result, row, col)) appendStringInfoString(&task->output, task->null);
+        else appendBinaryStringInfoEscapeQuote(&task->output, PQgetvalue(result, row, col), PQgetlength(result, row, col), !init_oid_is_string(PQftype(result, col)) && task->string, task->escape, task->quote);
     }
 }
 

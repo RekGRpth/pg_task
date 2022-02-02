@@ -17,7 +17,7 @@ static void headers(TupleDesc tupdesc) {
     for (int col = 1; col <= tupdesc->natts; col++) {
         const char *value = SPI_fname(tupdesc, col);
         if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
-        appendBinaryStringInfoEscapeQuote(&task->output, value, strlen(value), task->escape, task->quote);
+        appendBinaryStringInfoEscapeQuote(&task->output, value, strlen(value), false, task->escape, task->quote);
     }
 }
 
@@ -36,14 +36,9 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
         char *value = SPI_getvalue_my(slot, tupdesc, col);
         if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
         if (!value) appendStringInfoString(&task->output, task->null); else {
-            int len = value ? strlen(value) : 0;
-            if (!init_oid_is_string(SPI_gettypeid(tupdesc, col)) && task->string) {
-                if (len) appendBinaryStringInfo(&task->output, value, len);
-            } else {
-                appendBinaryStringInfoEscapeQuote(&task->output, value, len, task->escape, task->quote);
-            }
+            appendBinaryStringInfoEscapeQuote(&task->output, value, strlen(value), !init_oid_is_string(SPI_gettypeid(tupdesc, col)) && task->string, task->escape, task->quote);
+            pfree(value);
         }
-        if (value) pfree(value);
     }
     task->row++;
 #if PG_VERSION_NUM >= 90600
