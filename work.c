@@ -40,7 +40,7 @@ static void work_check(void) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfoString(&src, init_check());
-        appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND data = current_catalog AND schema = current_setting('pg_task.schema') AND "table" = current_setting('pg_task.table') AND timeout = current_setting('pg_task.timeout')::bigint), " ");
+        appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND "data" = current_catalog AND "schema" = current_setting('pg_task.schema') AND "table" = current_setting('pg_task.table') AND "timeout" = current_setting('pg_task.timeout')::bigint), " ");
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
@@ -162,8 +162,8 @@ static void work_index(int count, const char *const *indexes) {
     appendStringInfoString(&name, "_idx");
     name_quote = quote_identifier(name.data);
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE INDEX %s ON %s USING btree ), name_quote, work->schema_table);
-    appendStringInfoString(&src, "(");
+    appendStringInfo(&src, SQL(CREATE INDEX %s ON %s USING btree), name_quote, work->schema_table);
+    appendStringInfoString(&src, " (");
     for (int i = 0; i < count; i++) {
         const char *index = indexes[i];
         const char *index_quote = quote_identifier(index);
@@ -202,12 +202,12 @@ static void work_reset(void) {
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         WITH s AS (
-            SELECT id FROM %1$s AS t
-            LEFT JOIN pg_locks AS l ON l.locktype = 'userlock' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.objsubid = 4 AND l.database = $1 AND l.classid = t.id>>32 AND l.objid = t.id<<32>>32
-            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND state IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
+            SELECT "id" FROM %1$s AS t
+            LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = $1 AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
+            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "state" IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
             FOR UPDATE OF t %3$s
-        ) UPDATE %1$s AS t SET state = 'PLAN'::%2$s, start = NULL, stop = NULL, pid = NULL FROM s
-        WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
+        ) UPDATE %1$s AS t SET "state" = 'PLAN'::%2$s, "start" = NULL, "stop" = NULL, "pid" = NULL FROM s
+        WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
     ), work->schema_table, work->schema_type,
 #if PG_VERSION_NUM >= 90500
         "SKIP LOCKED"
