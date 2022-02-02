@@ -12,10 +12,10 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
     return OidOutputFunctionCall(foutoid, attr);
 }
 
-static void headers(TupleDesc typeinfo) {
+static void headers(TupleDesc tupdesc) {
     if (task->output.len) appendStringInfoString(&task->output, "\n");
-    for (int col = 1; col <= typeinfo->natts; col++) {
-        const char *value = SPI_fname(typeinfo, col);
+    for (int col = 1; col <= tupdesc->natts; col++) {
+        const char *value = SPI_fname(tupdesc, col);
         if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
         if (task->quote) appendStringInfoChar(&task->output, task->quote);
         if (task->escape) init_escape(&task->output, value, strlen(value), task->escape);
@@ -31,16 +31,16 @@ bool
 void
 #endif
 receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
-    TupleDesc typeinfo = slot->tts_tupleDescriptor;
+    TupleDesc tupdesc = slot->tts_tupleDescriptor;
     if (!task->output.data) initStringInfoMy(&task->output);
-    if (task->header && !task->row && typeinfo->natts > 1) headers(typeinfo);
+    if (task->header && !task->row && tupdesc->natts > 1) headers(tupdesc);
     if (task->output.len) appendStringInfoString(&task->output, "\n");
-    for (int col = 1; col <= typeinfo->natts; col++) {
-        char *value = SPI_getvalue_my(slot, typeinfo, col);
+    for (int col = 1; col <= tupdesc->natts; col++) {
+        char *value = SPI_getvalue_my(slot, tupdesc, col);
         int len = value ? strlen(value) : 0;
         if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
         if (!value) appendStringInfoString(&task->output, task->null); else {
-            if (!init_oid_is_string(SPI_gettypeid(typeinfo, col)) && task->string) {
+            if (!init_oid_is_string(SPI_gettypeid(tupdesc, col)) && task->string) {
                 if (len) appendStringInfoString(&task->output, value);
             } else {
                 if (task->quote) appendStringInfoChar(&task->output, task->quote);
@@ -59,7 +59,7 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
 #endif
 }
 
-static void rStartup(DestReceiver *self, int operation, TupleDesc typeinfo) {
+static void rStartup(DestReceiver *self, int operation, TupleDesc tupdesc) {
     task->row = 0;
     task->skip = 1;
 }
