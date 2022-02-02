@@ -667,14 +667,14 @@ static void work_timeout(void) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH l AS (
-                SELECT count(classid) AS pid, objid AS hash FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessShareLock' AND granted AND objsubid = 5 AND database = $1 GROUP BY objid
+                SELECT count("classid") AS "pid", "objid" AS "hash" FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessShareLock' AND "granted" AND "objsubid" = 5 AND "database" = $1 GROUP BY "objid"
             ), s AS (
-                SELECT t.id, t.hash, CASE WHEN t.max >= 0 THEN t.max ELSE 0 END - COALESCE(l.pid, 0) AS count FROM %1$s AS t LEFT JOIN l ON l.hash = t.hash
-                WHERE t.plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.state = 'PLAN'::%2$s AND CASE WHEN t.max >= 0 THEN t.max ELSE 0 END - COALESCE(l.pid, 0) >= 0 FOR UPDATE OF t %3$s
+                SELECT "id", t.hash, CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE(l.pid, 0) AS "count" FROM %1$s AS t LEFT JOIN l ON l.hash = t.hash
+                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN'::%2$s AND CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE(l.pid, 0) >= 0 FOR UPDATE OF t %3$s
             ), u AS (
-                SELECT id, hash, count - row_number() OVER (PARTITION BY hash ORDER BY count DESC, id) + 1 AS count FROM s ORDER BY s.count DESC, id
-            ) UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM u
-            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = u.id AND u.count >= 0 RETURNING t.id, t.hash, t.group, t.remote, t.max, t.delimiter
+                SELECT "id", "hash", "count" - row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") + 1 AS "count" FROM s ORDER BY s.count DESC, id
+            ) UPDATE %1$s AS t SET "state" = 'TAKE'::%2$s FROM u
+            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = u.id AND u.count >= 0 RETURNING t.id, t.hash, "group", "remote", "max", "delimiter"
         ), work->schema_table, work->schema_type,
 #if PG_VERSION_NUM >= 90500
         "SKIP LOCKED"
