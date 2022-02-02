@@ -672,9 +672,9 @@ static void work_timeout(void) {
                 SELECT "id", t.hash, CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE(l.pid, 0) AS "count" FROM %1$s AS t LEFT JOIN l ON l.hash = t.hash
                 WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN'::%2$s AND CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE(l.pid, 0) >= 0 FOR UPDATE OF t %3$s
             ), u AS (
-                SELECT "id", "hash", "count" - row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") + 1 AS "count" FROM s ORDER BY s.count DESC, id
+                SELECT "id", "count" - row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") + 1 AS "count" FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS t SET "state" = 'TAKE'::%2$s FROM u
-            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = u.id AND u.count >= 0 RETURNING t.id, t.hash, "group", "remote", "max"
+            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = u.id AND u.count >= 0 RETURNING t.id, "hash", "group", "remote", "max"
         ), work->schema_table, work->schema_type,
 #if PG_VERSION_NUM >= 90500
         "SKIP LOCKED"
