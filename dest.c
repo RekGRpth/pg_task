@@ -17,7 +17,7 @@ static void headers(TupleDesc tupdesc) {
     for (int col = 1; col <= tupdesc->natts; col++) {
         const char *value = SPI_fname(tupdesc, col);
         if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
-        appendBinaryStringInfoEscapeQueote(&task->output, value, -1, task->escape, task->quote);
+        appendBinaryStringInfoEscapeQuote(&task->output, value, -1, task->escape, task->quote);
     }
 }
 
@@ -40,7 +40,7 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
             if (!init_oid_is_string(SPI_gettypeid(tupdesc, col)) && task->string) {
                 if (len) appendBinaryStringInfo(&task->output, value, len);
             } else {
-                appendBinaryStringInfoEscapeQueote(&task->output, value, len, task->escape, task->quote);
+                appendBinaryStringInfoEscapeQuote(&task->output, value, len, task->escape, task->quote);
             }
         }
         if (value) pfree(value);

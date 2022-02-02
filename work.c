@@ -272,7 +272,7 @@ static void work_headers(Task *task, PGresult *result) {
     for (int col = 0; col < PQnfields(result); col++) {
         const char *value = PQfname(result, col);
         if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
-        appendBinaryStringInfoEscapeQueote(&task->output, value, -1, task->escape, task->quote);
+        appendBinaryStringInfoEscapeQuote(&task->output, value, -1, task->escape, task->quote);
     }
 }
 
@@ -288,7 +288,7 @@ static void work_success(Task *task, PGresult *result, int row) {
             if (!init_oid_is_string(PQftype(result, col)) && task->string) {
                 if (len) appendBinaryStringInfo(&task->output, value, len);
             } else {
-                appendBinaryStringInfoEscapeQueote(&task->output, value, len, task->escape, task->quote);
+                appendBinaryStringInfoEscapeQuote(&task->output, value, len, task->escape, task->quote);
             }
         }
     }
