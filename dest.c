@@ -3,12 +3,13 @@
 extern Task *task;
 
 static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
-    bool isnull, typisvarlena;
-    Datum val = slot_getattr(slot, fnumber, &isnull);
-    Oid foutoid, oid = TupleDescAttr(tupdesc, fnumber - 1)->atttypid;
+    bool isnull;
+    bool typisvarlena;
+    Datum attr = slot_getattr(slot, fnumber, &isnull);
+    Oid foutoid;
     if (isnull) return NULL;
-    getTypeOutputInfo(oid, &foutoid, &typisvarlena);
-    return OidOutputFunctionCall(foutoid, val);
+    getTypeOutputInfo(TupleDescAttr(tupdesc, fnumber - 1)->atttypid, &foutoid, &typisvarlena);
+    return OidOutputFunctionCall(foutoid, attr);
 }
 
 static void headers(TupleDesc typeinfo) {
