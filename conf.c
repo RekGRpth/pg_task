@@ -4,13 +4,12 @@ extern char *default_null;
 extern int work_default_restart;
 
 static void conf_data(WorkShared *ws) {
-    List *names;
+    List *names = stringToQualifiedNameList(ws->data.quote);
     StringInfoData src;
     elog(DEBUG1, "user = %s, data = %s", ws->user.str, ws->data.str);
     set_ps_display_my("data");
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), ws->data.quote, ws->user.quote);
-    names = stringToQualifiedNameList(ws->data.quote);
     SPI_connect_my(src.data);
     if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
@@ -30,14 +29,13 @@ static void conf_data(WorkShared *ws) {
 }
 
 static void conf_user(WorkShared *ws) {
-    List *names;
+    List *names = stringToQualifiedNameList(ws->user.quote);
     StringInfoData src;
     elog(DEBUG1, "user = %s", ws->user.str);
     set_ps_display_my("user");
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE USER %s), ws->user.quote);
     if (ws->partman.str[0]) appendStringInfoString(&src, " SUPERUSER");
-    names = stringToQualifiedNameList(ws->user.quote);
     SPI_connect_my(src.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
