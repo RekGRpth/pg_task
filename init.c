@@ -112,14 +112,14 @@ char *TextDatumGetCStringMy(Datum datum) {
 const char *init_check(void) {
     return SQL(
         WITH j AS (
-            SELECT  COALESCE(COALESCE(data, j.user), current_setting('pg_work.default_data')) AS data,
-                    COALESCE(partman, current_setting('pg_work.default_partman')) AS partman,
-                    EXTRACT(epoch FROM COALESCE(reset, current_setting('pg_work.default_reset')::interval))::bigint AS reset,
-                    COALESCE(schema, current_setting('pg_work.default_schema')) AS schema,
-                    COALESCE(j.table, current_setting('pg_work.default_table')) AS table,
-                    COALESCE(timeout, current_setting('pg_work.default_timeout')::bigint) AS timeout,
-                    COALESCE(COALESCE(j.user, data), current_setting('pg_work.default_user')) AS user
-            FROM    json_to_recordset(current_setting('pg_task.json')::json) AS j (data text, partman text, reset interval, schema text, "table" text, timeout bigint, "user" text)
+            SELECT  COALESCE(COALESCE("data", "user"), current_setting('pg_work.default_data')) AS "data",
+                    COALESCE("partman", current_setting('pg_work.default_partman')) AS "partman",
+                    EXTRACT(epoch FROM COALESCE("reset", current_setting('pg_work.default_reset')::interval))::bigint AS "reset",
+                    COALESCE("schema", current_setting('pg_work.default_schema')) AS "schema",
+                    COALESCE("table", current_setting('pg_work.default_table')) AS "table",
+                    COALESCE("timeout", current_setting('pg_work.default_timeout')::bigint) AS "timeout",
+                    COALESCE(COALESCE("user", "data"), current_setting('pg_work.default_user')) AS "user"
+            FROM    json_to_recordset(current_setting('pg_task.json')::json) AS j ("data" text, "partman" text, "reset" interval, "schema" text, "table" text, "timeout" bigint, "user" text)
         ) SELECT    DISTINCT j.* FROM j
     );
 }
