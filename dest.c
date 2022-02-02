@@ -18,7 +18,7 @@ static void headers(TupleDesc tupdesc) {
         const char *value = SPI_fname(tupdesc, col);
         if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
         if (task->quote) appendStringInfoChar(&task->output, task->quote);
-        if (task->escape) init_escape(&task->output, value, strlen(value), task->escape);
+        if (task->quote && task->escape) init_escape(&task->output, value, strlen(value), task->escape, task->quote);
         else appendStringInfoString(&task->output, value);
         if (task->quote) appendStringInfoChar(&task->output, task->quote);
     }
@@ -45,7 +45,7 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
             } else {
                 if (task->quote) appendStringInfoChar(&task->output, task->quote);
                 if (len) {
-                    if (task->escape) init_escape(&task->output, value, len, task->escape);
+                    if (task->quote && task->escape) init_escape(&task->output, value, len, task->escape, task->quote);
                     else appendStringInfoString(&task->output, value);
                 }
                 if (task->quote) appendStringInfoChar(&task->output, task->quote);

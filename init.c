@@ -132,9 +132,9 @@ Datum CStringGetTextDatumMy(const char *s) {
     return s ? PointerGetDatum(cstring_to_text_my(s)) : (Datum)NULL;
 }
 
-void init_escape(StringInfoData *buf, const char *data, int len, char escape) {
+void init_escape(StringInfoData *buf, const char *data, int len, char escape, char quote) {
     for (int i = 0; len-- > 0; i++) {
-        if (escape == data[i]) appendStringInfoChar(buf, escape);
+        if (quote == data[i]) appendStringInfoChar(buf, escape);
         appendStringInfoChar(buf, data[i]);
     }
 }

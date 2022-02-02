@@ -273,7 +273,7 @@ static void work_headers(Task *task, PGresult *result) {
         const char *value = PQfname(result, col);
         if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
         if (task->quote) appendStringInfoChar(&task->output, task->quote);
-        if (task->escape) init_escape(&task->output, value, strlen(value), task->escape);
+        if (task->quote && task->escape) init_escape(&task->output, value, strlen(value), task->escape, task->quote);
         else appendStringInfoString(&task->output, value);
         if (task->quote) appendStringInfoChar(&task->output, task->quote);
     }
@@ -293,7 +293,7 @@ static void work_success(Task *task, PGresult *result, int row) {
             } else {
                 if (task->quote) appendStringInfoChar(&task->output, task->quote);
                 if (len) {
-                    if (task->escape) init_escape(&task->output, value, len, task->escape);
+                    if (task->quote && task->escape) init_escape(&task->output, value, len, task->escape, task->quote);
                     else appendStringInfoString(&task->output, value);
                 }
                 if (task->quote) appendStringInfoChar(&task->output, task->quote);
