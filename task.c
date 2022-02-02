@@ -17,12 +17,12 @@ static bool task_live(Task *task) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH s AS (
-                SELECT id FROM %1$s AS t
-                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND state = 'PLAN'::%2$s AND hash = $1 AND max >= $2 AND CASE
-                    WHEN count > 0 AND live > '0 sec' THEN count > $3 AND $4 + live > CURRENT_TIMESTAMP ELSE count > $3 OR $4 + live > CURRENT_TIMESTAMP
-                END ORDER BY max DESC, id LIMIT 1 FOR UPDATE OF t %3$s
-            ) UPDATE %1$s AS t SET state = 'TAKE'::%2$s FROM s
-            WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
+                SELECT "id" FROM %1$s AS t
+                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN'::%2$s AND "hash" = $1 AND "max" >= $2 AND CASE
+                    WHEN "count" > 0 AND "live" > '0 sec' THEN "count" > $3 AND $4 + "live" > CURRENT_TIMESTAMP ELSE "count" > $3 OR $4 + "live" > CURRENT_TIMESTAMP
+                END ORDER BY "max" DESC, "id" LIMIT 1 FOR UPDATE OF t %3$s
+            ) UPDATE %1$s AS t SET "state" = 'TAKE'::%2$s FROM s
+            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
         ), work->schema_table, work->schema_type,
 #if PG_VERSION_NUM >= 90500
         "SKIP LOCKED"
@@ -50,10 +50,10 @@ static void task_delete(Task *task) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH s AS (
-                SELECT id FROM %1$s AS t
-                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND id = $1 FOR UPDATE OF t
-            ) DELETE FROM %1$s AS t WHERE
-            plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND id = $1 RETURNING t.id
+                SELECT "id" FROM %1$s AS t
+                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 FOR UPDATE OF t
+            ) DELETE FROM %1$s AS t
+            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 RETURNING t.id
         ), work->schema_table);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -74,12 +74,12 @@ static void task_insert(Task *task) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT * FROM %1$s AS t
-                WHERE plan BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND id = $1 FOR UPDATE OF t
-            ) INSERT INTO %1$s AS t (parent, plan, "group", max, input, timeout, delete, repeat, drift, count, live, remote)
-            SELECT id, CASE
-                WHEN drift THEN CURRENT_TIMESTAMP + repeat
-                ELSE (WITH RECURSIVE r AS (SELECT plan AS p UNION SELECT p + repeat FROM r WHERE p <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
-            END AS plan, "group", max, input, timeout, delete, repeat, drift, count, live, remote FROM s WHERE repeat > '0 sec' LIMIT 1 RETURNING t.id
+                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 FOR UPDATE OF t
+            ) INSERT INTO %1$s AS t ("parent", "plan", "active", "live", "repeat", "timeout", "count", "max", "delete", "drift", "header", "string", "delimiter", "escape", "quote", "group", "input", "null", "remote")
+            SELECT "id", CASE
+                WHEN "drift" THEN CURRENT_TIMESTAMP + "repeat"
+                ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p + "repeat" FROM r WHERE p <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
+            END AS "plan", "active", "live", "repeat", "timeout", "count", "max", "delete", "drift", "header", "string", "delimiter", "escape", "quote", "group", "input", "null", "remote" FROM s WHERE "repeat" > '0 sec' LIMIT 1 RETURNING t.id
         ), work->schema_table);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
