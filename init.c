@@ -132,11 +132,16 @@ Datum CStringGetTextDatumMy(const char *s) {
     return s ? PointerGetDatum(cstring_to_text_my(s)) : (Datum)NULL;
 }
 
-void init_escape(StringInfoData *buf, const char *data, int len, char escape, char quote) {
-    for (int i = 0; len-- > 0; i++) {
-        if (quote == data[i]) appendStringInfoChar(buf, escape);
-        appendStringInfoChar(buf, data[i]);
+void appendBinaryStringInfoEscapeQueote(StringInfoData *buf, const char *data, int len, char escape, char quote) {
+    if (len < 0) len = strlen(data);
+    if (quote) appendStringInfoChar(buf, quote);
+    if (len) {
+        if (escape && quote) for (int i = 0; len-- > 0; i++) {
+            if (quote == data[i]) appendStringInfoChar(buf, escape);
+            appendStringInfoChar(buf, data[i]);
+        } else appendBinaryStringInfo(buf, data, len);
     }
+    if (quote) appendStringInfoChar(buf, quote);
 }
 
 void init_work(bool dynamic) {

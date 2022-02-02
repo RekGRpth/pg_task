@@ -272,10 +272,7 @@ static void work_headers(Task *task, PGresult *result) {
     for (int col = 0; col < PQnfields(result); col++) {
         const char *value = PQfname(result, col);
         if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
-        if (task->quote) appendStringInfoChar(&task->output, task->quote);
-        if (task->quote && task->escape) init_escape(&task->output, value, strlen(value), task->escape, task->quote);
-        else appendStringInfoString(&task->output, value);
-        if (task->quote) appendStringInfoChar(&task->output, task->quote);
+        appendBinaryStringInfoEscapeQueote(&task->output, value, -1, task->escape, task->quote);
     }
 }
 
@@ -285,18 +282,13 @@ static void work_success(Task *task, PGresult *result, int row) {
     if (task->output.len) appendStringInfoString(&task->output, "\n");
     for (int col = 0; col < PQnfields(result); col++) {
         const char *value = PQgetvalue(result, row, col);
-        int len = PQgetlength(result, row, col);
         if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
         if (PQgetisnull(result, row, col)) appendStringInfoString(&task->output, task->null); else {
+            int len = PQgetlength(result, row, col);
             if (!init_oid_is_string(PQftype(result, col)) && task->string) {
-                if (len) appendStringInfoString(&task->output, value);
+                if (len) appendBinaryStringInfo(&task->output, value, len);
             } else {
-                if (task->quote) appendStringInfoChar(&task->output, task->quote);
-                if (len) {
-                    if (task->quote && task->escape) init_escape(&task->output, value, len, task->escape, task->quote);
-                    else appendStringInfoString(&task->output, value);
-                }
-                if (task->quote) appendStringInfoChar(&task->output, task->quote);
+                appendBinaryStringInfoEscapeQueote(&task->output, value, len, task->escape, task->quote);
             }
         }
     }

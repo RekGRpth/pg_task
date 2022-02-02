@@ -17,10 +17,7 @@ static void headers(TupleDesc tupdesc) {
     for (int col = 1; col <= tupdesc->natts; col++) {
         const char *value = SPI_fname(tupdesc, col);
         if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
-        if (task->quote) appendStringInfoChar(&task->output, task->quote);
-        if (task->quote && task->escape) init_escape(&task->output, value, strlen(value), task->escape, task->quote);
-        else appendStringInfoString(&task->output, value);
-        if (task->quote) appendStringInfoChar(&task->output, task->quote);
+        appendBinaryStringInfoEscapeQueote(&task->output, value, -1, task->escape, task->quote);
     }
 }
 
@@ -37,18 +34,13 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     if (task->output.len) appendStringInfoString(&task->output, "\n");
     for (int col = 1; col <= tupdesc->natts; col++) {
         char *value = SPI_getvalue_my(slot, tupdesc, col);
-        int len = value ? strlen(value) : 0;
         if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
         if (!value) appendStringInfoString(&task->output, task->null); else {
+            int len = value ? strlen(value) : 0;
             if (!init_oid_is_string(SPI_gettypeid(tupdesc, col)) && task->string) {
-                if (len) appendStringInfoString(&task->output, value);
+                if (len) appendBinaryStringInfo(&task->output, value, len);
             } else {
-                if (task->quote) appendStringInfoChar(&task->output, task->quote);
-                if (len) {
-                    if (task->quote && task->escape) init_escape(&task->output, value, len, task->escape, task->quote);
-                    else appendStringInfoString(&task->output, value);
-                }
-                if (task->quote) appendStringInfoChar(&task->output, task->quote);
+                appendBinaryStringInfoEscapeQueote(&task->output, value, len, task->escape, task->quote);
             }
         }
         if (value) pfree(value);
