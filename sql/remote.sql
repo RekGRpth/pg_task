@@ -51,7 +51,7 @@ DO $body$ BEGIN
         IF (SELECT count(*) FROM task WHERE state != 'DONE') = 0 THEN EXIT; END IF;
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
-SELECT "group", input, output, error, state, max, count(id) FROM task WHERE "group" = '9' AND plan > :ct::timestamp GROUP BY "group", input, output, error, state, max, pid ORDER BY max DESC;
+SELECT "group", input, output, error, state, max, count(id) FROM task WHERE "group" = '9' AND plan > :ct::timestamp GROUP BY "group", input, output, error, state, max, pid ORDER BY max DESC, 7;
 BEGIN;
 WITH s AS (SELECT generate_series(1, 20) AS s) INSERT INTO task ("group", input, max, count, remote) SELECT '10', 'SELECT pg_sleep(1) AS a', 1, 5, 'application_name=test' FROM s;
 COMMIT;
