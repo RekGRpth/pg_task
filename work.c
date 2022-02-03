@@ -368,13 +368,12 @@ static void work_proc_exit(int code, Datum arg) {
 #if PG_VERSION_NUM >= 120000
 static void work_extension(const char *schema_quote, const char *extension) {
     const char *extension_quote = quote_identifier(extension);
-    List *names;
+    List *names = stringToQualifiedNameList(extension_quote);
     StringInfoData src;
     elog(DEBUG1, "extension = %s", extension);
     set_ps_display_my("extension");
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, schema_quote);
-    names = stringToQualifiedNameList(extension_quote);
     SPI_connect_my(src.data);
     if (!OidIsValid(get_extension_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
