@@ -505,8 +505,8 @@ static void work_table(void) {
     const char *function_quote;
     StringInfoData function;
 #endif
-    const RangeVar *rangevar;
-    List *names;
+    List *names = stringToQualifiedNameList(work->schema_table);
+    const RangeVar *rangevar = makeRangeVarFromNameList(names);
     StringInfoData src, hash;
     elog(DEBUG1, "schema_table = %s, schema_type = %s", work->schema_table, work->schema_type);
     set_ps_display_my("table");
@@ -570,8 +570,6 @@ static void work_table(void) {
 #if PG_VERSION_NUM < 120000
     appendStringInfoString(&src, hash.data);
 #endif
-    names = stringToQualifiedNameList(work->schema_table);
-    rangevar = makeRangeVarFromNameList(names);
     SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     work->shared->oid = RangeVarGetRelid(rangevar, NoLock, false);
