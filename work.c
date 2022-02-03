@@ -193,29 +193,32 @@ static void work_index(int count, const char *const *indexes) {
 static void work_reset(void) {
     Datum values[] = {ObjectIdGetDatum(work->shared->oid)};
     static Oid argtypes[] = {OIDOID};
-    StringInfoData src;
+    static SPIPlanPtr plan = NULL;
+    static StringInfoData src = {0};
     set_ps_display_my("reset");
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(
-        WITH s AS (
-            SELECT "id" FROM %1$s AS t
-            LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = $1 AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
-            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "state" IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
-            FOR UPDATE OF t %3$s
-        ) UPDATE %1$s AS t SET "state" = 'PLAN'::%2$s, "start" = NULL, "stop" = NULL, "pid" = NULL FROM s
-        WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
-    ), work->schema_table, work->schema_type,
+    if (!src.data) {
+        initStringInfoMy(&src);
+        appendStringInfo(&src, SQL(
+            WITH s AS (
+                SELECT "id" FROM %1$s AS t
+                LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = $1 AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
+                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "state" IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
+                FOR UPDATE OF t %3$s
+            ) UPDATE %1$s AS t SET "state" = 'PLAN'::%2$s, "start" = NULL, "stop" = NULL, "pid" = NULL FROM s
+            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
+        ), work->schema_table, work->schema_type,
 #if PG_VERSION_NUM >= 90500
-        "SKIP LOCKED"
+            "SKIP LOCKED"
 #else
-        ""
+            ""
 #endif
-    );
+        );
+    }
     SPI_connect_my(src.data);
-    SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UPDATE_RETURNING);
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     SPI_finish_my();
-    pfree(src.data);
     set_ps_display_my("idle");
 }
 
