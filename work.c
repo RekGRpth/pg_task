@@ -251,13 +251,12 @@ static void work_done(Task *task) {
 }
 
 static void work_schema(const char *schema_quote) {
-    List *names;
+    List *names = stringToQualifiedNameList(schema_quote);
     StringInfoData src;
     elog(DEBUG1, "schema = %s", schema_quote);
     set_ps_display_my("schema");
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE SCHEMA %s), schema_quote);
-    names = stringToQualifiedNameList(schema_quote);
     SPI_connect_my(src.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
