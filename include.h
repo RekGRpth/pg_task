@@ -131,7 +131,7 @@ typedef struct Task {
     PGconn *conn;
     StringInfoData error;
     StringInfoData output;
-    TaskShared shared;
+    TaskShared *shared;
     TimestampTz start;
     uint64 row;
     void (*socket) (struct Task *task);

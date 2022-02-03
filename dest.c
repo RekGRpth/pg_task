@@ -72,7 +72,7 @@ void NullCommandMy(CommandDest dest) { }
 
 #if PG_VERSION_NUM >= 130000
 void BeginCommandMy(CommandTag commandTag, CommandDest dest) {
-    elog(DEBUG1, "id = %li, commandTag = %s", task->shared.id, GetCommandTagName(commandTag));
+    elog(DEBUG1, "id = %li, commandTag = %s", task->shared->id, GetCommandTagName(commandTag));
 }
 
 void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undecorated_output) {
@@ -81,7 +81,7 @@ void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undeco
     const char *tagname = GetCommandTagName(tag);
     if (command_tag_display_rowcount(tag) && !force_undecorated_output) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, tag == CMDTAG_INSERT ? "%s 0 " UINT64_FORMAT : "%s " UINT64_FORMAT, tagname, qc->nprocessed);
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
-    elog(DEBUG1, "id = %li, completionTag = %s", task->shared.id, completionTag);
+    elog(DEBUG1, "id = %li, completionTag = %s", task->shared->id, completionTag);
     if (task->skip) task->skip = 0; else {
         if (!task->output.data) initStringInfoMy(&task->output);
         if (task->output.len) appendStringInfoString(&task->output, "\n");
@@ -90,11 +90,11 @@ void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undeco
 }
 #else
 void BeginCommandMy(const char *commandTag, CommandDest dest) {
-    elog(DEBUG1, "id = %li, commandTag = %s", task->shared.id, commandTag);
+    elog(DEBUG1, "id = %li, commandTag = %s", task->shared->id, commandTag);
 }
 
 void EndCommandMy(const char *commandTag, CommandDest dest) {
-    elog(DEBUG1, "id = %li, commandTag = %s", task->shared.id, commandTag);
+    elog(DEBUG1, "id = %li, commandTag = %s", task->shared->id, commandTag);
     if (task->skip) task->skip = 0; else {
         if (!task->output.data) initStringInfoMy(&task->output);
         if (task->output.len) appendStringInfoString(&task->output, "\n");

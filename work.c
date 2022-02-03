@@ -124,8 +124,9 @@ static void work_fatal(Task *task, PGresult *result) {
 static void work_finish(Task *task) {
     dlist_delete(&task->node);
     PQfinish(task->conn);
-    if (!proc_exit_inprogress && task->pid && !unlock_table_pid_hash(work->shared->oid, task->pid, task->shared.hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work->shared->oid, task->pid, task->shared.hash);
+    if (!proc_exit_inprogress && task->pid && !unlock_table_pid_hash(work->shared->oid, task->pid, task->shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work->shared->oid, task->pid, task->shared->hash);
     task_free(task);
+    pfree(task->shared);
     pfree(task);
 }
 
@@ -287,9 +288,9 @@ static void work_success(Task *task, PGresult *result, int row) {
 static void work_result(Task *task) {
     for (PGresult *result; PQstatus(task->conn) == CONNECTION_OK && (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
         case PGRES_COMMAND_OK: work_command(task, result); break;
-        case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", task->shared.id), errdetail("%s", PQresultErrorMessageMy(result)))); work_fatal(task, result); break;
+        case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", task->shared->id), errdetail("%s", PQresultErrorMessageMy(result)))); work_fatal(task, result); break;
         case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) work_success(task, result, row); break;
-        default: elog(DEBUG1, "id = %li, %s", task->shared.id, PQresStatus(PQresultStatus(result))); break;
+        default: elog(DEBUG1, "id = %li, %s", task->shared->id, PQresStatus(PQresultStatus(result))); break;
     }
     work_done(task);
 }
@@ -302,13 +303,13 @@ static void work_query(Task *task) {
         if (task_work(task)) { work_finish(task); return; }
         if (task->active) break;
         ereport_my(WARNING, false, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
-        if (!task->shared.id) return;
+        if (!task->shared->id) return;
     }
     initStringInfoMy(&input);
     task->skip = 0;
     appendStringInfoString(&input, SQL(BEGIN;));
     task->skip++;
-    appendStringInfo(&input, SQL(SET SESSION "pg_task.id" = %li;), task->shared.id);
+    appendStringInfo(&input, SQL(SET SESSION "pg_task.id" = %li;), task->shared->id);
     task->skip++;
     if (task->timeout) {
         appendStringInfo(&input, SQL(SET SESSION "statement_timeout" = %i;), task->timeout);
@@ -317,7 +318,7 @@ static void work_query(Task *task) {
     appendStringInfoString(&input, SQL(COMMIT;));
     task->skip++;
     appendStringInfoString(&input, task->input);
-    elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task->shared.id, task->timeout, input.data, task->count);
+    elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task->shared->id, task->timeout, input.data, task->count);
     if (!PQsendQuery(task->conn, input.data)) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); pfree(input.data); return; }
     pfree(input.data);
     task->socket = work_result;
@@ -328,19 +329,19 @@ static void work_connect(Task *task) {
     bool connected = false;
     switch (PQstatus(task->conn)) {
         case CONNECTION_BAD: ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(task->conn)))); return;
-        case CONNECTION_OK: elog(DEBUG1, "id = %li, PQstatus == CONNECTION_OK", task->shared.id); connected = true; break;
+        case CONNECTION_OK: elog(DEBUG1, "id = %li, PQstatus == CONNECTION_OK", task->shared->id); connected = true; break;
         default: break;
     }
     if (!connected) switch (PQconnectPoll(task->conn)) {
-        case PGRES_POLLING_ACTIVE: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_ACTIVE", task->shared.id); break;
+        case PGRES_POLLING_ACTIVE: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_ACTIVE", task->shared->id); break;
         case PGRES_POLLING_FAILED: ereport_my(WARNING, true, (errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectPoll failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); return;
-        case PGRES_POLLING_OK: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_OK", task->shared.id); connected = true; break;
-        case PGRES_POLLING_READING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_READING", task->shared.id); task->event = WL_SOCKET_READABLE; break;
-        case PGRES_POLLING_WRITING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_WRITING", task->shared.id); task->event = WL_SOCKET_WRITEABLE; break;
+        case PGRES_POLLING_OK: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_OK", task->shared->id); connected = true; break;
+        case PGRES_POLLING_READING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_READING", task->shared->id); task->event = WL_SOCKET_READABLE; break;
+        case PGRES_POLLING_WRITING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_WRITING", task->shared->id); task->event = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
         if (!(task->pid = PQbackendPID(task->conn))) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQbackendPID failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); return; }
-        if (!lock_table_pid_hash(work->shared->oid, task->pid, task->shared.hash)) { ereport_my(WARNING, true, (errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", work->shared->oid, task->pid, task->shared.hash))); return; }
+        if (!lock_table_pid_hash(work->shared->oid, task->pid, task->shared->hash)) { ereport_my(WARNING, true, (errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", work->shared->oid, task->pid, task->shared->hash))); return; }
         work_query(task);
     }
 }
@@ -354,14 +355,12 @@ static void work_proc_exit(int code, Datum arg) {
         PGcancel *cancel = PQgetCancel(task->conn);
         if (!cancel) { ereport(WARNING, (errmsg("PQgetCancel failed"), errdetail("%s", PQerrorMessageMy(task->conn)))); continue; }
         if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { ereport(WARNING, (errmsg("PQcancel failed"), errdetail("%s", errbuf))); PQfreeCancel(cancel); continue; }
-        elog(WARNING, "cancel id = %li", task->shared.id);
+        elog(WARNING, "cancel id = %li", task->shared->id);
         PQfreeCancel(cancel);
         work_finish(task);
     }
     if (!code) {
         if (!ShutdownRequestPending) init_work(true);
-    } else {
-        if ((dsm_segment *)arg) dsm_detach((dsm_segment *)arg);
     }
 }
 
@@ -440,7 +439,7 @@ static void work_remote(Task *task) {
     int arg = 3;
     PQconninfoOption *opts = PQconninfoParse(task->remote, &err);
     StringInfoData name, value;
-    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", task->shared.id, task->group, task->remote ? task->remote : default_null, task->shared.max, work->shared->oid);
+    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", task->shared->id, task->group, task->remote ? task->remote : default_null, task->shared->max, work->shared->oid);
     dlist_push_head(&work->head, &task->node);
     if (!opts) { ereport_my(WARNING, true, (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), errdetail("%s", work_errstr(err)))); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
@@ -595,7 +594,7 @@ static void work_task(Task *task) {
     Size segsize;
     size_t len;
     TaskShared *ts;
-    elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", task->shared.id, task->group, task->shared.max, work->shared->oid);
+    elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", task->shared->id, task->group, task->shared->max, work->shared->oid);
     shm_toc_initialize_estimator(&e);
     shm_toc_estimate_chunk(&e, sizeof(*ts));
     shm_toc_estimate_keys(&e, 1);
@@ -604,9 +603,9 @@ static void work_task(Task *task) {
     toc = shm_toc_create(PG_TASK_MAGIC, dsm_segment_address(seg), segsize);
     ts = shm_toc_allocate(toc, sizeof(*ts));
     ts->handle = DatumGetUInt32(MyBgworkerEntry->bgw_main_arg);
-    ts->hash = task->shared.hash;
-    ts->id = task->shared.id;
-    ts->max = task->shared.max;
+    ts->hash = task->shared->hash;
+    ts->id = task->shared->id;
+    ts->max = task->shared->max;
     shm_toc_insert(toc, 0, ts);
     if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
@@ -630,6 +629,7 @@ static void work_task(Task *task) {
     dsm_pin_segment(seg);
     dsm_detach(seg);
     task_free(task);
+    pfree(task->shared);
     pfree(task);
 }
 
@@ -683,11 +683,12 @@ static void work_timeout(void) {
     for (uint64 row = 0; row < SPI_tuptable_my.numvals; row++) {
         Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
         task->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "group", false));
-        task->shared.hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "hash", false));
-        task->shared.id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "id", false));
-        task->shared.max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "max", false));
         task->remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "remote", true));
-        elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task->shared.id, task->shared.hash, task->group, task->remote ? task->remote : default_null, task->shared.max);
+        task->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(*task->shared));
+        task->shared->hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "hash", false));
+        task->shared->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "id", false));
+        task->shared->max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "max", false));
+        elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task->shared->id, task->shared->hash, task->group, task->remote ? task->remote : default_null, task->shared->max);
         task->remote ? work_remote(task) : work_task(task);
     }
     SPI_tuptable_free(&SPI_tuptable_my);
@@ -704,7 +705,7 @@ void work_main(Datum arg) {
     const char *index_plan[] = {"plan"};
     const char *index_state[] = {"state"};
     Datum datum;
-    dsm_segment *seg = NULL;
+    dsm_segment *seg;
     instr_time current_reset_time;
     instr_time current_timeout_time;
     instr_time start_time;
@@ -712,7 +713,7 @@ void work_main(Datum arg) {
     long current_timeout = -1;
     shm_toc *toc;
     StringInfoData schema_table, schema_type, timeout;
-    on_proc_exit(work_proc_exit, (Datum)seg);
+    on_proc_exit(work_proc_exit, (Datum)NULL);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
