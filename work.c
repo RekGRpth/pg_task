@@ -501,10 +501,6 @@ static void work_remote(Task *task) {
 }
 
 static void work_table(void) {
-#if PG_VERSION_NUM < 120000
-    const char *function_quote;
-    StringInfoData function;
-#endif
     List *names = stringToQualifiedNameList(work->schema_table);
     const RangeVar *rangevar = makeRangeVarFromNameList(names);
     StringInfoData src, hash;
@@ -515,18 +511,22 @@ static void work_table(void) {
 #if PG_VERSION_NUM >= 120000
     appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (hashtext("group"||COALESCE("remote", '%1$s'))) STORED), "");
 #else
-    initStringInfoMy(&function);
-    appendStringInfo(&function, "%1$s_hash_generate", work->shared->table.str);
-    function_quote = quote_identifier(function.data);
-    appendStringInfo(&hash, SQL(;CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
-        IF tg_op = 'INSERT' OR (new.group, new.remote) IS DISTINCT FROM (old.group, old.remote) THEN
-            new.hash = hashtext(new.group||COALESCE(new.remote, '%3$s'));
-        END IF;
-        return new;
-    end;$$ LANGUAGE plpgsql;
-    CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s()), work->shared->schema.quote, function_quote, "", work->schema_table);
-    if (function_quote != function.data) pfree((void *)function_quote);
-    pfree(function.data);
+    if (true) {
+        const char *function_quote;
+        StringInfoData function;
+        initStringInfoMy(&function);
+        appendStringInfo(&function, "%1$s_hash_generate", work->shared->table.str);
+        function_quote = quote_identifier(function.data);
+        appendStringInfo(&hash, SQL(;CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
+            IF tg_op = 'INSERT' OR (new.group, new.remote) IS DISTINCT FROM (old.group, old.remote) THEN
+                new.hash = hashtext(new.group||COALESCE(new.remote, '%3$s'));
+            END IF;
+            return new;
+        end;$$ LANGUAGE plpgsql;
+        CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s()), work->shared->schema.quote, function_quote, "", work->schema_table);
+        if (function_quote != function.data) pfree((void *)function_quote);
+        pfree(function.data);
+    }
 #endif
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
