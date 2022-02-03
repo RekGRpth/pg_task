@@ -285,14 +285,11 @@ static void work_success(Task *task, PGresult *result, int row) {
 }
 
 static void work_result(Task *task) {
-    for (PGresult *result; PQstatus(task->conn) == CONNECTION_OK && (result = PQgetResult(task->conn)); ) {
-        switch (PQresultStatus(result)) {
-            case PGRES_COMMAND_OK: work_command(task, result); break;
-            case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", task->shared.id), errdetail("%s", PQresultErrorMessageMy(result)))); work_fatal(task, result); break;
-            case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) work_success(task, result, row); break;
-            default: elog(DEBUG1, "id = %li, %s", task->shared.id, PQresStatus(PQresultStatus(result))); break;
-        }
-        PQclear(result);
+    for (PGresult *result; PQstatus(task->conn) == CONNECTION_OK && (result = PQgetResult(task->conn)); PQclear(result)) switch (PQresultStatus(result)) {
+        case PGRES_COMMAND_OK: work_command(task, result); break;
+        case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", task->shared.id), errdetail("%s", PQresultErrorMessageMy(result)))); work_fatal(task, result); break;
+        case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) work_success(task, result, row); break;
+        default: elog(DEBUG1, "id = %li, %s", task->shared.id, PQresStatus(PQresultStatus(result))); break;
     }
     work_done(task);
 }
