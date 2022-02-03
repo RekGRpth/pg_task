@@ -121,16 +121,12 @@ static void work_fatal(Task *task, PGresult *result) {
     }
 }
 
-static void work_free(Task *task) {
-    task_free(task);
-    pfree(task);
-}
-
 static void work_finish(Task *task) {
     dlist_delete(&task->node);
     PQfinish(task->conn);
     if (!proc_exit_inprogress && task->pid && !unlock_table_pid_hash(work->shared->oid, task->pid, task->shared.hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work->shared->oid, task->pid, task->shared.hash);
-    work_free(task);
+    task_free(task);
+    pfree(task);
 }
 
 static int work_nevents(void) {
@@ -637,7 +633,8 @@ static void work_task(Task *task) {
     pfree(handle);
     dsm_pin_segment(seg);
     dsm_detach(seg);
-    work_free(task);
+    task_free(task);
+    pfree(task);
 }
 
 static void work_type(void) {
