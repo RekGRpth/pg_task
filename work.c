@@ -270,9 +270,8 @@ static void work_schema(const char *schema_quote) {
 static void work_headers(Task *task, PGresult *result) {
     if (task->output.len) appendStringInfoString(&task->output, "\n");
     for (int col = 0; col < PQnfields(result); col++) {
-        const char *value = PQfname(result, col);
         if (col > 0) appendStringInfoChar(&task->output, task->delimiter);
-        appendBinaryStringInfoEscapeQuote(&task->output, value, strlen(value), false, task->escape, task->quote);
+        appendBinaryStringInfoEscapeQuote(&task->output, PQfname(result, col), strlen(PQfname(result, col)), false, task->escape, task->quote);
     }
 }
 

@@ -15,9 +15,8 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
 static void headers(TupleDesc tupdesc) {
     if (task->output.len) appendStringInfoString(&task->output, "\n");
     for (int col = 1; col <= tupdesc->natts; col++) {
-        const char *value = SPI_fname(tupdesc, col);
         if (col > 1) appendStringInfoChar(&task->output, task->delimiter);
-        appendBinaryStringInfoEscapeQuote(&task->output, value, strlen(value), false, task->escape, task->quote);
+        appendBinaryStringInfoEscapeQuote(&task->output, SPI_fname(tupdesc, col), strlen(SPI_fname(tupdesc, col)), false, task->escape, task->quote);
     }
 }
 
