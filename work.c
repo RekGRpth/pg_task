@@ -3,12 +3,11 @@
 extern char *default_null;
 extern Task *task;
 static emit_log_hook_type emit_log_hook_prev = NULL;
-static Task **taskp = &task;
 static void work_query(Task *t);
 Work *work;
 
 #define ereport_my(elevel, finish, ...) do { \
-    *taskp = t; \
+    task = t; \
     emit_log_hook_prev = emit_log_hook; \
     emit_log_hook = task_error; \
     ereport(elevel, __VA_ARGS__); \
