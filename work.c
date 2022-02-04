@@ -302,7 +302,7 @@ static void work_query(Task *t) {
         t->socket = work_query;
         if (task_work(t)) { work_finish(t); return; }
         if (t->active) break;
-        ereport_my(WARNING, false, (errcode(ERRCODE_QUERY_CANCELED), errmsg("t not active")));
+        ereport_my(WARNING, false, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
         if (!t->shared->id) return;
     }
     initStringInfoMy(&input);
