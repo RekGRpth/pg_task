@@ -147,6 +147,7 @@ void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes) {
     *seg = dsm_create_my(segsize, 0);
     toc = shm_toc_create(magic, dsm_segment_address(*seg), segsize);
     ptr = shm_toc_allocate(toc, nbytes);
+    MemSet(ptr, 0, nbytes);
     shm_toc_insert(toc, 0, ptr);
     return ptr;
 }

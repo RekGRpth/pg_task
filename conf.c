@@ -76,20 +76,10 @@ void conf_main(Datum arg) {
         char *str;
         dsm_segment *seg;
         pid_t pid;
-        shm_toc_estimator e;
-        shm_toc *toc;
-        Size segsize;
         size_t len;
         Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
         set_ps_display_my("row");
-        shm_toc_initialize_estimator(&e);
-        shm_toc_estimate_chunk(&e, sizeof(*work->shared));
-        shm_toc_estimate_keys(&e, 1);
-        segsize = shm_toc_estimate(&e);
-        seg = dsm_create_my(segsize, 0);
-        toc = shm_toc_create(PG_WORK_MAGIC, dsm_segment_address(seg), segsize);
-        work->shared = shm_toc_allocate(toc, sizeof(*work->shared));
-        memset(work->shared, 0, sizeof(*work->shared));
+        work->shared = shm_toc_allocate_my(PG_WORK_MAGIC, &seg, sizeof(*work->shared));
         work->shared->reset = DatumGetInt64(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "reset", false));
         work->shared->timeout = DatumGetInt64(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "timeout", false));
         if ((len = strlcpy(work->shared->data, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "data", false)), sizeof(work->shared->data))) >= sizeof(work->shared->data)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work->shared->data))));
@@ -111,7 +101,6 @@ void conf_main(Datum arg) {
         default_null
 #endif
         );
-        shm_toc_insert(toc, 0, work->shared);
         work->data = quote_identifier(work->shared->data);
         work->user = quote_identifier(work->shared->user);
         conf_user(work);
