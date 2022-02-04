@@ -134,7 +134,7 @@ typedef struct Task {
     TaskShared *shared;
     TimestampTz start;
     uint64 row;
-    void (*socket) (struct Task *task);
+    void (*socket) (struct Task *t);
 } Task;
 
 #define PG_WORK_MAGIC 0x776f726b
@@ -179,8 +179,8 @@ bool lock_data_user(Oid data, Oid user);
 bool lock_data_user_hash(Oid data, Oid user, int hash);
 bool lock_table_id(Oid table, int64 id);
 bool lock_table_pid_hash(Oid table, int pid, int hash);
-bool task_done(Task *task);
-bool task_work(Task *task);
+bool task_done(Task *t);
+bool task_work(Task *t);
 bool unlock_data_user(Oid data, Oid user);
 bool unlock_data_user_hash(Oid data, Oid user, int hash);
 bool unlock_table_id(Oid table, int64 id);
@@ -225,7 +225,7 @@ void SPI_finish_my(void);
 void SPI_tuptable_copy(SPITupleTableMy *tuptablemy);
 void SPI_tuptable_free(SPITupleTableMy *tuptablemy);
 void task_error(ErrorData *edata);
-void task_free(Task *task);
+void task_free(Task *t);
 void task_main(Datum main_arg);
 void work_main(Datum main_arg);
 
