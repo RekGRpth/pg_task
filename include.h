@@ -140,34 +140,28 @@ typedef struct Task {
 #define PG_WORK_MAGIC 0x776f726b
 
 typedef struct WorkShared {
+    char data[NAMEDATALEN];
+#if PG_VERSION_NUM >= 120000
+    char partman[NAMEDATALEN];
+#endif
+    char schema[NAMEDATALEN];
+    char table[NAMEDATALEN];
+    char user[NAMEDATALEN];
     int64 reset;
     int64 timeout;
     Oid oid;
-    struct {
-        char quote[NAMEDATALEN];
-        char str[NAMEDATALEN];
-    } data;
-    struct {
-        char quote[NAMEDATALEN];
-        char str[NAMEDATALEN];
-    } partman;
-    struct {
-        char quote[NAMEDATALEN];
-        char str[NAMEDATALEN];
-    } schema;
-    struct {
-        char quote[NAMEDATALEN];
-        char str[NAMEDATALEN];
-    } table;
-    struct {
-        char quote[NAMEDATALEN];
-        char str[NAMEDATALEN];
-    } user;
 } WorkShared;
 
 typedef struct Work {
     char *schema_table;
     char *schema_type;
+    const char *data;
+#if PG_VERSION_NUM >= 120000
+    const char *partman;
+#endif
+    const char *schema;
+    const char *table;
+    const char *user;
     dlist_head head;
     int hash;
     WorkShared *shared;
