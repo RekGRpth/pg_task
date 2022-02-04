@@ -96,9 +96,9 @@ void conf_main(Datum arg) {
         pfree(str);
         elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li, partman = %s", row, work->shared->user, work->shared->data, work->shared->schema, work->shared->table, work->shared->timeout, work->shared->reset,
 #if PG_VERSION_NUM >= 120000
-        work->shared->partman[0] ? work->shared->partman : default_null
+            work->shared->partman[0] ? work->shared->partman : default_null
 #else
-        default_null
+            default_null
 #endif
         );
         work->data = quote_identifier(work->shared->data);
@@ -129,6 +129,7 @@ void conf_main(Datum arg) {
         pfree(handle);
         dsm_pin_segment(seg);
         dsm_detach(seg);
+        pfree(work);
     }
     SPI_tuptable_free(&SPI_tuptable_my);
     set_ps_display_my("idle");
