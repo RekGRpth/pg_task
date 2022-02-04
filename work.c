@@ -603,10 +603,7 @@ static void work_task(Task *task) {
     seg = dsm_create_my(segsize, 0);
     toc = shm_toc_create(PG_TASK_MAGIC, dsm_segment_address(seg), segsize);
     ts = shm_toc_allocate(toc, sizeof(*ts));
-    ts->handle = task->shared->handle;
-    ts->hash = task->shared->hash;
-    ts->id = task->shared->id;
-    ts->max = task->shared->max;
+    *ts = *task->shared;
     shm_toc_insert(toc, 0, ts);
     if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
