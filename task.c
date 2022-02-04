@@ -6,12 +6,12 @@ extern Work *work;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 Task *task;
 
-static bool task_live(Task *task) {
-    Datum values[] = {Int32GetDatum(task->shared->hash), Int32GetDatum(task->shared->max), Int32GetDatum(task->count), TimestampTzGetDatum(task->start)};
+static bool task_live(Task *t) {
+    Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start)};
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    elog(DEBUG1, "id = %li, hash = %i, max = %i, count = %i, start = %s", task->shared->id, task->shared->hash, task->shared->max, task->count, timestamptz_to_str(task->start));
+    elog(DEBUG1, "id = %li, hash = %i, max = %i, count = %i, start = %s", t->shared->id, t->shared->hash, t->shared->max, t->count, timestamptz_to_str(t->start));
     set_ps_display_my("live");
     if (!src.data) {
         initStringInfoMy(&src);
@@ -33,18 +33,18 @@ static bool task_live(Task *task) {
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
-    task->shared->id = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false)) : 0;
-    elog(DEBUG1, "id = %li", task->shared->id);
+    t->shared->id = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false)) : 0;
+    elog(DEBUG1, "id = %li", t->shared->id);
     set_ps_display_my("idle");
-    return ShutdownRequestPending || !task->shared->id;
+    return ShutdownRequestPending || !t->shared->id;
 }
 
-static void task_delete(Task *task) {
-    Datum values[] = {Int64GetDatum(task->shared->id)};
+static void task_delete(Task *t) {
+    Datum values[] = {Int64GetDatum(t->shared->id)};
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    elog(DEBUG1, "id = %li", task->shared->id);
+    elog(DEBUG1, "id = %li", t->shared->id);
     set_ps_display_my("delete");
     if (!src.data) {
         initStringInfoMy(&src);
@@ -62,12 +62,12 @@ static void task_delete(Task *task) {
     set_ps_display_my("idle");
 }
 
-static void task_insert(Task *task) {
-    Datum values[] = {Int64GetDatum(task->shared->id)};
+static void task_insert(Task *t) {
+    Datum values[] = {Int64GetDatum(t->shared->id)};
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    elog(DEBUG1, "id = %li", task->shared->id);
+    elog(DEBUG1, "id = %li", t->shared->id);
     set_ps_display_my("insert");
     if (!src.data) {
         initStringInfoMy(&src);
@@ -88,12 +88,12 @@ static void task_insert(Task *task) {
     set_ps_display_my("idle");
 }
 
-static void task_update(Task *task) {
-    Datum values[] = {Int32GetDatum(task->shared->hash)};
+static void task_update(Task *t) {
+    Datum values[] = {Int32GetDatum(t->shared->hash)};
     static Oid argtypes[] = {INT4OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    elog(DEBUG1, "hash = %i", task->shared->hash);
+    elog(DEBUG1, "hash = %i", t->shared->hash);
     set_ps_display_my("update");
     if (!src.data) {
         initStringInfoMy(&src);
@@ -111,14 +111,14 @@ static void task_update(Task *task) {
     set_ps_display_my("idle");
 }
 
-bool task_done(Task *task) {
+bool task_done(Task *t) {
     bool delete = false, exit = true, insert = false, update = false;
-    char nulls[] = {' ', task->output.data ? ' ' : 'n', task->error.data ? ' ' : 'n'};
-    Datum values[] = {Int64GetDatum(task->shared->id), CStringGetTextDatumMy(task->output.data), CStringGetTextDatumMy(task->error.data)};
+    char nulls[] = {' ', t->output.data ? ' ' : 'n', t->error.data ? ' ' : 'n'};
+    Datum values[] = {Int64GetDatum(t->shared->id), CStringGetTextDatumMy(t->output.data), CStringGetTextDatumMy(t->error.data)};
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    elog(DEBUG1, "id = %li, output = %s, error = %s", task->shared->id, task->output.data ? task->output.data : default_null, task->error.data ? task->error.data : default_null);
+    elog(DEBUG1, "id = %li, output = %s, error = %s", t->shared->id, t->output.data ? t->output.data : default_null, t->error.data ? t->error.data : default_null);
     set_ps_display_my("done");
     if (!src.data) {
         initStringInfoMy(&src);
@@ -134,7 +134,7 @@ bool task_done(Task *task) {
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING);
-    if (SPI_processed != 1) elog(WARNING, "id = %li, SPI_processed %lu != 1", task->shared->id, (long)SPI_processed); else {
+    if (SPI_processed != 1) elog(WARNING, "id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed); else {
         delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
         exit = !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
         insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false));
@@ -143,34 +143,34 @@ bool task_done(Task *task) {
     }
     if (values[1]) pfree((void *)values[1]);
     if (values[2]) pfree((void *)values[2]);
-    if (insert) task_insert(task);
-    if (delete) task_delete(task);
-    if (update) task_update(task);
-    if (task->lock && !unlock_table_id(work->shared->oid, task->shared->id)) { elog(WARNING, "!unlock_table_id(%i, %li)", work->shared->oid, task->shared->id); exit = true; }
-    task->lock = false;
-    exit = exit || task_live(task);
+    if (insert) task_insert(t);
+    if (delete) task_delete(t);
+    if (update) task_update(t);
+    if (t->lock && !unlock_table_id(work->shared->oid, t->shared->id)) { elog(WARNING, "!unlock_table_id(%i, %li)", work->shared->oid, t->shared->id); exit = true; }
+    t->lock = false;
+    exit = exit || task_live(t);
     SPI_finish_my();
-    task_free(task);
+    task_free(t);
     set_ps_display_my("idle");
     return ShutdownRequestPending || exit;
 }
 
-bool task_work(Task *task) {
+bool task_work(Task *t) {
     bool exit = false;
-    Datum values[] = {Int64GetDatum(task->shared->id), Int32GetDatum(task->pid)};
+    Datum values[] = {Int64GetDatum(t->shared->id), Int32GetDatum(t->pid)};
     static Oid argtypes[] = {INT8OID, INT4OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return true;
-    if (!lock_table_id(work->shared->oid, task->shared->id)) { elog(WARNING, "!lock_table_id(%i, %li)", work->shared->oid, task->shared->id); return true; }
-    task->lock = true;
-    task->count++;
-    elog(DEBUG1, "id = %li, max = %i, oid = %i, count = %i, pid = %i", task->shared->id, task->shared->max, work->shared->oid, task->count, task->pid);
+    if (!lock_table_id(work->shared->oid, t->shared->id)) { elog(WARNING, "!lock_table_id(%i, %li)", work->shared->oid, t->shared->id); return true; }
+    t->lock = true;
+    t->count++;
+    elog(DEBUG1, "id = %li, max = %i, oid = %i, count = %i, pid = %i", t->shared->id, t->shared->max, work->shared->oid, t->count, t->pid);
     set_ps_display_my("work");
-    if (!task->conn) {
+    if (!t->conn) {
         StringInfoData id;
         initStringInfoMy(&id);
-        appendStringInfo(&id, "%li", task->shared->id);
+        appendStringInfo(&id, "%li", t->shared->id);
         set_config_option_my("pg_task.id", id.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
         pfree(id.data);
     }
@@ -189,24 +189,24 @@ bool task_work(Task *task) {
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) {
-        elog(WARNING, "id = %li, SPI_processed %lu != 1", task->shared->id, (long)SPI_processed);
+        elog(WARNING, "id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed);
         exit = true;
     } else {
-        task->active = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "active", false));
-        task->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false));
-        task->escape = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "escape", false));
-        task->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "group", false));
-        task->shared->hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "hash", false));
-        task->header = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "header", false));
-        task->input = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "input", false));
-        task->null = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "null", false));
-        task->quote = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "quote", false));
-        task->remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "remote", true));
-        task->string = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "string", false));
-        task->timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "timeout", false));
-        if (0 < StatementTimeout && StatementTimeout < task->timeout) task->timeout = StatementTimeout;
-        elog(DEBUG1, "group = %s, remote = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, active = %s", task->group, task->remote ? task->remote : default_null, task->shared->hash, task->input, task->timeout, task->header ? "true" : "false", task->string ? "true" : "false", task->null, task->delimiter, task->quote ? task->quote : 30, task->escape ? task->escape : 30, task->active ? "true" : "false");
-        if (!task->remote) set_config_option_my("pg_task.group", task->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+        t->active = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "active", false));
+        t->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false));
+        t->escape = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "escape", false));
+        t->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "group", false));
+        t->shared->hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "hash", false));
+        t->header = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "header", false));
+        t->input = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "input", false));
+        t->null = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "null", false));
+        t->quote = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "quote", false));
+        t->remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "remote", true));
+        t->string = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "string", false));
+        t->timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "timeout", false));
+        if (0 < StatementTimeout && StatementTimeout < t->timeout) t->timeout = StatementTimeout;
+        elog(DEBUG1, "group = %s, remote = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, active = %s", t->group, t->remote ? t->remote : default_null, t->shared->hash, t->input, t->timeout, t->header ? "true" : "false", t->string ? "true" : "false", t->null, t->delimiter, t->quote ? t->quote : 30, t->escape ? t->escape : 30, t->active ? "true" : "false");
+        if (!t->remote) set_config_option_my("pg_task.group", t->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     }
     SPI_finish_my();
     set_ps_display_my("idle");
@@ -355,13 +355,13 @@ static bool task_timeout(void) {
     return task_done(task);
 }
 
-void task_free(Task *task) {
-    if (task->error.data) { pfree(task->error.data); task->error.data = NULL; }
-    if (task->group) { pfree(task->group); task->group = NULL; }
-    if (task->input) { pfree(task->input); task->input = NULL; }
-    if (task->null) { pfree(task->null); task->null = NULL; }
-    if (task->output.data) { pfree(task->output.data); task->output.data = NULL; }
-    if (task->remote) { pfree(task->remote); task->remote = NULL; }
+void task_free(Task *t) {
+    if (t->error.data) { pfree(t->error.data); t->error.data = NULL; }
+    if (t->group) { pfree(t->group); t->group = NULL; }
+    if (t->input) { pfree(t->input); t->input = NULL; }
+    if (t->null) { pfree(t->null); t->null = NULL; }
+    if (t->output.data) { pfree(t->output.data); t->output.data = NULL; }
+    if (t->remote) { pfree(t->remote); t->remote = NULL; }
 }
 
 void task_main(Datum arg) {
