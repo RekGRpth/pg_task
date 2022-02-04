@@ -116,6 +116,8 @@ void conf_main(Datum arg) {
         work->user = quote_identifier(work->shared->user);
         conf_user(work);
         conf_data(work);
+        if (work->data != work->shared->data) pfree((void *)work->data);
+        if (work->user != work->shared->user) pfree((void *)work->user);
         if ((len = strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
         if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
         if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %li", work->shared->user, work->shared->data, work->shared->schema, work->shared->table, work->shared->timeout)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
@@ -135,8 +137,6 @@ void conf_main(Datum arg) {
             case BGWH_STARTED: break;
             case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
         }
-//        if (work->data != work->shared->data) pfree((void *)work->data);
-//        if (work->user != work->shared->data) pfree((void *)work->user);
         pfree(handle);
         dsm_pin_segment(seg);
         dsm_detach(seg);
