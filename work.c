@@ -665,16 +665,16 @@ static void work_timeout(void) {
     SPI_finish_my();
     for (uint64 row = 0; row < SPI_tuptable_my.numvals; row++) {
         dsm_segment *seg;
-        Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
-        task->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "group", false));
-        task->remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "remote", true));
-        task->shared = task->remote ? MemoryContextAllocZero(TopMemoryContext, sizeof(*task->shared)) : shm_toc_allocate_my(PG_TASK_MAGIC, &seg, sizeof(*task->shared));
-        task->shared->handle = DatumGetUInt32(MyBgworkerEntry->bgw_main_arg);
-        task->shared->hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "hash", false));
-        task->shared->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "id", false));
-        task->shared->max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "max", false));
-        elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task->shared->id, task->shared->hash, task->group, task->remote ? task->remote : default_null, task->shared->max);
-        task->remote ? work_remote(task) : work_task(task, seg);
+        Task *t = MemoryContextAllocZero(TopMemoryContext, sizeof(*t));
+        t->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "group", false));
+        t->remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "remote", true));
+        t->shared = t->remote ? MemoryContextAllocZero(TopMemoryContext, sizeof(*t->shared)) : shm_toc_allocate_my(PG_TASK_MAGIC, &seg, sizeof(*t->shared));
+        t->shared->handle = DatumGetUInt32(MyBgworkerEntry->bgw_main_arg);
+        t->shared->hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "hash", false));
+        t->shared->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "id", false));
+        t->shared->max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "max", false));
+        elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : default_null, t->shared->max);
+        t->remote ? work_remote(t) : work_task(t, seg);
     }
     SPI_tuptable_free(&SPI_tuptable_my);
     set_ps_display_my("idle");
