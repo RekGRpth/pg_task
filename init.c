@@ -135,6 +135,22 @@ Datum CStringGetTextDatumMy(const char *s) {
     return s ? PointerGetDatum(cstring_to_text_my(s)) : (Datum)NULL;
 }
 
+void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes) {
+    shm_toc_estimator e;
+    shm_toc *toc;
+    Size segsize;
+    void *ptr;
+    shm_toc_initialize_estimator(&e);
+    shm_toc_estimate_chunk(&e, nbytes);
+    shm_toc_estimate_keys(&e, 1);
+    segsize = shm_toc_estimate(&e);
+    *seg = dsm_create_my(segsize, 0);
+    toc = shm_toc_create(magic, dsm_segment_address(*seg), segsize);
+    ptr = shm_toc_allocate(toc, nbytes);
+    shm_toc_insert(toc, 0, ptr);
+    return ptr;
+}
+
 void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote) {
     if (!string && quote) appendStringInfoChar(buf, quote);
     if (len) {
