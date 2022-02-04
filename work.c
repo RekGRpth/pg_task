@@ -585,16 +585,12 @@ static void work_table(void) {
     set_ps_display_my("idle");
 }
 
-static void work_task(Task *task) {
+static void work_task(Task *task, dsm_segment *seg) {
     BackgroundWorkerHandle *handle = NULL;
     BackgroundWorker worker = {0};
-    dsm_segment *seg;
     pid_t pid;
     size_t len;
-    TaskShared *ts;
     elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", task->shared->id, task->group, task->shared->max, work->shared->oid);
-    ts = shm_toc_allocate_my(PG_TASK_MAGIC, &seg, sizeof(*ts));
-    *ts = *task->shared;
     if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
     if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work->shared->user, work->shared->data, work->shared->schema, work->shared->table, task->group)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
@@ -617,7 +613,6 @@ static void work_task(Task *task) {
     dsm_pin_segment(seg);
     dsm_detach(seg);
     task_free(task);
-    pfree(task->shared);
     pfree(task);
 }
 
@@ -669,16 +664,17 @@ static void work_timeout(void) {
     SPI_tuptable_copy(&SPI_tuptable_my);
     SPI_finish_my();
     for (uint64 row = 0; row < SPI_tuptable_my.numvals; row++) {
+        dsm_segment *seg;
         Task *task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
         task->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "group", false));
         task->remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "remote", true));
-        task->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(*task->shared));
+        task->shared = task->remote ? MemoryContextAllocZero(TopMemoryContext, sizeof(*task->shared)) : shm_toc_allocate_my(PG_TASK_MAGIC, &seg, sizeof(*task->shared));
         task->shared->handle = DatumGetUInt32(MyBgworkerEntry->bgw_main_arg);
         task->shared->hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "hash", false));
         task->shared->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "id", false));
         task->shared->max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "max", false));
         elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, task->shared->id, task->shared->hash, task->group, task->remote ? task->remote : default_null, task->shared->max);
-        task->remote ? work_remote(task) : work_task(task);
+        task->remote ? work_remote(task) : work_task(task, seg);
     }
     SPI_tuptable_free(&SPI_tuptable_my);
     set_ps_display_my("idle");
