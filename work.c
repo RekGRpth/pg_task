@@ -585,26 +585,32 @@ static void work_table(void) {
     set_ps_display_my("idle");
 }
 
+static void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes) {
+    shm_toc_estimator e;
+    shm_toc *toc;
+    Size segsize;
+    void *ptr;
+    shm_toc_initialize_estimator(&e);
+    shm_toc_estimate_chunk(&e, nbytes);
+    shm_toc_estimate_keys(&e, 1);
+    segsize = shm_toc_estimate(&e);
+    *seg = dsm_create_my(segsize, 0);
+    toc = shm_toc_create(magic, dsm_segment_address(*seg), segsize);
+    ptr = shm_toc_allocate(toc, nbytes);
+    shm_toc_insert(toc, 0, ptr);
+    return ptr;
+}
+
 static void work_task(Task *task) {
     BackgroundWorkerHandle *handle = NULL;
     BackgroundWorker worker = {0};
     dsm_segment *seg;
     pid_t pid;
-    shm_toc_estimator e;
-    shm_toc *toc;
-    Size segsize;
     size_t len;
     TaskShared *ts;
     elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", task->shared->id, task->group, task->shared->max, work->shared->oid);
-    shm_toc_initialize_estimator(&e);
-    shm_toc_estimate_chunk(&e, sizeof(*ts));
-    shm_toc_estimate_keys(&e, 1);
-    segsize = shm_toc_estimate(&e);
-    seg = dsm_create_my(segsize, 0);
-    toc = shm_toc_create(PG_TASK_MAGIC, dsm_segment_address(seg), segsize);
-    ts = shm_toc_allocate(toc, sizeof(*ts));
+    ts = shm_toc_allocate_my(PG_TASK_MAGIC, &seg, sizeof(*ts));
     *ts = *task->shared;
-    shm_toc_insert(toc, 0, ts);
     if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
     if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work->shared->user, work->shared->data, work->shared->schema, work->shared->table, task->group)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
