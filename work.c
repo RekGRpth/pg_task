@@ -603,7 +603,7 @@ static void work_task(Task *task) {
     seg = dsm_create_my(segsize, 0);
     toc = shm_toc_create(PG_TASK_MAGIC, dsm_segment_address(seg), segsize);
     ts = shm_toc_allocate(toc, sizeof(*ts));
-    ts->handle = DatumGetUInt32(MyBgworkerEntry->bgw_main_arg);
+    ts->handle = task->shared->handle;
     ts->hash = task->shared->hash;
     ts->id = task->shared->id;
     ts->max = task->shared->max;
@@ -686,6 +686,7 @@ static void work_timeout(void) {
         task->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "group", false));
         task->remote = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "remote", true));
         task->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(*task->shared));
+        task->shared->handle = DatumGetUInt32(MyBgworkerEntry->bgw_main_arg);
         task->shared->hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "hash", false));
         task->shared->id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "id", false));
         task->shared->max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "max", false));
