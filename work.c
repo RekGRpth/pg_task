@@ -61,8 +61,8 @@ static void work_event(WaitEventSet *set) {
     AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
     AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
     dlist_foreach_modify(iter, &work->head) {
-        Task *task = dlist_container(Task, node, iter.cur);
-        AddWaitEventToSet(set, task->event, PQsocket(task->conn), NULL, task);
+        Task *t = dlist_container(Task, node, iter.cur);
+        AddWaitEventToSet(set, t->event, PQsocket(t->conn), NULL, t);
     }
 }
 
