@@ -67,7 +67,11 @@ static void rDestroy(DestReceiver *self) {
 }
 
 static const DestReceiver myDestReceiver = {
-    receiveSlot, rStartup, rShutdown, rDestroy, DestDebug
+    .receiveSlot = receiveSlot,
+    .rStartup = rStartup,
+    .rShutdown = rShutdown,
+    .rDestroy = rDestroy,
+    .mydest = DestDebug,
 };
 
 DestReceiver *CreateDestReceiverMy(CommandDest dest) {
