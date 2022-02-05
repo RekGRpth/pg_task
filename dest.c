@@ -68,7 +68,11 @@ static void rDestroy(DestReceiver *self) {
     elog(DEBUG1, "id = %li", task->shared->id);
 }
 
-static const DestReceiver myDestReceiver = {
+static
+#if PG_VERSION_NUM >= 120000
+const
+#endif
+DestReceiver myDestReceiver = {
     .receiveSlot = receiveSlot,
     .rStartup = rStartup,
     .rShutdown = rShutdown,
@@ -77,7 +81,11 @@ static const DestReceiver myDestReceiver = {
 };
 
 DestReceiver *CreateDestReceiverMy(CommandDest dest) {
+#if PG_VERSION_NUM >= 120000
     return unconstify(DestReceiver *, &myDestReceiver);
+#else
+    return &myDestReceiver;
+#endif
 }
 
 void ReadyForQueryMy(CommandDest dest) {
