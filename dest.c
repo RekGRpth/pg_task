@@ -61,9 +61,11 @@ static void rStartup(DestReceiver *self, int operation, TupleDesc tupdesc) {
 }
 
 static void rShutdown(DestReceiver *self) {
+    elog(DEBUG1, "id = %li", task->shared->id);
 }
 
 static void rDestroy(DestReceiver *self) {
+    elog(DEBUG1, "id = %li", task->shared->id);
 }
 
 static const DestReceiver myDestReceiver = {
@@ -78,9 +80,13 @@ DestReceiver *CreateDestReceiverMy(CommandDest dest) {
     return unconstify(DestReceiver *, &myDestReceiver);
 }
 
-void ReadyForQueryMy(CommandDest dest) { }
+void ReadyForQueryMy(CommandDest dest) {
+    elog(DEBUG1, "id = %li", task->shared->id);
+}
 
-void NullCommandMy(CommandDest dest) { }
+void NullCommandMy(CommandDest dest) {
+    elog(DEBUG1, "id = %li", task->shared->id);
+}
 
 #if PG_VERSION_NUM >= 130000
 void BeginCommandMy(CommandTag commandTag, CommandDest dest) {
