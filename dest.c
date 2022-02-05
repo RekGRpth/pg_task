@@ -50,20 +50,18 @@ static void rStartup(DestReceiver *self, int operation, TupleDesc tupdesc) {
     task->skip = 1;
 }
 
-static void rShutdown(DestReceiver *self) { }
-
-static void rDestroy(DestReceiver *self) {
-    pfree(self);
+static void rShutdown(DestReceiver *self) {
 }
 
+static void rDestroy(DestReceiver *self) {
+}
+
+static const DestReceiver myDestReceiver = {
+    receiveSlot, rStartup, rShutdown, rDestroy, DestDebug
+};
+
 DestReceiver *CreateDestReceiverMy(CommandDest dest) {
-    DestReceiver *self = MemoryContextAllocZero(TopMemoryContext, sizeof(*self));
-    self->receiveSlot = receiveSlot;
-    self->rStartup = rStartup;
-    self->rShutdown = rShutdown;
-    self->rDestroy = rDestroy;
-    self->mydest = dest;
-    return self;
+    return unconstify(DestReceiver *, &myDestReceiver);
 }
 
 void ReadyForQueryMy(CommandDest dest) { }
