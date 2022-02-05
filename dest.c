@@ -46,6 +46,7 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
 }
 
 static void rStartup(DestReceiver *self, int operation, TupleDesc tupdesc) {
+    elog(DEBUG1, "id = %li, operation = %i", task->shared->id, operation);
     task->row = 0;
     task->skip = 1;
 }
