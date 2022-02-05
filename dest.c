@@ -46,7 +46,16 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
 }
 
 static void rStartup(DestReceiver *self, int operation, TupleDesc tupdesc) {
-    elog(DEBUG1, "id = %li, operation = %i", task->shared->id, operation);
+    switch (operation) {
+        case CMD_UNKNOWN: elog(DEBUG1, "id = %li, operation = CMD_UNKNOWN", task->shared->id); break;
+        case CMD_SELECT: elog(DEBUG1, "id = %li, operation = CMD_SELECT", task->shared->id); break;
+        case CMD_UPDATE: elog(DEBUG1, "id = %li, operation = CMD_UPDATE", task->shared->id); break;
+        case CMD_INSERT: elog(DEBUG1, "id = %li, operation = CMD_INSERT", task->shared->id); break;
+        case CMD_DELETE: elog(DEBUG1, "id = %li, operation = CMD_DELETE", task->shared->id); break;
+        case CMD_UTILITY: elog(DEBUG1, "id = %li, operation = CMD_UTILITY", task->shared->id); break;
+        case CMD_NOTHING: elog(DEBUG1, "id = %li, operation = CMD_NOTHING", task->shared->id); break;
+        default: elog(DEBUG1, "id = %li, operation = %i", task->shared->id, operation); break;
+    }
     task->row = 0;
     task->skip = 1;
 }
