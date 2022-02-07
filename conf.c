@@ -46,6 +46,66 @@ static void conf_user(Work *work) {
     set_ps_display_my("idle");
 }
 
+static void conf_row(Work *work, HeapTuple *vals, TupleDesc tupdesc, uint64 row) {
+    BackgroundWorkerHandle *handle;
+    BackgroundWorker worker = {0};
+    char *str;
+    dsm_segment *seg;
+    pid_t pid;
+    size_t len;
+    set_ps_display_my("row");
+    work->shared = shm_toc_allocate_my(PG_WORK_MAGIC, &seg, sizeof(*work->shared));
+    work->shared->reset = DatumGetInt64(SPI_getbinval_my(vals[row], tupdesc, "reset", false));
+    work->shared->timeout = DatumGetInt64(SPI_getbinval_my(vals[row], tupdesc, "timeout", false));
+    if ((len = strlcpy(work->shared->data, str = TextDatumGetCStringMy(SPI_getbinval_my(vals[row], tupdesc, "data", false)), sizeof(work->shared->data))) >= sizeof(work->shared->data)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work->shared->data))));
+    pfree(str);
+#if PG_VERSION_NUM >= 120000
+    if ((len = strlcpy(work->shared->partman, str = TextDatumGetCStringMy(SPI_getbinval_my(vals[row], tupdesc, "partman", false)), sizeof(work->shared->partman))) >= sizeof(work->shared->partman)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work->shared->partman))));
+    pfree(str);
+#endif
+    if ((len = strlcpy(work->shared->schema, str = TextDatumGetCStringMy(SPI_getbinval_my(vals[row], tupdesc, "schema", false)), sizeof(work->shared->schema))) >= sizeof(work->shared->schema)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work->shared->schema))));
+    pfree(str);
+    if ((len = strlcpy(work->shared->table, str = TextDatumGetCStringMy(SPI_getbinval_my(vals[row], tupdesc, "table", false)), sizeof(work->shared->table))) >= sizeof(work->shared->table)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work->shared->table))));
+    pfree(str);
+    if ((len = strlcpy(work->shared->user, str = TextDatumGetCStringMy(SPI_getbinval_my(vals[row], tupdesc, "user", false)), sizeof(work->shared->user))) >= sizeof(work->shared->user)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work->shared->user))));
+    pfree(str);
+    elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li, partman = %s", row, work->shared->user, work->shared->data, work->shared->schema, work->shared->table, work->shared->timeout, work->shared->reset,
+#if PG_VERSION_NUM >= 120000
+        work->shared->partman[0] ? work->shared->partman : default_null
+#else
+        default_null
+#endif
+    );
+    work->data = quote_identifier(work->shared->data);
+    work->user = quote_identifier(work->shared->user);
+    conf_user(work);
+    conf_data(work);
+    if (work->data != work->shared->data) pfree((void *)work->data);
+    if (work->user != work->shared->user) pfree((void *)work->user);
+    if ((len = strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
+    if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
+    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %li", work->shared->user, work->shared->data, work->shared->schema, work->shared->table, work->shared->timeout)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
+#if PG_VERSION_NUM >= 110000
+    if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
+#endif
+    worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
+    worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
+    worker.bgw_notify_pid = MyProcPid;
+    worker.bgw_restart_time = work_default_restart;
+    worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
+    set_ps_display_my("work");
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
+    switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
+        case BGWH_NOT_YET_STARTED: ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
+        case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
+        case BGWH_STARTED: break;
+        case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
+    }
+    pfree(handle);
+    dsm_pin_segment(seg);
+    dsm_detach(seg);
+}
+
 void conf_main(Datum arg) {
     SPITupleTableMy SPI_tuptable_my;
     StringInfoData src;
@@ -71,64 +131,8 @@ void conf_main(Datum arg) {
     SPI_tuptable_copy(&SPI_tuptable_my);
     SPI_finish_my();
     for (uint64 row = 0; row < SPI_tuptable_my.numvals; row++) {
-        BackgroundWorkerHandle *handle;
-        BackgroundWorker worker = {0};
-        char *str;
-        dsm_segment *seg;
-        pid_t pid;
-        size_t len;
         Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
-        set_ps_display_my("row");
-        work->shared = shm_toc_allocate_my(PG_WORK_MAGIC, &seg, sizeof(*work->shared));
-        work->shared->reset = DatumGetInt64(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "reset", false));
-        work->shared->timeout = DatumGetInt64(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "timeout", false));
-        if ((len = strlcpy(work->shared->data, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "data", false)), sizeof(work->shared->data))) >= sizeof(work->shared->data)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work->shared->data))));
-        pfree(str);
-#if PG_VERSION_NUM >= 120000
-        if ((len = strlcpy(work->shared->partman, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "partman", false)), sizeof(work->shared->partman))) >= sizeof(work->shared->partman)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work->shared->partman))));
-        pfree(str);
-#endif
-        if ((len = strlcpy(work->shared->schema, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "schema", false)), sizeof(work->shared->schema))) >= sizeof(work->shared->schema)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work->shared->schema))));
-        pfree(str);
-        if ((len = strlcpy(work->shared->table, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "table", false)), sizeof(work->shared->table))) >= sizeof(work->shared->table)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work->shared->table))));
-        pfree(str);
-        if ((len = strlcpy(work->shared->user, str = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, "user", false)), sizeof(work->shared->user))) >= sizeof(work->shared->user)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work->shared->user))));
-        pfree(str);
-        elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li, partman = %s", row, work->shared->user, work->shared->data, work->shared->schema, work->shared->table, work->shared->timeout, work->shared->reset,
-#if PG_VERSION_NUM >= 120000
-            work->shared->partman[0] ? work->shared->partman : default_null
-#else
-            default_null
-#endif
-        );
-        work->data = quote_identifier(work->shared->data);
-        work->user = quote_identifier(work->shared->user);
-        conf_user(work);
-        conf_data(work);
-        if (work->data != work->shared->data) pfree((void *)work->data);
-        if (work->user != work->shared->user) pfree((void *)work->user);
-        if ((len = strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
-        if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
-        if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %li", work->shared->user, work->shared->data, work->shared->schema, work->shared->table, work->shared->timeout)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
-#if PG_VERSION_NUM >= 110000
-        if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
-#endif
-        worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-        worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
-        worker.bgw_notify_pid = MyProcPid;
-        worker.bgw_restart_time = work_default_restart;
-        worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-        set_ps_display_my("work");
-        if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
-        switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
-            case BGWH_NOT_YET_STARTED: ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
-            case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
-            case BGWH_STARTED: break;
-            case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
-        }
-        pfree(handle);
-        dsm_pin_segment(seg);
-        dsm_detach(seg);
+        conf_row(work, SPI_tuptable_my.vals, SPI_tuptable_my.tupdesc, row);
         pfree(work);
     }
     SPI_tuptable_free(&SPI_tuptable_my);
