@@ -76,12 +76,14 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 
 #if PG_VERSION_NUM >= 100000
 #define createdb_my(pstate, stmt) createdb(pstate, stmt)
+#define CreateRoleMy(pstate, stmt) CreateRole(pstate, stmt)
 #define makeDefElemMy(name, arg, location) makeDefElem(name, arg, location)
 #define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key, noError)
 #define WaitEventSetWaitMy(set, timeout, occurred_events, nevents, wait_event_info) WaitEventSetWait(set, timeout, occurred_events, nevents, wait_event_info)
 #define WaitLatchMy(latch, wakeEvents, timeout, wait_event_info) WaitLatch(latch, wakeEvents, timeout, wait_event_info)
 #else
 #define createdb_my(pstate, stmt) createdb(stmt)
+#define CreateRoleMy(pstate, stmt) CreateRole(stmt)
 #define makeDefElemMy(name, arg, location) makeDefElem(name, arg)
 #define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key)
 #define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
@@ -187,6 +189,7 @@ Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fnam
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
 int severity_error(const char *error);
 Portal SPI_cursor_open_my(const char *name, SPIPlanPtr plan, Datum *values, const char *nulls);
+Portal SPI_cursor_open_with_args_my(const char *name, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote);
 #if PG_VERSION_NUM >= 130000

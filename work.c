@@ -650,7 +650,6 @@ static void work_timeout(void) {
     static Oid argtypes[] = {OIDOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    typeof(SPI_processed) numvals;
     set_ps_display_my("timeout");
     if (!src.data) {
         initStringInfoMy(&src);
@@ -677,9 +676,8 @@ static void work_timeout(void) {
     portal = SPI_cursor_open_my(NULL, plan, values, NULL);
     do {
         SPI_cursor_fetch(portal, true, 1);
-        numvals = SPI_processed;
         for (uint64 row = 0; row < SPI_processed; row++) work_row(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, row);
-    } while (numvals);
+    } while (SPI_processed);
     SPI_cursor_close(portal);
     SPI_finish_my();
     set_ps_display_my("idle");

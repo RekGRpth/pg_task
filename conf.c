@@ -10,19 +10,23 @@ static void conf_data(Work *work) {
     set_ps_display_my("data");
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), work->data, work->user);
-    SPI_connect_my(src.data);
+    BeginInternalSubTransaction(NULL);
+    MemoryContextSwitchTo(TopMemoryContext);
+    CurrentResourceOwner = AuxProcessResourceOwner;
     if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
-        stmt->dbname = (char *)work->shared->data;
-        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString((char *)work->shared->user), -1));
+        stmt->dbname = work->shared->data;
+        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString(work->shared->user), -1));
         pstate->p_sourcetext = src.data;
         createdb_my(pstate, stmt);
         list_free_deep(stmt->options);
         free_parsestate(pstate);
         pfree(stmt);
     }
-    SPI_finish_my();
+    ReleaseCurrentSubTransaction();
+    MemoryContextSwitchTo(TopMemoryContext);
+    CurrentResourceOwner = AuxProcessResourceOwner;
     list_free_deep(names);
     pfree(src.data);
     set_ps_display_my("idle");
@@ -34,13 +38,30 @@ static void conf_user(Work *work) {
     elog(DEBUG1, "user = %s", work->shared->user);
     set_ps_display_my("user");
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE USER %s), work->user);
+    appendStringInfo(&src, SQL(CREATE ROLE %s WITH LOGIN), work->user);
 #if PG_VERSION_NUM >= 120000
     if (work->shared->partman[0]) appendStringInfoString(&src, " SUPERUSER");
 #endif
-    SPI_connect_my(src.data);
-    if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_finish_my();
+    BeginInternalSubTransaction(NULL);
+    MemoryContextSwitchTo(TopMemoryContext);
+    CurrentResourceOwner = AuxProcessResourceOwner;
+    if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
+        CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
+        ParseState *pstate = make_parsestate(NULL);
+        stmt->role = work->shared->user;
+        stmt->options = list_make1(makeDefElemMy("canlogin", (Node *)makeInteger(1), -1));
+#if PG_VERSION_NUM >= 120000
+        if (work->shared->partman[0]) stmt->options = lappend(stmt->options, makeDefElemMy("superuser", (Node *)makeInteger(1), -1));
+#endif
+        pstate->p_sourcetext = src.data;
+        CreateRoleMy(pstate, stmt);
+        list_free_deep(stmt->options);
+        free_parsestate(pstate);
+        pfree(stmt);
+    }
+    ReleaseCurrentSubTransaction();
+    MemoryContextSwitchTo(TopMemoryContext);
+    CurrentResourceOwner = AuxProcessResourceOwner;
     list_free_deep(names);
     pfree(src.data);
     set_ps_display_my("idle");
@@ -109,10 +130,8 @@ static void conf_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
 }
 
 void conf_main(Datum arg) {
-    HeapTuple *vals;
+    Portal portal;
     StringInfoData src;
-    TupleDesc tupdesc;
-    typeof(SPI_processed) numvals;
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
     BackgroundWorkerInitializeConnectionMy("postgres", "postgres", 0);
@@ -131,12 +150,13 @@ void conf_main(Datum arg) {
         WHERE "pid" IS NULL)
     , " ");
     SPI_connect_my(src.data);
-    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_SELECT);
-    SPI_tuptable_copy(&vals, &tupdesc);
-    numvals = SPI_processed;
+    portal = SPI_cursor_open_with_args_my(NULL, src.data, 0, NULL, NULL, NULL);
+    do {
+        SPI_cursor_fetch(portal, true, 1);
+        for (uint64 row = 0; row < SPI_processed; row++) conf_row(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, row);
+    } while (SPI_processed);
+    SPI_cursor_close(portal);
     SPI_finish_my();
-    for (uint64 row = 0; row < numvals; row++) conf_row(vals[row], tupdesc, row);
-    SPI_tuptable_free(vals, tupdesc);
     set_ps_display_my("idle");
     pfree(src.data);
     if (!unlock_data_user(MyDatabaseId, GetUserId())) elog(WARNING, "!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId());

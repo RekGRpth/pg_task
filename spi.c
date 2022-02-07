@@ -16,6 +16,14 @@ Portal SPI_cursor_open_my(const char *name, SPIPlanPtr plan, Datum *values, cons
     return portal;
 }
 
+Portal SPI_cursor_open_with_args_my(const char *name, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
+    Portal portal;
+    if (!(portal = SPI_cursor_open_with_args(name, src, nargs, argtypes, values, nulls, false, 0))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open_with_args failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
+    MemoryContextSwitchTo(TopMemoryContext);
+    CurrentResourceOwner = AuxProcessResourceOwner;
+    return portal;
+}
+
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     int rc;
     SPIPlanPtr plan;
