@@ -1,6 +1,7 @@
 #include "include.h"
 
 extern char *default_null;
+extern int work_default_fetch;
 extern Task *task;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 static void work_query(Task *t);
@@ -675,7 +676,7 @@ static void work_timeout(void) {
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(NULL, plan, values, NULL);
     do {
-        SPI_cursor_fetch(portal, true, 1);
+        SPI_cursor_fetch(portal, true, work_default_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) work_row(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, row);
     } while (SPI_processed);
     SPI_cursor_close(portal);
