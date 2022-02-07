@@ -186,6 +186,7 @@ Datum CStringGetTextDatumMy(const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
 int severity_error(const char *error);
+Portal SPI_cursor_open_my(const char *name, SPIPlanPtr plan, Datum *values, const char *nulls);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote);
 #if PG_VERSION_NUM >= 130000

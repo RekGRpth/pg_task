@@ -646,11 +646,10 @@ static void work_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
 
 static void work_timeout(void) {
     Datum values[] = {ObjectIdGetDatum(work->shared->oid)};
-    HeapTuple *vals;
+    Portal portal;
     static Oid argtypes[] = {OIDOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    TupleDesc tupdesc;
     typeof(SPI_processed) numvals;
     set_ps_display_my("timeout");
     if (!src.data) {
@@ -675,12 +674,14 @@ static void work_timeout(void) {
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
-    SPI_tuptable_copy(&vals, &tupdesc);
-    numvals = SPI_processed;
+    portal = SPI_cursor_open_my(NULL, plan, values, NULL);
+    do {
+        SPI_cursor_fetch(portal, true, 1);
+        numvals = SPI_processed;
+        for (uint64 row = 0; row < SPI_processed; row++) work_row(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, row);
+    } while (numvals);
+    SPI_cursor_close(portal);
     SPI_finish_my();
-    for (uint64 row = 0; row < numvals; row++) work_row(vals[row], tupdesc, row);
-    SPI_tuptable_free(vals, tupdesc);
     set_ps_display_my("idle");
 }
 

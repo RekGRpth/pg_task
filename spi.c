@@ -8,6 +8,14 @@ Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fnam
     return datum;
 }
 
+Portal SPI_cursor_open_my(const char *name, SPIPlanPtr plan, Datum *values, const char *nulls) {
+    Portal portal;
+    if (!(portal = SPI_cursor_open(name, plan, values, nulls, false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open failed"), errdetail("%s", SPI_result_code_string(SPI_result))));
+    MemoryContextSwitchTo(TopMemoryContext);
+    CurrentResourceOwner = AuxProcessResourceOwner;
+    return portal;
+}
+
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     int rc;
     SPIPlanPtr plan;
