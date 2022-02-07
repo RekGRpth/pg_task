@@ -46,13 +46,14 @@ static void conf_user(Work *work) {
     set_ps_display_my("idle");
 }
 
-static void conf_row(Work *work, HeapTuple val, TupleDesc tupdesc, uint64 row) {
+static void conf_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker = {0};
     char *str;
     dsm_segment *seg;
     pid_t pid;
     size_t len;
+    Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
     set_ps_display_my("row");
     work->shared = shm_toc_allocate_my(PG_WORK_MAGIC, &seg, sizeof(*work->shared));
     work->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false));
@@ -104,6 +105,7 @@ static void conf_row(Work *work, HeapTuple val, TupleDesc tupdesc, uint64 row) {
     pfree(handle);
     dsm_pin_segment(seg);
     dsm_detach(seg);
+    pfree(work);
 }
 
 void conf_main(Datum arg) {
@@ -133,11 +135,7 @@ void conf_main(Datum arg) {
     SPI_tuptable_copy(&vals, &tupdesc);
     numvals = SPI_processed;
     SPI_finish_my();
-    for (uint64 row = 0; row < numvals; row++) {
-        Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
-        conf_row(work, vals[row], tupdesc, row);
-        pfree(work);
-    }
+    for (uint64 row = 0; row < numvals; row++) conf_row(vals[row], tupdesc, row);
     SPI_tuptable_free(vals, tupdesc);
     set_ps_display_my("idle");
     pfree(src.data);
