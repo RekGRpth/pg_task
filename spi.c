@@ -59,15 +59,14 @@ void SPI_finish_my(void) {
     CurrentResourceOwner = AuxProcessResourceOwner;
 }
 
-void SPI_tuptable_copy(SPITupleTableMy *tuptablemy) {
-    tuptablemy->numvals = SPI_processed;
-    tuptablemy->tupdesc = CreateTupleDescCopy(SPI_tuptable->tupdesc);
-    tuptablemy->vals = MemoryContextAlloc(TopMemoryContext, SPI_processed * sizeof(tuptablemy->vals));
-    for (uint64 row = 0; row < SPI_processed; row++) tuptablemy->vals[row] = heap_copytuple(SPI_tuptable->vals[row]);
+void SPI_tuptable_copy(HeapTuple **vals, TupleDesc *tupdesc) {
+    *tupdesc = CreateTupleDescCopy(SPI_tuptable->tupdesc);
+    *vals = MemoryContextAlloc(TopMemoryContext, SPI_processed * sizeof(**vals));
+    for (uint64 row = 0; row < SPI_processed; row++) (*vals)[row] = heap_copytuple(SPI_tuptable->vals[row]);
 }
 
-void SPI_tuptable_free(SPITupleTableMy *tuptablemy) {
-    for (uint64 row = 0; row < SPI_processed; row++) heap_freetuple(tuptablemy->vals[row]);
-    pfree(tuptablemy->vals);
-    FreeTupleDesc(tuptablemy->tupdesc);
+void SPI_tuptable_free(HeapTuple *vals, TupleDesc tupdesc) {
+    for (uint64 row = 0; row < SPI_processed; row++) heap_freetuple(vals[row]);
+    pfree(vals);
+    FreeTupleDesc(tupdesc);
 }

@@ -167,12 +167,6 @@ typedef struct Work {
     WorkShared *shared;
 } Work;
 
-typedef struct SPITupleTableMy {
-    HeapTuple *vals;
-    TupleDesc tupdesc;
-    typeof(SPI_processed) numvals;
-} SPITupleTableMy;
-
 bool init_oid_is_string(Oid oid);
 bool is_log_level_output(int elevel, int log_min_level);
 bool lock_data_user(Oid data, Oid user);
@@ -222,8 +216,8 @@ void SPI_connect_my(const char *src);
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res);
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res);
 void SPI_finish_my(void);
-void SPI_tuptable_copy(SPITupleTableMy *tuptablemy);
-void SPI_tuptable_free(SPITupleTableMy *tuptablemy);
+void SPI_tuptable_copy(HeapTuple **vals, TupleDesc *tupdesc);
+void SPI_tuptable_free(HeapTuple *vals, TupleDesc tupdesc);
 void task_error(ErrorData *edata);
 void task_free(Task *t);
 void task_main(Datum main_arg);

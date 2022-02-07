@@ -107,8 +107,10 @@ static void conf_row(Work *work, HeapTuple val, TupleDesc tupdesc, uint64 row) {
 }
 
 void conf_main(Datum arg) {
-    SPITupleTableMy SPI_tuptable_my;
+    HeapTuple *vals;
     StringInfoData src;
+    TupleDesc tupdesc;
+    typeof(SPI_processed) numvals;
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
     BackgroundWorkerInitializeConnectionMy("postgres", "postgres", 0);
@@ -128,14 +130,15 @@ void conf_main(Datum arg) {
     , " ");
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_SELECT);
-    SPI_tuptable_copy(&SPI_tuptable_my);
+    SPI_tuptable_copy(&vals, &tupdesc);
+    numvals = SPI_processed;
     SPI_finish_my();
-    for (uint64 row = 0; row < SPI_tuptable_my.numvals; row++) {
+    for (uint64 row = 0; row < numvals; row++) {
         Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
-        conf_row(work, SPI_tuptable_my.vals[row], SPI_tuptable_my.tupdesc, row);
+        conf_row(work, vals[row], tupdesc, row);
         pfree(work);
     }
-    SPI_tuptable_free(&SPI_tuptable_my);
+    SPI_tuptable_free(vals, tupdesc);
     set_ps_display_my("idle");
     pfree(src.data);
     if (!unlock_data_user(MyDatabaseId, GetUserId())) elog(WARNING, "!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId());
