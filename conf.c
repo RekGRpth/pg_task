@@ -143,7 +143,7 @@ void conf_main(Datum arg) {
         WHERE "pid" IS NULL)
     , " ");
     SPI_connect_my(src.data);
-    portal = SPI_cursor_open_with_args_my(NULL, src.data, 0, NULL, NULL, NULL);
+    portal = SPI_cursor_open_with_args_my(src.data, src.data, 0, NULL, NULL, NULL);
     do {
         SPI_cursor_fetch(portal, true, conf_default_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) conf_row(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, row);

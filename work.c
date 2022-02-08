@@ -674,7 +674,7 @@ static void work_timeout(void) {
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    portal = SPI_cursor_open_my(NULL, plan, values, NULL);
+    portal = SPI_cursor_open_my(src.data, plan, values, NULL);
     do {
         SPI_cursor_fetch(portal, true, work_default_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) work_row(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, row);
