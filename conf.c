@@ -63,7 +63,6 @@ static void conf_user(Work *work) {
 static void conf_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker = {0};
-    char *str;
     dsm_segment *seg;
     pid_t pid;
     size_t len;
@@ -72,18 +71,13 @@ static void conf_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
     work.shared = shm_toc_allocate_my(PG_WORK_MAGIC, &seg, sizeof(*work.shared));
     work.shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false));
     work.shared->timeout = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "timeout", false));
-    if ((len = strlcpy(work.shared->data, str = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "data", false)), sizeof(work.shared->data))) >= sizeof(work.shared->data)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work.shared->data))));
-    pfree(str);
+    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "data", false)), work.shared->data, sizeof(work.shared->data));
 #if PG_VERSION_NUM >= 120000
-    if ((len = strlcpy(work.shared->partman, str = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "partman", false)), sizeof(work.shared->partman))) >= sizeof(work.shared->partman)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work.shared->partman))));
-    pfree(str);
+    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "partman", false)), work.shared->partman, sizeof(work.shared->partman));
 #endif
-    if ((len = strlcpy(work.shared->schema, str = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "schema", false)), sizeof(work.shared->schema))) >= sizeof(work.shared->schema)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work.shared->schema))));
-    pfree(str);
-    if ((len = strlcpy(work.shared->table, str = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "table", false)), sizeof(work.shared->table))) >= sizeof(work.shared->table)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work.shared->table))));
-    pfree(str);
-    if ((len = strlcpy(work.shared->user, str = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "user", false)), sizeof(work.shared->user))) >= sizeof(work.shared->user)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(work.shared->user))));
-    pfree(str);
+    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "schema", false)), work.shared->schema, sizeof(work.shared->schema));
+    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false)), work.shared->table, sizeof(work.shared->table));
+    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false)), work.shared->user, sizeof(work.shared->user));
     elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li, partman = %s", row, work.shared->user, work.shared->data, work.shared->schema, work.shared->table, work.shared->timeout, work.shared->reset,
 #if PG_VERSION_NUM >= 120000
         work.shared->partman[0] ? work.shared->partman : default_null
