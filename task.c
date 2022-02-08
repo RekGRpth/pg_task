@@ -31,9 +31,11 @@ static bool task_live(Task *t) {
 #endif
         );
     }
+    BeginInternalSubTransactionMy(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     t->shared->id = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false)) : 0;
+    ReleaseCurrentSubTransactionMy();
     elog(DEBUG1, "id = %li", t->shared->id);
     set_ps_display_my("idle");
     return ShutdownRequestPending || !t->shared->id;
@@ -56,9 +58,11 @@ static void task_delete(Task *t) {
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 RETURNING t.id
         ), work->schema_table);
     }
+    BeginInternalSubTransactionMy(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE_RETURNING);
     for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, delete id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
+    ReleaseCurrentSubTransactionMy();
     set_ps_display_my("idle");
 }
 
@@ -82,9 +86,11 @@ static void task_insert(Task *t) {
             END AS "plan", "active", "live", "repeat", "timeout", "count", "max", "delete", "drift", "header", "string", "delimiter", "escape", "quote", "group", "input", "null", "remote" FROM s WHERE "repeat" > '0 sec' LIMIT 1 RETURNING t.id
         ), work->schema_table);
     }
+    BeginInternalSubTransactionMy(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING);
     for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, insert id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
+    ReleaseCurrentSubTransactionMy();
     set_ps_display_my("idle");
 }
 
@@ -105,9 +111,11 @@ static void task_update(Task *t) {
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
         ), work->schema_table, work->schema_type);
     }
+    BeginInternalSubTransactionMy(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, update id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
+    ReleaseCurrentSubTransactionMy();
     set_ps_display_my("idle");
 }
 
@@ -132,6 +140,7 @@ bool task_done(Task *t) {
         ), work->schema_table, work->schema_type);
     }
     SPI_connect_my(src.data);
+    BeginInternalSubTransactionMy(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) elog(WARNING, "id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed); else {
@@ -141,6 +150,7 @@ bool task_done(Task *t) {
         update = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "update", false));
         elog(DEBUG1, "delete = %s, exit = %s, insert = %s, update = %s", delete ? "true" : "false", exit ? "true" : "false", insert ? "true" : "false", update ? "true" : "false");
     }
+    ReleaseCurrentSubTransactionMy();
     if (values[1]) pfree((void *)values[1]);
     if (values[2]) pfree((void *)values[2]);
     if (insert) task_insert(t);
