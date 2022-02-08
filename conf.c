@@ -11,9 +11,7 @@ static void conf_data(Work *work) {
     set_ps_display_my("data");
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), work->data, work->user);
-    BeginInternalSubTransaction(NULL);
-    MemoryContextSwitchTo(TopMemoryContext);
-    CurrentResourceOwner = AuxProcessResourceOwner;
+    BeginInternalSubTransactionMy(src.data);
     if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
@@ -25,9 +23,7 @@ static void conf_data(Work *work) {
         free_parsestate(pstate);
         pfree(stmt);
     }
-    ReleaseCurrentSubTransaction();
-    MemoryContextSwitchTo(TopMemoryContext);
-    CurrentResourceOwner = AuxProcessResourceOwner;
+    ReleaseCurrentSubTransactionMy();
     list_free_deep(names);
     pfree(src.data);
     set_ps_display_my("idle");
@@ -43,9 +39,7 @@ static void conf_user(Work *work) {
 #if PG_VERSION_NUM >= 120000
     if (work->shared->partman[0]) appendStringInfoString(&src, " SUPERUSER");
 #endif
-    BeginInternalSubTransaction(NULL);
-    MemoryContextSwitchTo(TopMemoryContext);
-    CurrentResourceOwner = AuxProcessResourceOwner;
+    BeginInternalSubTransactionMy(src.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
         CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
         ParseState *pstate = make_parsestate(NULL);
@@ -60,9 +54,7 @@ static void conf_user(Work *work) {
         free_parsestate(pstate);
         pfree(stmt);
     }
-    ReleaseCurrentSubTransaction();
-    MemoryContextSwitchTo(TopMemoryContext);
-    CurrentResourceOwner = AuxProcessResourceOwner;
+    ReleaseCurrentSubTransactionMy();
     list_free_deep(names);
     pfree(src.data);
     set_ps_display_my("idle");

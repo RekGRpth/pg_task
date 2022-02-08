@@ -204,6 +204,7 @@ void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undeco
 void EndCommandMy(const char *commandTag, CommandDest dest);
 #endif
 void append_with_tabs(StringInfo buf, const char *str);
+void BeginInternalSubTransactionMy(const char *name);
 #if PG_VERSION_NUM < 120000
 extern PGDLLIMPORT ResourceOwner AuxProcessResourceOwner;
 void CreateAuxProcessResourceOwner(void);
@@ -215,6 +216,7 @@ void init_work(bool dynamic);
 void NullCommandMy(CommandDest dest);
 void _PG_init(void);
 void ReadyForQueryMy(CommandDest dest);
+void ReleaseCurrentSubTransactionMy(void);
 void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes);
 void SPI_connect_my(const char *src);
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res);
