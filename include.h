@@ -48,6 +48,7 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <storage/dsm.h>
 #include <storage/ipc.h>
 #include <storage/latch.h>
+#include <storage/procarray.h>
 #include <storage/proc.h>
 #include <storage/shm_toc.h>
 #include <tcop/pquery.h>

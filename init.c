@@ -7,6 +7,7 @@ int conf_default_fetch;
 int task_default_fetch;
 int work_default_fetch;
 int work_default_restart;
+int work_default_sleep;
 static bool task_default_delete;
 static bool task_default_drift;
 static bool task_default_header;
@@ -294,6 +295,7 @@ void _PG_init(void) {
     DefineCustomIntVariable("pg_task.id", "pg_task id", "task id", &task_id, 0, INT_MIN, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.default_fetch", "pg_work default fetch", "fetch at once", &work_default_fetch, 100, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.default_restart", "pg_work default restart", "work default restart interval", &work_default_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_work.default_sleep", "pg_work default sleep", "sleep before load", &work_default_sleep, 10, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.default_timeout", "pg_work default timeout", "check tasks every timeout milliseconds", &work_default_timeout, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_active", "pg_task default active", "task active after plan time", &task_default_active, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_delimiter", "pg_task default delimiter", "results colums delimiter", &task_default_delimiter, "\t", PGC_SIGHUP, 0, NULL, NULL, NULL);
