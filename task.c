@@ -2,6 +2,7 @@
 
 extern bool xact_started;
 extern char *default_null;
+extern int task_default_fetch;
 extern Work *work;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 Task *task;
@@ -96,6 +97,7 @@ static void task_insert(Task *t) {
 
 static void task_update(Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash)};
+    Portal portal;
     static Oid argtypes[] = {INT4OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
@@ -113,8 +115,12 @@ static void task_update(Task *t) {
     }
     BeginInternalSubTransactionMy(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_UPDATE_RETURNING);
-    for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, update id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
+    portal = SPI_cursor_open_my(src.data, plan, values, NULL);
+    do {
+        SPI_cursor_fetch(portal, true, task_default_fetch);
+        for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, update id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
+    } while (SPI_processed);
+    SPI_cursor_close(portal);
     ReleaseCurrentSubTransactionMy();
     set_ps_display_my("idle");
 }
