@@ -609,6 +609,7 @@ static void work_task(Task *t) {
     pid_t pid;
     size_t len;
     elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", t->shared->id, t->group, t->shared->max, work->shared->oid);
+    dlist_delete(&t->node);
     if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
     if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work->shared->user, work->shared->data, work->shared->schema, work->shared->table, t->group)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
@@ -651,12 +652,14 @@ static void work_type(void) {
 
 static void work_timeout(void) {
     Datum values[] = {ObjectIdGetDatum(work->shared->oid)};
+    dlist_head l;
     dlist_head r;
     dlist_mutable_iter iter;
     Portal portal;
     static Oid argtypes[] = {OIDOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
+    dlist_init(&l);
     dlist_init(&r);
     set_ps_display_my("timeout");
     if (!src.data) {
@@ -700,11 +703,12 @@ static void work_timeout(void) {
             t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false));
             t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false));
             elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : default_null, t->shared->max);
-            t->remote ? dlist_push_head(&r, &t->node) : work_task(t);
+            dlist_push_head(t->remote ? &r : &l, &t->node);
         }
     } while (SPI_processed);
     SPI_cursor_close(portal);
     SPI_finish_my();
+    dlist_foreach_modify(iter, &l) work_task(dlist_container(Task, node, iter.cur));
     dlist_foreach_modify(iter, &r) work_remote(dlist_container(Task, node, iter.cur));
     set_ps_display_my("idle");
 }
