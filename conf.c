@@ -13,7 +13,6 @@ static void conf_data(Work *w) {
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), w->data, w->user);
     SPI_connect_my(src.data);
-    BeginInternalSubTransactionMy(src.data);
     if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
@@ -25,7 +24,6 @@ static void conf_data(Work *w) {
         free_parsestate(pstate);
         pfree(stmt);
     }
-    ReleaseCurrentSubTransactionMy();
     SPI_finish_my();
     list_free_deep(names);
     pfree(src.data);
@@ -43,7 +41,6 @@ static void conf_user(Work *w) {
     if (w->shared->partman[0]) appendStringInfoString(&src, " SUPERUSER");
 #endif
     SPI_connect_my(src.data);
-    BeginInternalSubTransactionMy(src.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
         CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
         ParseState *pstate = make_parsestate(NULL);
@@ -58,7 +55,6 @@ static void conf_user(Work *w) {
         free_parsestate(pstate);
         pfree(stmt);
     }
-    ReleaseCurrentSubTransactionMy();
     SPI_finish_my();
     list_free_deep(names);
     pfree(src.data);
@@ -125,13 +121,9 @@ void conf_main(Datum arg) {
         WHERE "pid" IS NULL)
     , " ");
     SPI_connect_my(src.data);
-    BeginInternalSubTransactionMy(src.data);
     portal = SPI_cursor_open_with_args_my(src.data, src.data, 0, NULL, NULL, NULL);
-    ReleaseCurrentSubTransactionMy();
     do {
-        BeginInternalSubTransactionMy(src.data);
         SPI_cursor_fetch(portal, true, conf_default_fetch);
-        ReleaseCurrentSubTransactionMy();
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
             TupleDesc tupdesc = SPI_tuptable->tupdesc;

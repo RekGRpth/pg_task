@@ -34,18 +34,6 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     return plan;
 }
 
-void BeginInternalSubTransactionMy(const char *name) {
-    BeginInternalSubTransaction(name);
-    MemoryContextSwitchTo(TopMemoryContext);
-    CurrentResourceOwner = AuxProcessResourceOwner;
-}
-
-void ReleaseCurrentSubTransactionMy(void) {
-    ReleaseCurrentSubTransaction();
-    MemoryContextSwitchTo(TopMemoryContext);
-    CurrentResourceOwner = AuxProcessResourceOwner;
-}
-
 void SPI_connect_my(const char *src) {
     int rc;
     pgstat_report_activity(STATE_RUNNING, src);

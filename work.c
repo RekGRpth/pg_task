@@ -221,14 +221,10 @@ static void work_reset(void) {
         );
     }
     SPI_connect_my(src.data);
-    BeginInternalSubTransactionMy(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL);
-    ReleaseCurrentSubTransactionMy();
     do {
-        BeginInternalSubTransactionMy(src.data);
         SPI_cursor_fetch(portal, true, work_default_fetch);
-        ReleaseCurrentSubTransactionMy();
         for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     } while (SPI_processed);
     SPI_cursor_close(portal);
@@ -425,14 +421,10 @@ static void work_partman(void) {
         StringInfoData create_parent;
         initStringInfoMy(&create_parent);
         appendStringInfo(&create_parent, SQL(SELECT %1$s.create_parent(p_parent_table := $1, p_control := 'plan', p_type := 'native', p_interval := 'monthly', p_template_table := $2)), work.partman);
-        BeginInternalSubTransactionMy(src.data);
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        ReleaseCurrentSubTransactionMy();
-        BeginInternalSubTransactionMy(create_parent.data);
         SPI_execute_with_args_my(create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
         if (SPI_processed != 1) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_processed %lu != 1", (long)SPI_processed)));
         if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("could not create parent")));
-        ReleaseCurrentSubTransactionMy();
         if (values[0]) pfree((void *)values[0]);
         if (values[1]) pfree((void *)values[1]);
     }
@@ -685,14 +677,10 @@ static void work_timeout(void) {
         );
     }
     SPI_connect_my(src.data);
-    BeginInternalSubTransactionMy(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL);
-    ReleaseCurrentSubTransactionMy();
     do {
-        BeginInternalSubTransactionMy(src.data);
         SPI_cursor_fetch(portal, true, work_default_fetch);
-        ReleaseCurrentSubTransactionMy();
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
             Task *t = MemoryContextAllocZero(TopMemoryContext, sizeof(*t));
