@@ -3,6 +3,7 @@
 extern char *default_null;
 extern int conf_default_fetch;
 extern int work_default_restart;
+static dlist_head head;
 
 static void conf_data(Work *w) {
     List *names = stringToQualifiedNameList(w->data);
@@ -11,6 +12,7 @@ static void conf_data(Work *w) {
     set_ps_display_my("data");
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), w->data, w->user);
+    SPI_connect_my(src.data);
     BeginInternalSubTransactionMy(src.data);
     if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
@@ -24,6 +26,7 @@ static void conf_data(Work *w) {
         pfree(stmt);
     }
     ReleaseCurrentSubTransactionMy();
+    SPI_finish_my();
     list_free_deep(names);
     pfree(src.data);
     set_ps_display_my("idle");
@@ -39,6 +42,7 @@ static void conf_user(Work *w) {
 #if PG_VERSION_NUM >= 120000
     if (w->shared->partman[0]) appendStringInfoString(&src, " SUPERUSER");
 #endif
+    SPI_connect_my(src.data);
     BeginInternalSubTransactionMy(src.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
         CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
@@ -55,6 +59,7 @@ static void conf_user(Work *w) {
         pfree(stmt);
     }
     ReleaseCurrentSubTransactionMy();
+    SPI_finish_my();
     list_free_deep(names);
     pfree(src.data);
     set_ps_display_my("idle");
@@ -66,6 +71,7 @@ static void conf_work(Work *w) {
     pid_t pid;
     size_t len;
     set_ps_display_my("work");
+    dlist_delete(&w->node);
     w->data = quote_identifier(w->shared->data);
     w->user = quote_identifier(w->shared->user);
     conf_user(w);
@@ -97,6 +103,7 @@ static void conf_work(Work *w) {
 }
 
 void conf_main(Datum arg) {
+    dlist_mutable_iter iter;
     Portal portal;
     StringInfoData src;
     BackgroundWorkerUnblockSignals();
@@ -107,6 +114,7 @@ void conf_main(Datum arg) {
     set_ps_display_my("main");
     process_session_preload_libraries();
     if (!lock_data_user(MyDatabaseId, GetUserId())) { elog(WARNING, "!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()); return; }
+    dlist_init(&head);
     initStringInfoMy(&src);
     appendStringInfoString(&src, init_check());
     appendStringInfo(&src, SQL(%1$s
@@ -146,12 +154,13 @@ void conf_main(Datum arg) {
                 default_null
 #endif
             );
-            conf_work(w);
+            dlist_push_head(&head, &w->node);
         }
     } while (SPI_processed);
     SPI_cursor_close(portal);
     SPI_finish_my();
     set_ps_display_my("idle");
     pfree(src.data);
+    dlist_foreach_modify(iter, &head) conf_work(dlist_container(Work, node, iter.cur));
     if (!unlock_data_user(MyDatabaseId, GetUserId())) elog(WARNING, "!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId());
 }
