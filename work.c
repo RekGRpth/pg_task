@@ -356,13 +356,15 @@ static void work_proc_exit(int code, Datum arg) {
     dlist_mutable_iter iter;
     elog(DEBUG1, "code = %i", code);
     dlist_foreach_modify(iter, &work->head) {
-        char errbuf[256];
         Task *t = dlist_container(Task, node, iter.cur);
-        PGcancel *cancel = PQgetCancel(t->conn);
-        if (!cancel) { ereport(WARNING, (errmsg("PQgetCancel failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
-        if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { ereport(WARNING, (errmsg("PQcancel failed"), errdetail("%s", errbuf))); PQfreeCancel(cancel); continue; }
-        elog(WARNING, "cancel id = %li", t->shared->id);
-        PQfreeCancel(cancel);
+        if (PQstatus(t->conn) == CONNECTION_OK) {
+            char errbuf[256];
+            PGcancel *cancel = PQgetCancel(t->conn);
+            if (!cancel) { ereport(WARNING, (errmsg("PQgetCancel failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
+            if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { ereport(WARNING, (errmsg("PQcancel failed"), errdetail("%s", errbuf))); PQfreeCancel(cancel); continue; }
+            elog(WARNING, "cancel id = %li", t->shared->id);
+            PQfreeCancel(cancel);
+        }
         work_finish(t);
     }
     if (!code) {
