@@ -4,9 +4,12 @@ extern char *default_null;
 extern int work_default_fetch;
 extern Task task;
 static dlist_head head;
+static dlist_head l;
+static dlist_head r;
 static emit_log_hook_type emit_log_hook_prev = NULL;
-static void work_query(Task *t);
 Work work;
+
+static void work_query(Task *t);
 
 #define ereport_my(elevel, finish, ...) do { \
     task = *t; \
@@ -645,15 +648,11 @@ static void work_type(void) {
 
 static void work_timeout(void) {
     Datum values[] = {ObjectIdGetDatum(work.shared->oid)};
-    dlist_head l;
-    dlist_head r;
     dlist_mutable_iter iter;
     Portal portal;
     static Oid argtypes[] = {OIDOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    dlist_init(&l);
-    dlist_init(&r);
     set_ps_display_my("timeout");
     if (!src.data) {
         initStringInfoMy(&src);
@@ -746,6 +745,9 @@ void work_main(Datum arg) {
     work.hash = DatumGetInt32(DirectFunctionCall1Coll(hashtext, DEFAULT_COLLATION_OID, datum));
     pfree((void *)datum);
     if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.hash)) { elog(WARNING, "!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.hash); ShutdownRequestPending = true; return; }
+    dlist_init(&head);
+    dlist_init(&l);
+    dlist_init(&r);
     initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work.schema);
     work.schema_type = schema_type.data;
@@ -773,7 +775,6 @@ void work_main(Datum arg) {
     appendStringInfo(&timeout, "%li", work.shared->timeout);
     set_config_option_my("pg_task.timeout", timeout.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(timeout.data);
-    dlist_init(&head);
     set_ps_display_my("idle");
     work_reset();
     while (!ShutdownRequestPending) {
