@@ -29,6 +29,3 @@ c	d
 STATEMENT:  SELECT pg_sleep(10) AS a|DONE|8
 12|SELECT 1|ROLLBACK|ERROR:  PQconninfoParse failed
 DETAIL:  missing "=" after "application_name" in connection info string|DONE
-13|SELECT 1|ROLLBACK|ERROR:  PQstatus == CONNECTION_BAD
-DETAIL:  connection to server on socket "/tmp/.s.PGSQL.5433" failed: No such file or directory
-		Is the server running locally and accepting connections on that socket?|DONE

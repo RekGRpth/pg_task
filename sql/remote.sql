@@ -74,7 +74,6 @@ END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state, count(id) FROM task WHERE "group" = '11' AND plan > :ct::timestamp GROUP BY "group", input, output, error, state ORDER BY 6;
 BEGIN;
 INSERT INTO task ("group", input, remote) VALUES ('12', 'SELECT 1', 'application_name');
-INSERT INTO task ("group", input, remote) VALUES ('13', 'SELECT 1', 'port=5433');
 COMMIT;
 DO $body$ BEGIN
     WHILE true LOOP
@@ -83,4 +82,3 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '12' AND plan > :ct::timestamp;
-SELECT "group", input, output, error, state FROM task WHERE "group" = '13' AND plan > :ct::timestamp;
