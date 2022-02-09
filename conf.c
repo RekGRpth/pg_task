@@ -95,30 +95,6 @@ static void conf_work(Work *work) {
     dsm_detach(work->seg);
 }
 
-static void conf_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
-    Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));;
-    set_ps_display_my("row");
-    work->shared = shm_toc_allocate_my(PG_WORK_MAGIC, &work->seg, sizeof(*work->shared));
-    work->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false));
-    work->shared->timeout = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "timeout", false));
-    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "data", false)), work->shared->data, sizeof(work->shared->data));
-#if PG_VERSION_NUM >= 120000
-    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "partman", false)), work->shared->partman, sizeof(work->shared->partman));
-#endif
-    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "schema", false)), work->shared->schema, sizeof(work->shared->schema));
-    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false)), work->shared->table, sizeof(work->shared->table));
-    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false)), work->shared->user, sizeof(work->shared->user));
-    elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li, partman = %s", row, work->shared->user, work->shared->data, work->shared->schema, work->shared->table, work->shared->timeout, work->shared->reset,
-#if PG_VERSION_NUM >= 120000
-        work->shared->partman[0] ? work->shared->partman : default_null
-#else
-        default_null
-#endif
-    );
-    conf_work(work);
-    pfree(work);
-}
-
 void conf_main(Datum arg) {
     Portal portal;
     StringInfoData src;
@@ -147,7 +123,31 @@ void conf_main(Datum arg) {
         BeginInternalSubTransactionMy(src.data);
         SPI_cursor_fetch(portal, true, conf_default_fetch);
         ReleaseCurrentSubTransactionMy();
-        for (uint64 row = 0; row < SPI_processed; row++) conf_row(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, row);
+        for (uint64 row = 0; row < SPI_processed; row++) {
+            HeapTuple val = SPI_tuptable->vals[row];
+            TupleDesc tupdesc = SPI_tuptable->tupdesc;
+            Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));;
+            set_ps_display_my("row");
+            work->shared = shm_toc_allocate_my(PG_WORK_MAGIC, &work->seg, sizeof(*work->shared));
+            work->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false));
+            work->shared->timeout = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "timeout", false));
+            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "data", false)), work->shared->data, sizeof(work->shared->data));
+#if PG_VERSION_NUM >= 120000
+            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "partman", false)), work->shared->partman, sizeof(work->shared->partman));
+#endif
+            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "schema", false)), work->shared->schema, sizeof(work->shared->schema));
+            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false)), work->shared->table, sizeof(work->shared->table));
+            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false)), work->shared->user, sizeof(work->shared->user));
+            elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li, partman = %s", row, work->shared->user, work->shared->data, work->shared->schema, work->shared->table, work->shared->timeout, work->shared->reset,
+#if PG_VERSION_NUM >= 120000
+                work->shared->partman[0] ? work->shared->partman : default_null
+#else
+                default_null
+#endif
+            );
+            conf_work(work);
+            pfree(work);
+        }
     } while (SPI_processed);
     SPI_cursor_close(portal);
     SPI_finish_my();
