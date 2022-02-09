@@ -3,7 +3,7 @@
 extern char *default_null;
 extern int work_default_fetch;
 extern Task task;
-static dlist_head remote;
+static dlist_head head;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 static void work_query(Task *t);
 Work work;
@@ -63,7 +63,7 @@ static void work_events(WaitEventSet *set) {
     dlist_mutable_iter iter;
     AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
     AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
-    dlist_foreach_modify(iter, &remote) {
+    dlist_foreach_modify(iter, &head) {
         Task *t = dlist_container(Task, node, iter.cur);
         AddWaitEventToSet(set, t->event, PQsocket(t->conn), NULL, t);
     }
@@ -136,7 +136,7 @@ static void work_finish(Task *t) {
 static int work_nevents(void) {
     dlist_mutable_iter iter;
     int nevents = 2;
-    dlist_foreach_modify(iter, &remote) {
+    dlist_foreach_modify(iter, &head) {
         Task *t = dlist_container(Task, node, iter.cur);
         if (PQstatus(t->conn) == CONNECTION_BAD) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
         if (PQsocket(t->conn) == PGINVALID_SOCKET) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsocket == PGINVALID_SOCKET"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
@@ -357,7 +357,7 @@ static void work_connect(Task *t) {
 static void work_proc_exit(int code, Datum arg) {
     dlist_mutable_iter iter;
     elog(DEBUG1, "code = %i", code);
-    dlist_foreach_modify(iter, &remote) {
+    dlist_foreach_modify(iter, &head) {
         Task *t = dlist_container(Task, node, iter.cur);
         if (PQstatus(t->conn) == CONNECTION_OK) {
             char errbuf[256];
@@ -451,7 +451,7 @@ static void work_remote(Task *t) {
     StringInfoData name, value;
     elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : default_null, t->shared->max, work.shared->oid);
     dlist_delete(&t->node);
-    dlist_push_head(&remote, &t->node);
+    dlist_push_head(&head, &t->node);
     if (!opts) { ereport_my(WARNING, true, (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), errdetail("%s", work_errstr(err)))); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
@@ -773,7 +773,7 @@ void work_main(Datum arg) {
     appendStringInfo(&timeout, "%li", work.shared->timeout);
     set_config_option_my("pg_task.timeout", timeout.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(timeout.data);
-    dlist_init(&remote);
+    dlist_init(&head);
     set_ps_display_my("idle");
     work_reset();
     while (!ShutdownRequestPending) {
