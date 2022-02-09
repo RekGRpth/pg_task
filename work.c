@@ -603,7 +603,7 @@ static void work_table(void) {
     set_ps_display_my("idle");
 }
 
-static void work_task(Task *t, dsm_segment *seg) {
+static void work_task(Task *t) {
     BackgroundWorkerHandle *handle = NULL;
     BackgroundWorker worker = {0};
     pid_t pid;
@@ -616,7 +616,7 @@ static void work_task(Task *t, dsm_segment *seg) {
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
+    worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(t->seg));
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -628,8 +628,8 @@ static void work_task(Task *t, dsm_segment *seg) {
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     pfree(handle);
-    dsm_pin_segment(seg);
-    dsm_detach(seg);
+    dsm_pin_segment(t->seg);
+    dsm_detach(t->seg);
     task_free(t);
     pfree(t);
 }
@@ -689,19 +689,18 @@ static void work_timeout(void) {
         SPI_cursor_fetch(portal, true, work_default_fetch);
         ReleaseCurrentSubTransactionMy();
         for (uint64 row = 0; row < SPI_processed; row++) {
-            dsm_segment *seg;
             HeapTuple val = SPI_tuptable->vals[row];
             Task *t = MemoryContextAllocZero(TopMemoryContext, sizeof(*t));
             TupleDesc tupdesc = SPI_tuptable->tupdesc;
             t->group = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "group", false));
             t->remote = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "remote", true));
-            t->shared = t->remote ? MemoryContextAllocZero(TopMemoryContext, sizeof(*t->shared)) : shm_toc_allocate_my(PG_TASK_MAGIC, &seg, sizeof(*t->shared));
+            t->shared = t->remote ? MemoryContextAllocZero(TopMemoryContext, sizeof(*t->shared)) : shm_toc_allocate_my(PG_TASK_MAGIC, &t->seg, sizeof(*t->shared));
             t->shared->handle = DatumGetUInt32(MyBgworkerEntry->bgw_main_arg);
             t->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false));
             t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false));
             t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false));
             elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : default_null, t->shared->max);
-            t->remote ? dlist_push_head(&r, &t->node) : work_task(t, seg);
+            t->remote ? dlist_push_head(&r, &t->node) : work_task(t);
         }
     } while (SPI_processed);
     SPI_cursor_close(portal);

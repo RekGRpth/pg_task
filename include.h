@@ -126,6 +126,7 @@ typedef struct Task {
     char quote;
     char *remote;
     dlist_node node;
+    dsm_segment *seg;
     int count;
     int event;
     int pid;
