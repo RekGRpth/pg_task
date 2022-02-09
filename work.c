@@ -457,6 +457,8 @@ static void work_remote(Task *t) {
     PQconninfoOption *opts = PQconninfoParse(t->remote, &err);
     StringInfoData name, value;
     elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : default_null, t->shared->max, work->shared->oid);
+    dlist_delete(&t->node);
+    dlist_push_head(&remote, &t->node);
     if (!opts) { ereport_my(WARNING, true, (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), errdetail("%s", work_errstr(err)))); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
@@ -647,7 +649,7 @@ static void work_type(void) {
     set_ps_display_my("idle");
 }
 
-static void work_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
+static void work_row(HeapTuple val, TupleDesc tupdesc, uint64 row, dlist_head *r) {
     dsm_segment *seg;
     Task *t = MemoryContextAllocZero(TopMemoryContext, sizeof(*t));
     t->group = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "group", false));
@@ -658,17 +660,19 @@ static void work_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
     t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false));
     t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false));
     elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : default_null, t->shared->max);
-    t->remote ? dlist_push_head(&remote, &t->node) : work_task(t, seg);
+    t->remote ? dlist_push_head(r, &t->node) : work_task(t, seg);
 
 }
 
 static void work_timeout(void) {
     Datum values[] = {ObjectIdGetDatum(work->shared->oid)};
+    dlist_head r;
     dlist_mutable_iter iter;
     Portal portal;
     static Oid argtypes[] = {OIDOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
+    dlist_init(&r);
     set_ps_display_my("timeout");
     if (!src.data) {
         initStringInfoMy(&src);
@@ -699,11 +703,11 @@ static void work_timeout(void) {
         BeginInternalSubTransactionMy(src.data);
         SPI_cursor_fetch(portal, true, work_default_fetch);
         ReleaseCurrentSubTransactionMy();
-        for (uint64 row = 0; row < SPI_processed; row++) work_row(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, row);
+        for (uint64 row = 0; row < SPI_processed; row++) work_row(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, row, &r);
     } while (SPI_processed);
     SPI_cursor_close(portal);
     SPI_finish_my();
-    dlist_foreach_modify(iter, &remote) work_remote(dlist_container(Task, node, iter.cur));
+    dlist_foreach_modify(iter, &r) work_remote(dlist_container(Task, node, iter.cur));
     set_ps_display_my("idle");
 }
 
