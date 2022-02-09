@@ -3,21 +3,20 @@
 extern char *default_null;
 extern int conf_default_fetch;
 extern int work_default_restart;
-static Work work = {0};
 
-static void conf_data(void) {
-    List *names = stringToQualifiedNameList(work.data);
+static void conf_data(Work *work) {
+    List *names = stringToQualifiedNameList(work->data);
     StringInfoData src;
-    elog(DEBUG1, "user = %s, data = %s", work.shared->user, work.shared->data);
+    elog(DEBUG1, "user = %s, data = %s", work->shared->user, work->shared->data);
     set_ps_display_my("data");
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), work.data, work.user);
+    appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), work->data, work->user);
     BeginInternalSubTransactionMy(src.data);
     if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
-        stmt->dbname = work.shared->data;
-        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString(work.shared->user), -1));
+        stmt->dbname = work->shared->data;
+        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString(work->shared->user), -1));
         pstate->p_sourcetext = src.data;
         createdb_my(pstate, stmt);
         list_free_deep(stmt->options);
@@ -30,24 +29,24 @@ static void conf_data(void) {
     set_ps_display_my("idle");
 }
 
-static void conf_user(void) {
-    List *names = stringToQualifiedNameList(work.user);
+static void conf_user(Work *work) {
+    List *names = stringToQualifiedNameList(work->user);
     StringInfoData src;
-    elog(DEBUG1, "user = %s", work.shared->user);
+    elog(DEBUG1, "user = %s", work->shared->user);
     set_ps_display_my("user");
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE ROLE %s WITH LOGIN), work.user);
+    appendStringInfo(&src, SQL(CREATE ROLE %s WITH LOGIN), work->user);
 #if PG_VERSION_NUM >= 120000
-    if (work.shared->partman[0]) appendStringInfoString(&src, " SUPERUSER");
+    if (work->shared->partman[0]) appendStringInfoString(&src, " SUPERUSER");
 #endif
     BeginInternalSubTransactionMy(src.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
         CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
         ParseState *pstate = make_parsestate(NULL);
-        stmt->role = work.shared->user;
+        stmt->role = work->shared->user;
         stmt->options = list_make1(makeDefElemMy("canlogin", (Node *)makeInteger(1), -1));
 #if PG_VERSION_NUM >= 120000
-        if (work.shared->partman[0]) stmt->options = lappend(stmt->options, makeDefElemMy("superuser", (Node *)makeInteger(1), -1));
+        if (work->shared->partman[0]) stmt->options = lappend(stmt->options, makeDefElemMy("superuser", (Node *)makeInteger(1), -1));
 #endif
         pstate->p_sourcetext = src.data;
         CreateRoleMy(pstate, stmt);
@@ -67,33 +66,34 @@ static void conf_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
     dsm_segment *seg;
     pid_t pid;
     size_t len;
+    Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));;
     set_ps_display_my("row");
-    work.shared = shm_toc_allocate_my(PG_WORK_MAGIC, &seg, sizeof(*work.shared));
-    work.shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false));
-    work.shared->timeout = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "timeout", false));
-    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "data", false)), work.shared->data, sizeof(work.shared->data));
+    work->shared = shm_toc_allocate_my(PG_WORK_MAGIC, &seg, sizeof(*work->shared));
+    work->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false));
+    work->shared->timeout = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "timeout", false));
+    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "data", false)), work->shared->data, sizeof(work->shared->data));
 #if PG_VERSION_NUM >= 120000
-    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "partman", false)), work.shared->partman, sizeof(work.shared->partman));
+    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "partman", false)), work->shared->partman, sizeof(work->shared->partman));
 #endif
-    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "schema", false)), work.shared->schema, sizeof(work.shared->schema));
-    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false)), work.shared->table, sizeof(work.shared->table));
-    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false)), work.shared->user, sizeof(work.shared->user));
-    elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li, partman = %s", row, work.shared->user, work.shared->data, work.shared->schema, work.shared->table, work.shared->timeout, work.shared->reset,
+    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "schema", false)), work->shared->schema, sizeof(work->shared->schema));
+    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false)), work->shared->table, sizeof(work->shared->table));
+    text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false)), work->shared->user, sizeof(work->shared->user));
+    elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li, partman = %s", row, work->shared->user, work->shared->data, work->shared->schema, work->shared->table, work->shared->timeout, work->shared->reset,
 #if PG_VERSION_NUM >= 120000
-        work.shared->partman[0] ? work.shared->partman : default_null
+        work->shared->partman[0] ? work->shared->partman : default_null
 #else
         default_null
 #endif
     );
-    work.data = quote_identifier(work.shared->data);
-    work.user = quote_identifier(work.shared->user);
-    conf_user();
-    conf_data();
-    if (work.data != work.shared->data) pfree((void *)work.data);
-    if (work.user != work.shared->user) pfree((void *)work.user);
+    work->data = quote_identifier(work->shared->data);
+    work->user = quote_identifier(work->shared->user);
+    conf_user(work);
+    conf_data(work);
+    if (work->data != work->shared->data) pfree((void *)work->data);
+    if (work->user != work->shared->user) pfree((void *)work->user);
     if ((len = strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
-    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %li", work.shared->user, work.shared->data, work.shared->schema, work.shared->table, work.shared->timeout)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
+    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %li", work->shared->user, work->shared->data, work->shared->schema, work->shared->table, work->shared->timeout)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
 #if PG_VERSION_NUM >= 110000
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
@@ -113,6 +113,7 @@ static void conf_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
     pfree(handle);
     dsm_pin_segment(seg);
     dsm_detach(seg);
+    pfree(work);
 }
 
 void conf_main(Datum arg) {
