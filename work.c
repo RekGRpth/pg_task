@@ -759,19 +759,19 @@ void work_main(Datum arg) {
     appendStringInfo(&schema_table, "%s.%s", work->schema, work->table);
     work->schema_table = schema_table.data;
     datum = CStringGetTextDatumMy(work->schema_table);
-    work->schematable = DatumGetInt32(DirectFunctionCall1Coll(hashtext, DEFAULT_COLLATION_OID, datum));
+    work->hash = DatumGetInt32(DirectFunctionCall1Coll(hashtext, DEFAULT_COLLATION_OID, datum));
     pfree((void *)datum);
-    if (!lock_data_user_schematable(MyDatabaseId, GetUserId(), work->schematable)) { elog(WARNING, "!lock_data_user_schematable(%i, %i, %i)", MyDatabaseId, GetUserId(), work->schematable); ShutdownRequestPending = true; return; }
+    if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work->hash)) { elog(WARNING, "!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work->hash); ShutdownRequestPending = true; return; }
     initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work->schema);
     work->schema_type = schema_type.data;
-    elog(DEBUG1, "timeout = %li, reset = %li, schema_table = %s, schema_type = %s, partman = %s, schematable = %i", work->shared->timeout, work->shared->reset, work->schema_table, work->schema_type,
+    elog(DEBUG1, "timeout = %li, reset = %li, schema_table = %s, schema_type = %s, partman = %s, hash = %i", work->shared->timeout, work->shared->reset, work->schema_table, work->schema_type,
 #if PG_VERSION_NUM >= 120000
     work->shared->partman[0] ? work->shared->partman : default_null,
 #else
     default_null,
 #endif
-    work->schematable);
+    work->hash);
     work_schema(work->schema);
     set_config_option_my("pg_task.schema", work->shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
@@ -823,5 +823,5 @@ void work_main(Datum arg) {
         FreeWaitEventSet(set);
         pfree(events);
     }
-    if (!unlock_data_user_schematable(MyDatabaseId, GetUserId(), work->schematable)) elog(WARNING, "!unlock_data_user_schematable(%i, %i, %i)", MyDatabaseId, GetUserId(), work->schematable);
+    if (!unlock_data_user_hash(MyDatabaseId, GetUserId(), work->hash)) elog(WARNING, "!unlock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work->hash);
 }

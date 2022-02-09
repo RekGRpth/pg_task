@@ -53,9 +53,9 @@ bool init_oid_is_string(Oid oid) {
     }
 }
 
-bool lock_data_user_schematable(Oid data, Oid user, int schematable) {
-    LOCKTAG tag = {data, user, (uint32)schematable, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    elog(DEBUG1, "data = %i, user = %i, hschematablesh = %i", data, user, schematable);
+bool lock_data_user_hash(Oid data, Oid user, int hash) {
+    LOCKTAG tag = {data, user, (uint32)hash, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "data = %i, user = %i, hhashsh = %i", data, user, hash);
     return LockAcquire(&tag, AccessExclusiveLock, true, true) == LOCKACQUIRE_OK;
 }
 
@@ -77,9 +77,9 @@ bool lock_table_pid_hash(Oid table, int pid, int hash) {
     return LockAcquire(&tag, AccessShareLock, true, true) == LOCKACQUIRE_OK;
 }
 
-bool unlock_data_user_schematable(Oid data, Oid user, int schematable) {
-    LOCKTAG tag = {data, user, (uint32)schematable, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    elog(DEBUG1, "data = %i, user = %i, schematable = %i", data, user, schematable);
+bool unlock_data_user_hash(Oid data, Oid user, int hash) {
+    LOCKTAG tag = {data, user, (uint32)hash, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "data = %i, user = %i, hash = %i", data, user, hash);
     return LockRelease(&tag, AccessExclusiveLock, true);
 }
 

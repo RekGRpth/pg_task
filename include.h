@@ -166,20 +166,20 @@ typedef struct Work {
     const char *schema;
     const char *table;
     const char *user;
-    int schematable;
+    int hash;
     WorkShared *shared;
 } Work;
 
 bool init_oid_is_string(Oid oid);
 bool is_log_level_output(int elevel, int log_min_level);
 bool lock_data_user(Oid data, Oid user);
-bool lock_data_user_schematable(Oid data, Oid user, int schematable);
+bool lock_data_user_hash(Oid data, Oid user, int hash);
 bool lock_table_id(Oid table, int64 id);
 bool lock_table_pid_hash(Oid table, int pid, int hash);
 bool task_done(Task *t);
 bool task_work(Task *t);
 bool unlock_data_user(Oid data, Oid user);
-bool unlock_data_user_schematable(Oid data, Oid user, int schematable);
+bool unlock_data_user_hash(Oid data, Oid user, int hash);
 bool unlock_table_id(Oid table, int64 id);
 bool unlock_table_pid_hash(Oid table, int pid, int hash);
 char *TextDatumGetCStringMy(Datum datum);
