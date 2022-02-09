@@ -3,18 +3,20 @@
 extern char *default_null;
 extern int work_default_fetch;
 extern int work_default_sleep;
-extern Task *task;
+extern Task task;
 static dlist_head remote;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 static void work_query(Task *t);
 Work work;
 
 #define ereport_my(elevel, finish, ...) do { \
-    task = t; \
+    task = *t; \
     emit_log_hook_prev = emit_log_hook; \
     emit_log_hook = task_error; \
     ereport(elevel, __VA_ARGS__); \
+    *t = task; \
     if (task_done(t) || finish) work_finish(t); \
+    MemSet(&task, 0, sizeof(task)); \
 } while(0)
 
 static char *work_errstr(char *err) {
