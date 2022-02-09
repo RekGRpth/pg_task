@@ -133,7 +133,7 @@ static void work_finish(Task *t) {
 
 static int work_nevents(void) {
     dlist_mutable_iter iter;
-    int nevents = 0;
+    int nevents = 2;
     dlist_foreach_modify(iter, &work->head) {
         Task *t = dlist_container(Task, node, iter.cur);
         if (PQstatus(t->conn) == CONNECTION_BAD) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
