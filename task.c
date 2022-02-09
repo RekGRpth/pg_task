@@ -3,7 +3,7 @@
 extern bool xact_started;
 extern char *default_null;
 extern int task_default_fetch;
-extern Work *work;
+extern Work work;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 Task *task;
 
@@ -24,7 +24,7 @@ static bool task_live(Task *t) {
                 END ORDER BY "max" DESC, "id" LIMIT 1 FOR UPDATE OF t %3$s
             ) UPDATE %1$s AS t SET "state" = 'TAKE'::%2$s FROM s
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
-        ), work->schema_table, work->schema_type,
+        ), work.schema_table, work.schema_type,
 #if PG_VERSION_NUM >= 90500
         "SKIP LOCKED"
 #else
@@ -57,7 +57,7 @@ static void task_delete(Task *t) {
                 WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 FOR UPDATE OF t
             ) DELETE FROM %1$s AS t
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 RETURNING t.id
-        ), work->schema_table);
+        ), work.schema_table);
     }
     BeginInternalSubTransactionMy(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -86,7 +86,7 @@ static void task_insert(Task *t) {
                 WHEN "drift" THEN CURRENT_TIMESTAMP + "repeat"
                 ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p + "repeat" FROM r WHERE p <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
             END AS "plan", "active", "live", "repeat", "timeout", "count", "max", "delete", "drift", "header", "string", "delimiter", "escape", "quote", "group", "input", "null", "remote" FROM s WHERE "repeat" > '0 sec' LIMIT 1 RETURNING t.id
-        ), work->schema_table);
+        ), work.schema_table);
     }
     BeginInternalSubTransactionMy(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -113,7 +113,7 @@ static void task_update(Task *t) {
                 WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN'::%2$s AND "hash" = $1 AND "max" < 0 FOR UPDATE OF t
             ) UPDATE %1$s AS t SET "plan" = CASE WHEN "drift" THEN CURRENT_TIMESTAMP ELSE "plan" END + concat_ws(' ', (-"max")::text, 'msec')::interval FROM s
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
-        ), work->schema_table, work->schema_type);
+        ), work.schema_table, work.schema_type);
     }
     BeginInternalSubTransactionMy(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -147,7 +147,7 @@ bool task_done(Task *t) {
             ) UPDATE %1$s AS t SET "state" = 'DONE'::%2$s, "stop" = CURRENT_TIMESTAMP, "output" = $2, "error" = $3 FROM s
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id
             RETURNING "delete" AND "output" IS NULL AS "delete", "repeat" > '0 sec' AS "insert", "max" >= 0 AND ("count" > 0 OR "live" > '0 sec') AS "live", "max" < 0 AS "update"
-        ), work->schema_table, work->schema_type);
+        ), work.schema_table, work.schema_type);
     }
     SPI_connect_my(src.data);
     BeginInternalSubTransactionMy(src.data);
@@ -166,7 +166,7 @@ bool task_done(Task *t) {
     if (insert) task_insert(t);
     if (delete) task_delete(t);
     if (update) task_update(t);
-    if (t->lock && !unlock_table_id(work->shared->oid, t->shared->id)) { elog(WARNING, "!unlock_table_id(%i, %li)", work->shared->oid, t->shared->id); exit = true; }
+    if (t->lock && !unlock_table_id(work.shared->oid, t->shared->id)) { elog(WARNING, "!unlock_table_id(%i, %li)", work.shared->oid, t->shared->id); exit = true; }
     t->lock = false;
     exit = exit || task_live(t);
     SPI_finish_my();
@@ -182,10 +182,10 @@ bool task_work(Task *t) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return true;
-    if (!lock_table_id(work->shared->oid, t->shared->id)) { elog(WARNING, "!lock_table_id(%i, %li)", work->shared->oid, t->shared->id); return true; }
+    if (!lock_table_id(work.shared->oid, t->shared->id)) { elog(WARNING, "!lock_table_id(%i, %li)", work.shared->oid, t->shared->id); return true; }
     t->lock = true;
     t->count++;
-    elog(DEBUG1, "id = %li, max = %i, oid = %i, count = %i, pid = %i", t->shared->id, t->shared->max, work->shared->oid, t->count, t->pid);
+    elog(DEBUG1, "id = %li, max = %i, oid = %i, count = %i, pid = %i", t->shared->id, t->shared->max, work.shared->oid, t->count, t->pid);
     set_ps_display_my("work");
     if (!t->conn) {
         StringInfoData id;
@@ -203,7 +203,7 @@ bool task_work(Task *t) {
             ) UPDATE %1$s AS t SET "state" = 'WORK'::%2$s, "start" = CURRENT_TIMESTAMP, "pid" = $2 FROM s
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id
             RETURNING "group", "hash", "input", EXTRACT(epoch FROM "timeout")::integer * 1000 AS "timeout", "header", "string", "null", "delimiter", "quote", "escape", "plan" + "active" > CURRENT_TIMESTAMP AS "active", "remote"
-        ), work->schema_table, work->schema_type);
+        ), work.schema_table, work.schema_type);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -392,47 +392,46 @@ void task_main(Datum arg) {
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
     task = MemoryContextAllocZero(TopMemoryContext, sizeof(*task));
-    work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));
     if (!(seg = dsm_attach(DatumGetUInt32(arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
     if (!(toc = shm_toc_attach(PG_TASK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     task->shared = shm_toc_lookup_my(toc, 0, false);
     if (!(seg = dsm_attach(task->shared->handle))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
-    work->shared = shm_toc_lookup_my(toc, 0, false);
-    work->data = quote_identifier(work->shared->data);
-    work->schema = quote_identifier(work->shared->schema);
-    work->table = quote_identifier(work->shared->table);
-    work->user = quote_identifier(work->shared->user);
-    BackgroundWorkerInitializeConnectionMy(work->shared->data, work->shared->user, 0);
-    set_config_option_my("application_name", MyBgworkerEntry->bgw_name + strlen(work->shared->user) + 1 + strlen(work->shared->data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work->shared->user) + 1 + strlen(work->shared->data) + 1);
+    work.shared = shm_toc_lookup_my(toc, 0, false);
+    work.data = quote_identifier(work.shared->data);
+    work.schema = quote_identifier(work.shared->schema);
+    work.table = quote_identifier(work.shared->table);
+    work.user = quote_identifier(work.shared->user);
+    BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user, 0);
+    set_config_option_my("application_name", MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1);
     set_ps_display_my("main");
     process_session_preload_libraries();
-    elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", work->shared->oid, task->shared->id, task->shared->hash, task->shared->max);
-    set_config_option_my("pg_task.data", work->shared->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option_my("pg_task.schema", work->shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option_my("pg_task.table", work->shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option_my("pg_task.user", work->shared->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", work.shared->oid, task->shared->id, task->shared->hash, task->shared->max);
+    set_config_option_my("pg_task.data", work.shared->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option_my("pg_task.table", work.shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option_my("pg_task.user", work.shared->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     initStringInfoMy(&schema_table);
-    appendStringInfo(&schema_table, "%s.%s", work->schema, work->table);
-    work->schema_table = schema_table.data;
+    appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);
+    work.schema_table = schema_table.data;
     initStringInfoMy(&schema_type);
-    appendStringInfo(&schema_type, "%s.state", work->schema);
-    work->schema_type = schema_type.data;
+    appendStringInfo(&schema_type, "%s.state", work.schema);
+    work.schema_type = schema_type.data;
     initStringInfoMy(&oid);
-    appendStringInfo(&oid, "%i", work->shared->oid);
+    appendStringInfo(&oid, "%i", work.shared->oid);
     set_config_option_my("pg_task.oid", oid.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(oid.data);
     task->pid = MyProcPid;
     task->start = GetCurrentTimestamp();
     set_ps_display_my("idle");
-    if (!lock_table_pid_hash(work->shared->oid, task->pid, task->shared->hash)) { elog(WARNING, "!lock_table_pid_hash(%i, %i, %i)", work->shared->oid, task->pid, task->shared->hash); return; }
+    if (!lock_table_pid_hash(work.shared->oid, task->pid, task->shared->hash)) { elog(WARNING, "!lock_table_pid_hash(%i, %i, %i)", work.shared->oid, task->pid, task->shared->hash); return; }
     while (!ShutdownRequestPending) {
         int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
         if (rc & WL_TIMEOUT) if (task_timeout()) ShutdownRequestPending = true;
         if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
     }
-    if (!unlock_table_pid_hash(work->shared->oid, task->pid ? task->pid : MyProcPid, task->shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work->shared->oid, task->pid ? task->pid : MyProcPid, task->shared->hash);
+    if (!unlock_table_pid_hash(work.shared->oid, task->pid ? task->pid : MyProcPid, task->shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work.shared->oid, task->pid ? task->pid : MyProcPid, task->shared->hash);
 }

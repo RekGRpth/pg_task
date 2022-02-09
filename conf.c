@@ -3,20 +3,21 @@
 extern char *default_null;
 extern int conf_default_fetch;
 extern int work_default_restart;
+static Work work = {0};
 
-static void conf_data(Work *work) {
-    List *names = stringToQualifiedNameList(work->data);
+static void conf_data(void) {
+    List *names = stringToQualifiedNameList(work.data);
     StringInfoData src;
-    elog(DEBUG1, "user = %s, data = %s", work->shared->user, work->shared->data);
+    elog(DEBUG1, "user = %s, data = %s", work.shared->user, work.shared->data);
     set_ps_display_my("data");
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), work->data, work->user);
+    appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), work.data, work.user);
     BeginInternalSubTransactionMy(src.data);
     if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
-        stmt->dbname = work->shared->data;
-        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString(work->shared->user), -1));
+        stmt->dbname = work.shared->data;
+        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString(work.shared->user), -1));
         pstate->p_sourcetext = src.data;
         createdb_my(pstate, stmt);
         list_free_deep(stmt->options);
@@ -29,24 +30,24 @@ static void conf_data(Work *work) {
     set_ps_display_my("idle");
 }
 
-static void conf_user(Work *work) {
-    List *names = stringToQualifiedNameList(work->user);
+static void conf_user(void) {
+    List *names = stringToQualifiedNameList(work.user);
     StringInfoData src;
-    elog(DEBUG1, "user = %s", work->shared->user);
+    elog(DEBUG1, "user = %s", work.shared->user);
     set_ps_display_my("user");
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE ROLE %s WITH LOGIN), work->user);
+    appendStringInfo(&src, SQL(CREATE ROLE %s WITH LOGIN), work.user);
 #if PG_VERSION_NUM >= 120000
-    if (work->shared->partman[0]) appendStringInfoString(&src, " SUPERUSER");
+    if (work.shared->partman[0]) appendStringInfoString(&src, " SUPERUSER");
 #endif
     BeginInternalSubTransactionMy(src.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
         CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
         ParseState *pstate = make_parsestate(NULL);
-        stmt->role = work->shared->user;
+        stmt->role = work.shared->user;
         stmt->options = list_make1(makeDefElemMy("canlogin", (Node *)makeInteger(1), -1));
 #if PG_VERSION_NUM >= 120000
-        if (work->shared->partman[0]) stmt->options = lappend(stmt->options, makeDefElemMy("superuser", (Node *)makeInteger(1), -1));
+        if (work.shared->partman[0]) stmt->options = lappend(stmt->options, makeDefElemMy("superuser", (Node *)makeInteger(1), -1));
 #endif
         pstate->p_sourcetext = src.data;
         CreateRoleMy(pstate, stmt);
@@ -66,7 +67,6 @@ static void conf_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
     dsm_segment *seg;
     pid_t pid;
     size_t len;
-    Work work = {0};
     set_ps_display_my("row");
     work.shared = shm_toc_allocate_my(PG_WORK_MAGIC, &seg, sizeof(*work.shared));
     work.shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false));
@@ -87,8 +87,8 @@ static void conf_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
     );
     work.data = quote_identifier(work.shared->data);
     work.user = quote_identifier(work.shared->user);
-    conf_user(&work);
-    conf_data(&work);
+    conf_user();
+    conf_data();
     if (work.data != work.shared->data) pfree((void *)work.data);
     if (work.user != work.shared->user) pfree((void *)work.user);
     if ((len = strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
