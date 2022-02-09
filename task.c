@@ -130,7 +130,7 @@ static void task_update(Task *t) {
 }
 
 bool task_done(Task *t) {
-    bool delete = false, exit = true, insert = false, update = false, transaction = IsTransactionState();
+    bool delete = false, exit = true, insert = false, update = false;
     char nulls[] = {' ', t->output.data ? ' ' : 'n', t->error.data ? ' ' : 'n'};
     Datum values[] = {Int64GetDatum(t->shared->id), CStringGetTextDatumMy(t->output.data), CStringGetTextDatumMy(t->error.data)};
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
@@ -149,7 +149,7 @@ bool task_done(Task *t) {
             RETURNING "delete" AND "output" IS NULL AS "delete", "repeat" > '0 sec' AS "insert", "max" >= 0 AND ("count" > 0 OR "live" > '0 sec') AS "live", "max" < 0 AS "update"
         ), work->schema_table, work->schema_type);
     }
-    if (!transaction) SPI_connect_my(src.data);
+    SPI_connect_my(src.data);
     BeginInternalSubTransactionMy(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, nulls, SPI_OK_UPDATE_RETURNING);
@@ -169,7 +169,7 @@ bool task_done(Task *t) {
     if (t->lock && !unlock_table_id(work->shared->oid, t->shared->id)) { elog(WARNING, "!unlock_table_id(%i, %li)", work->shared->oid, t->shared->id); exit = true; }
     t->lock = false;
     exit = exit || task_live(t);
-    if (!transaction) SPI_finish_my();
+    SPI_finish_my();
     task_free(t);
     set_ps_display_my("idle");
     return ShutdownRequestPending || exit;
