@@ -4,8 +4,8 @@ extern char *default_null;
 extern int work_default_fetch;
 extern Task task;
 static dlist_head head;
-static dlist_head l;
-static dlist_head r;
+static dlist_head local;
+static dlist_head remote;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 Work work;
 
@@ -691,13 +691,13 @@ static void work_timeout(void) {
             t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false));
             t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false));
             elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : default_null, t->shared->max);
-            dlist_push_head(t->remote ? &r : &l, &t->node);
+            dlist_push_head(t->remote ? &remote : &local, &t->node);
         }
     } while (SPI_processed);
     SPI_cursor_close(portal);
     SPI_finish_my();
-    dlist_foreach_modify(iter, &l) work_task(dlist_container(Task, node, iter.cur));
-    dlist_foreach_modify(iter, &r) work_remote(dlist_container(Task, node, iter.cur));
+    dlist_foreach_modify(iter, &local) work_task(dlist_container(Task, node, iter.cur));
+    dlist_foreach_modify(iter, &remote) work_remote(dlist_container(Task, node, iter.cur));
     set_ps_display_my("idle");
 }
 
@@ -746,8 +746,8 @@ void work_main(Datum arg) {
     pfree((void *)datum);
     if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.hash)) { elog(WARNING, "!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.hash); ShutdownRequestPending = true; return; }
     dlist_init(&head);
-    dlist_init(&l);
-    dlist_init(&r);
+    dlist_init(&local);
+    dlist_init(&remote);
     initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work.schema);
     work.schema_type = schema_type.data;
