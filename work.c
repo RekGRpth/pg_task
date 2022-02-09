@@ -57,7 +57,7 @@ static void work_command(Task *t, PGresult *result) {
     appendStringInfo(&t->output, "%s%s", t->output.len ? "\n" : "", PQcmdStatus(result));
 }
 
-static void work_event(WaitEventSet *set) {
+static void work_events(WaitEventSet *set) {
     dlist_mutable_iter iter;
     AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
     AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
@@ -774,10 +774,10 @@ void work_main(Datum arg) {
     set_ps_display_my("idle");
     work_reset();
     while (!ShutdownRequestPending) {
-        int nevents = 2 + work_nevents();
+        int nevents = work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
-        work_event(set);
+        work_events(set);
         if (current_timeout <= 0) {
             INSTR_TIME_SET_CURRENT(start_time);
             current_timeout = work->shared->timeout;
