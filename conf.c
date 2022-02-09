@@ -63,12 +63,11 @@ static void conf_user(Work *work) {
 static void conf_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker = {0};
-    dsm_segment *seg;
     pid_t pid;
     size_t len;
     Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(*work));;
     set_ps_display_my("row");
-    work->shared = shm_toc_allocate_my(PG_WORK_MAGIC, &seg, sizeof(*work->shared));
+    work->shared = shm_toc_allocate_my(PG_WORK_MAGIC, &work->seg, sizeof(*work->shared));
     work->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false));
     work->shared->timeout = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "timeout", false));
     text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "data", false)), work->shared->data, sizeof(work->shared->data));
@@ -98,7 +97,7 @@ static void conf_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
+    worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(work->seg));
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = work_default_restart;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -111,8 +110,8 @@ static void conf_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     pfree(handle);
-    dsm_pin_segment(seg);
-    dsm_detach(seg);
+    dsm_pin_segment(work->seg);
+    dsm_detach(work->seg);
     pfree(work);
 }
 
