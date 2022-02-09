@@ -2,7 +2,6 @@
 
 extern char *default_null;
 extern int work_default_fetch;
-extern int work_default_sleep;
 extern Task task;
 static dlist_head remote;
 static emit_log_hook_type emit_log_hook_prev = NULL;
@@ -735,10 +734,6 @@ void work_main(Datum arg) {
     work.schema = quote_identifier(work.shared->schema);
     work.table = quote_identifier(work.shared->table);
     work.user = quote_identifier(work.shared->user);
-    for (int i = 0; i < work_default_sleep; i++) {
-        if (!IsBackendPid(MyBgworkerEntry->bgw_notify_pid)) break;
-        DirectFunctionCall1(pg_sleep, Float8GetDatum(1.0));
-    }
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user, 0);
     set_config_option_my("application_name", MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1);
