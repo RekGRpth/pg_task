@@ -4,6 +4,7 @@ extern char *default_null;
 extern int work_default_fetch;
 extern int work_default_sleep;
 extern Task *task;
+static dlist_head remote;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 static void work_query(Task *t);
 Work *work;
@@ -61,7 +62,7 @@ static void work_events(WaitEventSet *set) {
     dlist_mutable_iter iter;
     AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
     AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
-    dlist_foreach_modify(iter, &work->head) {
+    dlist_foreach_modify(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
         AddWaitEventToSet(set, t->event, PQsocket(t->conn), NULL, t);
     }
@@ -134,7 +135,7 @@ static void work_finish(Task *t) {
 static int work_nevents(void) {
     dlist_mutable_iter iter;
     int nevents = 2;
-    dlist_foreach_modify(iter, &work->head) {
+    dlist_foreach_modify(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
         if (PQstatus(t->conn) == CONNECTION_BAD) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
         if (PQsocket(t->conn) == PGINVALID_SOCKET) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsocket == PGINVALID_SOCKET"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
@@ -359,7 +360,7 @@ static void work_connect(Task *t) {
 static void work_proc_exit(int code, Datum arg) {
     dlist_mutable_iter iter;
     elog(DEBUG1, "code = %i", code);
-    dlist_foreach_modify(iter, &work->head) {
+    dlist_foreach_modify(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
         if (PQstatus(t->conn) == CONNECTION_OK) {
             char errbuf[256];
@@ -657,7 +658,7 @@ static void work_row(HeapTuple val, TupleDesc tupdesc, uint64 row) {
     t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false));
     t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false));
     elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : default_null, t->shared->max);
-    t->remote ? dlist_push_head(&work->head, &t->node) : work_task(t, seg);
+    t->remote ? dlist_push_head(&remote, &t->node) : work_task(t, seg);
 
 }
 
@@ -702,7 +703,7 @@ static void work_timeout(void) {
     } while (SPI_processed);
     SPI_cursor_close(portal);
     SPI_finish_my();
-    dlist_foreach_modify(iter, &work->head) work_remote(dlist_container(Task, node, iter.cur));
+    dlist_foreach_modify(iter, &remote) work_remote(dlist_container(Task, node, iter.cur));
     set_ps_display_my("idle");
 }
 
@@ -782,7 +783,7 @@ void work_main(Datum arg) {
     appendStringInfo(&timeout, "%li", work->shared->timeout);
     set_config_option_my("pg_task.timeout", timeout.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(timeout.data);
-    dlist_init(&work->head);
+    dlist_init(&remote);
     set_ps_display_my("idle");
     work_reset();
     while (!ShutdownRequestPending) {

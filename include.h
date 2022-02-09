@@ -165,7 +165,6 @@ typedef struct Work {
     const char *schema;
     const char *table;
     const char *user;
-    dlist_head head;
     int hash;
     WorkShared *shared;
 } Work;
