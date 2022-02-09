@@ -93,6 +93,7 @@ static void conf_work(Work *work) {
     pfree(handle);
     dsm_pin_segment(work->seg);
     dsm_detach(work->seg);
+    pfree(work);
 }
 
 void conf_main(Datum arg) {
@@ -146,7 +147,6 @@ void conf_main(Datum arg) {
 #endif
             );
             conf_work(work);
-            pfree(work);
         }
     } while (SPI_processed);
     SPI_cursor_close(portal);
