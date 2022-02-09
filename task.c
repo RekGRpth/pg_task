@@ -118,12 +118,14 @@ static void task_update(Task *t) {
     BeginInternalSubTransactionMy(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL);
+    ReleaseCurrentSubTransactionMy();
     do {
+        BeginInternalSubTransactionMy(src.data);
         SPI_cursor_fetch(portal, true, task_default_fetch);
+        ReleaseCurrentSubTransactionMy();
         for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, update id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     } while (SPI_processed);
     SPI_cursor_close(portal);
-    ReleaseCurrentSubTransactionMy();
     set_ps_display_my("idle");
 }
 

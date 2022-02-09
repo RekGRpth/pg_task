@@ -218,10 +218,14 @@ static void work_reset(void) {
         );
     }
     SPI_connect_my(src.data);
+    BeginInternalSubTransactionMy(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL);
+    ReleaseCurrentSubTransactionMy();
     do {
+        BeginInternalSubTransactionMy(src.data);
         SPI_cursor_fetch(portal, true, work_default_fetch);
+        ReleaseCurrentSubTransactionMy();
         for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     } while (SPI_processed);
     SPI_cursor_close(portal);
@@ -685,10 +689,14 @@ static void work_timeout(void) {
         );
     }
     SPI_connect_my(src.data);
+    BeginInternalSubTransactionMy(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL);
+    ReleaseCurrentSubTransactionMy();
     do {
+        BeginInternalSubTransactionMy(src.data);
         SPI_cursor_fetch(portal, true, work_default_fetch);
+        ReleaseCurrentSubTransactionMy();
         for (uint64 row = 0; row < SPI_processed; row++) work_row(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, row);
     } while (SPI_processed);
     SPI_cursor_close(portal);

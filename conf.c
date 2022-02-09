@@ -136,9 +136,13 @@ void conf_main(Datum arg) {
         WHERE "pid" IS NULL)
     , " ");
     SPI_connect_my(src.data);
+    BeginInternalSubTransactionMy(src.data);
     portal = SPI_cursor_open_with_args_my(src.data, src.data, 0, NULL, NULL, NULL);
+    ReleaseCurrentSubTransactionMy();
     do {
+        BeginInternalSubTransactionMy(src.data);
         SPI_cursor_fetch(portal, true, conf_default_fetch);
+        ReleaseCurrentSubTransactionMy();
         for (uint64 row = 0; row < SPI_processed; row++) conf_row(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, row);
     } while (SPI_processed);
     SPI_cursor_close(portal);
