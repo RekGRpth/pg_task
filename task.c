@@ -420,5 +420,5 @@ void task_main(Datum arg) {
         if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
     }
-    if (!unlock_table_pid_hash(work.shared->oid, task.pid ? task.pid : MyProcPid, task.shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work.shared->oid, task.pid ? task.pid : MyProcPid, task.shared->hash);
+    if (!unlock_table_pid_hash(work.shared->oid, task.pid, task.shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work.shared->oid, task.pid, task.shared->hash);
 }
