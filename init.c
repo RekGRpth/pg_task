@@ -55,7 +55,7 @@ bool init_oid_is_string(Oid oid) {
 
 bool lock_data_user_hash(Oid data, Oid user, int hash) {
     LOCKTAG tag = {data, user, (uint32)hash, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    elog(DEBUG1, "data = %i, user = %i, hhashsh = %i", data, user, hash);
+    elog(DEBUG1, "data = %i, user = %i, hash = %i", data, user, hash);
     return LockAcquire(&tag, AccessExclusiveLock, true, true) == LOCKACQUIRE_OK;
 }
 
