@@ -148,6 +148,7 @@ void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes) {
     shm_toc_estimate_keys(&e, 1);
     segsize = shm_toc_estimate(&e);
     *seg = dsm_create_my(segsize, 0);
+    dsm_pin_mapping(*seg);
     toc = shm_toc_create(magic, dsm_segment_address(*seg), segsize);
     ptr = shm_toc_allocate(toc, nbytes);
     MemSet(ptr, 0, nbytes);
@@ -410,63 +411,3 @@ bool is_log_level_output(int elevel, int log_min_level) {
     } else if (elevel >= log_min_level) return true; // Neither is LOG
     return false;
 }
-
-#if PG_VERSION_NUM < 120000
-ResourceOwner AuxProcessResourceOwner = NULL;
-
-static void ReleaseAuxProcessResourcesCallback(int code, Datum arg);
-
-/*
- * Establish an AuxProcessResourceOwner for the current process.
- */
-void
-CreateAuxProcessResourceOwner(void)
-{
-	Assert(AuxProcessResourceOwner == NULL);
-	Assert(CurrentResourceOwner == NULL);
-	AuxProcessResourceOwner = ResourceOwnerCreate(NULL, "AuxiliaryProcess");
-	CurrentResourceOwner = AuxProcessResourceOwner;
-
-	/*
-	 * Register a shmem-exit callback for cleanup of aux-process resource
-	 * owner.  (This needs to run after, e.g., ShutdownXLOG.)
-	 */
-	on_shmem_exit(ReleaseAuxProcessResourcesCallback, 0);
-
-}
-
-/*
- * Convenience routine to release all resources tracked in
- * AuxProcessResourceOwner (but that resowner is not destroyed here).
- * Warn about leaked resources if isCommit is true.
- */
-void
-ReleaseAuxProcessResources(bool isCommit)
-{
-	/*
-	 * At this writing, the only thing that could actually get released is
-	 * buffer pins; but we may as well do the full release protocol.
-	 */
-	ResourceOwnerRelease(AuxProcessResourceOwner,
-						 RESOURCE_RELEASE_BEFORE_LOCKS,
-						 isCommit, true);
-	ResourceOwnerRelease(AuxProcessResourceOwner,
-						 RESOURCE_RELEASE_LOCKS,
-						 isCommit, true);
-	ResourceOwnerRelease(AuxProcessResourceOwner,
-						 RESOURCE_RELEASE_AFTER_LOCKS,
-						 isCommit, true);
-}
-
-/*
- * Shmem-exit callback for the same.
- * Warn about leaked resources if process exit code is zero (ie normal).
- */
-static void
-ReleaseAuxProcessResourcesCallback(int code, Datum arg)
-{
-	bool		isCommit = (code == 0);
-
-	ReleaseAuxProcessResources(isCommit);
-}
-#endif

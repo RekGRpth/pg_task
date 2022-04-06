@@ -207,11 +207,6 @@ void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undeco
 void EndCommandMy(const char *commandTag, CommandDest dest);
 #endif
 void append_with_tabs(StringInfo buf, const char *str);
-#if PG_VERSION_NUM < 120000
-extern PGDLLIMPORT ResourceOwner AuxProcessResourceOwner;
-void CreateAuxProcessResourceOwner(void);
-void ReleaseAuxProcessResources(bool isCommit);
-#endif
 void exec_simple_query_my(const char *query_string);
 void initStringInfoMy(StringInfoData *buf);
 void init_work(bool dynamic);
