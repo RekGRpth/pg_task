@@ -296,9 +296,22 @@ static void work_success(Task *t, PGresult *result, int row) {
     }
 }
 
+static void work_copy(Task *t) {
+    char *data;
+    int len;
+    if (!t->output.data) initStringInfoMy(&t->output);
+    switch ((len = PQgetCopyData(t->conn, &data, false))) {
+        case 0: return;
+        case -1: return;
+        case -2: ereport_my(WARNING, true, (errmsg("id = %li, PQgetCopyData == -2", t->shared->id), errdetail("%s", PQerrorMessageMy(t->conn)))); return;
+    }
+    appendBinaryStringInfo(&t->output, data, len);
+}
+
 static void work_result(Task *t) {
     for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK && (result = PQgetResult(t->conn)); PQclear(result)) switch (PQresultStatus(result)) {
         case PGRES_COMMAND_OK: work_command(t, result); break;
+        case PGRES_COPY_OUT: work_copy(t); break;
         case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), errdetail("%s", PQresultErrorMessageMy(result)))); work_fatal(t, result); break;
         case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) work_success(t, result, row); break;
         default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
