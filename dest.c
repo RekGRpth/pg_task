@@ -1,6 +1,12 @@
 #include "include.h"
+#include <unistd.h>
 
+enum PIPES {READ, WRITE};
 extern Task task;
+//static int stderr_fd;
+//static int stderr_pipe[2];
+static int stdout_fd;
+static int stdout_pipe[2];
 
 static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
     bool isnull;
@@ -65,7 +71,31 @@ static void rShutdown(DestReceiver *self) {
 }
 
 static void rDestroy(DestReceiver *self) {
+    char buffer[1024 + 1];
+    int nread;
     elog(DEBUG1, "id = %li", task.shared->id);
+//    if (fflush(stderr)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
+//    if (dup2(stderr_fd, STDERR_FILENO) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
+//    if (close(stderr_fd) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
+//    while ((nread = read(stderr_pipe[READ], buffer, sizeof(buffer))) > 0) {
+//        if (!task.error.data) initStringInfoMy(&task.error);
+//        buffer[nread] = '\0';
+//        elog(DEBUG1, "nread = %i, buffer = %s", nread, buffer);
+//        appendBinaryStringInfo(&task.error, buffer, nread);
+//        if (fwrite(buffer, nread, 1, stderr) != 1) ereport(ERROR, (errcode_for_file_access(), errmsg("fwrite != 1"), errdetail("%m")));
+//    }
+//    if (close(stderr_pipe[READ]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
+    if (fflush(stdout)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
+    if (dup2(stdout_fd, STDOUT_FILENO) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
+    if (close(stdout_fd) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
+    while ((nread = read(stdout_pipe[READ], buffer, sizeof(buffer))) > 0) {
+        if (!task.output.data) initStringInfoMy(&task.output);
+        buffer[nread] = '\0';
+        elog(DEBUG1, "nread = %i, buffer = %s", nread, buffer);
+        appendBinaryStringInfo(&task.output, buffer, nread);
+        if (fwrite(buffer, nread, 1, stdout) != 1) ereport(ERROR, (errcode_for_file_access(), errmsg("fwrite != 1"), errdetail("%m")));
+    }
+    if (close(stdout_pipe[READ]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
 }
 
 static
@@ -81,6 +111,17 @@ DestReceiver myDestReceiver = {
 };
 
 DestReceiver *CreateDestReceiverMy(CommandDest dest) {
+    elog(DEBUG1, "id = %li", task.shared->id);
+//    if ((stderr_fd = dup(STDERR_FILENO)) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("dup < 0"), errdetail("%m")));
+//    if (pipe(stderr_pipe) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("pipe < 0"), errdetail("%m")));
+//    if (fflush(stderr)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
+//    if (dup2(stderr_pipe[WRITE], STDERR_FILENO) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
+//    if (close(stderr_pipe[WRITE]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
+    if ((stdout_fd = dup(STDOUT_FILENO)) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("dup < 0"), errdetail("%m")));
+    if (pipe(stdout_pipe) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("pipe < 0"), errdetail("%m")));
+    if (fflush(stdout)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
+    if (dup2(stdout_pipe[WRITE], STDOUT_FILENO) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
+    if (close(stdout_pipe[WRITE]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
 #if PG_VERSION_NUM >= 120000
     return unconstify(DestReceiver *, &myDestReceiver);
 #else
