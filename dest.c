@@ -80,7 +80,6 @@ static void rDestroy(DestReceiver *self) {
         buffer[nread] = '\0';
         elog(DEBUG1, "nread = %i, buffer = %s", nread, buffer);
         appendBinaryStringInfo(&task.output, buffer, nread);
-        if (fwrite(buffer, nread, 1, stdout) != 1) ereport(ERROR, (errcode_for_file_access(), errmsg("fwrite != 1"), errdetail("%m")));
     }
     if (close(stdout_pipe[READ]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
 }
