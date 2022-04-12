@@ -77,8 +77,6 @@ static void rDestroy(DestReceiver *self) {
     if (close(stdout_fd) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
     while ((nread = read(stdout_pipe[READ], buffer, sizeof(buffer))) > 0) {
         if (!task.output.data) initStringInfoMy(&task.output);
-        buffer[nread] = '\0';
-        elog(DEBUG1, "nread = %i, buffer = %s", nread, buffer);
         appendBinaryStringInfo(&task.output, buffer, nread);
     }
     if (close(stdout_pipe[READ]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
