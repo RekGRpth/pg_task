@@ -69,7 +69,7 @@ static void rShutdown(DestReceiver *self) {
 }
 
 static void rDestroy(DestReceiver *self) {
-    char buffer[1024 + 1];
+    char buffer[1024];
     int nread;
     elog(DEBUG1, "id = %li", task.shared->id);
     if (fflush(stdout)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
