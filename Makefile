@@ -1,5 +1,5 @@
 MODULE_big = pg_task
-OBJS = init.o conf.o work.o task.o postgres.o spi.o dest.o latch.o
+OBJS = init.o conf.o work.o task.o spi.o latch.o
 PG_CONFIG = pg_config
 PG94 = $(shell $(PG_CONFIG) --version | egrep " 8\.| 9\.0| 9\.1| 9\.2| 9\.3" > /dev/null && echo no || echo yes)
 ifeq ($(PG94),no)
