@@ -66,6 +66,8 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <utils/timeout.h>
 #include <utils/timestamp.h>
 
+#include "dest.h"
+
 #if PG_VERSION_NUM >= 90500
 #define dsm_create_my(size, flags) dsm_create(size, flags)
 #define set_config_option_my(name, value, context, source, action, changeVal, elevel, is_reload) set_config_option(name, value, context, source, action, changeVal, elevel, is_reload)
@@ -189,30 +191,16 @@ const char *error_severity(int elevel);
 const char *init_check(void);
 Datum CStringGetTextDatumMy(const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
-DestReceiver *CreateDestReceiverMy(CommandDest dest);
 int severity_error(const char *error);
 Portal SPI_cursor_open_my(const char *name, SPIPlanPtr plan, Datum *values, const char *nulls);
 Portal SPI_cursor_open_with_args_my(const char *name, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote);
-#if PG_VERSION_NUM >= 130000
-void BeginCommandMy(CommandTag commandTag, CommandDest dest);
-#else
-void BeginCommandMy(const char *commandTag, CommandDest dest);
-#endif
 void conf_main(Datum main_arg);
-#if PG_VERSION_NUM >= 130000
-void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undecorated_output);
-#else
-void EndCommandMy(const char *commandTag, CommandDest dest);
-#endif
 void append_with_tabs(StringInfo buf, const char *str);
-void exec_simple_query_my(const char *query_string);
 void initStringInfoMy(StringInfoData *buf);
 void init_work(bool dynamic);
-void NullCommandMy(CommandDest dest);
 void _PG_init(void);
-void ReadyForQueryMy(CommandDest dest);
 void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes);
 void SPI_connect_my(const char *src);
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res);
