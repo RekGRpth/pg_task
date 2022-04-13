@@ -176,14 +176,14 @@ typedef struct Work {
 
 bool init_oid_is_string(Oid oid);
 bool is_log_level_output(int elevel, int log_min_level);
-bool lock_data_user(Oid data, Oid user);
 bool lock_data_user_hash(Oid data, Oid user, int hash);
+bool lock_data_user(Oid data, Oid user);
 bool lock_table_id(Oid table, int64 id);
 bool lock_table_pid_hash(Oid table, int pid, int hash);
 bool task_done(Task *t);
 bool task_work(Task *t);
-bool unlock_data_user(Oid data, Oid user);
 bool unlock_data_user_hash(Oid data, Oid user, int hash);
+bool unlock_data_user(Oid data, Oid user);
 bool unlock_table_id(Oid table, int64 id);
 bool unlock_table_pid_hash(Oid table, int pid, int hash);
 char *TextDatumGetCStringMy(Datum datum);
@@ -196,8 +196,8 @@ Portal SPI_cursor_open_my(const char *name, SPIPlanPtr plan, Datum *values, cons
 Portal SPI_cursor_open_with_args_my(const char *name, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote);
-void conf_main(Datum main_arg);
 void append_with_tabs(StringInfo buf, const char *str);
+void conf_main(Datum main_arg);
 void initStringInfoMy(StringInfoData *buf);
 void init_work(bool dynamic);
 void _PG_init(void);

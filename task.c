@@ -299,8 +299,8 @@ static void task_execute(void) {
     ReadyForQueryMy(whereToSendOutput);
     SetCurrentStatementStartTimestamp();
     StatementTimeout = task.timeout;
-    exec_simple_query_my(task.input);
-    if (IsTransactionState()) exec_simple_query_my(SQL(COMMIT));
+    exec_simple_query(task.input);
+    if (IsTransactionState()) exec_simple_query(SQL(COMMIT));
     if (IsTransactionState()) ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION), errmsg("still active sql transaction")));
     StatementTimeout = StatementTimeoutMy;
 }

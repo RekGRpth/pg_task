@@ -4,7 +4,6 @@ postgres.%.c: postgres.%.i
 	sed -i 's/BeginCommand/BeginCommandMy/' $<
 	sed -i 's/CreateDestReceiver/CreateDestReceiverMy/' $<
 	sed -i 's/EndCommand/EndCommandMy/' $<
-	sed -i 's/exec_simple_query/exec_simple_query_my/' $<
 	sed -i 's/NullCommand/NullCommandMy/' $<
 	sed -i 's/static bool xact_started/bool xact_started/' $<
 	cat $< | tr '\n' '\f' | sed 's/static void\fexec_simple_query/void exec_simple_query/' | tr '\f' '\n' >$@
