@@ -88,6 +88,7 @@ postgres.9.6.c:
 	cat postgres.9.6.c | tr '\n' '\f' | sed 's/static void\fexec_simple_query/void exec_simple_query/' | tr '\f' '\n' >postgres.9.6.c.my
 	mv -f postgres.9.6.c.my postgres.9.6.c
 
+EXTRA_CLEAN = postgres.10.c postgres.11.c postgres.12.c postgres.13.c postgres.14.c postgres.9.4.c postgres.9.5.c postgres.9.6.c
 MODULE_big = pg_task
 OBJS = init.o conf.o work.o task.o postgres.o spi.o dest.o latch.o
 PG_CONFIG = pg_config
