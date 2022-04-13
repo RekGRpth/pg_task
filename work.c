@@ -306,6 +306,7 @@ static void work_copy(Task *t) {
         case -2: ereport_my(WARNING, true, (errmsg("id = %li, PQgetCopyData == -2", t->shared->id), errdetail("%s", PQerrorMessageMy(t->conn)))); return;
     }
     appendBinaryStringInfo(&t->output, data, len);
+    t->skip++;
 }
 
 static void work_result(Task *t) {
