@@ -10,29 +10,11 @@ postgres.%.c: postgres.%.i
 	cat $< | tr '\n' '\f' | sed 's/static void\fexec_simple_query/void exec_simple_query/' | tr '\f' '\n' >$@
 	rm $<
 
-postgres.10.i:
-	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL_10_STABLE/src/backend/tcop/postgres.c
+postgres.%.i:
+	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL_$*_STABLE/src/backend/tcop/postgres.c
 
-postgres.11.i:
-	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL_11_STABLE/src/backend/tcop/postgres.c
-
-postgres.12.i:
-	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL_12_STABLE/src/backend/tcop/postgres.c
-
-postgres.13.i:
-	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL_13_STABLE/src/backend/tcop/postgres.c
-
-postgres.14.i:
-	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL_14_STABLE/src/backend/tcop/postgres.c
-
-postgres.9.4.i:
-	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL9_4_STABLE/src/backend/tcop/postgres.c
-
-postgres.9.5.i:
-	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL9_5_STABLE/src/backend/tcop/postgres.c
-
-postgres.9.6.i:
-	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/backend/tcop/postgres.c
+postgres.9.%.i:
+	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL9_$*_STABLE/src/backend/tcop/postgres.c
 
 EXTRA_CLEAN = postgres.10.c postgres.11.c postgres.12.c postgres.13.c postgres.14.c postgres.9.4.c postgres.9.5.c postgres.9.6.c
 MODULE_big = pg_task
