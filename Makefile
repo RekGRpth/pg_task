@@ -16,7 +16,7 @@ postgres.%.i:
 postgres.9.%.i:
 	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL9_$*_STABLE/src/backend/tcop/postgres.c
 
-EXTRA_CLEAN = postgres.10.c postgres.11.c postgres.12.c postgres.13.c postgres.14.c postgres.9.4.c postgres.9.5.c postgres.9.6.c
+EXTRA_CLEAN = postgres.*.c
 MODULE_big = pg_task
 OBJS = init.o conf.o work.o task.o postgres.o spi.o dest.o latch.o
 PG_CONFIG = pg_config
