@@ -1,4 +1,17 @@
-postgres.o: postgres.10.c postgres.11.c postgres.12.c postgres.13.c postgres.14.c postgres.9.4.c postgres.9.5.c postgres.9.6.c
+PG_CONFIG = pg_config
+
+PG_MAJOR = $(shell $(PG_CONFIG) --version | egrep -o "9\.4" | head -1)
+ifeq ($(PG_MAJOR),)
+PG_MAJOR = $(shell $(PG_CONFIG) --version | egrep -o "9\.5" | head -1)
+endif
+ifeq ($(PG_MAJOR),)
+PG_MAJOR = $(shell $(PG_CONFIG) --version | egrep -o "9\.6" | head -1)
+endif
+ifeq ($(PG_MAJOR),)
+PG_MAJOR = $(shell $(PG_CONFIG) --version | egrep -o "1[[:digit:]]" | head -1)
+endif
+
+postgres.o: postgres.$(PG_MAJOR).c
 
 postgres.%.c: postgres.%.i
 	sed -i 's/BeginCommand/BeginCommandMy/' $<
@@ -18,7 +31,6 @@ postgres.9.%.i:
 EXTRA_CLEAN = postgres.*.c
 MODULE_big = pg_task
 OBJS = init.o conf.o work.o task.o postgres.o spi.o dest.o latch.o
-PG_CONFIG = pg_config
 PG94 = $(shell $(PG_CONFIG) --version | egrep " 8\.| 9\.0| 9\.1| 9\.2| 9\.3" > /dev/null && echo no || echo yes)
 ifeq ($(PG94),no)
 $(error Minimum version of PostgreSQL required is 9.4.0)
