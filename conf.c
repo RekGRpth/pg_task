@@ -102,6 +102,7 @@ void conf_main(Datum arg) {
     Portal portal;
     StringInfoData src;
     BackgroundWorkerUnblockSignals();
+    CreateAuxProcessResourceOwner();
     BackgroundWorkerInitializeConnectionMy("postgres", "postgres", 0);
     set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pgstat_report_appname("pg_conf");
