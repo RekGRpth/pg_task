@@ -28,7 +28,7 @@ postgres.%.i:
 postgres.9.%.i:
 	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL9_$*_STABLE/src/backend/tcop/postgres.c
 
-EXTRA_CLEAN = postgres.*.c
+EXTRA_CLEAN = postgres.*.c postgres.*.i
 MODULE_big = pg_task
 OBJS = init.o conf.o work.o task.o postgres.o spi.o dest.o latch.o
 PG94 = $(shell $(PG_CONFIG) --version | egrep " 8\.| 9\.0| 9\.1| 9\.2| 9\.3" > /dev/null && echo no || echo yes)
