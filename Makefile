@@ -11,7 +11,13 @@ ifeq ($(PG_MAJOR),)
 PG_MAJOR = $(shell $(PG_CONFIG) --version | egrep -o "1[[:digit:]]" | head -1)
 endif
 
-postgres.o: postgres.$(PG_MAJOR).c
+postgres.o: postgres.$(PG_MAJOR).c postgres.$(PG_MAJOR).i
+
+postgres.%.i:
+	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL_$*_STABLE/src/backend/tcop/postgres.c
+
+postgres.9.%.i:
+	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL9_$*_STABLE/src/backend/tcop/postgres.c
 
 postgres.%.c: postgres.%.i
 	sed -i 's/BeginCommand/BeginCommandMy/' $<
@@ -21,12 +27,6 @@ postgres.%.c: postgres.%.i
 	sed -i 's/static bool xact_started/bool xact_started/' $<
 	cat $< | tr '\n' '\f' | sed 's/static void\fexec_simple_query/void exec_simple_query/' | tr '\f' '\n' >$@
 	rm $<
-
-postgres.%.i:
-	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL_$*_STABLE/src/backend/tcop/postgres.c
-
-postgres.9.%.i:
-	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL9_$*_STABLE/src/backend/tcop/postgres.c
 
 EXTRA_CLEAN = postgres.*.c postgres.*.i
 MODULE_big = pg_task
