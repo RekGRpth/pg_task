@@ -19,7 +19,7 @@ postgres.%.i:
 postgres.9.%.i:
 	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL9_$*_STABLE/src/backend/tcop/postgres.c
 
-postgres.%.c: postgres.%.i
+postgres.$(PG_MAJOR).c: postgres.$(PG_MAJOR).i
 	sed -i 's/BeginCommand/BeginCommandMy/' $<
 	sed -i 's/CreateDestReceiver/CreateDestReceiverMy/' $<
 	sed -i 's/EndCommand/EndCommandMy/' $<
