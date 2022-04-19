@@ -139,7 +139,7 @@ Datum CStringGetTextDatumMy(const char *s) {
 }
 
 static void on_dsm_detach_callback_my(dsm_segment *seg, Datum arg) {
-    elog(DEBUG1, "seg = %p", dsm_segment_address(seg));
+    elog(DEBUG1, "detach seg = %p", dsm_segment_address(seg));
 }
 
 void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes) {
@@ -152,7 +152,7 @@ void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes) {
     shm_toc_estimate_keys(&e, 1);
     segsize = shm_toc_estimate(&e);
     *seg = dsm_create_my(segsize, 0);
-    elog(DEBUG1, "seg = %p", dsm_segment_address(*seg));
+    elog(DEBUG1, "allocate seg = %p", dsm_segment_address(*seg));
     on_dsm_detach(*seg, on_dsm_detach_callback_my, (Datum)NULL);
     toc = shm_toc_create(magic, dsm_segment_address(*seg), segsize);
     ptr = shm_toc_allocate(toc, nbytes);
