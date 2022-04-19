@@ -138,7 +138,7 @@ Datum CStringGetTextDatumMy(const char *s) {
     return s ? PointerGetDatum(cstring_to_text_my(s)) : (Datum)NULL;
 }
 
-static void on_dsm_detach_callback_my(dsm_segment *seg, Datum arg) {
+void on_dsm_detach_callback_my(dsm_segment *seg, Datum arg) {
     elog(DEBUG1, "detach seg = %p", dsm_segment_address(seg));
 }
 
