@@ -26,7 +26,7 @@ postgres.9.$(PG_MAJOR).c:
 	rm postgres.9.$(PG_MAJOR).i
 endif
 
-EXTRA_CLEAN = postgres.*.c postgres.*.i
+EXTRA_CLEAN = postgres.*.c
 MODULE_big = pg_task
 OBJS = init.o conf.o work.o task.o postgres.o spi.o dest.o latch.o
 PG94 = $(shell $(PG_CONFIG) --version | egrep " 8\.| 9\.0| 9\.1| 9\.2| 9\.3" > /dev/null && echo no || echo yes)
