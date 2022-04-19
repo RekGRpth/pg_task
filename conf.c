@@ -94,6 +94,7 @@ static void conf_work(Work *w) {
     }
     pfree(handle);
     dsm_pin_segment(w->seg);
+    dsm_detach(w->seg);
     pfree(w);
 }
 

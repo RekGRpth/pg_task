@@ -380,9 +380,11 @@ void task_main(Datum arg) {
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
     if (!(seg = dsm_attach(DatumGetUInt32(arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
+    elog(DEBUG1, "seg = %p", seg);
     if (!(toc = shm_toc_attach(PG_TASK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     task.shared = shm_toc_lookup_my(toc, 0, false);
     if (!(seg = dsm_attach(task.shared->handle))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
+    elog(DEBUG1, "seg = %p", seg);
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     work.shared = shm_toc_lookup_my(toc, 0, false);
     work.data = quote_identifier(work.shared->data);
