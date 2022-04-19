@@ -205,7 +205,6 @@ void ReleaseAuxProcessResources(bool isCommit);
 #endif
 void initStringInfoMy(StringInfoData *buf);
 void init_work(bool dynamic);
-void on_dsm_detach_callback_my(dsm_segment *seg, Datum arg);
 void _PG_init(void);
 void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes);
 void SPI_connect_my(const char *src);
