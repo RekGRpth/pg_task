@@ -106,6 +106,37 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #define set_ps_display_my(activity) set_ps_display(activity, false)
 #endif
 
+#define PG_WORK_MAGIC 0x776f726b
+
+typedef struct WorkShared {
+    char data[NAMEDATALEN];
+#if PG_VERSION_NUM >= 120000
+    char partman[NAMEDATALEN];
+#endif
+    char schema[NAMEDATALEN];
+    char table[NAMEDATALEN];
+    char user[NAMEDATALEN];
+    int64 reset;
+    int64 timeout;
+    Oid oid;
+} WorkShared;
+
+typedef struct Work {
+    char *schema_table;
+    char *schema_type;
+    const char *data;
+#if PG_VERSION_NUM >= 120000
+    const char *partman;
+#endif
+    const char *schema;
+    const char *table;
+    const char *user;
+    dlist_node node;
+    dsm_segment *seg;
+    int hash;
+    WorkShared *shared;
+} Work;
+
 #define PG_TASK_MAGIC 0x7461736b
 
 typedef struct TaskShared {
@@ -142,37 +173,6 @@ typedef struct Task {
     uint64 row;
     void (*socket) (struct Task *t);
 } Task;
-
-#define PG_WORK_MAGIC 0x776f726b
-
-typedef struct WorkShared {
-    char data[NAMEDATALEN];
-#if PG_VERSION_NUM >= 120000
-    char partman[NAMEDATALEN];
-#endif
-    char schema[NAMEDATALEN];
-    char table[NAMEDATALEN];
-    char user[NAMEDATALEN];
-    int64 reset;
-    int64 timeout;
-    Oid oid;
-} WorkShared;
-
-typedef struct Work {
-    char *schema_table;
-    char *schema_type;
-    const char *data;
-#if PG_VERSION_NUM >= 120000
-    const char *partman;
-#endif
-    const char *schema;
-    const char *table;
-    const char *user;
-    dlist_node node;
-    dsm_segment *seg;
-    int hash;
-    WorkShared *shared;
-} Work;
 
 bool init_oid_is_string(Oid oid);
 bool is_log_level_output(int elevel, int log_min_level);
