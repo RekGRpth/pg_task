@@ -1,12 +1,6 @@
 PG_CONFIG = pg_config
 
-PG_MAJOR = $(shell $(PG_CONFIG) --version | egrep -o "9\.4" | head -1)
-ifeq ($(PG_MAJOR),)
-PG_MAJOR = $(shell $(PG_CONFIG) --version | egrep -o "9\.5" | head -1)
-endif
-ifeq ($(PG_MAJOR),)
-PG_MAJOR = $(shell $(PG_CONFIG) --version | egrep -o "9\.6" | head -1)
-endif
+PG_MAJOR = $(shell $(PG_CONFIG) --version | egrep -o "9\.[[:digit:]]" | head -1)
 ifeq ($(PG_MAJOR),)
 PG_MAJOR = $(shell $(PG_CONFIG) --version | egrep -o "1[[:digit:]]" | head -1)
 endif
