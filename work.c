@@ -720,6 +720,7 @@ static void work_writeable(Task *t) {
 }
 
 void work_main(Datum arg) {
+    const char *index_hash[] = {"hash"};
     const char *index_input[] = {"input"};
     const char *index_parent[] = {"parent"};
     const char *index_plan[] = {"plan"};
@@ -779,6 +780,7 @@ void work_main(Datum arg) {
     set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
     work_table();
+    work_index(countof(index_hash), index_hash);
     work_index(countof(index_input), index_input);
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);
