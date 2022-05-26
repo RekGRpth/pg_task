@@ -297,15 +297,16 @@ static void work_success(Task *t, PGresult *result, int row) {
 }
 
 static void work_copy(Task *t) {
-    char *data;
+    char *buffer = NULL;
     int len;
     if (!t->output.data) initStringInfoMy(&t->output);
-    switch ((len = PQgetCopyData(t->conn, &data, false))) {
-        case 0: return;
-        case -1: return;
-        case -2: ereport_my(WARNING, true, (errmsg("id = %li, PQgetCopyData == -2", t->shared->id), errdetail("%s", PQerrorMessageMy(t->conn)))); return;
+    switch ((len = PQgetCopyData(t->conn, &buffer, false))) {
+        case 0: break;
+        case -1: break;
+        case -2: ereport_my(WARNING, true, (errmsg("id = %li, PQgetCopyData == -2", t->shared->id), errdetail("%s", PQerrorMessageMy(t->conn)))); if (buffer) PQfreemem(buffer); return;
+        default: appendBinaryStringInfo(&t->output, buffer, len); break;
     }
-    appendBinaryStringInfo(&t->output, data, len);
+    if (buffer) PQfreemem(buffer);
     t->skip++;
 }
 
