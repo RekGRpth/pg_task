@@ -327,7 +327,6 @@ static void task_catch(void) {
     AbortOutOfAnyTransaction();
 #if PG_VERSION_NUM >= 110000
     PortalErrorCleanup();
-    SPICleanup();
 #endif
     if (MyReplicationSlot) ReplicationSlotRelease();
 #if PG_VERSION_NUM >= 100000
