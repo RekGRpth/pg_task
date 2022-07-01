@@ -1,6 +1,8 @@
 #include "dest.h"
 
-#if PG_VERSION_NUM >= 140000
+#if PG_VERSION_NUM >= 150000
+#include <postgres.15.c>
+#elif PG_VERSION_NUM >= 140000
 #include <postgres.14.c>
 #elif PG_VERSION_NUM >= 130000
 #include <postgres.13.c>
