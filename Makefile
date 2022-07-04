@@ -11,7 +11,7 @@ postgres.c:
 	sed -i 's/NullCommand/NullCommandMy/' $@
 else
 postgres.c:
-	wget -O postgres.9.$(PG_MAJOR).i https://raw.githubusercontent.com/postgres/postgres/REL9_$(PG_MAJOR)_STABLE/src/backend/tcop/postgres.c
+	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/REL9_$(PG_MAJOR)_STABLE/src/backend/tcop/postgres.c
 	sed -i 's/BeginCommand/BeginCommandMy/' $@
 	sed -i 's/CreateDestReceiver/CreateDestReceiverMy/' $@
 	sed -i 's/EndCommand/EndCommandMy/' $@
