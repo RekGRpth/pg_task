@@ -1,9 +1,9 @@
 #include "include.h"
 
-extern bool xact_started;
 extern char *default_null;
 extern int task_default_fetch;
 extern Work work;
+static bool xact_started;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 Task task;
 
