@@ -16,7 +16,6 @@ void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undeco
 #else
 void EndCommandMy(const char *commandTag, CommandDest dest);
 #endif
-void exec_simple_query(const char *query_string);
 void NullCommandMy(CommandDest dest);
 void ReadyForQueryMy(CommandDest dest);
 
