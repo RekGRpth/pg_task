@@ -8,6 +8,8 @@ else
 REL = REL9_$(PG_MAJOR)_STABLE
 endif
 
+task.o: postgres.c
+
 postgres.c:
 	wget -O $@ https://raw.githubusercontent.com/postgres/postgres/$(REL)/src/backend/tcop/postgres.c
 	sed -i 's/BeginCommand/BeginCommandMy/' $@
