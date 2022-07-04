@@ -1,13 +1,14 @@
+#include "dest.h"
+
+#include <postgres.c>
+
 #include "include.h"
 
 extern char *default_null;
 extern int task_default_fetch;
 extern Work work;
-static bool xact_started;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 Task task;
-
-static void exec_simple_query(const char *query_string);
 
 static bool task_live(Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start)};
@@ -426,5 +427,3 @@ void task_main(Datum arg) {
     }
     if (!unlock_table_pid_hash(work.shared->oid, task.pid, task.shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work.shared->oid, task.pid, task.shared->hash);
 }
-
-#include <postgres.c>
