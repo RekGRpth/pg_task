@@ -1,12 +1,10 @@
-#include "dest.h"
-
-#include <postgres.c>
+#include "include.h"
 
 #if PG_VERSION_NUM <= 90400
-#undef PQArgBlock
+#define PQArgBlock
 #endif
 
-#include "include.h"
+#include <postgres.c>
 
 extern char *default_null;
 extern int task_default_fetch;
