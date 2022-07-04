@@ -2,6 +2,10 @@
 
 #include <postgres.c>
 
+#if PG_VERSION_NUM <= 90400
+#undef PQArgBlock
+#endif
+
 #include "include.h"
 
 extern char *default_null;
