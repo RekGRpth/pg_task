@@ -1,7 +1,8 @@
 #include "include.h"
 
-#if PG_VERSION_NUM <= 90400
-#define PQArgBlock
+#if PG_VERSION_NUM >= 90500
+#else
+#define PQArgBlock undef
 #endif
 
 #include <postgres.c>
