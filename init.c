@@ -326,6 +326,9 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_work.default_table", "pg_work default table", "table name for tasks table", &work_default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_user", "pg_work default user", "default username", &work_default_user, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
     elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, timeout = %i, reset = %s, active = %s, partman = %s", default_json, work_default_user, work_default_data, work_default_schema, work_default_table, default_null, work_default_timeout, work_default_reset, work_default_active, work_default_partman && work_default_partman[0] ? work_default_partman : default_null);
+#ifdef GP_VERSION_NUM
+    if (!IS_QUERY_DISPATCHER()) return;
+#endif
     init_work(false);
 }
 

@@ -68,6 +68,10 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 
 #include "dest.h"
 
+#ifdef GP_VERSION_NUM
+#include "cdb/cdbvars.h"
+#endif
+
 #if PG_VERSION_NUM >= 90500
 #define dsm_create_my(size, flags) dsm_create(size, flags)
 #define set_config_option_my(name, value, context, source, action, changeVal, elevel, is_reload) set_config_option(name, value, context, source, action, changeVal, elevel, is_reload)
