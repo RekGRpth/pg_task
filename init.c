@@ -2,6 +2,8 @@
 
 PG_MODULE_MAGIC;
 
+char *conf_default_data;
+char *conf_default_user;
 char *default_null;
 int conf_default_fetch;
 int task_default_fetch;
@@ -11,8 +13,6 @@ static bool task_default_delete;
 static bool task_default_drift;
 static bool task_default_header;
 static bool task_default_string;
-static char *conf_default_data;
-static char *conf_default_user;
 static char *default_json;
 static char *task_default_active;
 static char *task_default_delimiter;
