@@ -3,6 +3,9 @@
 #if PG_VERSION_NUM >= 90500
 #else
 #define PQArgBlock undef
+#ifndef pg_rewrite_query
+static List *pg_rewrite_query(Query *query);
+#endif
 #endif
 
 #include <postgres.c>

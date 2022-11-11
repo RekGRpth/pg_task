@@ -75,9 +75,6 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #define dsm_create_my(size, flags) dsm_create(size)
 #define MyLatch (&MyProc->procLatch)
 #define set_config_option_my(name, value, context, source, action, changeVal, elevel, is_reload) set_config_option(name, value, context, source, action, changeVal, elevel)
-#ifndef pg_rewrite_query
-List *pg_rewrite_query(Query *query);
-#endif
 #endif
 
 #if PG_VERSION_NUM >= 100000
