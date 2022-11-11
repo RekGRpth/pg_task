@@ -75,6 +75,7 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #define dsm_create_my(size, flags) dsm_create(size)
 #define MyLatch (&MyProc->procLatch)
 #define set_config_option_my(name, value, context, source, action, changeVal, elevel, is_reload) set_config_option(name, value, context, source, action, changeVal, elevel)
+List *pg_rewrite_query(Query *query);
 #endif
 
 #if PG_VERSION_NUM >= 100000
@@ -88,7 +89,11 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #define createdb_my(pstate, stmt) createdb(stmt)
 #define CreateRoleMy(pstate, stmt) CreateRole(stmt)
 #define makeDefElemMy(name, arg, location) makeDefElem(name, arg)
+#ifdef GP_VERSION_NUM
+#define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key, noError)
+#else
 #define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key)
+#endif
 #define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
 #define WaitEventSetWaitMy(set, timeout, occurred_events, nevents, wait_event_info) WaitEventSetWait(set, timeout, occurred_events, nevents)
 #define WaitLatchMy(latch, wakeEvents, timeout, wait_event_info) WaitLatch(latch, wakeEvents, timeout)
@@ -98,6 +103,16 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #define BackgroundWorkerInitializeConnectionMy(dbname, username, flags) BackgroundWorkerInitializeConnection(dbname, username, flags)
 #else
 #define BackgroundWorkerInitializeConnectionMy(dbname, username, flags) BackgroundWorkerInitializeConnection(dbname, username)
+#endif
+
+#if PG_VERSION_NUM >= 120000
+#define relation_openrv_extended_my(relation, lockmode, missing_ok, noWait) relation_openrv_extended(relation, lockmode, missing_ok)
+#else
+#ifdef GP_VERSION_NUM
+#define relation_openrv_extended_my(relation, lockmode, missing_ok, noWait) relation_openrv_extended(relation, lockmode, missing_ok, noWait)
+#else
+#define relation_openrv_extended_my(relation, lockmode, missing_ok, noWait) relation_openrv_extended(relation, lockmode, missing_ok)
+#endif
 #endif
 
 #if PG_VERSION_NUM >= 130000

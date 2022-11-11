@@ -183,7 +183,7 @@ static void work_index(int count, const char *const *indexes) {
     SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    } else if ((relation = relation_openrv_extended(rangevar, AccessShareLock, true))) {
+    } else if ((relation = relation_openrv_extended_my(rangevar, AccessShareLock, true, false))) {
         if (relation->rd_index && relation->rd_index->indrelid != work.shared->oid) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         relation_close(relation, AccessShareLock);
     }
