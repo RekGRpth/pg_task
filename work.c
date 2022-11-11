@@ -739,6 +739,9 @@ void work_main(Datum arg) {
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
+#ifdef GP_VERSION_NUM
+    optimizer = false;
+#endif
     if (!(seg = dsm_attach(DatumGetUInt32(arg)))) { ereport(WARNING, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment"))); return; }
 #if PG_VERSION_NUM >= 100000
     dsm_unpin_segment(dsm_segment_handle(seg));
