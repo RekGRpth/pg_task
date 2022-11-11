@@ -741,6 +741,8 @@ void work_main(Datum arg) {
     CreateAuxProcessResourceOwner();
 #ifdef GP_VERSION_NUM
     optimizer = false;
+    Gp_role = GP_ROLE_UTILITY;
+    Gp_session_role = GP_ROLE_UTILITY;
 #endif
     if (!(seg = dsm_attach(DatumGetUInt32(arg)))) { ereport(WARNING, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment"))); return; }
 #if PG_VERSION_NUM >= 100000
