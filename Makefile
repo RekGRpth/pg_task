@@ -1,6 +1,6 @@
 PG_CONFIG = pg_config
 
-ifeq ($(PG_MAJOR),)
+ifeq ($(PG_BUILD_FROM_SOURCE),)
 	GREENPLUM = $(shell postgres --version | grep -i Greenplum >/dev/null && echo yes || echo no)
 	PG_MAJOR = $(shell $(PG_CONFIG) --version | cut -f 2 -d ' ' | egrep -o "[[:digit:]]+" | head -1)
 	ifeq ($(GREENPLUM),yes)
