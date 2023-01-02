@@ -1,33 +1,25 @@
 PG_CONFIG = pg_config
 
-GREENPLUM = $(shell postgres --version | grep -i Greenplum > /dev/null && echo yes || echo no)
-PG_MAJOR = $(shell $(PG_CONFIG) --version | egrep -o "9\.[[:digit:]]" | head -1 | cut -f 2 -d .)
-
 ifeq ($(PG_MAJOR),)
-PG_MAJOR = $(shell $(PG_CONFIG) --version | egrep -o "1[[:digit:]]" | head -1)
-ifeq ($(GREENPLUM),yes)
-REL = main
+	GREENPLUM = $(shell postgres --version | grep -i Greenplum >/dev/null && echo yes || echo no)
+	PG_MAJOR = $(shell $(PG_CONFIG) --version | cut -f 2 -d ' ' | egrep -o "[[:digit:]]+" | head -1)
+	ifeq ($(GREENPLUM),yes)
+		PG_VERSION = $(shell $(PG_CONFIG) --version | cut -f 2 -d ' ')
+		REPO = greenplum-db/gpdb
+	else
+		PG_VERSION = $(shell $(PG_CONFIG) --version | cut -f 2 -d ' ' | tr '.' '_')
+		REPO = postgres/postgres
+	endif
+	REL = $(shell test "$(PG_MAJOR)" -lt 10 && echo "REL$(PG_VERSION)" || echo "REL_$(PG_VERSION)")
 else
-REL = REL_$(PG_MAJOR)_STABLE
-endif
-else
-ifeq ($(GREENPLUM),yes)
-REL = 6X_STABLE
-else
-REL = REL9_$(PG_MAJOR)_STABLE
-endif
-endif
-
-ifeq ($(GREENPLUM),yes)
-REPO = greenplum-db/gpdb
-else
-REPO = postgres/postgres
+	REL = $(shell test "$(PG_MAJOR)" -lt 10 && echo "REL9_$(PG_MAJOR)_STABLE" || echo "REL_$(PG_MAJOR)_STABLE")
+	REPO = postgres/postgres
 endif
 
 task.o: postgres.c
 
 postgres.c:
-	wget -O $@ https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c
+	wget -O $@ "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c"
 	sed -i 's/BeginCommand/BeginCommandMy/' $@
 	sed -i 's/CreateDestReceiver/CreateDestReceiverMy/' $@
 	sed -i 's/EndCommand/EndCommandMy/' $@
@@ -38,7 +30,7 @@ MODULE_big = pg_task
 OBJS = init.o conf.o work.o task.o spi.o dest.o latch.o
 PG94 = $(shell $(PG_CONFIG) --version | egrep " 8\.| 9\.0| 9\.1| 9\.2| 9\.3" > /dev/null && echo no || echo yes)
 ifeq ($(PG94),no)
-$(error Minimum version of PostgreSQL required is 9.4.0)
+	$(error Minimum version of PostgreSQL required is 9.4.0)
 endif
 PG_CPPFLAGS = -I$(libpq_srcdir)
 PGXS = $(shell $(PG_CONFIG) --pgxs)
