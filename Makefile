@@ -4,13 +4,18 @@ ifeq ($(PG_BUILD_FROM_SOURCE),)
 	GREENPLUM = $(shell postgres --version | grep -i Greenplum >/dev/null && echo yes || echo no)
 	PG_MAJOR = $(shell $(PG_CONFIG) --version | cut -f 2 -d ' ' | egrep -o "[[:digit:]]+" | head -1)
 	ifeq ($(GREENPLUM),yes)
-		PG_VERSION = $(shell $(PG_CONFIG) --version | cut -f 2 -d ' ')
-		REPO = greenplum-db/gpdb
+		ARENADATA = $(shell gppkg --version | grep -i arenadata >/dev/null && echo yes || echo no)
+		ifeq ($(ARENADATA),yes)
+			REPO = arenadata/gpdb
+		else
+			REPO = greenplum-db/gpdb
+		endif
+		REL = $(shell test "$(PG_MAJOR)" -lt 10 && gppkg --version | cut -f 3 -d ' ' | cut -f 1 -d '+' || echo "main")
 	else
-		PG_VERSION = $(shell $(PG_CONFIG) --version | cut -f 2 -d ' ' | tr '.' '_')
 		REPO = postgres/postgres
+		PG_VERSION = $(shell $(PG_CONFIG) --version | cut -f 2 -d ' ' | tr '.' '_')
+		REL = $(shell test "$(PG_MAJOR)" -lt 10 && echo "REL$(PG_VERSION)" || echo "REL_$(PG_VERSION)")
 	endif
-	REL = $(shell test "$(PG_MAJOR)" -lt 10 && echo "REL$(PG_VERSION)" || echo "REL_$(PG_VERSION)")
 else
 	REL = $(shell test "$(PG_MAJOR)" -lt 10 && echo "REL9_$(PG_MAJOR)_STABLE" || echo "REL_$(PG_MAJOR)_STABLE")
 	REPO = postgres/postgres
