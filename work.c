@@ -183,7 +183,7 @@ static void work_index(int count, const char *const *indexes) {
     SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    } else if ((relation = relation_openrv_extended(rangevar, AccessShareLock, true))) {
+    } else if ((relation = relation_openrv_extended_my(rangevar, AccessShareLock, true, false))) {
         if (relation->rd_index && relation->rd_index->indrelid != work.shared->oid) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         relation_close(relation, AccessShareLock);
     }
@@ -297,15 +297,16 @@ static void work_success(Task *t, PGresult *result, int row) {
 }
 
 static void work_copy(Task *t) {
-    char *data;
+    char *buffer = NULL;
     int len;
     if (!t->output.data) initStringInfoMy(&t->output);
-    switch ((len = PQgetCopyData(t->conn, &data, false))) {
-        case 0: return;
-        case -1: return;
-        case -2: ereport_my(WARNING, true, (errmsg("id = %li, PQgetCopyData == -2", t->shared->id), errdetail("%s", PQerrorMessageMy(t->conn)))); return;
+    switch ((len = PQgetCopyData(t->conn, &buffer, false))) {
+        case 0: break;
+        case -1: break;
+        case -2: ereport_my(WARNING, true, (errmsg("id = %li, PQgetCopyData == -2", t->shared->id), errdetail("%s", PQerrorMessageMy(t->conn)))); if (buffer) PQfreemem(buffer); return;
+        default: appendBinaryStringInfo(&t->output, buffer, len); break;
     }
-    appendBinaryStringInfo(&t->output, data, len);
+    if (buffer) PQfreemem(buffer);
     t->skip++;
 }
 
@@ -639,6 +640,7 @@ static void work_task(Task *t) {
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     pfree(handle);
+    dsm_detach(t->seg);
     task_free(t);
     pfree(t);
 }
@@ -719,6 +721,7 @@ static void work_writeable(Task *t) {
 }
 
 void work_main(Datum arg) {
+    const char *index_hash[] = {"hash"};
     const char *index_input[] = {"input"};
     const char *index_parent[] = {"parent"};
     const char *index_plan[] = {"plan"};
@@ -735,8 +738,19 @@ void work_main(Datum arg) {
     on_proc_exit(work_proc_exit, (Datum)NULL);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
+    CreateAuxProcessResourceOwner();
+#ifdef GP_VERSION_NUM
+    optimizer = false;
+    Gp_role = GP_ROLE_UTILITY;
+#if PG_VERSION_NUM >= 120000
+#else
+    Gp_session_role = GP_ROLE_UTILITY;
+#endif
+#endif
     if (!(seg = dsm_attach(DatumGetUInt32(arg)))) { ereport(WARNING, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment"))); return; }
+#if PG_VERSION_NUM >= 100000
     dsm_unpin_segment(dsm_segment_handle(seg));
+#endif
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     work.shared = shm_toc_lookup_my(toc, 0, false);
     work.data = quote_identifier(work.shared->data);
@@ -775,6 +789,7 @@ void work_main(Datum arg) {
     set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
     work_table();
+    work_index(countof(index_hash), index_hash);
     work_index(countof(index_input), index_input);
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);

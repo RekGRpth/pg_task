@@ -2,6 +2,8 @@
 
 PG_MODULE_MAGIC;
 
+char *conf_default_data;
+char *conf_default_user;
 char *default_null;
 int conf_default_fetch;
 int task_default_fetch;
@@ -148,7 +150,7 @@ void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes) {
     shm_toc_estimate_keys(&e, 1);
     segsize = shm_toc_estimate(&e);
     *seg = dsm_create_my(segsize, 0);
-    dsm_pin_mapping(*seg);
+    dsm_pin_segment(*seg);
     toc = shm_toc_create(magic, dsm_segment_address(*seg), segsize);
     ptr = shm_toc_allocate(toc, nbytes);
     MemSet(ptr, 0, nbytes);
@@ -172,7 +174,7 @@ void init_work(bool dynamic) {
     size_t len;
     if ((len = strlcpy(worker.bgw_function_name, "conf_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
-    if ((len = strlcpy(worker.bgw_name, "postgres postgres pg_conf", sizeof(worker.bgw_name))) >= sizeof(worker.bgw_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_name))));
+    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_conf", conf_default_user, conf_default_data)) >= sizeof(worker.bgw_name) - 1) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
 #if PG_VERSION_NUM >= 110000
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
@@ -298,6 +300,8 @@ void _PG_init(void) {
     DefineCustomIntVariable("pg_work.default_fetch", "pg_work default fetch", "fetch at once", &work_default_fetch, 100, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.default_restart", "pg_work default restart", "work default restart interval", &work_default_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.default_timeout", "pg_work default timeout", "check tasks every timeout milliseconds", &work_default_timeout, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_conf.default_data", "pg_conf default data", "default database name", &conf_default_data, "postgres", PGC_POSTMASTER, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_conf.default_user", "pg_conf default user", "default username", &conf_default_user, "postgres", PGC_POSTMASTER, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_active", "pg_task default active", "task active after plan time", &task_default_active, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_delimiter", "pg_task default delimiter", "results colums delimiter", &task_default_delimiter, "\t", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_escape", "pg_task default escape", "results colums escape", &task_default_escape, "", PGC_SIGHUP, 0, NULL, NULL, NULL);
@@ -322,6 +326,9 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_work.default_table", "pg_work default table", "table name for tasks table", &work_default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_user", "pg_work default user", "default username", &work_default_user, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
     elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, timeout = %i, reset = %s, active = %s, partman = %s", default_json, work_default_user, work_default_data, work_default_schema, work_default_table, default_null, work_default_timeout, work_default_reset, work_default_active, work_default_partman && work_default_partman[0] ? work_default_partman : default_null);
+#ifdef GP_VERSION_NUM
+    if (!IS_QUERY_DISPATCHER()) return;
+#endif
     init_work(false);
 }
 
@@ -411,3 +418,63 @@ bool is_log_level_output(int elevel, int log_min_level) {
     } else if (elevel >= log_min_level) return true; // Neither is LOG
     return false;
 }
+
+#if PG_VERSION_NUM < 120000
+ResourceOwner AuxProcessResourceOwner = NULL;
+
+static void ReleaseAuxProcessResourcesCallback(int code, Datum arg);
+
+/*
+ * Establish an AuxProcessResourceOwner for the current process.
+ */
+void
+CreateAuxProcessResourceOwner(void)
+{
+	Assert(AuxProcessResourceOwner == NULL);
+	Assert(CurrentResourceOwner == NULL);
+	AuxProcessResourceOwner = ResourceOwnerCreate(NULL, "AuxiliaryProcess");
+	CurrentResourceOwner = AuxProcessResourceOwner;
+
+	/*
+	 * Register a shmem-exit callback for cleanup of aux-process resource
+	 * owner.  (This needs to run after, e.g., ShutdownXLOG.)
+	 */
+	on_shmem_exit(ReleaseAuxProcessResourcesCallback, 0);
+
+}
+
+/*
+ * Convenience routine to release all resources tracked in
+ * AuxProcessResourceOwner (but that resowner is not destroyed here).
+ * Warn about leaked resources if isCommit is true.
+ */
+void
+ReleaseAuxProcessResources(bool isCommit)
+{
+	/*
+	 * At this writing, the only thing that could actually get released is
+	 * buffer pins; but we may as well do the full release protocol.
+	 */
+	ResourceOwnerRelease(AuxProcessResourceOwner,
+						 RESOURCE_RELEASE_BEFORE_LOCKS,
+						 isCommit, true);
+	ResourceOwnerRelease(AuxProcessResourceOwner,
+						 RESOURCE_RELEASE_LOCKS,
+						 isCommit, true);
+	ResourceOwnerRelease(AuxProcessResourceOwner,
+						 RESOURCE_RELEASE_AFTER_LOCKS,
+						 isCommit, true);
+}
+
+/*
+ * Shmem-exit callback for the same.
+ * Warn about leaked resources if process exit code is zero (ie normal).
+ */
+static void
+ReleaseAuxProcessResourcesCallback(int code, Datum arg)
+{
+	bool		isCommit = (code == 0);
+
+	ReleaseAuxProcessResources(isCommit);
+}
+#endif

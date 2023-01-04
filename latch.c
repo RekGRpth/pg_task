@@ -482,7 +482,7 @@ WaitEventAdjustPoll(WaitEventSet *set, WaitEvent *event)
 			pollfd->events |= POLLOUT;
 	}
 
-	Assert(event->fd != PGINVALID_SOCKET);
+	//Assert(event->fd != PGINVALID_SOCKET);
 }
 #endif
 

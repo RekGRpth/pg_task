@@ -66,6 +66,10 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <utils/timeout.h>
 #include <utils/timestamp.h>
 
+#ifdef GP_VERSION_NUM
+#include "cdb/cdbvars.h"
+#endif
+
 #if PG_VERSION_NUM >= 90500
 #define dsm_create_my(size, flags) dsm_create(size, flags)
 #define set_config_option_my(name, value, context, source, action, changeVal, elevel, is_reload) set_config_option(name, value, context, source, action, changeVal, elevel, is_reload)
@@ -86,7 +90,11 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #define createdb_my(pstate, stmt) createdb(stmt)
 #define CreateRoleMy(pstate, stmt) CreateRole(stmt)
 #define makeDefElemMy(name, arg, location) makeDefElem(name, arg)
+#ifdef GP_VERSION_NUM
+#define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key, noError)
+#else
 #define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key)
+#endif
 #define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
 #define WaitEventSetWaitMy(set, timeout, occurred_events, nevents, wait_event_info) WaitEventSetWait(set, timeout, occurred_events, nevents)
 #define WaitLatchMy(latch, wakeEvents, timeout, wait_event_info) WaitLatch(latch, wakeEvents, timeout)
@@ -98,11 +106,52 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #define BackgroundWorkerInitializeConnectionMy(dbname, username, flags) BackgroundWorkerInitializeConnection(dbname, username)
 #endif
 
+#if PG_VERSION_NUM >= 120000
+#define relation_openrv_extended_my(relation, lockmode, missing_ok, noWait) relation_openrv_extended(relation, lockmode, missing_ok)
+#else
+#ifdef GP_VERSION_NUM
+#define relation_openrv_extended_my(relation, lockmode, missing_ok, noWait) relation_openrv_extended(relation, lockmode, missing_ok, noWait)
+#else
+#define relation_openrv_extended_my(relation, lockmode, missing_ok, noWait) relation_openrv_extended(relation, lockmode, missing_ok)
+#endif
+#endif
+
 #if PG_VERSION_NUM >= 130000
 #define set_ps_display_my(activity) set_ps_display(activity)
 #else
 #define set_ps_display_my(activity) set_ps_display(activity, false)
 #endif
+
+#define PG_WORK_MAGIC 0x776f726b
+
+typedef struct WorkShared {
+    char data[NAMEDATALEN];
+#if PG_VERSION_NUM >= 120000
+    char partman[NAMEDATALEN];
+#endif
+    char schema[NAMEDATALEN];
+    char table[NAMEDATALEN];
+    char user[NAMEDATALEN];
+    int64 reset;
+    int64 timeout;
+    Oid oid;
+} WorkShared;
+
+typedef struct Work {
+    char *schema_table;
+    char *schema_type;
+    const char *data;
+#if PG_VERSION_NUM >= 120000
+    const char *partman;
+#endif
+    const char *schema;
+    const char *table;
+    const char *user;
+    dlist_node node;
+    dsm_segment *seg;
+    int hash;
+    WorkShared *shared;
+} Work;
 
 #define PG_TASK_MAGIC 0x7461736b
 
@@ -137,39 +186,9 @@ typedef struct Task {
     StringInfoData output;
     TaskShared *shared;
     TimestampTz start;
+    uint64 row;
     void (*socket) (struct Task *t);
 } Task;
-
-#define PG_WORK_MAGIC 0x776f726b
-
-typedef struct WorkShared {
-    char data[NAMEDATALEN];
-#if PG_VERSION_NUM >= 120000
-    char partman[NAMEDATALEN];
-#endif
-    char schema[NAMEDATALEN];
-    char table[NAMEDATALEN];
-    char user[NAMEDATALEN];
-    int64 reset;
-    int64 timeout;
-    Oid oid;
-} WorkShared;
-
-typedef struct Work {
-    char *schema_table;
-    char *schema_type;
-    const char *data;
-#if PG_VERSION_NUM >= 120000
-    const char *partman;
-#endif
-    const char *schema;
-    const char *table;
-    const char *user;
-    dlist_node node;
-    dsm_segment *seg;
-    int hash;
-    WorkShared *shared;
-} Work;
 
 bool init_oid_is_string(Oid oid);
 bool is_log_level_output(int elevel, int log_min_level);
@@ -195,6 +214,11 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote);
 void append_with_tabs(StringInfo buf, const char *str);
 void conf_main(Datum main_arg);
+#if PG_VERSION_NUM < 120000
+extern PGDLLIMPORT ResourceOwner AuxProcessResourceOwner;
+void CreateAuxProcessResourceOwner(void);
+void ReleaseAuxProcessResources(bool isCommit);
+#endif
 void initStringInfoMy(StringInfoData *buf);
 void init_work(bool dynamic);
 void _PG_init(void);

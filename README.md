@@ -1,4 +1,4 @@
-PostgreSQL job scheduler pg_task allows to execute any sql command at any specific time at background asynchronously 
+PostgreSQL and Greenplum job scheduler pg_task allows to execute any sql command at any specific time at background asynchronously
 
 # pg_task config
 to run pg_task add it to line

@@ -1,3 +1,5 @@
+env:
+  INPUTS_TAG: v1.0.0
 name: Docker
 on:
   push:

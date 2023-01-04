@@ -382,6 +382,8 @@ static bool task_timeout(void) {
     PG_END_TRY();
     SPI_finish_my();
     StatementTimeout = StatementTimeoutMy;
+    pgstat_report_stat(false);
+    pgstat_report_activity(STATE_IDLE, NULL);
     set_ps_display_my("idle");
     return task_done(&task);
 }
@@ -401,7 +403,11 @@ void task_main(Datum arg) {
     StringInfoData oid, schema_table, schema_type;
     on_proc_exit(task_proc_exit, (Datum)NULL);
     BackgroundWorkerUnblockSignals();
+    CreateAuxProcessResourceOwner();
     if (!(seg = dsm_attach(DatumGetUInt32(arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
+#if PG_VERSION_NUM >= 100000
+    dsm_unpin_segment(dsm_segment_handle(seg));
+#endif
     if (!(toc = shm_toc_attach(PG_TASK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     task.shared = shm_toc_lookup_my(toc, 0, false);
     if (!(seg = dsm_attach(task.shared->handle))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
@@ -421,6 +427,7 @@ void task_main(Datum arg) {
     set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option_my("pg_task.table", work.shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option_my("pg_task.user", work.shared->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     initStringInfoMy(&schema_table);
     appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);
     work.schema_table = schema_table.data;
