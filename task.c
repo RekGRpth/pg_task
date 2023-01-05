@@ -296,7 +296,6 @@ void task_error(ErrorData *edata) {
 
 
 static void task_execute(void) {
-    int StatementTimeoutMy = StatementTimeout;
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
     MemoryContextResetAndDeleteChildren(MessageContext);
     InvalidateCatalogSnapshotConditionally();
@@ -304,11 +303,9 @@ static void task_execute(void) {
     whereToSendOutput = DestDebug;
     ReadyForQueryMy(whereToSendOutput);
     SetCurrentStatementStartTimestamp();
-    StatementTimeout = task.timeout;
     exec_simple_query(task.input);
     if (IsTransactionState()) exec_simple_query(SQL(COMMIT));
     if (IsTransactionState()) ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION), errmsg("still active sql transaction")));
-    StatementTimeout = StatementTimeoutMy;
 }
 
 static void task_proc_exit(int code, Datum arg) {
@@ -353,15 +350,18 @@ static void task_latch(void) {
 }
 
 static bool task_timeout(void) {
+    int StatementTimeoutMy = StatementTimeout;
     if (task_work(&task)) return true;
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
+    StatementTimeout = task.timeout;
     PG_TRY();
         if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
         task_execute();
     PG_CATCH();
         task_catch();
     PG_END_TRY();
+    StatementTimeout = StatementTimeoutMy;
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
     set_ps_display_my("idle");
