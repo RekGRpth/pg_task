@@ -128,9 +128,6 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 
 typedef struct WorkShared {
     char data[NAMEDATALEN];
-#if PG_VERSION_NUM >= 120000
-    char partman[NAMEDATALEN];
-#endif
     char schema[NAMEDATALEN];
     char table[NAMEDATALEN];
     char user[NAMEDATALEN];
@@ -143,9 +140,6 @@ typedef struct Work {
     char *schema_table;
     char *schema_type;
     const char *data;
-#if PG_VERSION_NUM >= 120000
-    const char *partman;
-#endif
     const char *schema;
     const char *table;
     const char *user;
