@@ -53,35 +53,30 @@ tasks
 ```conf
 pg_task.default_null = '\N'
 ```
-11) uses schema
-```conf
-pg_task.default_partman = 'partman'
-```
-for pg_partman if extension available
 
-12) uses schema
+11) uses schema
 ```conf
 pg_task.default_schema = 'public'
 ```
 for tasks
 
-13) prints only strings in quotes in output
+12) prints only strings in quotes in output
 ```conf
 pg_task.default_string = 'on'
 ```
-14) uses table
+13) uses table
 ```conf
 pg_task.default_table = 'task'
 ```
 for tasks
 
-15) uses sleep timeout
+14) uses sleep timeout
 ```conf
 pg_task.default_timeout = 1000
 ```
 milliseconds
 
-16) uses user
+15) uses user
 ```conf
 pg_task.default_user = 'postgres'
 ```
@@ -94,7 +89,6 @@ pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"
 ```
 
 if database and/or user and/or schema and/or table does not exist then pg_task create it/their
-(with using pg_partman if user does not exist then pg_task create it as superuser to create extension, but after that You may alter on nosuperuser)
 
 # pg_task using
 

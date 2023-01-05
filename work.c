@@ -392,72 +392,6 @@ static void work_proc_exit(int code, Datum arg) {
     }
 }
 
-#if PG_VERSION_NUM >= 120000
-static void work_extension(const char *schema_quote, const char *extension) {
-    const char *extension_quote = quote_identifier(extension);
-    List *names = stringToQualifiedNameList(extension_quote);
-    StringInfoData src;
-    elog(DEBUG1, "extension = %s", extension);
-    set_ps_display_my("extension");
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE EXTENSION %s SCHEMA %s), extension_quote, schema_quote);
-    SPI_connect_my(src.data);
-    if (!OidIsValid(get_extension_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_finish_my();
-    list_free_deep(names);
-    if (extension_quote != extension) pfree((void *)extension_quote);
-    pfree(src.data);
-    set_ps_display_my("idle");
-}
-
-static void work_partman(void) {
-    const char *pkey_quote;
-    const char *template_quote;
-    const RangeVar *rangevar;
-    List *names;
-    StringInfoData src, pkey, template, template_table;
-    set_ps_display_my("partman");
-    work_schema(work.partman);
-    work_extension(work.partman, "pg_partman");
-    initStringInfoMy(&pkey);
-    appendStringInfo(&pkey, "%s_pkey", work.shared->table);
-    initStringInfoMy(&template);
-    appendStringInfo(&template, "template_%s_%s", work.shared->schema, work.shared->table);
-    pkey_quote = quote_identifier(pkey.data);
-    template_quote = quote_identifier(template.data);
-    initStringInfoMy(&template_table);
-    appendStringInfo(&template_table, "%s.%s", work.partman, template_quote);
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL, CONSTRAINT %3$s PRIMARY KEY ("id"))), template_table.data, work.schema_table, pkey_quote);
-    names = stringToQualifiedNameList(template_table.data);
-    rangevar = makeRangeVarFromNameList(names);
-    SPI_connect_my(src.data);
-    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
-        Datum values[] = {CStringGetTextDatumMy(work.schema_table), CStringGetTextDatumMy(template_table.data)};
-        static Oid argtypes[] = {TEXTOID, TEXTOID};
-        StringInfoData create_parent;
-        initStringInfoMy(&create_parent);
-        appendStringInfo(&create_parent, SQL(SELECT %1$s.create_parent(p_parent_table := $1, p_control := 'plan', p_type := 'native', p_interval := 'monthly', p_template_table := $2)), work.partman);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_execute_with_args_my(create_parent.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
-        if (SPI_processed != 1) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_processed %lu != 1", (long)SPI_processed)));
-        if (!DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "create_parent", false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("could not create parent")));
-        if (values[0]) pfree((void *)values[0]);
-        if (values[1]) pfree((void *)values[1]);
-    }
-    SPI_finish_my();
-    pfree((void *)rangevar);
-    list_free_deep(names);
-    if (pkey_quote != pkey.data) pfree((void *)pkey_quote);
-    if (template_quote != template.data) pfree((void *)template_quote);
-    pfree(pkey.data);
-    pfree(src.data);
-    pfree(template.data);
-    pfree(template_table.data);
-    set_ps_display_my("idle");
-}
-#endif
-
 static void work_remote(Task *t) {
     bool password = false;
     char *err;
@@ -559,7 +493,7 @@ static void work_table(void) {
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         CREATE TABLE %1$s (
-            "id" bigserial NOT NULL%4$s,
+            "id" bigserial NOT NULL PRIMARY KEY,
             "parent" bigint DEFAULT NULLIF(current_setting('pg_task.id')::bigint, 0),
             "plan" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
             "start" timestamp with time zone,
@@ -589,13 +523,12 @@ static void work_table(void) {
         )
     ), work.schema_table, work.schema_type,
 #if PG_VERSION_NUM >= 120000
-        hash.data, work.shared->partman[0] ? "" : " PRIMARY KEY"
+        hash.data
 #else
-        "", " PRIMARY KEY"
+        ""
 #endif
     );
 #if PG_VERSION_NUM >= 120000
-    if (work.shared->partman[0]) appendStringInfoString(&src, " PARTITION BY RANGE (plan)");
 #else
     appendStringInfoString(&src, hash.data);
 #endif
@@ -754,9 +687,6 @@ void work_main(Datum arg) {
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     work.shared = shm_toc_lookup_my(toc, 0, false);
     work.data = quote_identifier(work.shared->data);
-#if PG_VERSION_NUM >= 120000
-    if (work.shared->partman[0]) work.partman = quote_identifier(work.shared->partman);
-#endif
     work.schema = quote_identifier(work.shared->schema);
     work.table = quote_identifier(work.shared->table);
     work.user = quote_identifier(work.shared->user);
@@ -778,13 +708,7 @@ void work_main(Datum arg) {
     initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work.schema);
     work.schema_type = schema_type.data;
-    elog(DEBUG1, "timeout = %li, reset = %li, schema_table = %s, schema_type = %s, partman = %s, hash = %i", work.shared->timeout, work.shared->reset, work.schema_table, work.schema_type,
-#if PG_VERSION_NUM >= 120000
-    work.shared->partman[0] ? work.shared->partman : default_null,
-#else
-    default_null,
-#endif
-    work.hash);
+    elog(DEBUG1, "timeout = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->timeout, work.shared->reset, work.schema_table, work.schema_type, work.hash);
     work_schema(work.schema);
     set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
@@ -794,9 +718,6 @@ void work_main(Datum arg) {
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);
     work_index(countof(index_state), index_state);
-#if PG_VERSION_NUM >= 120000
-    if (work.shared->partman[0]) work_partman();
-#endif
     set_config_option_my("pg_task.data", work.shared->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option_my("pg_task.user", work.shared->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(&timeout);

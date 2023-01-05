@@ -39,18 +39,12 @@ static void conf_user(Work *w) {
     set_ps_display_my("user");
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE ROLE %s WITH LOGIN), w->user);
-#if PG_VERSION_NUM >= 120000
-    if (w->shared->partman[0]) appendStringInfoString(&src, " SUPERUSER");
-#endif
     SPI_connect_my(src.data);
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
         CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
         ParseState *pstate = make_parsestate(NULL);
         stmt->role = w->shared->user;
         stmt->options = list_make1(makeDefElemMy("canlogin", (Node *)makeInteger(1), -1));
-#if PG_VERSION_NUM >= 120000
-        if (w->shared->partman[0]) stmt->options = lappend(stmt->options, makeDefElemMy("superuser", (Node *)makeInteger(1), -1));
-#endif
         pstate->p_sourcetext = src.data;
         CreateRoleMy(pstate, stmt);
         list_free_deep(stmt->options);
@@ -134,19 +128,10 @@ void conf_main(Datum arg) {
             w->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false));
             w->shared->timeout = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "timeout", false));
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "data", false)), w->shared->data, sizeof(w->shared->data));
-#if PG_VERSION_NUM >= 120000
-            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "partman", false)), w->shared->partman, sizeof(w->shared->partman));
-#endif
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "schema", false)), w->shared->schema, sizeof(w->shared->schema));
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false)), w->shared->table, sizeof(w->shared->table));
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false)), w->shared->user, sizeof(w->shared->user));
-            elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li, partman = %s", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->timeout, w->shared->reset,
-#if PG_VERSION_NUM >= 120000
-                w->shared->partman[0] ? w->shared->partman : default_null
-#else
-                default_null
-#endif
-            );
+            elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, timeout = %li, reset = %li", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->timeout, w->shared->reset);
             dlist_push_head(&head, &w->node);
         }
     } while (SPI_processed);
