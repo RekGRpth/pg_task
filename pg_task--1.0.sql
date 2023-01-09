@@ -42,7 +42,7 @@ DO $do$BEGIN
         SELECT pg_catalog.pg_extension_config_dump(%1$L, '');
         ALTER DATABASE %3$I SET "pg_task.table" TO %1$L;
     $format$,
-        current_setting('pg_work.default_table'),
+        current_setting('pg_task.table'),
         CASE WHEN current_setting('server_version_num')::int >= 120000 THEN $text$GENERATED ALWAYS AS (hashtext("group"||COALESCE("remote", ''))) STORED$text$ ELSE '' END,
         current_catalog
     );
@@ -56,8 +56,8 @@ DO $do$BEGIN
             END;$function$ LANGUAGE plpgsql;
             CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %1$I FOR EACH ROW EXECUTE PROCEDURE %2$I();
         $format$,
-            current_setting('pg_work.default_table'),
-            current_setting('pg_work.default_table')||'_hash_generate',
+            current_setting('pg_task.table'),
+            current_setting('pg_task.table')||'_hash_generate',
         );
     END IF;
 END;$do$ LANGUAGE plpgsql;
