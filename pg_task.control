@@ -1,4 +1,5 @@
 comment = 'PostgreSQL task'
 default_version = '1.0'
 module_pathname = '$libdir/pg_task'
+relocatable = true
 superuser = false

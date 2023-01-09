@@ -1,11 +1,11 @@
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
 \echo Use "CREATE EXTENSION pg_task" to load this file. \quit
 
-CREATE TYPE @extschema@."state" AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'STOP');
+CREATE TYPE "state" AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'STOP');
 
 DO $do$BEGIN
     EXECUTE FORMAT($format$
-        CREATE TABLE @extschema@.%1$I (
+        CREATE TABLE %1$I (
             "id" bigserial NOT NULL PRIMARY KEY,
             "parent" bigint DEFAULT NULLIF(current_setting('pg_task.id')::bigint, 0),
             "plan" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -34,25 +34,25 @@ DO $do$BEGIN
             "output" text,
             "remote" text
         );
-        CREATE INDEX ON @extschema@.%1$I USING btree ("hash");
-        CREATE INDEX ON @extschema@.%1$I USING btree ("input");
-        CREATE INDEX ON @extschema@.%1$I USING btree ("parent");
-        CREATE INDEX ON @extschema@.%1$I USING btree ("plan");
-        CREATE INDEX ON @extschema@.%1$I USING btree ("state");
-        SELECT pg_catalog.pg_extension_config_dump('@extschema@.%1$I', '');
+        CREATE INDEX ON %1$I USING btree ("hash");
+        CREATE INDEX ON %1$I USING btree ("input");
+        CREATE INDEX ON %1$I USING btree ("parent");
+        CREATE INDEX ON %1$I USING btree ("plan");
+        CREATE INDEX ON %1$I USING btree ("state");
+        SELECT pg_catalog.pg_extension_config_dump(%1$L, '');
     $format$,
         current_setting('pg_work.default_table'),
         CASE WHEN current_setting('server_version_num')::int >= 120000 THEN $text$GENERATED ALWAYS AS (hashtext("group"||COALESCE("remote", ''))) STORED$text$ ELSE '' END
     );
     IF current_setting('server_version_num')::int < 120000 THEN
         EXECUTE FORMAT($format$
-            CREATE FUNCTION @extschema@.%2$I() RETURNS TRIGGER AS $function$BEGIN
+            CREATE FUNCTION %2$I() RETURNS TRIGGER AS $function$BEGIN
                 IF tg_op = 'INSERT' OR (new.group, new.remote) IS DISTINCT FROM (old.group, old.remote) THEN
                     new.hash = hashtext(new.group||COALESCE(new.remote, ''));
                 END IF;
                 RETURN new;
             END;$function$ LANGUAGE plpgsql;
-            CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON @extschema@.%1$I FOR EACH ROW EXECUTE PROCEDURE @extschema@.%2$I();
+            CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %1$I FOR EACH ROW EXECUTE PROCEDURE %2$I();
         $format$,
             current_setting('pg_work.default_table'),
             current_setting('pg_work.default_table')||'_hash_generate',
