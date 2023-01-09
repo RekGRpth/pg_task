@@ -31,6 +31,8 @@ postgres.c:
 	sed -i 's/EndCommand/EndCommandMy/' $@
 	sed -i 's/NullCommand/NullCommandMy/' $@
 
+DATA = pg_task--1.0.sql
+EXTENSION = pg_task
 EXTRA_CLEAN = postgres.c
 MODULE_big = pg_task
 OBJS = init.o conf.o work.o task.o spi.o dest.o latch.o

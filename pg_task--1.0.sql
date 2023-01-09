@@ -1,0 +1,55 @@
+-- complain if script is sourced in psql, rather than via CREATE EXTENSION
+\echo Use "CREATE EXTENSION pg_task" to load this file. \quit
+
+CREATE TYPE "state" AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'STOP');
+
+DO $do$BEGIN
+    EXECUTE FORMAT($format$
+        CREATE TABLE %1$I (
+            "id" bigserial NOT NULL PRIMARY KEY,
+            "parent" bigint DEFAULT NULLIF(current_setting('pg_task.id')::bigint, 0),
+            "plan" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "start" timestamp with time zone,
+            "stop" timestamp with time zone,
+            "active" interval NOT NULL DEFAULT current_setting('pg_task.default_active')::interval CHECK ("active" > '0 sec'::interval),
+            "live" interval NOT NULL DEFAULT current_setting('pg_task.default_live')::interval CHECK ("live" >= '0 sec'::interval),
+            "repeat" interval NOT NULL DEFAULT current_setting('pg_task.default_repeat')::interval CHECK ("repeat" >= '0 sec'::interval),
+            "timeout" interval NOT NULL DEFAULT current_setting('pg_task.default_timeout')::interval CHECK ("timeout" >= '0 sec'::interval),
+            "count" int NOT NULL DEFAULT current_setting('pg_task.default_count')::int CHECK ("count" >= 0),
+            "hash" int NOT NULL %2$s,
+            "max" int NOT NULL DEFAULT current_setting('pg_task.default_max')::int,
+            "pid" int,
+            "state" "state" NOT NULL DEFAULT 'PLAN',
+            "delete" bool NOT NULL DEFAULT current_setting('pg_task.default_delete')::bool,
+            "drift" bool NOT NULL DEFAULT current_setting('pg_task.default_drift')::bool,
+            "header" bool NOT NULL DEFAULT current_setting('pg_task.default_header')::bool,
+            "string" bool NOT NULL DEFAULT current_setting('pg_task.default_string')::bool,
+            "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.default_delimiter')::"char",
+            "escape" "char" NOT NULL DEFAULT current_setting('pg_task.default_escape')::"char",
+            "quote" "char" NOT NULL DEFAULT current_setting('pg_task.default_quote')::"char",
+            "error" text,
+            "group" text NOT NULL DEFAULT current_setting('pg_task.default_group'),
+            "input" text NOT NULL,
+            "null" text NOT NULL DEFAULT current_setting('pg_task.default_null'),
+            "output" text,
+            "remote" text
+        );
+    $format$,
+        current_setting('pg_work.default_table'),
+        CASE WHEN current_setting('server_version_num')::int >= 120000 THEN $text$GENERATED ALWAYS AS (hashtext("group"||COALESCE("remote", ''))) STORED$text$ ELSE '' END
+    );
+    IF current_setting('server_version_num')::int < 120000 THEN
+        EXECUTE FORMAT($format$
+            CREATE FUNCTION %2$I() RETURNS TRIGGER AS $function$BEGIN
+                IF tg_op = 'INSERT' OR (new.group, new.remote) IS DISTINCT FROM (old.group, old.remote) THEN
+                    new.hash = hashtext(new.group||COALESCE(new.remote, ''));
+                END IF;
+                RETURN new;
+            END;$function$ LANGUAGE plpgsql;
+            CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %1$I FOR EACH ROW EXECUTE PROCEDURE %2$I();
+        $format$,
+            current_setting('pg_work.default_table'),
+            current_setting('pg_work.default_table')||'_hash_generate',
+        );
+    END IF;
+END;$do$ LANGUAGE plpgsql;
