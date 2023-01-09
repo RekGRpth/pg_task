@@ -1,6 +1,5 @@
 #include "include.h"
 
-extern char *conf_default_data;
 extern char *default_null;
 extern int conf_default_fetch;
 extern int work_default_restart;
@@ -98,7 +97,7 @@ void conf_main(Datum arg) {
     StringInfoData src;
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
-    BackgroundWorkerInitializeConnectionMy(conf_default_data, NULL, 0);
+    BackgroundWorkerInitializeConnectionMy("postgres", NULL, 0);
     set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pgstat_report_appname("pg_conf");
     set_ps_display_my("main");
