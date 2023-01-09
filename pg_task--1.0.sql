@@ -40,9 +40,11 @@ DO $do$BEGIN
         CREATE INDEX ON %1$I USING btree ("plan");
         CREATE INDEX ON %1$I USING btree ("state");
         SELECT pg_catalog.pg_extension_config_dump(%1$L, '');
+        ALTER DATABASE %3$I SET "pg_task.table" TO %1$L;
     $format$,
         current_setting('pg_work.default_table'),
-        CASE WHEN current_setting('server_version_num')::int >= 120000 THEN $text$GENERATED ALWAYS AS (hashtext("group"||COALESCE("remote", ''))) STORED$text$ ELSE '' END
+        CASE WHEN current_setting('server_version_num')::int >= 120000 THEN $text$GENERATED ALWAYS AS (hashtext("group"||COALESCE("remote", ''))) STORED$text$ ELSE '' END,
+        current_catalog
     );
     IF current_setting('server_version_num')::int < 120000 THEN
         EXECUTE FORMAT($format$

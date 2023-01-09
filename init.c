@@ -20,6 +20,7 @@ static char *task_default_live;
 static char *task_default_quote;
 static char *task_default_repeat;
 static char *task_default_timeout;
+static char *task_table;
 static char *work_default_active;
 static char *work_default_data;
 static char *work_default_reset;
@@ -306,6 +307,7 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_task.default_repeat", "pg_task default repeat", "repeat task", &task_default_repeat, "0 sec", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_timeout", "pg_task default timeout", "task timeout", &task_default_timeout, "0 sec", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.json", "pg_task json", "json configuration: available keys are: user, data, schema, table, timeout, count and live", &default_json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign, NULL);
+    DefineCustomStringVariable("pg_task.table", "pg_task table", "table name for tasks table", &task_table, "task", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_active", "pg_work default active", "task active before now", &work_default_active, "1 week", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_data", "pg_work default data", "default database name", &work_default_data, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_reset", "pg_work default reset", "reset tasks every interval", &work_default_reset, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
