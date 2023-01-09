@@ -34,6 +34,11 @@ DO $do$BEGIN
             "output" text,
             "remote" text
         );
+        CREATE INDEX ON %1$I USING btree ("hash");
+        CREATE INDEX ON %1$I USING btree ("input");
+        CREATE INDEX ON %1$I USING btree ("parent");
+        CREATE INDEX ON %1$I USING btree ("plan");
+        CREATE INDEX ON %1$I USING btree ("state");
     $format$,
         current_setting('pg_work.default_table'),
         CASE WHEN current_setting('server_version_num')::int >= 120000 THEN $text$GENERATED ALWAYS AS (hashtext("group"||COALESCE("remote", ''))) STORED$text$ ELSE '' END
