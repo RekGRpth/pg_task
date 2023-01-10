@@ -20,13 +20,13 @@ static char *task_group;
 static char *task_live;
 static char *task_quote;
 static char *task_repeat;
+static char *task_reset;
 static char *task_schema;
 static char *task_table;
 static char *task_timeout;
 static char *task_user;
 static char *work_active;
 static char *work_data;
-static char *work_reset;
 static char *work_schema;
 static char *work_table;
 static char *work_user;
@@ -120,7 +120,7 @@ const char *init_check(void) {
     return SQL(
         WITH j AS (
             SELECT  COALESCE(COALESCE("data", "user"), current_setting('pg_work.data')) AS "data",
-                    EXTRACT(epoch FROM COALESCE("reset", current_setting('pg_work.reset')::interval))::bigint AS "reset",
+                    EXTRACT(epoch FROM COALESCE("reset", current_setting('pg_task.reset')::interval))::bigint AS "reset",
                     COALESCE("schema", current_setting('pg_work.schema')) AS "schema",
                     COALESCE("table", current_setting('pg_work.table')) AS "table",
                     COALESCE("timeout", current_setting('pg_work.timeout')::bigint) AS "timeout",
@@ -346,17 +346,17 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_task.null", "pg_task null", "text null representation", &task_null, "\\N", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.quote", "pg_task quote", "results colums quote", &task_quote, "", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.repeat", "pg_task repeat", "repeat task", &task_repeat, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.reset", "pg_task reset", "reset tasks every interval", &task_reset, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.schema", "pg_task schema", "schema name for tasks table", &task_schema, "public", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.table", "pg_task table", "table name for tasks table", &task_table, "task", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.timeout", "pg_task timeout", "task timeout", &task_timeout, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.user", "pg_task user", "user name for tasks table", &task_user, "postgres", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.active", "pg_work active", "task active before now", &work_active, "1 week", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.data", "pg_work data", "database name", &work_data, "postgres", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_work.reset", "pg_work reset", "reset tasks every interval", &work_reset, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.schema", "pg_work schema", "schema name for tasks table", &work_schema, "public", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.table", "pg_work table", "table name for tasks table", &work_table, "task", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.user", "pg_work user", "username", &work_user, "postgres", PGC_USERSET, 0, NULL, NULL, NULL);
-    elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, timeout = %i, reset = %s, active = %s", default_json, work_user, work_data, work_schema, work_table, task_null, work_timeout, work_reset, work_active);
+    elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, timeout = %i, reset = %s, active = %s", default_json, work_user, work_data, work_schema, work_table, task_null, work_timeout, task_reset, work_active);
 #ifdef GP_VERSION_NUM
     if (!IS_QUERY_DISPATCHER()) return;
 #endif
