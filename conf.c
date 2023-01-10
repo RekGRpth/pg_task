@@ -60,13 +60,8 @@ static void conf_work(Work *w) {
     pid_t pid;
     size_t len;
     set_ps_display_my("work");
-    dlist_delete(&w->node);
-    w->data = quote_identifier(w->shared->data);
-    w->user = quote_identifier(w->shared->user);
     conf_user(w);
     conf_data(w);
-    if (w->data != w->shared->data) pfree((void *)w->data);
-    if (w->user != w->shared->user) pfree((void *)w->user);
     if ((len = strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
     if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %li", w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
@@ -137,7 +132,12 @@ void conf_main(Datum arg) {
     pfree(src.data);
     dlist_foreach_modify(iter, &head) {
         Work *w = dlist_container(Work, node, iter.cur);
+        w->data = quote_identifier(w->shared->data);
+        w->user = quote_identifier(w->shared->user);
         conf_work(w);
+        if (w->data != w->shared->data) pfree((void *)w->data);
+        if (w->user != w->shared->user) pfree((void *)w->user);
+        dlist_delete(&w->node);
         pfree(w);
     }
     if (!unlock_data_user(MyDatabaseId, GetUserId())) elog(WARNING, "!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId());
