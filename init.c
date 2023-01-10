@@ -2,7 +2,7 @@
 
 PG_MODULE_MAGIC;
 
-char *default_null;
+char *task_null;
 int conf_fetch;
 int task_fetch;
 int work_fetch;
@@ -200,7 +200,7 @@ static void init_assign(const char *newval, void *extra) {
     new_isnull = !newval || newval[0] == '\0';
     if (old_isnull && new_isnull) return;
     if (!old_isnull && !new_isnull && !strcmp(oldval, newval)) return;
-    elog(DEBUG1, "oldval = %s, newval = %s", !old_isnull ? oldval : default_null, !new_isnull ? newval : default_null);
+    elog(DEBUG1, "oldval = %s, newval = %s", !old_isnull ? oldval : task_null, !new_isnull ? newval : task_null);
     init_work(true);
 }
 
@@ -302,7 +302,6 @@ void _PG_init(void) {
     DefineCustomIntVariable("pg_work.timeout", "pg_work default timeout", "check tasks every timeout milliseconds", &work_timeout, 1000, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.active", "pg_task default active", "task active after plan time", &task_active, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.data", "pg_task data", "database name for tasks table", &task_data, "postgres", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_null", "pg_task default null", "text null representation", &default_null, "\\N", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_quote", "pg_task default quote", "results colums quote", &task_default_quote, "", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.default_repeat", "pg_task default repeat", "repeat task", &task_default_repeat, "0 sec", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.delimiter", "pg_task default delimiter", "results colums delimiter", &task_delimiter, "\t", PGC_USERSET, 0, NULL, NULL, NULL);
@@ -310,6 +309,7 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_task.group", "pg_task default group", "group tasks name", &task_group, "group", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.json", "pg_task json", "json configuration: available keys are: user, data, schema, table, timeout, count and live", &default_json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign, NULL);
     DefineCustomStringVariable("pg_task.live", "pg_task default live", "exit until timeout", &task_live, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.null", "pg_task default null", "text null representation", &task_null, "\\N", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.schema", "pg_task schema", "schema name for tasks table", &task_schema, "public", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.table", "pg_task table", "table name for tasks table", &task_table, "task", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.timeout", "pg_task default timeout", "task timeout", &task_timeout, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
@@ -320,7 +320,7 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_work.default_schema", "pg_work default schema", "schema name for tasks table", &work_default_schema, "public", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_table", "pg_work default table", "table name for tasks table", &work_default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.default_user", "pg_work default user", "default username", &work_default_user, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, timeout = %i, reset = %s, active = %s", default_json, work_default_user, work_default_data, work_default_schema, work_default_table, default_null, work_timeout, work_default_reset, work_active);
+    elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, timeout = %i, reset = %s, active = %s", default_json, work_default_user, work_default_data, work_default_schema, work_default_table, task_null, work_timeout, work_default_reset, work_active);
 #ifdef GP_VERSION_NUM
     if (!IS_QUERY_DISPATCHER()) return;
 #endif

@@ -30,7 +30,7 @@ DO $do$BEGIN
             "error" text,
             "group" text NOT NULL DEFAULT current_setting('pg_task.group'),
             "input" text NOT NULL,
-            "null" text NOT NULL DEFAULT current_setting('pg_task.default_null'),
+            "null" text NOT NULL DEFAULT current_setting('pg_task.null'),
             "output" text,
             "remote" text
         );

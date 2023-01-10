@@ -1,6 +1,6 @@
 #include "include.h"
 
-extern char *default_null;
+extern char *task_null;
 extern int work_fetch;
 extern Task task;
 static dlist_head head;
@@ -401,7 +401,7 @@ static void work_remote(Task *t) {
     int arg = 3;
     PQconninfoOption *opts = PQconninfoParse(t->remote, &err);
     StringInfoData name, value;
-    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : default_null, t->shared->max, work.shared->oid);
+    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : task_null, t->shared->max, work.shared->oid);
     dlist_delete(&t->node);
     dlist_push_head(&head, &t->node);
     if (!opts) { ereport_my(WARNING, true, (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), errdetail("%s", work_errstr(err)))); if (err) PQfreemem(err); return; }
@@ -517,7 +517,7 @@ static void work_table(void) {
             "error" text,
             "group" text NOT NULL DEFAULT current_setting('pg_task.group'),
             "input" text NOT NULL,
-            "null" text NOT NULL DEFAULT current_setting('pg_task.default_null'),
+            "null" text NOT NULL DEFAULT current_setting('pg_task.null'),
             "output" text,
             "remote" text
         )
@@ -638,7 +638,7 @@ static void work_timeout(void) {
             t->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false));
             t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false));
             t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false));
-            elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : default_null, t->shared->max);
+            elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : task_null, t->shared->max);
             dlist_push_head(t->remote ? &remote : &local, &t->node);
         }
     } while (SPI_processed);

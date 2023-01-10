@@ -1,6 +1,5 @@
 #include "include.h"
 
-extern char *default_null;
 extern int conf_fetch;
 extern int work_restart;
 static dlist_head head;
