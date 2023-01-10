@@ -32,9 +32,9 @@ static char *work_default_table;
 static char *work_default_user;
 static int conf_restart;
 static int task_count;
-static int task_default_limit;
 static int task_default_max;
 static int task_id;
+static int task_limit;
 static int work_default_timeout;
 
 bool init_oid_is_string(Oid oid) {
@@ -293,7 +293,7 @@ void _PG_init(void) {
     DefineCustomIntVariable("pg_conf.fetch", "pg_conf default fetch", "fetch at once", &conf_fetch, 10, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.restart", "pg_conf default restart", "conf default restart interval", &conf_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.count", "pg_task default count", "do count tasks before exit", &task_count, 0, 0, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.default_limit", "pg_task default limit", "limit tasks at once", &task_default_limit, 1000, 0, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.limit", "pg_task default limit", "limit tasks at once", &task_limit, 1000, 0, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.default_max", "pg_task default max", "maximum parallel tasks", &task_default_max, 0, INT_MIN, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.fetch", "pg_task default fetch", "fetch tasks at once", &task_fetch, 100, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.id", "pg_task id", "task id", &task_id, 0, INT_MIN, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
