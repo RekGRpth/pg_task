@@ -507,7 +507,7 @@ static void work_table(void) {
             "max" integer NOT NULL DEFAULT current_setting('pg_task.default_max')::integer,
             "pid" integer,
             "state" %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
-            "delete" boolean NOT NULL DEFAULT current_setting('pg_task.default_delete')::boolean,
+            "delete" boolean NOT NULL DEFAULT current_setting('pg_task.delete')::boolean,
             "drift" boolean NOT NULL DEFAULT current_setting('pg_task.default_drift')::boolean,
             "header" boolean NOT NULL DEFAULT current_setting('pg_task.default_header')::boolean,
             "string" boolean NOT NULL DEFAULT current_setting('pg_task.default_string')::boolean,
