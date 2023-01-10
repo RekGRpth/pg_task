@@ -26,7 +26,7 @@ DO $do$BEGIN
             "string" bool NOT NULL DEFAULT current_setting('pg_task.string')::bool,
             "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.delimiter')::"char",
             "escape" "char" NOT NULL DEFAULT current_setting('pg_task.escape')::"char",
-            "quote" "char" NOT NULL DEFAULT current_setting('pg_task.default_quote')::"char",
+            "quote" "char" NOT NULL DEFAULT current_setting('pg_task.quote')::"char",
             "error" text,
             "group" text NOT NULL DEFAULT current_setting('pg_task.group'),
             "input" text NOT NULL,
