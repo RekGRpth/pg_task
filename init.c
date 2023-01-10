@@ -303,20 +303,21 @@ static void reset(char *name) {
 }
 
 static void pg_task_object_access(ObjectAccessType access, Oid classId, Oid objectId, int subId, void *arg) {
-    if (classId != ExtensionRelationId) goto next;
-    if (access != OAT_DROP) goto next;
-    if (get_extension_oid("pg_task", true) != objectId) goto next;
+    if (next_object_access_hook) next_object_access_hook(access, classId, objectId, subId, arg);
+    if (classId != ExtensionRelationId) return;
+    CommandCounterIncrement();
+    if (get_extension_oid("pg_task", true) != objectId) return;
     switch (access) {
-        case OAT_DROP:
+        case OAT_DROP: {
             reset("pg_task.data");
             reset("pg_task.schema");
             reset("pg_task.table");
             reset("pg_task.user");
-            break;
+        } break;
+        case OAT_POST_CREATE: {
+        } break;
         default: break;
     }
-next:
-    if (next_object_access_hook) next_object_access_hook(access, classId, objectId, subId, arg);
 }
 
 void _PG_init(void) {
