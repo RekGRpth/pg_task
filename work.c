@@ -501,7 +501,7 @@ static void work_table(void) {
             "active" interval NOT NULL DEFAULT current_setting('pg_task.default_active')::interval CHECK ("active" > '0 sec'::interval),
             "live" interval NOT NULL DEFAULT current_setting('pg_task.default_live')::interval CHECK ("live" >= '0 sec'::interval),
             "repeat" interval NOT NULL DEFAULT current_setting('pg_task.default_repeat')::interval CHECK ("repeat" >= '0 sec'::interval),
-            "timeout" interval NOT NULL DEFAULT current_setting('pg_task.default_timeout')::interval CHECK ("timeout" >= '0 sec'::interval),
+            "timeout" interval NOT NULL DEFAULT current_setting('pg_task.timeout')::interval CHECK ("timeout" >= '0 sec'::interval),
             "count" integer NOT NULL DEFAULT current_setting('pg_task.count')::int CHECK ("count" >= 0),
             "hash" integer NOT NULL %3$s,
             "max" integer NOT NULL DEFAULT current_setting('pg_task.max')::int,
