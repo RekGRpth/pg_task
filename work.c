@@ -515,7 +515,7 @@ static void work_table(void) {
             "escape" "char" NOT NULL DEFAULT current_setting('pg_task.escape')::"char",
             "quote" "char" NOT NULL DEFAULT current_setting('pg_task.default_quote')::"char",
             "error" text,
-            "group" text NOT NULL DEFAULT current_setting('pg_task.default_group'),
+            "group" text NOT NULL DEFAULT current_setting('pg_task.group'),
             "input" text NOT NULL,
             "null" text NOT NULL DEFAULT current_setting('pg_task.default_null'),
             "output" text,
