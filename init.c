@@ -36,6 +36,7 @@ static int task_id;
 static int task_limit;
 static int task_max;
 static int work_timeout;
+static object_access_hook_type next_object_access_hook = NULL;
 
 bool init_oid_is_string(Oid oid) {
     switch (oid) {
@@ -284,6 +285,35 @@ void initStringInfoMy(StringInfoData *buf) {
     MemoryContextSwitchTo(oldMemoryContext);
 }
 
+static void reset(char *name) {
+    ResourceOwner currentOwner = CurrentResourceOwner;
+    AlterDatabaseSetStmt *stmt = makeNode(AlterDatabaseSetStmt);
+    if (!(stmt->dbname = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
+    stmt->setstmt = makeNode(VariableSetStmt);
+    stmt->setstmt->kind = VAR_RESET;
+    stmt->setstmt->name = name;
+    BeginInternalSubTransaction(NULL);
+    CurrentResourceOwner = currentOwner;
+    (void)AlterDatabaseSet(stmt);
+    ReleaseCurrentSubTransaction();
+    CurrentResourceOwner = currentOwner;
+    pfree(stmt->dbname);
+    pfree(stmt->setstmt);
+    pfree(stmt);
+}
+
+static void pg_task_object_access(ObjectAccessType access, Oid classId, Oid objectId, int subId, void *arg) {
+    if (classId != ExtensionRelationId) goto next;
+    if (access != OAT_DROP) goto next;
+    if (get_extension_oid("pg_task", true) != objectId) goto next;
+    reset("pg_task.data");
+    reset("pg_task.schema");
+    reset("pg_task.table");
+    reset("pg_task.user");
+next:
+    if (next_object_access_hook) next_object_access_hook(access, classId, objectId, subId, arg);
+}
+
 void _PG_init(void) {
     if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("This module can only be loaded via shared_preload_libraries")));
     DefineCustomBoolVariable("pg_task.delete", "pg_task delete", "delete task if output is null", &task_delete, true, PGC_USERSET, 0, NULL, NULL, NULL);
@@ -324,6 +354,8 @@ void _PG_init(void) {
 #ifdef GP_VERSION_NUM
     if (!IS_QUERY_DISPATCHER()) return;
 #endif
+    next_object_access_hook = object_access_hook;
+    object_access_hook = pg_task_object_access;
     init_work(false);
 }
 

@@ -15,7 +15,9 @@
 #include <access/xact.h>
 #include <catalog/heap.h>
 #include <catalog/namespace.h>
+#include <catalog/objectaccess.h>
 #include <catalog/pg_collation.h>
+#include <catalog/pg_extension.h>
 #include <catalog/pg_type.h>
 #include <commands/async.h>
 #include <commands/dbcommands.h>
