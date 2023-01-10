@@ -306,10 +306,15 @@ static void pg_task_object_access(ObjectAccessType access, Oid classId, Oid obje
     if (classId != ExtensionRelationId) goto next;
     if (access != OAT_DROP) goto next;
     if (get_extension_oid("pg_task", true) != objectId) goto next;
-    reset("pg_task.data");
-    reset("pg_task.schema");
-    reset("pg_task.table");
-    reset("pg_task.user");
+    switch (access) {
+        case OAT_DROP:
+            reset("pg_task.data");
+            reset("pg_task.schema");
+            reset("pg_task.table");
+            reset("pg_task.user");
+            break;
+        default: break;
+    }
 next:
     if (next_object_access_hook) next_object_access_hook(access, classId, objectId, subId, arg);
 }
