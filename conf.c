@@ -1,7 +1,7 @@
 #include "include.h"
 
 extern char *default_null;
-extern int conf_default_fetch;
+extern int conf_fetch;
 extern int work_default_restart;
 static dlist_head head;
 
@@ -116,7 +116,7 @@ void conf_main(Datum arg) {
     SPI_connect_my(src.data);
     portal = SPI_cursor_open_with_args_my(src.data, src.data, 0, NULL, NULL, NULL);
     do {
-        SPI_cursor_fetch(portal, true, conf_default_fetch);
+        SPI_cursor_fetch(portal, true, conf_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
             TupleDesc tupdesc = SPI_tuptable->tupdesc;

@@ -1,7 +1,7 @@
 #include "include.h"
 
 extern char *default_null;
-extern int work_default_fetch;
+extern int work_fetch;
 extern Task task;
 static dlist_head head;
 static dlist_head local;
@@ -226,7 +226,7 @@ static void work_reset(void) {
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL);
     do {
-        SPI_cursor_fetch(portal, true, work_default_fetch);
+        SPI_cursor_fetch(portal, true, work_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     } while (SPI_processed);
     SPI_cursor_close(portal);
@@ -626,7 +626,7 @@ static void work_timeout(void) {
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL);
     do {
-        SPI_cursor_fetch(portal, true, work_default_fetch);
+        SPI_cursor_fetch(portal, true, work_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
             Task *t = MemoryContextAllocZero(TopMemoryContext, sizeof(*t));
