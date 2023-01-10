@@ -511,7 +511,7 @@ static void work_table(void) {
             "drift" boolean NOT NULL DEFAULT current_setting('pg_task.drift')::bool,
             "header" boolean NOT NULL DEFAULT current_setting('pg_task.header')::bool,
             "string" boolean NOT NULL DEFAULT current_setting('pg_task.string')::bool,
-            "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.default_delimiter')::"char",
+            "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.delimiter')::"char",
             "escape" "char" NOT NULL DEFAULT current_setting('pg_task.default_escape')::"char",
             "quote" "char" NOT NULL DEFAULT current_setting('pg_task.default_quote')::"char",
             "error" text,
