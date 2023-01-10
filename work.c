@@ -686,7 +686,6 @@ void work_main(Datum arg) {
 #endif
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     work.shared = shm_toc_lookup_my(toc, 0, false);
-    work.data = quote_identifier(work.shared->data);
     work.schema = quote_identifier(work.shared->schema);
     work.table = quote_identifier(work.shared->table);
     work.user = quote_identifier(work.shared->user);
