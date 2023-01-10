@@ -310,7 +310,9 @@ static void pg_task_object_access(ObjectAccessType access, Oid classId, Oid obje
     switch (access) {
         case OAT_DROP: {
             reset("pg_task.data");
+            reset("pg_task.reset");
             reset("pg_task.schema");
+            reset("pg_task.sleep");
             reset("pg_task.table");
             reset("pg_task.user");
         } break;
