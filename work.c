@@ -512,7 +512,7 @@ static void work_table(void) {
             "header" boolean NOT NULL DEFAULT current_setting('pg_task.header')::bool,
             "string" boolean NOT NULL DEFAULT current_setting('pg_task.string')::bool,
             "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.delimiter')::"char",
-            "escape" "char" NOT NULL DEFAULT current_setting('pg_task.default_escape')::"char",
+            "escape" "char" NOT NULL DEFAULT current_setting('pg_task.escape')::"char",
             "quote" "char" NOT NULL DEFAULT current_setting('pg_task.default_quote')::"char",
             "error" text,
             "group" text NOT NULL DEFAULT current_setting('pg_task.default_group'),
