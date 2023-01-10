@@ -4,7 +4,7 @@ extern int conf_fetch;
 extern int work_restart;
 static dlist_head head;
 
-static void conf_data(Work *w) {
+static void conf_data(const Work *w) {
     List *names = stringToQualifiedNameList(w->data);
     StringInfoData src;
     elog(DEBUG1, "user = %s, data = %s", w->shared->user, w->shared->data);
@@ -29,7 +29,7 @@ static void conf_data(Work *w) {
     set_ps_display_my("idle");
 }
 
-static void conf_user(Work *w) {
+static void conf_user(const Work *w) {
     List *names = stringToQualifiedNameList(w->user);
     StringInfoData src;
     elog(DEBUG1, "user = %s", w->shared->user);
@@ -54,7 +54,7 @@ static void conf_user(Work *w) {
     set_ps_display_my("idle");
 }
 
-static void conf_work(Work *w) {
+static void conf_work(const Work *w) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker = {0};
     pid_t pid;
