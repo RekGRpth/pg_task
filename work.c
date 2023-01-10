@@ -502,15 +502,15 @@ static void work_table(void) {
             "live" interval NOT NULL DEFAULT current_setting('pg_task.default_live')::interval CHECK ("live" >= '0 sec'::interval),
             "repeat" interval NOT NULL DEFAULT current_setting('pg_task.default_repeat')::interval CHECK ("repeat" >= '0 sec'::interval),
             "timeout" interval NOT NULL DEFAULT current_setting('pg_task.default_timeout')::interval CHECK ("timeout" >= '0 sec'::interval),
-            "count" integer NOT NULL DEFAULT current_setting('pg_task.count')::integer CHECK ("count" >= 0),
+            "count" integer NOT NULL DEFAULT current_setting('pg_task.count')::int CHECK ("count" >= 0),
             "hash" integer NOT NULL %3$s,
-            "max" integer NOT NULL DEFAULT current_setting('pg_task.default_max')::integer,
+            "max" integer NOT NULL DEFAULT current_setting('pg_task.default_max')::int,
             "pid" integer,
             "state" %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
-            "delete" boolean NOT NULL DEFAULT current_setting('pg_task.delete')::boolean,
-            "drift" boolean NOT NULL DEFAULT current_setting('pg_task.drift')::boolean,
-            "header" boolean NOT NULL DEFAULT current_setting('pg_task.header')::boolean,
-            "string" boolean NOT NULL DEFAULT current_setting('pg_task.string')::boolean,
+            "delete" boolean NOT NULL DEFAULT current_setting('pg_task.delete')::bool,
+            "drift" boolean NOT NULL DEFAULT current_setting('pg_task.drift')::bool,
+            "header" boolean NOT NULL DEFAULT current_setting('pg_task.header')::bool,
+            "string" boolean NOT NULL DEFAULT current_setting('pg_task.string')::bool,
             "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.default_delimiter')::"char",
             "escape" "char" NOT NULL DEFAULT current_setting('pg_task.default_escape')::"char",
             "quote" "char" NOT NULL DEFAULT current_setting('pg_task.default_quote')::"char",
@@ -609,7 +609,7 @@ static void work_timeout(void) {
             ), s AS (
                 SELECT "id", t.hash, CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" = "hash"
                 WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN'::%2$s AND CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) >= 0
-                ORDER BY 3 DESC, 1 LIMIT current_setting('pg_task.limit')::integer FOR UPDATE OF t %3$s
+                ORDER BY 3 DESC, 1 LIMIT current_setting('pg_task.limit')::int FOR UPDATE OF t %3$s
             ), u AS (
                 SELECT "id", "count" - row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") + 1 AS "count" FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS t SET "state" = 'TAKE'::%2$s FROM u

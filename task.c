@@ -196,7 +196,7 @@ bool task_work(Task *t) {
                 WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 FOR UPDATE OF t
             ) UPDATE %1$s AS t SET "state" = 'WORK'::%2$s, "start" = CURRENT_TIMESTAMP, "pid" = $2 FROM s
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id
-            RETURNING "group", "hash", "input", EXTRACT(epoch FROM "timeout")::integer * 1000 AS "timeout", "header", "string", "null", "delimiter", "quote", "escape", "plan" + "active" > CURRENT_TIMESTAMP AS "active", "remote"
+            RETURNING "group", "hash", "input", EXTRACT(epoch FROM "timeout")::int * 1000 AS "timeout", "header", "string", "null", "delimiter", "quote", "escape", "plan" + "active" > CURRENT_TIMESTAMP AS "active", "remote"
         ), work.schema_table, work.schema_type);
     }
     SPI_connect_my(src.data);
