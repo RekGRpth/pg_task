@@ -4,64 +4,12 @@ extern int conf_fetch;
 extern int work_restart;
 static dlist_head head;
 
-static void conf_data(const Work *w) {
-    List *names = stringToQualifiedNameList(w->data);
-    StringInfoData src;
-    elog(DEBUG1, "user = %s, data = %s", w->shared->user, w->shared->data);
-    set_ps_display_my("data");
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), w->data, w->user);
-    SPI_connect_my(src.data);
-    if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
-        CreatedbStmt *stmt = makeNode(CreatedbStmt);
-        ParseState *pstate = make_parsestate(NULL);
-        stmt->dbname = w->shared->data;
-        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString(w->shared->user), -1));
-        pstate->p_sourcetext = src.data;
-        createdb_my(pstate, stmt);
-        list_free_deep(stmt->options);
-        free_parsestate(pstate);
-        pfree(stmt);
-    }
-    SPI_finish_my();
-    list_free_deep(names);
-    pfree(src.data);
-    set_ps_display_my("idle");
-}
-
-static void conf_user(const Work *w) {
-    List *names = stringToQualifiedNameList(w->user);
-    StringInfoData src;
-    elog(DEBUG1, "user = %s", w->shared->user);
-    set_ps_display_my("user");
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE ROLE %s WITH LOGIN), w->user);
-    SPI_connect_my(src.data);
-    if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
-        CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
-        ParseState *pstate = make_parsestate(NULL);
-        stmt->role = w->shared->user;
-        stmt->options = list_make1(makeDefElemMy("canlogin", (Node *)makeInteger(1), -1));
-        pstate->p_sourcetext = src.data;
-        CreateRoleMy(pstate, stmt);
-        list_free_deep(stmt->options);
-        free_parsestate(pstate);
-        pfree(stmt);
-    }
-    SPI_finish_my();
-    list_free_deep(names);
-    pfree(src.data);
-    set_ps_display_my("idle");
-}
-
 static void conf_work(const Work *w) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker = {0};
     pid_t pid;
     size_t len;
     set_ps_display_my("work");
-    conf_user(w);
-    conf_data(w);
     if ((len = strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
     if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %li", w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
@@ -132,11 +80,7 @@ void conf_main(Datum arg) {
     pfree(src.data);
     dlist_foreach_modify(iter, &head) {
         Work *w = dlist_container(Work, node, iter.cur);
-        w->data = quote_identifier(w->shared->data);
-        w->user = quote_identifier(w->shared->user);
         conf_work(w);
-        if (w->data != w->shared->data) pfree((void *)w->data);
-        if (w->user != w->shared->user) pfree((void *)w->user);
         dlist_delete(&w->node);
         pfree(w);
     }
