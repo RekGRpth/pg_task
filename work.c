@@ -510,7 +510,7 @@ static void work_table(void) {
             "delete" boolean NOT NULL DEFAULT current_setting('pg_task.delete')::boolean,
             "drift" boolean NOT NULL DEFAULT current_setting('pg_task.drift')::boolean,
             "header" boolean NOT NULL DEFAULT current_setting('pg_task.header')::boolean,
-            "string" boolean NOT NULL DEFAULT current_setting('pg_task.default_string')::boolean,
+            "string" boolean NOT NULL DEFAULT current_setting('pg_task.string')::boolean,
             "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.default_delimiter')::"char",
             "escape" "char" NOT NULL DEFAULT current_setting('pg_task.default_escape')::"char",
             "quote" "char" NOT NULL DEFAULT current_setting('pg_task.default_quote')::"char",

@@ -23,7 +23,7 @@ DO $do$BEGIN
             "delete" bool NOT NULL DEFAULT current_setting('pg_task.delete')::bool,
             "drift" bool NOT NULL DEFAULT current_setting('pg_task.drift')::bool,
             "header" bool NOT NULL DEFAULT current_setting('pg_task.header')::bool,
-            "string" bool NOT NULL DEFAULT current_setting('pg_task.default_string')::bool,
+            "string" bool NOT NULL DEFAULT current_setting('pg_task.string')::bool,
             "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.default_delimiter')::"char",
             "escape" "char" NOT NULL DEFAULT current_setting('pg_task.default_escape')::"char",
             "quote" "char" NOT NULL DEFAULT current_setting('pg_task.default_quote')::"char",
