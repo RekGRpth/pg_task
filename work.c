@@ -688,7 +688,6 @@ void work_main(Datum arg) {
     work.shared = shm_toc_lookup_my(toc, 0, false);
     work.schema = quote_identifier(work.shared->schema);
     work.table = quote_identifier(work.shared->table);
-    work.user = quote_identifier(work.shared->user);
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user, 0);
     set_config_option_my("application_name", MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1);
