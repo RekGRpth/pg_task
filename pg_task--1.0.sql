@@ -17,7 +17,7 @@ DO $do$BEGIN
             "timeout" interval NOT NULL DEFAULT current_setting('pg_task.default_timeout')::interval CHECK ("timeout" >= '0 sec'::interval),
             "count" int NOT NULL DEFAULT current_setting('pg_task.count')::int CHECK ("count" >= 0),
             "hash" int NOT NULL %2$s,
-            "max" int NOT NULL DEFAULT current_setting('pg_task.default_max')::int,
+            "max" int NOT NULL DEFAULT current_setting('pg_task.max')::int,
             "pid" int,
             "state" "state" NOT NULL DEFAULT 'PLAN',
             "delete" bool NOT NULL DEFAULT current_setting('pg_task.delete')::bool,

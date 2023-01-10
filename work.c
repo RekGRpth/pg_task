@@ -504,7 +504,7 @@ static void work_table(void) {
             "timeout" interval NOT NULL DEFAULT current_setting('pg_task.default_timeout')::interval CHECK ("timeout" >= '0 sec'::interval),
             "count" integer NOT NULL DEFAULT current_setting('pg_task.count')::int CHECK ("count" >= 0),
             "hash" integer NOT NULL %3$s,
-            "max" integer NOT NULL DEFAULT current_setting('pg_task.default_max')::int,
+            "max" integer NOT NULL DEFAULT current_setting('pg_task.max')::int,
             "pid" integer,
             "state" %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
             "delete" boolean NOT NULL DEFAULT current_setting('pg_task.delete')::bool,
