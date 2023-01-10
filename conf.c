@@ -87,7 +87,6 @@ static void conf_work(Work *w) {
     }
     pfree(handle);
     dsm_detach(w->seg);
-    pfree(w);
 }
 
 void conf_main(Datum arg) {
@@ -136,6 +135,10 @@ void conf_main(Datum arg) {
     SPI_finish_my();
     set_ps_display_my("idle");
     pfree(src.data);
-    dlist_foreach_modify(iter, &head) conf_work(dlist_container(Work, node, iter.cur));
+    dlist_foreach_modify(iter, &head) {
+        Work *w = dlist_container(Work, node, iter.cur);
+        conf_work(w);
+        pfree(w);
+    }
     if (!unlock_data_user(MyDatabaseId, GetUserId())) elog(WARNING, "!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId());
 }
