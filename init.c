@@ -285,7 +285,7 @@ void initStringInfoMy(StringInfoData *buf) {
     MemoryContextSwitchTo(oldMemoryContext);
 }
 
-static void reset(char *name) {
+static void init_reset(char *name) {
     ResourceOwner currentOwner = CurrentResourceOwner;
     AlterDatabaseSetStmt *stmt = makeNode(AlterDatabaseSetStmt);
     if (!(stmt->dbname = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
@@ -302,19 +302,19 @@ static void reset(char *name) {
     pfree(stmt);
 }
 
-static void pg_task_object_access(ObjectAccessType access, Oid classId, Oid objectId, int subId, void *arg) {
+static void init_object_access(ObjectAccessType access, Oid classId, Oid objectId, int subId, void *arg) {
     if (next_object_access_hook) next_object_access_hook(access, classId, objectId, subId, arg);
     if (classId != ExtensionRelationId) return;
     CommandCounterIncrement();
     if (get_extension_oid("pg_task", true) != objectId) return;
     switch (access) {
         case OAT_DROP: {
-            reset("pg_task.data");
-            reset("pg_task.reset");
-            reset("pg_task.schema");
-            reset("pg_task.sleep");
-            reset("pg_task.table");
-            reset("pg_task.user");
+            init_reset("pg_task.data");
+            init_reset("pg_task.reset");
+            init_reset("pg_task.schema");
+            init_reset("pg_task.sleep");
+            init_reset("pg_task.table");
+            init_reset("pg_task.user");
         } break;
         case OAT_POST_CREATE: {
         } break;
@@ -363,7 +363,7 @@ void _PG_init(void) {
     if (!IS_QUERY_DISPATCHER()) return;
 #endif
     next_object_access_hook = object_access_hook;
-    object_access_hook = pg_task_object_access;
+    object_access_hook = init_object_access;
     init_work(false);
 }
 
