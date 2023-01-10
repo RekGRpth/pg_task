@@ -21,7 +21,7 @@ DO $do$BEGIN
             "pid" int,
             "state" "state" NOT NULL DEFAULT 'PLAN',
             "delete" bool NOT NULL DEFAULT current_setting('pg_task.delete')::bool,
-            "drift" bool NOT NULL DEFAULT current_setting('pg_task.default_drift')::bool,
+            "drift" bool NOT NULL DEFAULT current_setting('pg_task.drift')::bool,
             "header" bool NOT NULL DEFAULT current_setting('pg_task.default_header')::bool,
             "string" bool NOT NULL DEFAULT current_setting('pg_task.default_string')::bool,
             "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.default_delimiter')::"char",

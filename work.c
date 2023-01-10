@@ -508,7 +508,7 @@ static void work_table(void) {
             "pid" integer,
             "state" %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
             "delete" boolean NOT NULL DEFAULT current_setting('pg_task.delete')::boolean,
-            "drift" boolean NOT NULL DEFAULT current_setting('pg_task.default_drift')::boolean,
+            "drift" boolean NOT NULL DEFAULT current_setting('pg_task.drift')::boolean,
             "header" boolean NOT NULL DEFAULT current_setting('pg_task.default_header')::boolean,
             "string" boolean NOT NULL DEFAULT current_setting('pg_task.default_string')::boolean,
             "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.default_delimiter')::"char",
