@@ -134,7 +134,7 @@ typedef struct WorkShared {
     char table[NAMEDATALEN];
     char user[NAMEDATALEN];
     int64 reset;
-    int64 timeout;
+    int64 sleep;
     Oid oid;
 } WorkShared;
 

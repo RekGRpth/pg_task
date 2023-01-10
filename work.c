@@ -667,7 +667,7 @@ void work_main(Datum arg) {
     long current_reset = -1;
     long current_timeout = -1;
     shm_toc *toc;
-    StringInfoData schema_table, schema_type, timeout;
+    StringInfoData schema_table, schema_type, sleep;
     on_proc_exit(work_proc_exit, (Datum)NULL);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
@@ -708,7 +708,7 @@ void work_main(Datum arg) {
     initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work.schema);
     work.schema_type = schema_type.data;
-    elog(DEBUG1, "timeout = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->timeout, work.shared->reset, work.schema_table, work.schema_type, work.hash);
+    elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.hash);
     work_schema(work.schema);
     set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
@@ -720,10 +720,10 @@ void work_main(Datum arg) {
     work_index(countof(index_state), index_state);
     set_config_option_my("pg_task.data", work.shared->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option_my("pg_task.user", work.shared->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    initStringInfoMy(&timeout);
-    appendStringInfo(&timeout, "%li", work.shared->timeout);
-    set_config_option_my("pg_task.timeout", timeout.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pfree(timeout.data);
+    initStringInfoMy(&sleep);
+    appendStringInfo(&sleep, "%li", work.shared->sleep);
+    set_config_option_my("pg_task.sleep", sleep.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    pfree(sleep.data);
     set_ps_display_my("idle");
     work_reset();
     while (!ShutdownRequestPending) {
@@ -733,7 +733,7 @@ void work_main(Datum arg) {
         work_events(set);
         if (current_timeout <= 0) {
             INSTR_TIME_SET_CURRENT(start_time);
-            current_timeout = work.shared->timeout;
+            current_timeout = work.shared->sleep;
         }
         if (current_reset <= 0) current_reset = work.shared->reset;
         nevents = WaitEventSetWaitMy(set, current_timeout, events, nevents, PG_WAIT_EXTENSION);
@@ -746,7 +746,7 @@ void work_main(Datum arg) {
         }
         INSTR_TIME_SET_CURRENT(current_timeout_time);
         INSTR_TIME_SUBTRACT(current_timeout_time, start_time);
-        current_timeout = work.shared->timeout - (long)INSTR_TIME_GET_MILLISEC(current_timeout_time);
+        current_timeout = work.shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_timeout_time);
         if (work.shared->reset >= 0) {
             INSTR_TIME_SET_CURRENT(current_reset_time);
             INSTR_TIME_SUBTRACT(current_reset_time, start_time);
