@@ -170,7 +170,7 @@ void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, in
     if (!string && quote) appendStringInfoChar(buf, quote);
 }
 
-void init_work(bool dynamic) {
+void init_conf(bool dynamic) {
     BackgroundWorker worker = {0};
     size_t len;
     if ((len = strlcpy(worker.bgw_function_name, "conf_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
@@ -202,7 +202,7 @@ static void init_assign(const char *newval, void *extra) {
     if (old_isnull && new_isnull) return;
     if (!old_isnull && !new_isnull && !strcmp(oldval, newval)) return;
     elog(DEBUG1, "oldval = %s, newval = %s", !old_isnull ? oldval : task_null, !new_isnull ? newval : task_null);
-    init_work(true);
+    init_conf(true);
 }
 
 #if PG_VERSION_NUM >= 130000
@@ -364,7 +364,7 @@ void _PG_init(void) {
 #endif
     next_object_access_hook = object_access_hook;
     object_access_hook = init_object_access;
-    init_work(false);
+    init_conf(false);
 }
 
 #if PG_VERSION_NUM < 130000
