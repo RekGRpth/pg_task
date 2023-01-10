@@ -15,7 +15,7 @@ DO $do$BEGIN
             "live" interval NOT NULL DEFAULT current_setting('pg_task.default_live')::interval CHECK ("live" >= '0 sec'::interval),
             "repeat" interval NOT NULL DEFAULT current_setting('pg_task.default_repeat')::interval CHECK ("repeat" >= '0 sec'::interval),
             "timeout" interval NOT NULL DEFAULT current_setting('pg_task.default_timeout')::interval CHECK ("timeout" >= '0 sec'::interval),
-            "count" int NOT NULL DEFAULT current_setting('pg_task.default_count')::int CHECK ("count" >= 0),
+            "count" int NOT NULL DEFAULT current_setting('pg_task.count')::int CHECK ("count" >= 0),
             "hash" int NOT NULL %2$s,
             "max" int NOT NULL DEFAULT current_setting('pg_task.default_max')::int,
             "pid" int,
