@@ -204,6 +204,16 @@ static void work_reset(void) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     set_ps_display_my("reset");
+    StartTransactionCommand();
+    MemoryContextSwitchTo(TopMemoryContext);
+    if (get_extension_oid("pg_task", true) == InvalidOid) {
+        ShutdownRequestPending = true;
+        CommitTransactionCommand();
+        MemoryContextSwitchTo(TopMemoryContext);
+        return;
+    }
+    CommitTransactionCommand();
+    MemoryContextSwitchTo(TopMemoryContext);
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
@@ -600,6 +610,16 @@ static void work_timeout(void) {
     static Oid argtypes[] = {OIDOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
+    StartTransactionCommand();
+    MemoryContextSwitchTo(TopMemoryContext);
+    if (get_extension_oid("pg_task", true) == InvalidOid) {
+        ShutdownRequestPending = true;
+        CommitTransactionCommand();
+        MemoryContextSwitchTo(TopMemoryContext);
+        return;
+    }
+    CommitTransactionCommand();
+    MemoryContextSwitchTo(TopMemoryContext);
     set_ps_display_my("timeout");
     if (!src.data) {
         initStringInfoMy(&src);
