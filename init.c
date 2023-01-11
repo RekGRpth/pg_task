@@ -211,10 +211,10 @@ void initStringInfoMy(StringInfoData *buf) {
     MemoryContextSwitchTo(oldMemoryContext);
 }
 
-static void init_reset(const char *name) {
+static void init_reset(const char *data, const char *name) {
     ResourceOwner currentOwner = CurrentResourceOwner;
     AlterDatabaseSetStmt *stmt = makeNode(AlterDatabaseSetStmt);
-    if (!(stmt->dbname = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
+    stmt->dbname = (char *)data;
     stmt->setstmt = makeNode(VariableSetStmt);
     stmt->setstmt->kind = VAR_RESET;
     stmt->setstmt->name = (char *)name;
@@ -223,7 +223,6 @@ static void init_reset(const char *name) {
     (void)AlterDatabaseSet(stmt);
     ReleaseCurrentSubTransaction();
     CurrentResourceOwner = currentOwner;
-    pfree(stmt->dbname);
     pfree(stmt->setstmt);
     pfree(stmt);
 }
@@ -236,10 +235,10 @@ static A_Const *makeAConst(const char *str) {
 	return v;
 }
 
-static void init_set(const char *name, const char *value) {
+static void init_set(const char *data, const char *name, const char *value) {
     ResourceOwner currentOwner = CurrentResourceOwner;
     AlterDatabaseSetStmt *stmt = makeNode(AlterDatabaseSetStmt);
-    if (!(stmt->dbname = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
+    stmt->dbname = (char *)data;
     stmt->setstmt = makeNode(VariableSetStmt);
     stmt->setstmt->args = list_make1(makeAConst((char *)value));
     stmt->setstmt->kind = VAR_SET_VALUE;
@@ -249,35 +248,37 @@ static void init_set(const char *name, const char *value) {
     (void)AlterDatabaseSet(stmt);
     ReleaseCurrentSubTransaction();
     CurrentResourceOwner = currentOwner;
-    pfree(stmt->dbname);
     list_free_deep(stmt->setstmt->args);
     pfree(stmt->setstmt);
     pfree(stmt);
 }
 
 static void init_object_access(ObjectAccessType access, Oid classId, Oid objectId, int subId, void *arg) {
-    char *data;
     if (next_object_access_hook) next_object_access_hook(access, classId, objectId, subId, arg);
     if (classId != ExtensionRelationId) return;
     CommandCounterIncrement();
     if (get_extension_oid("pg_task", true) != objectId) return;
     switch (access) {
         case OAT_DROP: {
-            init_reset("pg_task.data");
-            init_reset("pg_task.reset");
-            init_reset("pg_task.schema");
-            init_reset("pg_task.sleep");
-            init_reset("pg_task.table");
-            init_reset("pg_task.user");
+            char *data;
+            if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
+            init_reset(data, "pg_task.data");
+            init_reset(data, "pg_task.reset");
+            init_reset(data, "pg_task.schema");
+            init_reset(data, "pg_task.sleep");
+            init_reset(data, "pg_task.table");
+            init_reset(data, "pg_task.user");
+            pfree(data);
         } break;
         case OAT_POST_CREATE: {
+            char *data;
             if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
-            init_set("pg_task.data", data);
-            init_set("pg_task.reset", GetConfigOption("pg_task.reset", true, true));
-            //init_set("pg_task.schema");
-            init_set("pg_task.sleep", GetConfigOption("pg_task.sleep", true, true));
-            init_set("pg_task.table", GetConfigOption("pg_task.table", true, true));
-            //init_set("pg_task.user");
+            init_set(data, "pg_task.data", data);
+            init_set(data, "pg_task.reset", GetConfigOption("pg_task.reset", true, true));
+            //init_set(data, "pg_task.schema");
+            init_set(data, "pg_task.sleep", GetConfigOption("pg_task.sleep", true, true));
+            init_set(data, "pg_task.table", GetConfigOption("pg_task.table", true, true));
+            //init_set(data, "pg_task.user");
             pfree(data);
         } break;
         default: break;
