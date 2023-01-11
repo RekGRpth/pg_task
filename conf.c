@@ -34,7 +34,20 @@ void conf_work(const Work *w) {
 void conf_main(Datum arg) {
     dlist_mutable_iter iter;
     Portal portal;
-    StringInfoData src;
+    static const char *src = SQL(
+        WITH _ as (
+            WITH _ as (
+                select datname, regexp_split_to_array(unnest(setconfig), '=') as setconfig from pg_db_role_setting inner join pg_database on setdatabase = oid
+            ) select datname, jsonb_object(array_agg(setconfig[1]), array_agg(setconfig[2])) as setconfig from _ group by 1
+        ) select    datname,
+                    setconfig->>'pg_task.data' as "data",
+                    EXTRACT(epoch FROM (setconfig->>'pg_task.reset')::interval)::bigint as "reset",
+                    setconfig->>'pg_task.schema' as "schema",
+                    (setconfig->>'pg_task.sleep')::bigint as "sleep",
+                    setconfig->>'pg_task.table' as "table",
+                    setconfig->>'pg_task.user' as "user"
+        from _
+    );
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL, 0);
@@ -44,17 +57,17 @@ void conf_main(Datum arg) {
     process_session_preload_libraries();
     if (!lock_data_user(MyDatabaseId, GetUserId())) { elog(WARNING, "!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()); return; }
     dlist_init(&head);
-    initStringInfoMy(&src);
+    //initStringInfoMy(&src);
     //appendStringInfoString(&src, init_check());
-    appendStringInfo(&src, SQL(%1$s
+    /*appendStringInfo(&src, SQL(%1$s
         LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3
         AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = "data")
         AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = "user")
         AND "objid" = hashtext(quote_ident("schema")||'.'||quote_ident("table"))::oid
         WHERE "pid" IS NULL)
-    , " ");
-    SPI_connect_my(src.data);
-    portal = SPI_cursor_open_with_args_my(src.data, src.data, 0, NULL, NULL, NULL);
+    , " ");*/
+    SPI_connect_my(src);
+    portal = SPI_cursor_open_with_args_my(src, src, 0, NULL, NULL, NULL);
     do {
         SPI_cursor_fetch(portal, true, conf_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) {
@@ -75,7 +88,7 @@ void conf_main(Datum arg) {
     } while (SPI_processed);
     SPI_cursor_close(portal);
     SPI_finish_my();
-    pfree(src.data);
+    //pfree(src.data);
     dlist_foreach_modify(iter, &head) {
         Work *w = dlist_container(Work, node, iter.cur);
         conf_work(w);
