@@ -256,6 +256,7 @@ static void init_set(const char *name, const char *value) {
 }
 
 static void init_object_access(ObjectAccessType access, Oid classId, Oid objectId, int subId, void *arg) {
+    char *data;
     if (next_object_access_hook) next_object_access_hook(access, classId, objectId, subId, arg);
     if (classId != ExtensionRelationId) return;
     CommandCounterIncrement();
@@ -270,12 +271,14 @@ static void init_object_access(ObjectAccessType access, Oid classId, Oid objectI
             init_reset("pg_task.user");
         } break;
         case OAT_POST_CREATE: {
-            //init_set("pg_task.data");
+            if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
+            init_set("pg_task.data", data);
             init_set("pg_task.reset", GetConfigOption("pg_task.reset", true, true));
             //init_set("pg_task.schema");
             init_set("pg_task.sleep", GetConfigOption("pg_task.sleep", true, true));
             init_set("pg_task.table", GetConfigOption("pg_task.table", true, true));
             //init_set("pg_task.user");
+            pfree(data);
         } break;
         default: break;
     }
