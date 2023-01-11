@@ -153,11 +153,11 @@ static void work_reset(void) {
             WITH s AS (
                 SELECT "id" FROM %1$s AS t
                 LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = $1 AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
-                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
-                FOR UPDATE OF t %3$s
-            ) UPDATE %1$s AS t SET "state" = 'PLAN'::%2$s, "start" = NULL, "stop" = NULL, "pid" = NULL FROM s
+                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" IN ('TAKE', 'WORK') AND l.pid IS NULL
+                FOR UPDATE OF t %2$s
+            ) UPDATE %1$s AS t SET "state" = 'PLAN', "start" = NULL, "stop" = NULL, "pid" = NULL FROM s
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
-        ), work.schema_table, work.schema_type,
+        ), work.schema_table,
 #if PG_VERSION_NUM >= 90500
             "SKIP LOCKED"
 #else
@@ -442,13 +442,13 @@ static void work_timeout(void) {
                 SELECT count("classid") AS "classid", "objid" FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessShareLock' AND "granted" AND "objsubid" = 5 AND "database" = $1 GROUP BY "objid"
             ), s AS (
                 SELECT "id", t.hash, CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" = "hash"
-                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN'::%2$s AND CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) >= 0
-                ORDER BY 3 DESC, 1 LIMIT current_setting('pg_task.limit')::int FOR UPDATE OF t %3$s
+                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN' AND CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) >= 0
+                ORDER BY 3 DESC, 1 LIMIT current_setting('pg_task.limit')::int FOR UPDATE OF t %2$s
             ), u AS (
                 SELECT "id", "count" - row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") + 1 AS "count" FROM s ORDER BY s.count DESC, id
-            ) UPDATE %1$s AS t SET "state" = 'TAKE'::%2$s FROM u
+            ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM u
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND t.id = u.id AND u.count >= 0 RETURNING t.id, "hash", "group", "remote", "max"
-        ), work.schema_table, work.schema_type,
+        ), work.schema_table,
 #if PG_VERSION_NUM >= 90500
         "SKIP LOCKED"
 #else
@@ -496,7 +496,7 @@ void work_main(Datum arg) {
     long current_reset = -1;
     long current_timeout = -1;
     shm_toc *toc;
-    StringInfoData schema_table, schema_type;
+    StringInfoData schema_table;
     on_proc_exit(work_proc_exit, (Datum)NULL);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
@@ -532,10 +532,7 @@ void work_main(Datum arg) {
     dlist_init(&head);
     dlist_init(&local);
     dlist_init(&remote);
-    initStringInfoMy(&schema_type);
-    appendStringInfo(&schema_type, "%s.state", work.schema);
-    work.schema_type = schema_type.data;
-    elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.hash);
+    elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.hash);
     set_ps_display_my("idle");
     StartTransactionCommand();
     MemoryContextSwitchTo(TopMemoryContext);

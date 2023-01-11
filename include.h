@@ -142,7 +142,6 @@ typedef struct WorkShared {
 
 typedef struct Work {
     char *schema_table;
-    char *schema_type;
     const char *schema;
     const char *table;
     dsm_segment *seg;
