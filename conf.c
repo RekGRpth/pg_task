@@ -4,7 +4,7 @@ extern int conf_fetch;
 extern int work_restart;
 static dlist_head head;
 
-static void conf_work(const Work *w) {
+void conf_work(const Work *w) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker = {0};
     pid_t pid;
