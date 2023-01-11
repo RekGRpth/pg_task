@@ -35,18 +35,18 @@ void conf_main(Datum arg) {
     dlist_mutable_iter iter;
     Portal portal;
     static const char *src = SQL(
-        WITH _ as (
-            WITH _ as (
-                select datname, regexp_split_to_array(unnest(setconfig), '=') as setconfig from pg_db_role_setting inner join pg_database on setdatabase = oid
-            ) select datname, jsonb_object(array_agg(setconfig[1]), array_agg(setconfig[2])) as setconfig from _ group by 1
-        ) select    datname,
-                    setconfig->>'pg_task.data' as "data",
-                    EXTRACT(epoch FROM (setconfig->>'pg_task.reset')::interval)::bigint as "reset",
-                    setconfig->>'pg_task.schema' as "schema",
-                    (setconfig->>'pg_task.sleep')::bigint as "sleep",
-                    setconfig->>'pg_task.table' as "table",
-                    setconfig->>'pg_task.user' as "user"
-        from _
+        WITH _ AS (
+            WITH _ AS (
+                SELECT datname, regexp_split_to_array(UNNEST(setconfig), '=') AS setconfig FROM pg_db_role_setting INNER JOIN pg_database ON setdatabase = oid
+            ) SELECT datname, jsonb_object(array_agg(setconfig[1]), array_agg(setconfig[2])) AS setconfig FROM _ GROUP BY 1
+        ) SELECT    datname,
+                    setconfig->>'pg_task.data' AS "data",
+                    EXTRACT(epoch FROM (setconfig->>'pg_task.reset')::interval)::bigint AS "reset",
+                    setconfig->>'pg_task.schema' AS "schema",
+                    (setconfig->>'pg_task.sleep')::bigint AS "sleep",
+                    setconfig->>'pg_task.table' AS "table",
+                    setconfig->>'pg_task.user' AS "user"
+        FROM _
     );
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
