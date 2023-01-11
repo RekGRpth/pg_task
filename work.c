@@ -38,24 +38,6 @@ static char *PQresultErrorMessageMy(const PGresult *res) {
     return work_errstr(PQresultErrorMessage(res));
 }
 
-/*static void work_check(void) {
-    static SPIPlanPtr plan = NULL;
-    static StringInfoData src = {0};
-    if (ShutdownRequestPending) return;
-    set_ps_display_my("check");
-    if (!src.data) {
-        initStringInfoMy(&src);
-        appendStringInfoString(&src, init_check());
-        appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND "data" = current_catalog AND "schema" = current_setting('pg_task.schema') AND "table" = current_setting('pg_task.table') AND "timeout" = current_setting('pg_task.timeout')::bigint), " ");
-    }
-    SPI_connect_my(src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
-    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
-    if (!SPI_processed) ShutdownRequestPending = true;
-    SPI_finish_my();
-    set_ps_display_my("idle");
-}*/
-
 static void work_command(Task *t, PGresult *result) {
     if (t->skip) { t->skip--; return; }
     if (!t->output.data) initStringInfoMy(&t->output);
@@ -148,55 +130,6 @@ static int work_nevents(void) {
     return nevents;
 }
 
-/*static void work_index(int count, const char *const *indexes) {
-    const char *name_quote;
-    const RangeVar *rangevar;
-    List *names;
-    RelationData *relation;
-    StringInfoData src, name, idx;
-    set_ps_display_my("index");
-    initStringInfoMy(&name);
-    appendStringInfoString(&name, work.shared->table);
-    for (int i = 0; i < count; i++) {
-        const char *index = indexes[i];
-        appendStringInfoString(&name, "_");
-        appendStringInfoString(&name, index);
-    }
-    appendStringInfoString(&name, "_idx");
-    name_quote = quote_identifier(name.data);
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE INDEX %s ON %s USING btree), name_quote, work.schema_table);
-    appendStringInfoString(&src, " (");
-    for (int i = 0; i < count; i++) {
-        const char *index = indexes[i];
-        const char *index_quote = quote_identifier(index);
-        if (i) appendStringInfoString(&src, ", ");
-        appendStringInfoString(&src, index_quote);
-        if (index_quote != index) pfree((void *)index_quote);
-    }
-    appendStringInfoString(&src, ")");
-    initStringInfoMy(&idx);
-    appendStringInfo(&idx, "%s.%s", work.schema, name_quote);
-    names = stringToQualifiedNameList(idx.data);
-    rangevar = makeRangeVarFromNameList(names);
-    elog(DEBUG1, "index = %s, schema_table = %s", idx.data, work.schema_table);
-    SPI_connect_my(src.data);
-    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    } else if ((relation = relation_openrv_extended_my(rangevar, AccessShareLock, true, false))) {
-        if (relation->rd_index && relation->rd_index->indrelid != work.shared->oid) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        relation_close(relation, AccessShareLock);
-    }
-    SPI_finish_my();
-    pfree((void *)rangevar);
-    list_free_deep(names);
-    if (name_quote != name.data) pfree((void *)name_quote);
-    pfree(idx.data);
-    pfree(name.data);
-    pfree(src.data);
-    set_ps_display_my("idle");
-}*/
-
 static void work_reset(void) {
     Datum values[] = {ObjectIdGetDatum(work.shared->oid)};
     Portal portal;
@@ -247,7 +180,6 @@ static void work_reset(void) {
 static void work_reload(void) {
     ConfigReloadPending = false;
     ProcessConfigFile(PGC_SIGHUP);
-    //work_check();
     if (!ShutdownRequestPending) work_reset();
 }
 
@@ -271,21 +203,6 @@ static void work_done(Task *t) {
     }
     task_done(t) || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
 }
-
-/*static void work_schema(const char *schema_quote) {
-    List *names = stringToQualifiedNameList(schema_quote);
-    StringInfoData src;
-    elog(DEBUG1, "schema = %s", schema_quote);
-    set_ps_display_my("schema");
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE SCHEMA %s), schema_quote);
-    SPI_connect_my(src.data);
-    if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_finish_my();
-    list_free_deep(names);
-    pfree(src.data);
-    set_ps_display_my("idle");
-}*/
 
 static void work_headers(Task *t, PGresult *result) {
     if (t->output.len) appendStringInfoString(&t->output, "\n");
@@ -397,9 +314,6 @@ static void work_proc_exit(int code, Datum arg) {
         }
         work_finish(t);
     }
-    if (!code) {
-        //if (!ShutdownRequestPending) init_conf(true);
-    }
 }
 
 static void work_remote(Task *t) {
@@ -472,91 +386,6 @@ static void work_remote(Task *t) {
     t->group = NULL;
 }
 
-/*static void work_table(void) {
-    List *names = stringToQualifiedNameList(work.schema_table);
-    const RangeVar *rangevar = makeRangeVarFromNameList(names);
-    StringInfoData src, hash;
-    elog(DEBUG1, "schema_table = %s, schema_type = %s", work.schema_table, work.schema_type);
-    set_ps_display_my("table");
-    set_config_option_my("pg_task.table", work.shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    initStringInfoMy(&hash);
-#if PG_VERSION_NUM >= 120000
-    appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (hashtext("group"||COALESCE("remote", '%1$s'))) STORED), "");
-#else
-    if (true) {
-        const char *function_quote;
-        StringInfoData function;
-        initStringInfoMy(&function);
-        appendStringInfo(&function, "%1$s_hash_generate", work.shared->table);
-        function_quote = quote_identifier(function.data);
-        appendStringInfo(&hash, SQL(;CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
-            IF tg_op = 'INSERT' OR (new.group, new.remote) IS DISTINCT FROM (old.group, old.remote) THEN
-                new.hash = hashtext(new.group||COALESCE(new.remote, '%3$s'));
-            END IF;
-            return new;
-        end;$$ LANGUAGE plpgsql;
-        CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s()), work.schema, function_quote, "", work.schema_table);
-        if (function_quote != function.data) pfree((void *)function_quote);
-        pfree(function.data);
-    }
-#endif
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(
-        CREATE TABLE %1$s (
-            "id" bigserial NOT NULL PRIMARY KEY,
-            "parent" bigint DEFAULT NULLIF(current_setting('pg_task.id')::bigint, 0),
-            "plan" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            "start" timestamp with time zone,
-            "stop" timestamp with time zone,
-            "active" interval NOT NULL DEFAULT current_setting('pg_task.active')::interval CHECK ("active" > '0 sec'::interval),
-            "live" interval NOT NULL DEFAULT current_setting('pg_task.live')::interval CHECK ("live" >= '0 sec'::interval),
-            "repeat" interval NOT NULL DEFAULT current_setting('pg_task.repeat')::interval CHECK ("repeat" >= '0 sec'::interval),
-            "timeout" interval NOT NULL DEFAULT current_setting('pg_task.timeout')::interval CHECK ("timeout" >= '0 sec'::interval),
-            "count" integer NOT NULL DEFAULT current_setting('pg_task.count')::int CHECK ("count" >= 0),
-            "hash" integer NOT NULL %3$s,
-            "max" integer NOT NULL DEFAULT current_setting('pg_task.max')::int,
-            "pid" integer,
-            "state" %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
-            "delete" boolean NOT NULL DEFAULT current_setting('pg_task.delete')::bool,
-            "drift" boolean NOT NULL DEFAULT current_setting('pg_task.drift')::bool,
-            "header" boolean NOT NULL DEFAULT current_setting('pg_task.header')::bool,
-            "string" boolean NOT NULL DEFAULT current_setting('pg_task.string')::bool,
-            "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.delimiter')::"char",
-            "escape" "char" NOT NULL DEFAULT current_setting('pg_task.escape')::"char",
-            "quote" "char" NOT NULL DEFAULT current_setting('pg_task.quote')::"char",
-            "error" text,
-            "group" text NOT NULL DEFAULT current_setting('pg_task.group'),
-            "input" text NOT NULL,
-            "null" text NOT NULL DEFAULT current_setting('pg_task.null'),
-            "output" text,
-            "remote" text
-        )
-    ), work.schema_table, work.schema_type,
-#if PG_VERSION_NUM >= 120000
-        hash.data
-#else
-        ""
-#endif
-    );
-#if PG_VERSION_NUM >= 120000
-#else
-    appendStringInfoString(&src, hash.data);
-#endif
-    SPI_connect_my(src.data);
-    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    work.shared->oid = RangeVarGetRelid(rangevar, NoLock, false);
-    SPI_finish_my();
-    pfree((void *)rangevar);
-    list_free_deep(names);
-    set_config_option_my("pg_task.table", work.shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    resetStringInfo(&src);
-    appendStringInfo(&src, "%i", work.shared->oid);
-    set_config_option_my("pg_task.oid", src.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pfree(hash.data);
-    pfree(src.data);
-    set_ps_display_my("idle");
-}*/
-
 static void work_task(Task *t) {
     BackgroundWorkerHandle *handle = NULL;
     BackgroundWorker worker = {0};
@@ -587,21 +416,6 @@ static void work_task(Task *t) {
     task_free(t);
     pfree(t);
 }
-
-/*static void work_type(void) {
-    int32 typmod;
-    Oid type = InvalidOid;
-    StringInfoData src;
-    set_ps_display_my("type");
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'STOP')), work.schema_type);
-    SPI_connect_my(src.data);
-    parseTypeString(work.schema_type, &type, &typmod, true);
-    if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_finish_my();
-    pfree(src.data);
-    set_ps_display_my("idle");
-}*/
 
 static void work_timeout(void) {
     Datum values[] = {ObjectIdGetDatum(work.shared->oid)};
@@ -674,11 +488,6 @@ static void work_writeable(Task *t) {
 }
 
 void work_main(Datum arg) {
-    //const char *index_hash[] = {"hash"};
-    //const char *index_input[] = {"input"};
-    //const char *index_parent[] = {"parent"};
-    //const char *index_plan[] = {"plan"};
-    //const char *index_state[] = {"state"};
     Datum datum;
     dsm_segment *seg;
     instr_time current_reset_time;
@@ -687,7 +496,7 @@ void work_main(Datum arg) {
     long current_reset = -1;
     long current_timeout = -1;
     shm_toc *toc;
-    StringInfoData schema_table, schema_type/*, sleep*/;
+    StringInfoData schema_table, schema_type;
     on_proc_exit(work_proc_exit, (Datum)NULL);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
@@ -727,21 +536,6 @@ void work_main(Datum arg) {
     appendStringInfo(&schema_type, "%s.state", work.schema);
     work.schema_type = schema_type.data;
     elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.hash);
-    //work_schema(work.schema);
-    //set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    //work_type();
-    //work_table();
-    //work_index(countof(index_hash), index_hash);
-    //work_index(countof(index_input), index_input);
-    //work_index(countof(index_parent), index_parent);
-    //work_index(countof(index_plan), index_plan);
-    //work_index(countof(index_state), index_state);
-    //set_config_option_my("pg_task.data", work.shared->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    //set_config_option_my("pg_task.user", work.shared->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    //initStringInfoMy(&sleep);
-    //appendStringInfo(&sleep, "%li", work.shared->sleep);
-    //set_config_option_my("pg_task.sleep", sleep.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    //pfree(sleep.data);
     set_ps_display_my("idle");
     StartTransactionCommand();
     MemoryContextSwitchTo(TopMemoryContext);
