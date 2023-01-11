@@ -170,7 +170,7 @@ void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, in
     if (!string && quote) appendStringInfoChar(buf, quote);
 }
 
-/*void init_conf(bool dynamic) {
+static void init_conf(void) {
     BackgroundWorker worker = {0};
     size_t len;
     if ((len = strlcpy(worker.bgw_function_name, "conf_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
@@ -182,13 +182,13 @@ void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, in
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_restart_time = conf_restart;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    if (dynamic) {
+    /*if (dynamic) {
         worker.bgw_notify_pid = MyProcPid;
         IsUnderPostmaster = true;
         if (!RegisterDynamicBackgroundWorker(&worker, NULL)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
         IsUnderPostmaster = false;
-    } else RegisterBackgroundWorker(&worker);
-}*/
+    } else */RegisterBackgroundWorker(&worker);
+}
 
 /*static void init_assign(const char *newval, void *extra) {
     bool new_isnull;
@@ -383,7 +383,7 @@ void _PG_init(void) {
 #endif
     next_object_access_hook = object_access_hook;
     object_access_hook = init_object_access;
-    //init_conf(false);
+    init_conf();
 }
 
 #if PG_VERSION_NUM < 130000
