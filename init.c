@@ -11,7 +11,6 @@ static bool task_delete;
 static bool task_drift;
 static bool task_header;
 static bool task_string;
-//static char *default_json;
 static char *task_active;
 static char *task_data;
 static char *task_delimiter;
@@ -116,20 +115,6 @@ char *TextDatumGetCStringMy(Datum datum) {
     return datum ? text_to_cstring_my((text *)DatumGetPointer(datum)) : NULL;
 }
 
-/*const char *init_check(void) {
-    return SQL(
-        WITH j AS (
-            SELECT  COALESCE(COALESCE("data", "user"), current_setting('pg_work.data')) AS "data",
-                    EXTRACT(epoch FROM COALESCE("reset", current_setting('pg_task.reset')::interval))::bigint AS "reset",
-                    COALESCE("schema", current_setting('pg_work.schema')) AS "schema",
-                    COALESCE("table", current_setting('pg_work.table')) AS "table",
-                    COALESCE("sleep", current_setting('pg_task.sleep')::bigint) AS "sleep",
-                    COALESCE(COALESCE("user", "data"), current_setting('pg_work.user')) AS "user"
-            FROM    json_to_recordset(current_setting('pg_task.json')::json) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
-        ) SELECT    DISTINCT j.* FROM j
-    );
-}*/
-
 static text *cstring_to_text_my(const char *s) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     text *result = cstring_to_text(s);
@@ -182,28 +167,8 @@ static void init_conf(void) {
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_restart_time = conf_restart;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    /*if (dynamic) {
-        worker.bgw_notify_pid = MyProcPid;
-        IsUnderPostmaster = true;
-        if (!RegisterDynamicBackgroundWorker(&worker, NULL)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
-        IsUnderPostmaster = false;
-    } else */RegisterBackgroundWorker(&worker);
+    RegisterBackgroundWorker(&worker);
 }
-
-/*static void init_assign(const char *newval, void *extra) {
-    bool new_isnull;
-    bool old_isnull;
-    const char *oldval;
-    if (PostmasterPid != MyProcPid) return;
-    if (process_shared_preload_libraries_in_progress) return;
-    oldval = GetConfigOption("pg_task.json", true, true);
-    old_isnull = !oldval || oldval[0] == '\0';
-    new_isnull = !newval || newval[0] == '\0';
-    if (old_isnull && new_isnull) return;
-    if (!old_isnull && !new_isnull && !strcmp(oldval, newval)) return;
-    elog(DEBUG1, "oldval = %s, newval = %s", !old_isnull ? oldval : task_null, !new_isnull ? newval : task_null);
-    init_conf(true);
-}*/
 
 void initStringInfoMy(StringInfoData *buf) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
@@ -362,7 +327,6 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_task.delimiter", "pg_task delimiter", "results colums delimiter", &task_delimiter, "\t", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.escape", "pg_task escape", "results colums escape", &task_escape, "", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.group", "pg_task group", "group tasks name", &task_group, "group", PGC_USERSET, 0, NULL, NULL, NULL);
-    //DefineCustomStringVariable("pg_task.json", "pg_task json", "json configuration: available keys are: user, data, schema, table, sleep, count and live", &default_json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign, NULL);
     DefineCustomStringVariable("pg_task.live", "pg_task live", "exit until timeout", &task_live, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.null", "pg_task null", "text null representation", &task_null, "\\N", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.quote", "pg_task quote", "results colums quote", &task_quote, "", PGC_USERSET, 0, NULL, NULL, NULL);
@@ -377,7 +341,7 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_work.schema", "pg_work schema", "schema name for tasks table", &work_schema, "public", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.table", "pg_work table", "table name for tasks table", &work_table, "task", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.user", "pg_work user", "username", &work_user, "postgres", PGC_USERSET, 0, NULL, NULL, NULL);
-    //elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, sleep = %i, reset = %s, active = %s", default_json, work_user, work_data, work_schema, work_table, task_null, task_sleep, task_reset, work_active);
+    elog(DEBUG1, "user = %s, data = %s, schema = %s, table = %s, null = %s, sleep = %i, reset = %s, active = %s", work_user, work_data, work_schema, work_table, task_null, task_sleep, task_reset, work_active);
 #ifdef GP_VERSION_NUM
     if (!IS_QUERY_DISPATCHER()) return;
 #endif
