@@ -398,7 +398,7 @@ static void work_proc_exit(int code, Datum arg) {
         work_finish(t);
     }
     if (!code) {
-        if (!ShutdownRequestPending) init_conf(true);
+        //if (!ShutdownRequestPending) init_conf(true);
     }
 }
 

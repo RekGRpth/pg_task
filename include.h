@@ -221,7 +221,7 @@ void CreateAuxProcessResourceOwner(void);
 void ReleaseAuxProcessResources(bool isCommit);
 #endif
 void initStringInfoMy(StringInfoData *buf);
-void init_conf(bool dynamic);
+//void init_conf(bool dynamic);
 void _PG_init(void);
 void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes);
 void SPI_connect_my(const char *src);

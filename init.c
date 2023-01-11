@@ -11,7 +11,7 @@ static bool task_delete;
 static bool task_drift;
 static bool task_header;
 static bool task_string;
-static char *default_json;
+//static char *default_json;
 static char *task_active;
 static char *task_data;
 static char *task_delimiter;
@@ -170,7 +170,7 @@ void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, in
     if (!string && quote) appendStringInfoChar(buf, quote);
 }
 
-void init_conf(bool dynamic) {
+/*void init_conf(bool dynamic) {
     BackgroundWorker worker = {0};
     size_t len;
     if ((len = strlcpy(worker.bgw_function_name, "conf_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
@@ -188,9 +188,9 @@ void init_conf(bool dynamic) {
         if (!RegisterDynamicBackgroundWorker(&worker, NULL)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
         IsUnderPostmaster = false;
     } else RegisterBackgroundWorker(&worker);
-}
+}*/
 
-static void init_assign(const char *newval, void *extra) {
+/*static void init_assign(const char *newval, void *extra) {
     bool new_isnull;
     bool old_isnull;
     const char *oldval;
@@ -203,7 +203,7 @@ static void init_assign(const char *newval, void *extra) {
     if (!old_isnull && !new_isnull && !strcmp(oldval, newval)) return;
     elog(DEBUG1, "oldval = %s, newval = %s", !old_isnull ? oldval : task_null, !new_isnull ? newval : task_null);
     init_conf(true);
-}
+}*/
 
 void initStringInfoMy(StringInfoData *buf) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
@@ -362,7 +362,7 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_task.delimiter", "pg_task delimiter", "results colums delimiter", &task_delimiter, "\t", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.escape", "pg_task escape", "results colums escape", &task_escape, "", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.group", "pg_task group", "group tasks name", &task_group, "group", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.json", "pg_task json", "json configuration: available keys are: user, data, schema, table, sleep, count and live", &default_json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign, NULL);
+    //DefineCustomStringVariable("pg_task.json", "pg_task json", "json configuration: available keys are: user, data, schema, table, sleep, count and live", &default_json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign, NULL);
     DefineCustomStringVariable("pg_task.live", "pg_task live", "exit until timeout", &task_live, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.null", "pg_task null", "text null representation", &task_null, "\\N", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.quote", "pg_task quote", "results colums quote", &task_quote, "", PGC_USERSET, 0, NULL, NULL, NULL);
@@ -377,13 +377,13 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_work.schema", "pg_work schema", "schema name for tasks table", &work_schema, "public", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.table", "pg_work table", "table name for tasks table", &work_table, "task", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.user", "pg_work user", "username", &work_user, "postgres", PGC_USERSET, 0, NULL, NULL, NULL);
-    elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, sleep = %i, reset = %s, active = %s", default_json, work_user, work_data, work_schema, work_table, task_null, task_sleep, task_reset, work_active);
+    //elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, sleep = %i, reset = %s, active = %s", default_json, work_user, work_data, work_schema, work_table, task_null, task_sleep, task_reset, work_active);
 #ifdef GP_VERSION_NUM
     if (!IS_QUERY_DISPATCHER()) return;
 #endif
     next_object_access_hook = object_access_hook;
     object_access_hook = init_object_access;
-    init_conf(false);
+    //init_conf(false);
 }
 
 #if PG_VERSION_NUM < 130000
