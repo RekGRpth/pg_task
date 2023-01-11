@@ -2,7 +2,6 @@
 
 extern int conf_fetch;
 extern int work_restart;
-static dlist_head head;
 
 void conf_work(const Work *w) {
     BackgroundWorkerHandle *handle;
@@ -32,7 +31,6 @@ void conf_work(const Work *w) {
 }
 
 void conf_main(Datum arg) {
-    dlist_mutable_iter iter;
     Portal portal;
     static const char *src = SQL(
         WITH _ AS (
@@ -56,7 +54,6 @@ void conf_main(Datum arg) {
     set_ps_display_my("main");
     process_session_preload_libraries();
     if (!lock_data_user(MyDatabaseId, GetUserId())) { elog(WARNING, "!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()); return; }
-    dlist_init(&head);
     SPI_connect_my(src);
     portal = SPI_cursor_open_with_args_my(src, src, 0, NULL, NULL, NULL);
     do {
@@ -74,16 +71,11 @@ void conf_main(Datum arg) {
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false)), w->shared->table, sizeof(w->shared->table));
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false)), w->shared->user, sizeof(w->shared->user));
             elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, sleep = %li, reset = %li", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset);
-            dlist_push_head(&head, &w->node);
+            conf_work(w);
+            pfree(w);
         }
     } while (SPI_processed);
     SPI_cursor_close(portal);
     SPI_finish_my();
-    dlist_foreach_modify(iter, &head) {
-        Work *w = dlist_container(Work, node, iter.cur);
-        conf_work(w);
-        dlist_delete(&w->node);
-        pfree(w);
-    }
     if (!unlock_data_user(MyDatabaseId, GetUserId())) elog(WARNING, "!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId());
 }

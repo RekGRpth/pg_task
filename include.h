@@ -147,7 +147,6 @@ typedef struct Work {
     char *schema_type;
     const char *schema;
     const char *table;
-    dlist_node node;
     dsm_segment *seg;
     int hash;
     WorkShared *shared;
