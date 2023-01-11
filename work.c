@@ -148,7 +148,7 @@ static int work_nevents(void) {
     return nevents;
 }
 
-static void work_index(int count, const char *const *indexes) {
+/*static void work_index(int count, const char *const *indexes) {
     const char *name_quote;
     const RangeVar *rangevar;
     List *names;
@@ -195,7 +195,7 @@ static void work_index(int count, const char *const *indexes) {
     pfree(name.data);
     pfree(src.data);
     set_ps_display_my("idle");
-}
+}*/
 
 static void work_reset(void) {
     Datum values[] = {ObjectIdGetDatum(work.shared->oid)};
@@ -262,7 +262,7 @@ static void work_done(Task *t) {
     task_done(t) || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
 }
 
-static void work_schema(const char *schema_quote) {
+/*static void work_schema(const char *schema_quote) {
     List *names = stringToQualifiedNameList(schema_quote);
     StringInfoData src;
     elog(DEBUG1, "schema = %s", schema_quote);
@@ -275,7 +275,7 @@ static void work_schema(const char *schema_quote) {
     list_free_deep(names);
     pfree(src.data);
     set_ps_display_my("idle");
-}
+}*/
 
 static void work_headers(Task *t, PGresult *result) {
     if (t->output.len) appendStringInfoString(&t->output, "\n");
@@ -462,7 +462,7 @@ static void work_remote(Task *t) {
     t->group = NULL;
 }
 
-static void work_table(void) {
+/*static void work_table(void) {
     List *names = stringToQualifiedNameList(work.schema_table);
     const RangeVar *rangevar = makeRangeVarFromNameList(names);
     StringInfoData src, hash;
@@ -545,7 +545,7 @@ static void work_table(void) {
     pfree(hash.data);
     pfree(src.data);
     set_ps_display_my("idle");
-}
+}*/
 
 static void work_task(Task *t) {
     BackgroundWorkerHandle *handle = NULL;
@@ -578,7 +578,7 @@ static void work_task(Task *t) {
     pfree(t);
 }
 
-static void work_type(void) {
+/*static void work_type(void) {
     int32 typmod;
     Oid type = InvalidOid;
     StringInfoData src;
@@ -591,7 +591,7 @@ static void work_type(void) {
     SPI_finish_my();
     pfree(src.data);
     set_ps_display_my("idle");
-}
+}*/
 
 static void work_timeout(void) {
     Datum values[] = {ObjectIdGetDatum(work.shared->oid)};
@@ -654,11 +654,11 @@ static void work_writeable(Task *t) {
 }
 
 void work_main(Datum arg) {
-    const char *index_hash[] = {"hash"};
-    const char *index_input[] = {"input"};
-    const char *index_parent[] = {"parent"};
-    const char *index_plan[] = {"plan"};
-    const char *index_state[] = {"state"};
+    //const char *index_hash[] = {"hash"};
+    //const char *index_input[] = {"input"};
+    //const char *index_parent[] = {"parent"};
+    //const char *index_plan[] = {"plan"};
+    //const char *index_state[] = {"state"};
     Datum datum;
     dsm_segment *seg;
     instr_time current_reset_time;
@@ -667,7 +667,7 @@ void work_main(Datum arg) {
     long current_reset = -1;
     long current_timeout = -1;
     shm_toc *toc;
-    StringInfoData schema_table, schema_type, sleep;
+    StringInfoData schema_table, schema_type/*, sleep*/;
     on_proc_exit(work_proc_exit, (Datum)NULL);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
@@ -707,22 +707,23 @@ void work_main(Datum arg) {
     appendStringInfo(&schema_type, "%s.state", work.schema);
     work.schema_type = schema_type.data;
     elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.hash);
-    work_schema(work.schema);
-    set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    work_type();
-    work_table();
-    work_index(countof(index_hash), index_hash);
-    work_index(countof(index_input), index_input);
-    work_index(countof(index_parent), index_parent);
-    work_index(countof(index_plan), index_plan);
-    work_index(countof(index_state), index_state);
-    set_config_option_my("pg_task.data", work.shared->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option_my("pg_task.user", work.shared->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    initStringInfoMy(&sleep);
-    appendStringInfo(&sleep, "%li", work.shared->sleep);
-    set_config_option_my("pg_task.sleep", sleep.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pfree(sleep.data);
+    //work_schema(work.schema);
+    //set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    //work_type();
+    //work_table();
+    //work_index(countof(index_hash), index_hash);
+    //work_index(countof(index_input), index_input);
+    //work_index(countof(index_parent), index_parent);
+    //work_index(countof(index_plan), index_plan);
+    //work_index(countof(index_state), index_state);
+    //set_config_option_my("pg_task.data", work.shared->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    //set_config_option_my("pg_task.user", work.shared->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    //initStringInfoMy(&sleep);
+    //appendStringInfo(&sleep, "%li", work.shared->sleep);
+    //set_config_option_my("pg_task.sleep", sleep.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    //pfree(sleep.data);
     set_ps_display_my("idle");
+    pg_usleep(1000L * 10 * 1000);
     work_reset();
     while (!ShutdownRequestPending) {
         int nevents = work_nevents();
