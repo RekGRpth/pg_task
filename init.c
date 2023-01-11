@@ -25,7 +25,6 @@ static char *task_table;
 static char *task_timeout;
 static char *task_user;
 static char *work_active;
-static char *work_user;
 static int conf_restart;
 static int task_count;
 static int task_id;
@@ -334,8 +333,7 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_task.timeout", "pg_task timeout", "task timeout", &task_timeout, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.user", "pg_task user", "user name for tasks table", &task_user, "postgres", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.active", "pg_work active", "task active before now", &work_active, "1 week", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_work.user", "pg_work user", "username", &work_user, "postgres", PGC_USERSET, 0, NULL, NULL, NULL);
-    elog(DEBUG1, "user = %s, null = %s, sleep = %i, reset = %s, active = %s", work_user, task_null, task_sleep, task_reset, work_active);
+    elog(DEBUG1, "null = %s, sleep = %i, reset = %s, active = %s", task_null, task_sleep, task_reset, work_active);
 #ifdef GP_VERSION_NUM
     if (!IS_QUERY_DISPATCHER()) return;
 #endif
