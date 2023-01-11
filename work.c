@@ -38,7 +38,7 @@ static char *PQresultErrorMessageMy(const PGresult *res) {
     return work_errstr(PQresultErrorMessage(res));
 }
 
-static void work_check(void) {
+/*static void work_check(void) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return;
@@ -54,7 +54,7 @@ static void work_check(void) {
     if (!SPI_processed) ShutdownRequestPending = true;
     SPI_finish_my();
     set_ps_display_my("idle");
-}
+}*/
 
 static void work_command(Task *t, PGresult *result) {
     if (t->skip) { t->skip--; return; }
@@ -247,7 +247,7 @@ static void work_reset(void) {
 static void work_reload(void) {
     ConfigReloadPending = false;
     ProcessConfigFile(PGC_SIGHUP);
-    work_check();
+    //work_check();
     if (!ShutdownRequestPending) work_reset();
 }
 
