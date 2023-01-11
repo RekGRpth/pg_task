@@ -185,7 +185,7 @@ bool task_work(Task *t) {
         StringInfoData id;
         initStringInfoMy(&id);
         appendStringInfo(&id, "%li", t->shared->id);
-        set_config_option_my("pg_task.id", id.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+        SetConfigOption("pg_task.id", id.data, PGC_USERSET, PGC_S_SESSION);
         pfree(id.data);
     }
     if (!src.data) {
@@ -220,7 +220,7 @@ bool task_work(Task *t) {
         t->timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "timeout", false));
         if (0 < StatementTimeout && StatementTimeout < t->timeout) t->timeout = StatementTimeout;
         elog(DEBUG1, "group = %s, remote = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, active = %s", t->group, t->remote ? t->remote : task_null, t->shared->hash, t->input, t->timeout, t->header ? "true" : "false", t->string ? "true" : "false", t->null, t->delimiter, t->quote ? t->quote : 30, t->escape ? t->escape : 30, t->active ? "true" : "false");
-        if (!t->remote) set_config_option_my("pg_task.group", t->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+        if (!t->remote) SetConfigOption("pg_task.group", t->group, PGC_USERSET, PGC_S_SESSION);
     }
     SPI_finish_my();
     set_ps_display_my("idle");
@@ -396,7 +396,7 @@ void task_main(Datum arg) {
     work.schema = quote_identifier(work.shared->schema);
     work.table = quote_identifier(work.shared->table);
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user, 0);
-    set_config_option_my("application_name", MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    SetConfigOption("application_name", MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1, PGC_USERSET, PGC_S_SESSION);
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1);
     set_ps_display_my("main");
     process_session_preload_libraries();

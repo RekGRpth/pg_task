@@ -518,7 +518,7 @@ void work_main(Datum arg) {
     work.schema = quote_identifier(work.shared->schema);
     work.table = quote_identifier(work.shared->table);
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user, 0);
-    set_config_option_my("application_name", MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    SetConfigOption("application_name", MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1, PGC_USERSET, PGC_S_SESSION);
     pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1);
     set_ps_display_my("main");
     process_session_preload_libraries();

@@ -79,12 +79,10 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #if PG_VERSION_NUM >= 90500
 #define dsm_create_my(size, flags) dsm_create(size, flags)
 #define GetUserNameFromIdMy(roleid) GetUserNameFromId(roleid, false)
-#define set_config_option_my(name, value, context, source, action, changeVal, elevel, is_reload) set_config_option(name, value, context, source, action, changeVal, elevel, is_reload)
 #else
 #define dsm_create_my(size, flags) dsm_create(size)
 #define GetUserNameFromIdMy(roleid) GetUserNameFromId(roleid)
 #define MyLatch (&MyProc->procLatch)
-#define set_config_option_my(name, value, context, source, action, changeVal, elevel, is_reload) set_config_option(name, value, context, source, action, changeVal, elevel)
 #endif
 
 #if PG_VERSION_NUM >= 100000
