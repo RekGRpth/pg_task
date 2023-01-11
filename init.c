@@ -253,6 +253,40 @@ static void init_set(const char *data, const char *name, const char *value) {
     pfree(stmt);
 }
 
+static Oid
+get_extension_schema(Oid ext_oid)
+{
+	Oid			result;
+	Relation	rel;
+	SysScanDesc scandesc;
+	HeapTuple	tuple;
+	ScanKeyData entry[1];
+
+	rel = table_open(ExtensionRelationId, AccessShareLock);
+
+	ScanKeyInit(&entry[0],
+				Anum_pg_extension_oid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(ext_oid));
+
+	scandesc = systable_beginscan(rel, ExtensionOidIndexId, true,
+								  NULL, 1, entry);
+
+	tuple = systable_getnext(scandesc);
+
+	/* We assume that there can be at most one matching tuple */
+	if (HeapTupleIsValid(tuple))
+		result = ((Form_pg_extension) GETSTRUCT(tuple))->extnamespace;
+	else
+		result = InvalidOid;
+
+	systable_endscan(scandesc);
+
+	table_close(rel, AccessShareLock);
+
+	return result;
+}
+
 static void init_object_access(ObjectAccessType access, Oid classId, Oid objectId, int subId, void *arg) {
     if (next_object_access_hook) next_object_access_hook(access, classId, objectId, subId, arg);
     if (classId != ExtensionRelationId) return;
@@ -272,16 +306,21 @@ static void init_object_access(ObjectAccessType access, Oid classId, Oid objectI
         } break;
         case OAT_POST_CREATE: {
             char *data;
+            char *schema;
             char *user;
+            Oid ext_oid;
+            if ((ext_oid = get_extension_schema(objectId)) == InvalidOid) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema for extension %u does not exist", objectId)));
             if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
+            if (!(schema = get_namespace_name(ext_oid))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema %u does not exist", ext_oid)));
             if (!(user = GetUserNameFromIdMy(GetUserId()))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", GetUserId())));
             init_set(data, "pg_task.data", data);
             init_set(data, "pg_task.reset", GetConfigOption("pg_task.reset", true, true));
-            //init_set(data, "pg_task.schema");
+            init_set(data, "pg_task.schema", schema);
             init_set(data, "pg_task.sleep", GetConfigOption("pg_task.sleep", true, true));
             init_set(data, "pg_task.table", GetConfigOption("pg_task.table", true, true));
             init_set(data, "pg_task.user", user);
             pfree(data);
+            pfree(schema);
             pfree(user);
         } break;
         default: break;

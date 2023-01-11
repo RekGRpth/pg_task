@@ -12,6 +12,7 @@
 #if PG_VERSION_NUM >= 120000
 #include <access/relation.h>
 #endif
+#include <access/table.h>
 #include <access/xact.h>
 #include <catalog/heap.h>
 #include <catalog/namespace.h>
@@ -57,6 +58,7 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <tcop/utility.h>
 #include <utils/acl.h>
 #include <utils/builtins.h>
+#include <utils/fmgroids.h>
 #include <utils/lsyscache.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
