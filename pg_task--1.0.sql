@@ -41,10 +41,10 @@ DO $do$BEGIN
         CREATE INDEX ON %1$I USING btree ("state");
         SELECT pg_catalog.pg_extension_config_dump(%1$L, '');
         ALTER DATABASE %3$I SET "pg_task.data" TO %3$L;
-        ALTER DATABASE %3$I SET "pg_task.reset" TO %6$L;
+        --ALTER DATABASE %3$I SET "pg_task.reset" TO %6$L;
         ALTER DATABASE %3$I SET "pg_task.schema" TO %5$L;
-        ALTER DATABASE %3$I SET "pg_task.sleep" TO %7$L;
-        ALTER DATABASE %3$I SET "pg_task.table" TO %1$L;
+        --ALTER DATABASE %3$I SET "pg_task.sleep" TO %7$L;
+        --ALTER DATABASE %3$I SET "pg_task.table" TO %1$L;
         ALTER DATABASE %3$I SET "pg_task.user" TO %4$L;
     $format$,
         current_setting('pg_task.table'),
