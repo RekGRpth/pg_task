@@ -45,7 +45,7 @@ DO $do$BEGIN
         ALTER DATABASE %3$I SET "pg_task.schema" TO %5$L;
         --ALTER DATABASE %3$I SET "pg_task.sleep" TO %7$L;
         --ALTER DATABASE %3$I SET "pg_task.table" TO %1$L;
-        ALTER DATABASE %3$I SET "pg_task.user" TO %4$L;
+        --ALTER DATABASE %3$I SET "pg_task.user" TO %4$L;
     $format$,
         current_setting('pg_task.table'),
         CASE WHEN current_setting('server_version_num')::int >= 120000 THEN $text$GENERATED ALWAYS AS (hashtext("group"||COALESCE("remote", ''))) STORED$text$ ELSE '' END,

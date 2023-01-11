@@ -272,14 +272,17 @@ static void init_object_access(ObjectAccessType access, Oid classId, Oid objectI
         } break;
         case OAT_POST_CREATE: {
             char *data;
+            char *user;
             if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
+            if (!(user = GetUserNameFromIdMy(GetUserId()))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", GetUserId())));
             init_set(data, "pg_task.data", data);
             init_set(data, "pg_task.reset", GetConfigOption("pg_task.reset", true, true));
             //init_set(data, "pg_task.schema");
             init_set(data, "pg_task.sleep", GetConfigOption("pg_task.sleep", true, true));
             init_set(data, "pg_task.table", GetConfigOption("pg_task.table", true, true));
-            //init_set(data, "pg_task.user");
+            init_set(data, "pg_task.user", user);
             pfree(data);
+            pfree(user);
         } break;
         default: break;
     }
