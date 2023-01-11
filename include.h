@@ -204,7 +204,6 @@ bool unlock_table_id(Oid table, int64 id);
 bool unlock_table_pid_hash(Oid table, int pid, int hash);
 char *TextDatumGetCStringMy(Datum datum);
 const char *error_severity(int elevel);
-//const char *init_check(void);
 Datum CStringGetTextDatumMy(const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
 int severity_error(const char *error);
@@ -221,7 +220,6 @@ void CreateAuxProcessResourceOwner(void);
 void ReleaseAuxProcessResources(bool isCommit);
 #endif
 void initStringInfoMy(StringInfoData *buf);
-//void init_conf(bool dynamic);
 void _PG_init(void);
 void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes);
 void SPI_connect_my(const char *src);
