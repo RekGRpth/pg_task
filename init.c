@@ -230,7 +230,9 @@ static void init_reset(const char *name) {
 
 static A_Const *makeAConst(const char *str) {
     A_Const *v = makeNode(A_Const);
-	v->val.sval = *makeString((char *)str);
+    String *s = makeString((char *)str);
+	v->val.sval = *s;
+    pfree(s);
 	return v;
 }
 
@@ -244,7 +246,6 @@ static void init_set(const char *name, const char *value) {
     stmt->setstmt->name = (char *)name;
     BeginInternalSubTransaction(NULL);
     CurrentResourceOwner = currentOwner;
-    elog(WARNING, "%i, %i, %i", stmt->type, stmt->setstmt->type, ((Node *)lfirst(list_head(stmt->setstmt->args)))->type);
     (void)AlterDatabaseSet(stmt);
     ReleaseCurrentSubTransaction();
     CurrentResourceOwner = currentOwner;
