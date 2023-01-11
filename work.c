@@ -723,7 +723,11 @@ void work_main(Datum arg) {
     //set_config_option_my("pg_task.sleep", sleep.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     //pfree(sleep.data);
     set_ps_display_my("idle");
-    pg_usleep(1000L * 10 * 1000);
+    StartTransactionCommand();
+    MemoryContextSwitchTo(TopMemoryContext);
+    while (get_extension_oid("pg_task", true) == InvalidOid) pg_usleep(1000000);
+    CommitTransactionCommand();
+    MemoryContextSwitchTo(TopMemoryContext);
     work_reset();
     while (!ShutdownRequestPending) {
         int nevents = work_nevents();
