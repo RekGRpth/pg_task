@@ -230,9 +230,9 @@ static void init_reset(const char *data, const char *name) {
 static A_Const *makeAConst(const char *str) {
     A_Const *v = makeNode(A_Const);
     String *s = makeString((char *)str);
-	v->val.sval = *s;
+    v->val.sval = *s;
     pfree(s);
-	return v;
+    return v;
 }
 
 static void init_set(const char *data, const char *name, const char *value) {
