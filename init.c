@@ -116,7 +116,7 @@ char *TextDatumGetCStringMy(Datum datum) {
     return datum ? text_to_cstring_my((text *)DatumGetPointer(datum)) : NULL;
 }
 
-const char *init_check(void) {
+/*const char *init_check(void) {
     return SQL(
         WITH j AS (
             SELECT  COALESCE(COALESCE("data", "user"), current_setting('pg_work.data')) AS "data",
@@ -128,7 +128,7 @@ const char *init_check(void) {
             FROM    json_to_recordset(current_setting('pg_task.json')::json) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
         ) SELECT    DISTINCT j.* FROM j
     );
-}
+}*/
 
 static text *cstring_to_text_my(const char *s) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);

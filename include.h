@@ -204,7 +204,7 @@ bool unlock_table_id(Oid table, int64 id);
 bool unlock_table_pid_hash(Oid table, int pid, int hash);
 char *TextDatumGetCStringMy(Datum datum);
 const char *error_severity(int elevel);
-const char *init_check(void);
+//const char *init_check(void);
 Datum CStringGetTextDatumMy(const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
 int severity_error(const char *error);

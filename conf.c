@@ -45,7 +45,7 @@ void conf_main(Datum arg) {
     if (!lock_data_user(MyDatabaseId, GetUserId())) { elog(WARNING, "!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()); return; }
     dlist_init(&head);
     initStringInfoMy(&src);
-    appendStringInfoString(&src, init_check());
+    //appendStringInfoString(&src, init_check());
     appendStringInfo(&src, SQL(%1$s
         LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3
         AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = "data")
