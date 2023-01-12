@@ -200,15 +200,15 @@ static void init_reset(const char *data, const char *name) {
     pfree(stmt);
 }
 
-/*static A_Const *makeAConst(const char *str) {
+static A_Const *makeAConst(const char *str) {
     A_Const *v = makeNode(A_Const);
     String *s = makeString((char *)str);
     v->val.sval = *s;
     pfree(s);
     return v;
-}*/
+}
 
-/*static void init_set(const char *data, const char *name, const char *value) {
+static void init_set(const char *data, const char *name, const char *value) {
     ResourceOwner currentOwner = CurrentResourceOwner;
     AlterDatabaseSetStmt *stmt = makeNode(AlterDatabaseSetStmt);
     stmt->dbname = (char *)data;
@@ -224,9 +224,9 @@ static void init_reset(const char *data, const char *name) {
     list_free_deep(stmt->setstmt->args);
     pfree(stmt->setstmt);
     pfree(stmt);
-}*/
+}
 
-/*static Oid
+static Oid
 get_extension_schema(Oid ext_oid)
 {
 	Oid			result;
@@ -247,7 +247,7 @@ get_extension_schema(Oid ext_oid)
 
 	tuple = systable_getnext(scandesc);
 
-	/ * We assume that there can be at most one matching tuple * /
+	/* We assume that there can be at most one matching tuple */
 	if (HeapTupleIsValid(tuple))
 		result = ((Form_pg_extension) GETSTRUCT(tuple))->extnamespace;
 	else
@@ -258,7 +258,7 @@ get_extension_schema(Oid ext_oid)
 	table_close(rel, AccessShareLock);
 
 	return result;
-}*/
+}
 
 static void init_object_access(ObjectAccessType access, Oid classId, Oid objectId, int subId, void *arg) {
     if (next_object_access_hook) next_object_access_hook(access, classId, objectId, subId, arg);
@@ -277,7 +277,29 @@ static void init_object_access(ObjectAccessType access, Oid classId, Oid objectI
             init_reset(data, "pg_task.user");
             pfree(data);
         } break;
-        case OAT_POST_CREATE: init_conf(true); break;
+        case OAT_POST_CREATE: {
+            char *data;
+            char *schema;
+            const char *table = GetConfigOption("pg_task.table", true, true);
+            const char *reset = GetConfigOption("pg_task.reset", true, true);
+            const char *sleep = GetConfigOption("pg_task.sleep", true, true);
+            char *user;
+            Oid oid;
+            if ((oid = get_extension_schema(objectId)) == InvalidOid) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema for extension %u does not exist", objectId)));
+            if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
+            if (!(schema = get_namespace_name(oid))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema %u does not exist", oid)));
+            if (!(user = GetUserNameFromIdMy(GetUserId()))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", GetUserId())));
+            init_set(data, "pg_task.data", data);
+            init_set(data, "pg_task.reset", reset);
+            init_set(data, "pg_task.schema", schema);
+            init_set(data, "pg_task.sleep", sleep);
+            init_set(data, "pg_task.table", table);
+            init_set(data, "pg_task.user", user);
+            init_conf(true);
+            pfree(data);
+            pfree(schema);
+            pfree(user);
+        } break;
         default: break;
     }
 }
