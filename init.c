@@ -266,45 +266,15 @@ static void init_object_access(ObjectAccessType access, Oid classId, Oid objectI
     if (next_object_access_hook) next_object_access_hook(access, classId, objectId, subId, arg);
     if (classId != ExtensionRelationId) return;
     if (access != OAT_DROP) return;
-    //CommandCounterIncrement();
     if (get_extension_oid("pg_task", true) != objectId) return;
-    //switch (access) {
-        //case OAT_DROP: {
-            //char *data;
-            if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
-            init_reset(data, "pg_task.data");
-            init_reset(data, "pg_task.reset");
-            init_reset(data, "pg_task.schema");
-            init_reset(data, "pg_task.sleep");
-            init_reset(data, "pg_task.table");
-            init_reset(data, "pg_task.user");
-            pfree(data);
-        /*} break;
-        case OAT_POST_CREATE: {
-            char *data;
-            char *schema;
-            const char *table = GetConfigOption("pg_task.table", true, true);
-            const char *reset = GetConfigOption("pg_task.reset", true, true);
-            const char *sleep = GetConfigOption("pg_task.sleep", true, true);
-            char *user;
-            Oid oid;
-            if ((oid = get_extension_schema(objectId)) == InvalidOid) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema for extension %u does not exist", objectId)));
-            if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
-            if (!(schema = get_namespace_name(oid))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema %u does not exist", oid)));
-            if (!(user = GetUserNameFromIdMy(GetUserId()))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", GetUserId())));
-            init_set(data, "pg_task.data", data);
-            init_set(data, "pg_task.reset", reset);
-            init_set(data, "pg_task.schema", schema);
-            init_set(data, "pg_task.sleep", sleep);
-            init_set(data, "pg_task.table", table);
-            init_set(data, "pg_task.user", user);
-            init_conf(true);
-            pfree(data);
-            pfree(schema);
-            pfree(user);
-        } break;
-        default: break;
-    }*/
+    if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
+    init_reset(data, "pg_task.data");
+    init_reset(data, "pg_task.reset");
+    init_reset(data, "pg_task.schema");
+    init_reset(data, "pg_task.sleep");
+    init_reset(data, "pg_task.table");
+    init_reset(data, "pg_task.user");
+    pfree(data);
 }
 
 static void init_ProcessUtility_hook(PlannedStmt *pstmt, const char *queryString, bool readOnlyTree, ProcessUtilityContext context, ParamListInfo params, QueryEnvironment *queryEnv, DestReceiver *dest, QueryCompletion *qc) {
@@ -313,7 +283,6 @@ static void init_ProcessUtility_hook(PlannedStmt *pstmt, const char *queryString
     switch (nodeTag(parsetree)) {
         case T_CreateExtensionStmt: {
             CreateExtensionStmt *stmt = (CreateExtensionStmt *)parsetree;
-            //elog(WARNING, "extname = %s", stmt->extname);
             if (!strcmp(stmt->extname, "pg_task")) {
                 Oid oid = get_extension_oid("pg_task", false);
                 char *data;
@@ -323,9 +292,6 @@ static void init_ProcessUtility_hook(PlannedStmt *pstmt, const char *queryString
                 const char *sleep = GetConfigOption("pg_task.sleep", true, true);
                 char *user;
                 Oid ext_oid;
-                //size_t len;
-                //Work *w = palloc0(sizeof(*w));
-                //elog(WARNING, "objectId = %i", objectId);
                 if ((ext_oid = get_extension_schema(oid)) == InvalidOid) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema for extension %u does not exist", oid)));
                 if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
                 if (!(schema = get_namespace_name(ext_oid))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema %u does not exist", ext_oid)));
@@ -337,18 +303,9 @@ static void init_ProcessUtility_hook(PlannedStmt *pstmt, const char *queryString
                 init_set(data, "pg_task.table", table);
                 init_set(data, "pg_task.user", user);
                 init_conf(true);
-                /*w->shared = shm_toc_allocate_my(PG_WORK_MAGIC, &w->seg, sizeof(*w->shared));
-                w->shared->reset = strtol(reset, NULL, 10);
-                w->shared->sleep = strtol(sleep, NULL, 10);
-                if ((len = strlcpy(w->shared->data, data, sizeof(w->shared->data))) >= sizeof(w->shared->data)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(w->shared->data))));
-                if ((len = strlcpy(w->shared->schema, schema, sizeof(w->shared->schema))) >= sizeof(w->shared->schema)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(w->shared->schema))));
-                if ((len = strlcpy(w->shared->table, table, sizeof(w->shared->table))) >= sizeof(w->shared->table)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(w->shared->table))));
-                if ((len = strlcpy(w->shared->user, user, sizeof(w->shared->user))) >= sizeof(w->shared->user)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(w->shared->user))));
-                conf_work(w);*/
                 pfree(data);
                 pfree(schema);
                 pfree(user);
-                //pfree(w);
             }
         } break;
         default: return;
