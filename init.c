@@ -151,7 +151,7 @@ void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, in
     if (!string && quote) appendStringInfoChar(buf, quote);
 }
 
-static void init_conf(void) {
+static void init_conf(bool dynamic) {
     BackgroundWorker worker = {0};
     size_t len;
     if ((len = strlcpy(worker.bgw_function_name, "conf_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
@@ -163,7 +163,19 @@ static void init_conf(void) {
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_restart_time = conf_restart;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    RegisterBackgroundWorker(&worker);
+    if (dynamic) {
+        BackgroundWorkerHandle *handle;
+        pid_t pid;
+        worker.bgw_notify_pid = MyProcPid;
+        if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
+        switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
+            case BGWH_NOT_YET_STARTED: ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
+            case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
+            case BGWH_STARTED: break;
+            case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
+        }
+        pfree(handle);
+    } else RegisterBackgroundWorker(&worker);
 }
 
 void initStringInfoMy(StringInfoData *buf) {
@@ -188,15 +200,15 @@ static void init_reset(const char *data, const char *name) {
     pfree(stmt);
 }
 
-static A_Const *makeAConst(const char *str) {
+/*static A_Const *makeAConst(const char *str) {
     A_Const *v = makeNode(A_Const);
     String *s = makeString((char *)str);
     v->val.sval = *s;
     pfree(s);
     return v;
-}
+}*/
 
-static void init_set(const char *data, const char *name, const char *value) {
+/*static void init_set(const char *data, const char *name, const char *value) {
     ResourceOwner currentOwner = CurrentResourceOwner;
     AlterDatabaseSetStmt *stmt = makeNode(AlterDatabaseSetStmt);
     stmt->dbname = (char *)data;
@@ -212,9 +224,9 @@ static void init_set(const char *data, const char *name, const char *value) {
     list_free_deep(stmt->setstmt->args);
     pfree(stmt->setstmt);
     pfree(stmt);
-}
+}*/
 
-static Oid
+/*static Oid
 get_extension_schema(Oid ext_oid)
 {
 	Oid			result;
@@ -235,7 +247,7 @@ get_extension_schema(Oid ext_oid)
 
 	tuple = systable_getnext(scandesc);
 
-	/* We assume that there can be at most one matching tuple */
+	/ * We assume that there can be at most one matching tuple * /
 	if (HeapTupleIsValid(tuple))
 		result = ((Form_pg_extension) GETSTRUCT(tuple))->extnamespace;
 	else
@@ -246,7 +258,7 @@ get_extension_schema(Oid ext_oid)
 	table_close(rel, AccessShareLock);
 
 	return result;
-}
+}*/
 
 static void init_object_access(ObjectAccessType access, Oid classId, Oid objectId, int subId, void *arg) {
     if (next_object_access_hook) next_object_access_hook(access, classId, objectId, subId, arg);
@@ -265,39 +277,7 @@ static void init_object_access(ObjectAccessType access, Oid classId, Oid objectI
             init_reset(data, "pg_task.user");
             pfree(data);
         } break;
-        case OAT_POST_CREATE: {
-            char *data;
-            char *schema;
-            const char *table = GetConfigOption("pg_task.table", true, true);
-            const char *reset = GetConfigOption("pg_task.reset", true, true);
-            const char *sleep = GetConfigOption("pg_task.sleep", true, true);
-            char *user;
-            Oid ext_oid;
-            size_t len;
-            Work *w = palloc0(sizeof(*w));
-            if ((ext_oid = get_extension_schema(objectId)) == InvalidOid) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema for extension %u does not exist", objectId)));
-            if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
-            if (!(schema = get_namespace_name(ext_oid))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema %u does not exist", ext_oid)));
-            if (!(user = GetUserNameFromIdMy(GetUserId()))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", GetUserId())));
-            init_set(data, "pg_task.data", data);
-            init_set(data, "pg_task.reset", reset);
-            init_set(data, "pg_task.schema", schema);
-            init_set(data, "pg_task.sleep", sleep);
-            init_set(data, "pg_task.table", table);
-            init_set(data, "pg_task.user", user);
-            w->shared = shm_toc_allocate_my(PG_WORK_MAGIC, &w->seg, sizeof(*w->shared));
-            w->shared->reset = strtol(reset, NULL, 10);
-            w->shared->sleep = strtol(sleep, NULL, 10);
-            if ((len = strlcpy(w->shared->data, data, sizeof(w->shared->data))) >= sizeof(w->shared->data)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(w->shared->data))));
-            if ((len = strlcpy(w->shared->schema, schema, sizeof(w->shared->schema))) >= sizeof(w->shared->schema)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(w->shared->schema))));
-            if ((len = strlcpy(w->shared->table, table, sizeof(w->shared->table))) >= sizeof(w->shared->table)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(w->shared->table))));
-            if ((len = strlcpy(w->shared->user, user, sizeof(w->shared->user))) >= sizeof(w->shared->user)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(w->shared->user))));
-            conf_work(w);
-            pfree(data);
-            pfree(schema);
-            pfree(user);
-            pfree(w);
-        } break;
+        case OAT_POST_CREATE: init_conf(true); break;
         default: break;
     }
 }
@@ -339,7 +319,7 @@ void _PG_init(void) {
 #endif
     next_object_access_hook = object_access_hook;
     object_access_hook = init_object_access;
-    init_conf();
+    init_conf(false);
 }
 
 #if PG_VERSION_NUM < 130000
