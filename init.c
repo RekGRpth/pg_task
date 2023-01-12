@@ -185,22 +185,6 @@ void initStringInfoMy(StringInfoData *buf) {
     MemoryContextSwitchTo(oldMemoryContext);
 }
 
-static void init_reset(const char *data, const char *name) {
-    ResourceOwner currentOwner = CurrentResourceOwner;
-    AlterDatabaseSetStmt *stmt = makeNode(AlterDatabaseSetStmt);
-    stmt->dbname = (char *)data;
-    stmt->setstmt = makeNode(VariableSetStmt);
-    stmt->setstmt->kind = VAR_RESET;
-    stmt->setstmt->name = (char *)name;
-    BeginInternalSubTransaction(NULL);
-    CurrentResourceOwner = currentOwner;
-    (void)AlterDatabaseSet(stmt);
-    ReleaseCurrentSubTransaction();
-    CurrentResourceOwner = currentOwner;
-    pfree(stmt->setstmt);
-    pfree(stmt);
-}
-
 static A_Const *makeAConst(const char *str) {
     A_Const *v = makeNode(A_Const);
     String *s = makeString((char *)str);
@@ -214,8 +198,8 @@ static void init_set(const char *data, const char *name, const char *value) {
     AlterDatabaseSetStmt *stmt = makeNode(AlterDatabaseSetStmt);
     stmt->dbname = (char *)data;
     stmt->setstmt = makeNode(VariableSetStmt);
-    stmt->setstmt->args = list_make1(makeAConst((char *)value));
-    stmt->setstmt->kind = VAR_SET_VALUE;
+    if (value) stmt->setstmt->args = list_make1(makeAConst((char *)value));
+    stmt->setstmt->kind = value ? VAR_SET_VALUE : VAR_RESET;
     stmt->setstmt->name = (char *)name;
     BeginInternalSubTransaction(NULL);
     CurrentResourceOwner = currentOwner;
@@ -268,12 +252,12 @@ static void init_object_access(ObjectAccessType access, Oid classId, Oid objectI
     if (access != OAT_DROP) return;
     if (get_extension_oid("pg_task", true) != objectId) return;
     if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
-    init_reset(data, "pg_task.data");
-    init_reset(data, "pg_task.reset");
-    init_reset(data, "pg_task.schema");
-    init_reset(data, "pg_task.sleep");
-    init_reset(data, "pg_task.table");
-    init_reset(data, "pg_task.user");
+    init_set(data, "pg_task.data", NULL);
+    init_set(data, "pg_task.reset", NULL);
+    init_set(data, "pg_task.schema", NULL);
+    init_set(data, "pg_task.sleep", NULL);
+    init_set(data, "pg_task.table", NULL);
+    init_set(data, "pg_task.user", NULL);
     pfree(data);
 }
 
