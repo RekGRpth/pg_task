@@ -2,36 +2,36 @@
 
 PG_MODULE_MAGIC;
 
-char *default_null;
-int conf_default_fetch;
-int task_default_fetch;
-int work_default_fetch;
-int work_default_restart;
-static bool task_default_delete;
-static bool task_default_drift;
-static bool task_default_header;
-static bool task_default_string;
+char *task_null;
+int conf_fetch;
+int task_fetch;
+int work_fetch;
+int work_restart;
+static bool task_delete;
+static bool task_drift;
+static bool task_header;
+static bool task_string;
 static char *default_json;
-static char *task_default_active;
-static char *task_default_delimiter;
-static char *task_default_escape;
-static char *task_default_group;
-static char *task_default_live;
-static char *task_default_quote;
-static char *task_default_repeat;
-static char *task_default_timeout;
-static char *work_default_active;
-static char *work_default_data;
-static char *work_default_reset;
-static char *work_default_schema;
-static char *work_default_table;
-static char *work_default_user;
-static int conf_default_restart;
-static int task_default_count;
-static int task_default_limit;
-static int task_default_max;
+static char *task_active;
+static char *task_data;
+static char *task_delimiter;
+static char *task_escape;
+static char *task_group;
+static char *task_live;
+static char *task_quote;
+static char *task_repeat;
+static char *task_reset;
+static char *task_schema;
+static char *task_table;
+static char *task_timeout;
+static char *task_user;
+static char *work_active;
+static int conf_restart;
+static int task_count;
 static int task_id;
-static int work_default_timeout;
+static int task_limit;
+static int task_max;
+static int task_sleep;
 
 bool init_oid_is_string(Oid oid) {
     switch (oid) {
@@ -165,7 +165,7 @@ void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, in
     if (!string && quote) appendStringInfoChar(buf, quote);
 }
 
-void init_work(bool dynamic) {
+void init_conf(bool dynamic) {
     BackgroundWorker worker = {0};
     size_t len;
     if ((len = strlcpy(worker.bgw_function_name, "conf_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
@@ -175,7 +175,7 @@ void init_work(bool dynamic) {
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    worker.bgw_restart_time = conf_default_restart;
+    worker.bgw_restart_time = conf_restart;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     if (dynamic) {
         worker.bgw_notify_pid = MyProcPid;
@@ -196,8 +196,8 @@ static void init_assign(const char *newval, void *extra) {
     new_isnull = !newval || newval[0] == '\0';
     if (old_isnull && new_isnull) return;
     if (!old_isnull && !new_isnull && !strcmp(oldval, newval)) return;
-    elog(DEBUG1, "oldval = %s, newval = %s", !old_isnull ? oldval : default_null, !new_isnull ? newval : default_null);
-    init_work(true);
+    elog(DEBUG1, "oldval = %s, newval = %s", !old_isnull ? oldval : task_null, !new_isnull ? newval : task_null);
+    init_conf(true);
 }
 
 #if PG_VERSION_NUM >= 130000
@@ -282,41 +282,41 @@ void initStringInfoMy(StringInfoData *buf) {
 
 void _PG_init(void) {
     if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("This module can only be loaded via shared_preload_libraries")));
-    DefineCustomBoolVariable("pg_task.default_delete", "pg_task default delete", "delete task if output is null", &task_default_delete, true, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomBoolVariable("pg_task.default_drift", "pg_task default drift", "compute next repeat time by plan instead current", &task_default_drift, false, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomBoolVariable("pg_task.default_header", "pg_task default header", "show headers", &task_default_header, true, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomBoolVariable("pg_task.default_string", "pg_task default string", "quote string only", &task_default_string, true, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_conf.default_fetch", "pg_conf default fetch", "fetch at once", &conf_default_fetch, 10, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_conf.default_restart", "pg_conf default restart", "conf default restart interval", &conf_default_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.default_count", "pg_task default count", "do count tasks before exit", &task_default_count, 0, 0, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.default_fetch", "pg_task default fetch", "fetch tasks at once", &task_default_fetch, 100, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.default_limit", "pg_task default limit", "limit tasks at once", &task_default_limit, 1000, 0, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.default_max", "pg_task default max", "maximum parallel tasks", &task_default_max, 0, INT_MIN, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomBoolVariable("pg_task.default_delete", "pg_task default delete", "delete task if output is null", &task_delete, true, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomBoolVariable("pg_task.default_drift", "pg_task default drift", "compute next repeat time by plan instead current", &task_drift, false, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomBoolVariable("pg_task.default_header", "pg_task default header", "show headers", &task_header, true, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomBoolVariable("pg_task.default_string", "pg_task default string", "quote string only", &task_string, true, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_conf.default_fetch", "pg_conf default fetch", "fetch at once", &conf_fetch, 10, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_conf.default_restart", "pg_conf default restart", "conf default restart interval", &conf_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.default_count", "pg_task default count", "do count tasks before exit", &task_count, 0, 0, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.default_fetch", "pg_task default fetch", "fetch tasks at once", &task_fetch, 100, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.default_limit", "pg_task default limit", "limit tasks at once", &task_limit, 1000, 0, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.default_max", "pg_task default max", "maximum parallel tasks", &task_max, 0, INT_MIN, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.id", "pg_task id", "task id", &task_id, 0, INT_MIN, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_work.default_fetch", "pg_work default fetch", "fetch at once", &work_default_fetch, 100, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_work.default_restart", "pg_work default restart", "work default restart interval", &work_default_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_work.default_timeout", "pg_work default timeout", "check tasks every timeout milliseconds", &work_default_timeout, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_active", "pg_task default active", "task active after plan time", &task_default_active, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_delimiter", "pg_task default delimiter", "results colums delimiter", &task_default_delimiter, "\t", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_escape", "pg_task default escape", "results colums escape", &task_default_escape, "", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_group", "pg_task default group", "group tasks name", &task_default_group, "group", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_live", "pg_task default live", "exit until timeout", &task_default_live, "0 sec", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_null", "pg_task default null", "text null representation", &default_null, "\\N", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_quote", "pg_task default quote", "results colums quote", &task_default_quote, "", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_repeat", "pg_task default repeat", "repeat task", &task_default_repeat, "0 sec", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.default_timeout", "pg_task default timeout", "task timeout", &task_default_timeout, "0 sec", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_work.default_fetch", "pg_work default fetch", "fetch at once", &work_fetch, 100, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_work.default_restart", "pg_work default restart", "work default restart interval", &work_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_work.default_timeout", "pg_work default timeout", "check tasks every timeout milliseconds", &task_sleep, 1000, 1, INT_MAX, PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.default_active", "pg_task default active", "task active after plan time", &task_active, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.default_delimiter", "pg_task default delimiter", "results colums delimiter", &task_delimiter, "\t", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.default_escape", "pg_task default escape", "results colums escape", &task_escape, "", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.default_group", "pg_task default group", "group tasks name", &task_group, "group", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.default_live", "pg_task default live", "exit until timeout", &task_live, "0 sec", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.task_null", "pg_task default null", "text null representation", &task_null, "\\N", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.default_quote", "pg_task default quote", "results colums quote", &task_quote, "", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.default_repeat", "pg_task default repeat", "repeat task", &task_repeat, "0 sec", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.default_timeout", "pg_task default timeout", "task timeout", &task_timeout, "0 sec", PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.json", "pg_task json", "json configuration: available keys are: user, data, schema, table, timeout, count and live", &default_json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign, NULL);
-    DefineCustomStringVariable("pg_work.default_active", "pg_work default active", "task active before now", &work_default_active, "1 week", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_work.default_data", "pg_work default data", "default database name", &work_default_data, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_work.default_reset", "pg_work default reset", "reset tasks every interval", &work_default_reset, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_work.default_schema", "pg_work default schema", "schema name for tasks table", &work_default_schema, "public", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_work.default_table", "pg_work default table", "table name for tasks table", &work_default_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_work.default_user", "pg_work default user", "default username", &work_default_user, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
-    elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, timeout = %i, reset = %s, active = %s", default_json, work_default_user, work_default_data, work_default_schema, work_default_table, default_null, work_default_timeout, work_default_reset, work_default_active);
+    DefineCustomStringVariable("pg_work.default_active", "pg_work default active", "task active before now", &work_active, "1 week", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_work.default_data", "pg_work default data", "default database name", &task_data, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_work.default_reset", "pg_work default reset", "reset tasks every interval", &task_reset, "1 hour", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_work.default_schema", "pg_work default schema", "schema name for tasks table", &task_schema, "public", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_work.default_table", "pg_work default table", "table name for tasks table", &task_table, "task", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_work.default_user", "pg_work default user", "default username", &task_user, "postgres", PGC_SIGHUP, 0, NULL, NULL, NULL);
+    elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, timeout = %i, reset = %s, active = %s", default_json, task_user, task_data, task_schema, task_table, task_null, task_sleep, task_reset, work_active);
 #ifdef GP_VERSION_NUM
     if (!IS_QUERY_DISPATCHER()) return;
 #endif
-    init_work(false);
+    init_conf(false);
 }
 
 #if PG_VERSION_NUM < 130000

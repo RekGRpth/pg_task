@@ -1,8 +1,8 @@
 #include "include.h"
 
-extern char *default_null;
-extern int conf_default_fetch;
-extern int work_default_restart;
+extern char *task_null;
+extern int conf_fetch;
+extern int work_restart;
 static dlist_head head;
 
 static void conf_data(Work *w) {
@@ -77,7 +77,7 @@ static void conf_work(Work *w) {
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(w->seg));
     worker.bgw_notify_pid = MyProcPid;
-    worker.bgw_restart_time = work_default_restart;
+    worker.bgw_restart_time = work_restart;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
     switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
@@ -116,7 +116,7 @@ void conf_main(Datum arg) {
     SPI_connect_my(src.data);
     portal = SPI_cursor_open_with_args_my(src.data, src.data, 0, NULL, NULL, NULL);
     do {
-        SPI_cursor_fetch(portal, true, conf_default_fetch);
+        SPI_cursor_fetch(portal, true, conf_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
             TupleDesc tupdesc = SPI_tuptable->tupdesc;
