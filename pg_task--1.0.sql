@@ -60,3 +60,7 @@ DO $do$BEGIN
         );
     END IF;
 END;$do$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION pg_task_init_conf() RETURNS void AS 'MODULE_PATHNAME', 'pg_task_init_conf' LANGUAGE 'c';
+SELECT pg_task_init_conf();
+DROP FUNCTION pg_task_init_conf();

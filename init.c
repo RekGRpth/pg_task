@@ -1,5 +1,7 @@
 #include "include.h"
 
+#define EXTENSION(function) Datum (function)(PG_FUNCTION_ARGS); PG_FUNCTION_INFO_V1(function); Datum (function)(PG_FUNCTION_ARGS)
+
 PG_MODULE_MAGIC;
 
 char *task_null;
@@ -179,6 +181,8 @@ static void init_conf(bool dynamic) {
     } else RegisterBackgroundWorker(&worker);
 }
 
+EXTENSION(pg_task_init_conf) { init_conf(true); PG_RETURN_NULL(); }
+
 void initStringInfoMy(StringInfoData *buf) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     initStringInfo(buf);
@@ -286,7 +290,7 @@ static void init_ProcessUtility_hook(PlannedStmt *pstmt, const char *queryString
                 init_set(data, "pg_task.sleep", sleep);
                 init_set(data, "pg_task.table", table);
                 init_set(data, "pg_task.user", user);
-                init_conf(true);
+//                init_conf(true);
                 pfree(data);
                 pfree(schema);
                 pfree(user);
