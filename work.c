@@ -514,6 +514,7 @@ static void work_table(void) {
             "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.delimiter')::"char",
             "escape" "char" NOT NULL DEFAULT current_setting('pg_task.escape')::"char",
             "quote" "char" NOT NULL DEFAULT current_setting('pg_task.quote')::"char",
+            "data" text,
             "error" text,
             "group" text NOT NULL DEFAULT current_setting('pg_task.group'),
             "input" text NOT NULL,
