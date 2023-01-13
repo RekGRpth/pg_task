@@ -25,12 +25,12 @@ static bool task_live(Task *t) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT "id" FROM %1$s AS t
-                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN'::%2$s AND "hash" = $1 AND "max" >= $2 AND CASE
+                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN' AND "hash" = $1 AND "max" >= $2 AND CASE
                     WHEN "count" > 0 AND "live" > '0 sec' THEN "count" > $3 AND $4 + "live" > CURRENT_TIMESTAMP ELSE "count" > $3 OR $4 + "live" > CURRENT_TIMESTAMP
-                END ORDER BY "max" DESC, "id" LIMIT 1 FOR UPDATE OF t %3$s
-            ) UPDATE %1$s AS t SET "state" = 'TAKE'::%2$s FROM s
+                END ORDER BY "max" DESC, "id" LIMIT 1 FOR UPDATE OF t %2$s
+            ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
-        ), work.schema_table, work.schema_type,
+        ), work.schema_table,
 #if PG_VERSION_NUM >= 90500
         "SKIP LOCKED"
 #else
@@ -110,10 +110,10 @@ static void task_update(Task *t) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT "id" FROM %1$s AS t
-                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN'::%2$s AND "hash" = $1 AND "max" < 0 FOR UPDATE OF t
+                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN' AND "hash" = $1 AND "max" < 0 FOR UPDATE OF t
             ) UPDATE %1$s AS t SET "plan" = CASE WHEN "drift" THEN CURRENT_TIMESTAMP ELSE "plan" END + concat_ws(' ', (-"max")::text, 'msec')::interval FROM s
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
-        ), work.schema_table, work.schema_type);
+        ), work.schema_table);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL);
@@ -140,10 +140,10 @@ bool task_done(Task *t) {
             WITH s AS (
                 SELECT "id" FROM %1$s AS t
                 WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 FOR UPDATE OF t
-            ) UPDATE %1$s AS t SET "state" = 'DONE'::%2$s, "stop" = CURRENT_TIMESTAMP, "output" = $2, "error" = $3 FROM s
+            ) UPDATE %1$s AS t SET "state" = 'DONE', "stop" = CURRENT_TIMESTAMP, "output" = $2, "error" = $3 FROM s
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id
             RETURNING "delete" AND "output" IS NULL AS "delete", "repeat" > '0 sec' AS "insert", "max" >= 0 AND ("count" > 0 OR "live" > '0 sec') AS "live", "max" < 0 AS "update"
-        ), work.schema_table, work.schema_type);
+        ), work.schema_table);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -194,10 +194,10 @@ bool task_work(Task *t) {
             WITH s AS (
                 SELECT "id" FROM %1$s AS t
                 WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 FOR UPDATE OF t
-            ) UPDATE %1$s AS t SET "state" = 'WORK'::%2$s, "start" = CURRENT_TIMESTAMP, "pid" = $2 FROM s
+            ) UPDATE %1$s AS t SET "state" = 'WORK', "start" = CURRENT_TIMESTAMP, "pid" = $2 FROM s
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id
-            RETURNING "group", "hash", "input", EXTRACT(epoch FROM "timeout")::integer * 1000 AS "timeout", "header", "string", "null", "delimiter", "quote", "escape", "plan" + "active" > CURRENT_TIMESTAMP AS "active", "remote"
-        ), work.schema_table, work.schema_type);
+            RETURNING "group", "hash", "input", EXTRACT(epoch FROM "timeout")::int * 1000 AS "timeout", "header", "string", "null", "delimiter", "quote", "escape", "plan" + "active" > CURRENT_TIMESTAMP AS "active", "remote"
+        ), work.schema_table);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -380,7 +380,7 @@ void task_free(Task *t) {
 void task_main(Datum arg) {
     dsm_segment *seg;
     shm_toc *toc;
-    StringInfoData oid, schema_table, schema_type;
+    StringInfoData oid, schema_table;
     on_proc_exit(task_proc_exit, (Datum)NULL);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
@@ -411,9 +411,6 @@ void task_main(Datum arg) {
     initStringInfoMy(&schema_table);
     appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);
     work.schema_table = schema_table.data;
-    initStringInfoMy(&schema_type);
-    appendStringInfo(&schema_type, "%s.state", work.schema);
-    work.schema_type = schema_type.data;
     initStringInfoMy(&oid);
     appendStringInfo(&oid, "%i", work.shared->oid);
     set_config_option_my("pg_task.oid", oid.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
