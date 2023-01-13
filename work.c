@@ -46,7 +46,7 @@ static void work_check(void) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfoString(&src, init_check());
-        appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND "data" = current_catalog AND "schema" = current_setting('pg_task.schema') AND "table" = current_setting('pg_task.table') AND "timeout" = current_setting('pg_task.timeout')::bigint), " ");
+        appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND "data" = current_catalog AND "schema" = current_setting('pg_task.schema') AND "table" = current_setting('pg_task.table') AND "sleep" = current_setting('pg_task.sleep')::bigint), " ");
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
@@ -210,10 +210,10 @@ static void work_reset(void) {
             WITH s AS (
                 SELECT "id" FROM %1$s AS t
                 LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = $1 AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
-                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "state" IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
+                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" IN ('TAKE'::%2$s, 'WORK'::%2$s) AND l.pid IS NULL
                 FOR UPDATE OF t %3$s
             ) UPDATE %1$s AS t SET "state" = 'PLAN'::%2$s, "start" = NULL, "stop" = NULL, "pid" = NULL FROM s
-            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
+            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
         ), work.schema_table, work.schema_type,
 #if PG_VERSION_NUM >= 90500
             "SKIP LOCKED"
@@ -498,26 +498,26 @@ static void work_table(void) {
             "plan" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
             "start" timestamp with time zone,
             "stop" timestamp with time zone,
-            "active" interval NOT NULL DEFAULT current_setting('pg_task.default_active')::interval CHECK ("active" > '0 sec'::interval),
-            "live" interval NOT NULL DEFAULT current_setting('pg_task.default_live')::interval CHECK ("live" >= '0 sec'::interval),
-            "repeat" interval NOT NULL DEFAULT current_setting('pg_task.default_repeat')::interval CHECK ("repeat" >= '0 sec'::interval),
-            "timeout" interval NOT NULL DEFAULT current_setting('pg_task.default_timeout')::interval CHECK ("timeout" >= '0 sec'::interval),
-            "count" integer NOT NULL DEFAULT current_setting('pg_task.default_count')::integer CHECK ("count" >= 0),
+            "active" interval NOT NULL DEFAULT current_setting('pg_task.active')::interval CHECK ("active" > '0 sec'::interval),
+            "live" interval NOT NULL DEFAULT current_setting('pg_task.live')::interval CHECK ("live" >= '0 sec'::interval),
+            "repeat" interval NOT NULL DEFAULT current_setting('pg_task.repeat')::interval CHECK ("repeat" >= '0 sec'::interval),
+            "timeout" interval NOT NULL DEFAULT current_setting('pg_task.timeout')::interval CHECK ("timeout" >= '0 sec'::interval),
+            "count" integer NOT NULL DEFAULT current_setting('pg_task.count')::integer CHECK ("count" >= 0),
             "hash" integer NOT NULL %3$s,
-            "max" integer NOT NULL DEFAULT current_setting('pg_task.default_max')::integer,
+            "max" integer NOT NULL DEFAULT current_setting('pg_task.max')::integer,
             "pid" integer,
             "state" %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
-            "delete" boolean NOT NULL DEFAULT current_setting('pg_task.default_delete')::boolean,
-            "drift" boolean NOT NULL DEFAULT current_setting('pg_task.default_drift')::boolean,
-            "header" boolean NOT NULL DEFAULT current_setting('pg_task.default_header')::boolean,
-            "string" boolean NOT NULL DEFAULT current_setting('pg_task.default_string')::boolean,
-            "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.default_delimiter')::"char",
-            "escape" "char" NOT NULL DEFAULT current_setting('pg_task.default_escape')::"char",
-            "quote" "char" NOT NULL DEFAULT current_setting('pg_task.default_quote')::"char",
+            "delete" boolean NOT NULL DEFAULT current_setting('pg_task.delete')::boolean,
+            "drift" boolean NOT NULL DEFAULT current_setting('pg_task.drift')::boolean,
+            "header" boolean NOT NULL DEFAULT current_setting('pg_task.header')::boolean,
+            "string" boolean NOT NULL DEFAULT current_setting('pg_task.string')::boolean,
+            "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.delimiter')::"char",
+            "escape" "char" NOT NULL DEFAULT current_setting('pg_task.escape')::"char",
+            "quote" "char" NOT NULL DEFAULT current_setting('pg_task.quote')::"char",
             "error" text,
-            "group" text NOT NULL DEFAULT current_setting('pg_task.default_group'),
+            "group" text NOT NULL DEFAULT current_setting('pg_task.group'),
             "input" text NOT NULL,
-            "null" text NOT NULL DEFAULT current_setting('pg_task.task_null'),
+            "null" text NOT NULL DEFAULT current_setting('pg_task.null'),
             "output" text,
             "remote" text
         )
@@ -608,12 +608,12 @@ static void work_timeout(void) {
                 SELECT count("classid") AS "classid", "objid" FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessShareLock' AND "granted" AND "objsubid" = 5 AND "database" = $1 GROUP BY "objid"
             ), s AS (
                 SELECT "id", t.hash, CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" = "hash"
-                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN'::%2$s AND CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) >= 0
-                ORDER BY 3 DESC, 1 LIMIT current_setting('pg_task.default_limit')::integer FOR UPDATE OF t %3$s
+                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN'::%2$s AND CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) >= 0
+                ORDER BY 3 DESC, 1 LIMIT current_setting('pg_task.limit')::integer FOR UPDATE OF t %3$s
             ), u AS (
                 SELECT "id", "count" - row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") + 1 AS "count" FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS t SET "state" = 'TAKE'::%2$s FROM u
-            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.default_active')::interval AND CURRENT_TIMESTAMP AND t.id = u.id AND u.count >= 0 RETURNING t.id, "hash", "group", "remote", "max"
+            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND t.id = u.id AND u.count >= 0 RETURNING t.id, "hash", "group", "remote", "max"
         ), work.schema_table, work.schema_type,
 #if PG_VERSION_NUM >= 90500
         "SKIP LOCKED"
@@ -667,7 +667,7 @@ void work_main(Datum arg) {
     long current_reset = -1;
     long current_timeout = -1;
     shm_toc *toc;
-    StringInfoData schema_table, schema_type, timeout;
+    StringInfoData schema_table, schema_type, sleep;
     on_proc_exit(work_proc_exit, (Datum)NULL);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
@@ -708,7 +708,7 @@ void work_main(Datum arg) {
     initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work.schema);
     work.schema_type = schema_type.data;
-    elog(DEBUG1, "timeout = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->timeout, work.shared->reset, work.schema_table, work.schema_type, work.hash);
+    elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.hash);
     work_schema(work.schema);
     set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
@@ -720,10 +720,10 @@ void work_main(Datum arg) {
     work_index(countof(index_state), index_state);
     set_config_option_my("pg_task.data", work.shared->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option_my("pg_task.user", work.shared->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    initStringInfoMy(&timeout);
-    appendStringInfo(&timeout, "%li", work.shared->timeout);
-    set_config_option_my("pg_task.timeout", timeout.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pfree(timeout.data);
+    initStringInfoMy(&sleep);
+    appendStringInfo(&sleep, "%li", work.shared->sleep);
+    set_config_option_my("pg_task.sleep", sleep.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    pfree(sleep.data);
     set_ps_display_my("idle");
     work_reset();
     while (!ShutdownRequestPending) {
@@ -733,7 +733,7 @@ void work_main(Datum arg) {
         work_events(set);
         if (current_timeout <= 0) {
             INSTR_TIME_SET_CURRENT(start_time);
-            current_timeout = work.shared->timeout;
+            current_timeout = work.shared->sleep;
         }
         if (current_reset <= 0) current_reset = work.shared->reset;
         nevents = WaitEventSetWaitMy(set, current_timeout, events, nevents, PG_WAIT_EXTENSION);
@@ -746,7 +746,7 @@ void work_main(Datum arg) {
         }
         INSTR_TIME_SET_CURRENT(current_timeout_time);
         INSTR_TIME_SUBTRACT(current_timeout_time, start_time);
-        current_timeout = work.shared->timeout - (long)INSTR_TIME_GET_MILLISEC(current_timeout_time);
+        current_timeout = work.shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_timeout_time);
         if (work.shared->reset >= 0) {
             INSTR_TIME_SET_CURRENT(current_reset_time);
             INSTR_TIME_SUBTRACT(current_reset_time, start_time);
