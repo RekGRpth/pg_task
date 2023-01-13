@@ -83,11 +83,11 @@ static void task_insert(Task *t) {
             WITH s AS (
                 SELECT * FROM %1$s AS t
                 WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 FOR UPDATE OF t
-            ) INSERT INTO %1$s AS t ("parent", "plan", "active", "live", "repeat", "timeout", "count", "max", "delete", "drift", "header", "string", "delimiter", "escape", "quote", "group", "input", "null", "remote")
+            ) INSERT INTO %1$s AS t ("parent", "plan", "active", "live", "repeat", "timeout", "count", "max", "delete", "drift", "header", "string", "delimiter", "escape", "quote", "group", "input", "null", "remote", "data")
             SELECT "id", CASE
                 WHEN "drift" THEN CURRENT_TIMESTAMP + "repeat"
                 ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p + "repeat" FROM r WHERE p <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
-            END AS "plan", "active", "live", "repeat", "timeout", "count", "max", "delete", "drift", "header", "string", "delimiter", "escape", "quote", "group", "input", "null", "remote" FROM s WHERE "repeat" > '0 sec' LIMIT 1 RETURNING t.id
+            END AS "plan", "active", "live", "repeat", "timeout", "count", "max", "delete", "drift", "header", "string", "delimiter", "escape", "quote", "group", "input", "null", "remote", "data" FROM s WHERE "repeat" > '0 sec' LIMIT 1 RETURNING t.id
         ), work.schema_table);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
