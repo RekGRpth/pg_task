@@ -44,7 +44,7 @@ void conf_main(Datum arg) {
                     ("setconfig"->>'pg_task.sleep')::bigint AS "sleep",
                     "setconfig"->>'pg_task.table' AS "table"
         FROM _ INNER JOIN "pg_database" ON "setdatabase" = "oid" INNER JOIN "pg_user" ON "usesysid" = "datdba"
-        LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = "oid" AND "classid" = "usesysid" AND "objid" = hashtext(quote_ident("setconfig"->>'pg_task.schema')||'.'||quote_ident("setconfig"->>'pg_task.table'))::oid
+        LEFT JOIN "pg_locks" ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = "oid" AND "classid" = "usesysid" AND "objid" = hashtext(quote_ident("setconfig"->>'pg_task.schema')||'.'||quote_ident("setconfig"->>'pg_task.table'))::oid
         WHERE "pid" IS NULL
     );
     BackgroundWorkerUnblockSignals();
