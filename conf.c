@@ -37,7 +37,8 @@ void conf_main(Datum arg) {
             WITH _ AS (
                 SELECT "setdatabase", regexp_split_to_array(UNNEST("setconfig"), '=') AS "setconfig" FROM "pg_db_role_setting"
             ) SELECT "setdatabase", jsonb_object(array_agg("setconfig"[1]), array_agg("setconfig"[2])) AS "setconfig" FROM _ GROUP BY 1
-        ) SELECT    "datname"::text AS "data",
+        ) SELECT    "setdatabase",
+                    "datname"::text AS "data",
                     "rolname"::text AS "user",
                     EXTRACT(epoch FROM ("setconfig"->>'pg_task.reset')::interval)::bigint AS "reset",
                     "setconfig"->>'pg_task.schema' AS "schema",
@@ -65,13 +66,14 @@ void conf_main(Datum arg) {
             Work *w = MemoryContextAllocZero(TopMemoryContext, sizeof(*w));;
             set_ps_display_my("row");
             w->shared = shm_toc_allocate_my(PG_WORK_MAGIC, &w->seg, sizeof(*w->shared));
+            w->shared->oid = DatumGetObjectId(SPI_getbinval_my(val, tupdesc, "setdatabase", false));
             w->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false));
             w->shared->sleep = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "sleep", false));
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "data", false)), w->shared->data, sizeof(w->shared->data));
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "schema", false)), w->shared->schema, sizeof(w->shared->schema));
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false)), w->shared->table, sizeof(w->shared->table));
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false)), w->shared->user, sizeof(w->shared->user));
-            elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, sleep = %li, reset = %li", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset);
+            elog(DEBUG1, "row = %lu, oid = %i, user = %s, data = %s, schema = %s, table = %s, sleep = %li, reset = %li", row, w->shared->oid, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset);
             conf_work(w);
             pfree(w);
         }
