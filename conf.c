@@ -35,15 +35,15 @@ void conf_main(Datum arg) {
     static const char *src = SQL(
         WITH _ AS (
             WITH _ AS (
-                SELECT "datname", regexp_split_to_array(UNNEST("setconfig"), '=') AS "setconfig" FROM pg_db_role_setting INNER JOIN pg_database ON "setdatabase" = "oid" INNER JOIN pg_user ON "usesysid" = "datdba"
-            ) SELECT "datname", jsonb_object(array_agg("setconfig"[1]), array_agg("setconfig"[2])) AS "setconfig" FROM _ GROUP BY 1
+                SELECT "oid", "datname", "usesysid", "usename", regexp_split_to_array(UNNEST("setconfig"), '=') AS "setconfig" FROM pg_db_role_setting INNER JOIN pg_database ON "setdatabase" = "oid" INNER JOIN pg_user ON "usesysid" = "datdba"
+            ) SELECT "oid", "datname", "usesysid", "usename", jsonb_object(array_agg("setconfig"[1]), array_agg("setconfig"[2])) AS "setconfig" FROM _ GROUP BY 1, 2, 3, 4
         ) SELECT    "datname" AS "data",
                     "usename" AS "user",
                     EXTRACT(epoch FROM ("setconfig"->>'pg_task.reset')::interval)::bigint AS "reset",
                     "setconfig"->>'pg_task.schema' AS "schema",
                     ("setconfig"->>'pg_task.sleep')::bigint AS "sleep",
                     "setconfig"->>'pg_task.table' AS "table"
-        FROM _ LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = "oid" AND "classid" = "datdba" AND "objid" = hashtext(quote_ident("schema")||'.'||quote_ident("table"))::oid
+        FROM _ LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = "oid" AND "classid" = "usesysid" AND "objid" = hashtext(quote_ident("setconfig"->>'pg_task.schema')||'.'||quote_ident("setconfig"->>'pg_task.table'))::oid
         WHERE "pid" IS NULL
     );
     BackgroundWorkerUnblockSignals();
