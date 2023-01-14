@@ -73,6 +73,13 @@ DO $do$BEGIN
     END IF;
 END;$do$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION pg_task_init_conf() RETURNS void AS 'MODULE_PATHNAME', 'pg_task_init_conf' LANGUAGE 'c';
-SELECT pg_task_init_conf();
-DROP FUNCTION pg_task_init_conf();
+CREATE FUNCTION pg_task_init_conf() RETURNS void AS 'MODULE_PATHNAME', 'pg_task_init_conf' LANGUAGE 'c';
+
+CREATE FUNCTION pg_task_fini_conf() RETURNS void AS $function$BEGIN
+    EXECUTE FORMAT($format$
+        ALTER DATABASE %1$I RESET "pg_task.reset";
+        ALTER DATABASE %1$I RESET "pg_task.schema";
+        ALTER DATABASE %1$I RESET "pg_task.sleep";
+        ALTER DATABASE %1$I RESET "pg_task.table";
+    $format$, current_catalog);
+END;$function$ LANGUAGE plpgsql;
