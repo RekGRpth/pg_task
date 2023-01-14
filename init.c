@@ -9,7 +9,6 @@ int conf_fetch;
 int task_fetch;
 int work_fetch;
 int work_restart;
-static bool call_init_conf = false;
 static bool task_delete;
 static bool task_drift;
 static bool task_header;
@@ -178,19 +177,12 @@ static void init_conf(bool dynamic) {
     } else RegisterBackgroundWorker(&worker);
 }
 
-EXTENSION(pg_task_init_conf) { call_init_conf = true; PG_RETURN_NULL(); }
+EXTENSION(pg_task_init_conf) { init_conf(true); PG_RETURN_NULL(); }
 
 void initStringInfoMy(StringInfoData *buf) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     initStringInfo(buf);
     MemoryContextSwitchTo(oldMemoryContext);
-}
-
-static void init_xact_callback(XactEvent event, void *arg) {
-    if (event != XACT_EVENT_COMMIT) return;
-    if (!call_init_conf) return;
-    call_init_conf = false;
-    init_conf(true);
 }
 
 void _PG_init(void) {
@@ -227,7 +219,6 @@ void _PG_init(void) {
     if (!IS_QUERY_DISPATCHER()) return;
 #endif
     init_conf(false);
-    RegisterXactCallback(init_xact_callback, NULL);
 }
 
 #if PG_VERSION_NUM < 130000
