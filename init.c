@@ -14,7 +14,6 @@ static bool task_drift;
 static bool task_header;
 static bool task_string;
 static char *task_active;
-static char *task_data;
 static char *task_delimiter;
 static char *task_escape;
 static char *task_group;
@@ -25,7 +24,6 @@ static char *task_reset;
 static char *task_schema;
 static char *task_table;
 static char *task_timeout;
-static char *task_user;
 static char *work_active;
 static int conf_restart;
 static int task_count;
@@ -256,12 +254,10 @@ static void init_object_access(ObjectAccessType access, Oid classId, Oid objectI
     if (access != OAT_DROP) return;
     if (get_extension_oid("pg_task", true) != objectId) return;
     if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
-    init_set(data, "pg_task.data", NULL);
     init_set(data, "pg_task.reset", NULL);
     init_set(data, "pg_task.schema", NULL);
     init_set(data, "pg_task.sleep", NULL);
     init_set(data, "pg_task.table", NULL);
-    init_set(data, "pg_task.user", NULL);
     pfree(data);
 }
 
@@ -284,12 +280,10 @@ static void init_ProcessUtility_hook(PlannedStmt *pstmt, const char *queryString
                 if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
                 if (!(schema = get_namespace_name(ext_oid))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema %u does not exist", ext_oid)));
                 if (!(user = GetUserNameFromIdMy(GetUserId()))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", GetUserId())));
-                init_set(data, "pg_task.data", data);
                 init_set(data, "pg_task.reset", reset);
                 init_set(data, "pg_task.schema", schema);
                 init_set(data, "pg_task.sleep", sleep);
                 init_set(data, "pg_task.table", table);
-                init_set(data, "pg_task.user", user);
 //                init_conf(true);
                 pfree(data);
                 pfree(schema);
@@ -317,7 +311,6 @@ void _PG_init(void) {
     DefineCustomIntVariable("pg_work.fetch", "pg_work fetch", "fetch at once", &work_fetch, 100, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.restart", "pg_work restart", "work restart interval", &work_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.active", "pg_task active", "task active after plan time", &task_active, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.data", "pg_task data", "database name for tasks table", &task_data, "postgres", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.delimiter", "pg_task delimiter", "results colums delimiter", &task_delimiter, "\t", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.escape", "pg_task escape", "results colums escape", &task_escape, "", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.group", "pg_task group", "group tasks name", &task_group, "group", PGC_USERSET, 0, NULL, NULL, NULL);
@@ -329,7 +322,6 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_task.schema", "pg_task schema", "schema name for tasks table", &task_schema, "public", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.table", "pg_task table", "table name for tasks table", &task_table, "task", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.timeout", "pg_task timeout", "task timeout", &task_timeout, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.user", "pg_task user", "user name for tasks table", &task_user, "postgres", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_work.active", "pg_work active", "task active before now", &work_active, "1 week", PGC_USERSET, 0, NULL, NULL, NULL);
     elog(DEBUG1, "null = %s, sleep = %i, reset = %s, active = %s", task_null, task_sleep, task_reset, work_active);
 #ifdef GP_VERSION_NUM

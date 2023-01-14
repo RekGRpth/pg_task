@@ -348,11 +348,8 @@ static void work_remote(Task *t) {
     values[arg] = name.data;
     initStringInfoMy(&value);
     if (options) appendStringInfoString(&value, options);
-    appendStringInfo(&value, "%s-c pg_task.data=%s", value.len ? " " : "", work.shared->data);
-    appendStringInfo(&value, " -c pg_task.user=%s", work.shared->user);
     appendStringInfo(&value, " -c pg_task.schema=%s", work.shared->schema);
     appendStringInfo(&value, " -c pg_task.table=%s", work.shared->table);
-    appendStringInfo(&value, " -c pg_task.oid=%i", work.shared->oid);
     appendStringInfo(&value, " -c pg_task.group=%s", t->group);
     arg++;
     keywords[arg] = "options";

@@ -35,22 +35,15 @@ void conf_main(Datum arg) {
     static const char *src = SQL(
         WITH _ AS (
             WITH _ AS (
-                WITH _ AS (
-                    SELECT datname, regexp_split_to_array(UNNEST(setconfig), '=') AS setconfig FROM pg_db_role_setting INNER JOIN pg_database ON setdatabase = oid
-                ) SELECT datname, jsonb_object(array_agg(setconfig[1]), array_agg(setconfig[2])) AS setconfig FROM _ GROUP BY 1
-            ) SELECT    datname,
-                        setconfig->>'pg_task.data' AS "data",
-                        EXTRACT(epoch FROM (setconfig->>'pg_task.reset')::interval)::bigint AS "reset",
-                        setconfig->>'pg_task.schema' AS "schema",
-                        (setconfig->>'pg_task.sleep')::bigint AS "sleep",
-                        setconfig->>'pg_task.table' AS "table",
-                        setconfig->>'pg_task.user' AS "user"
-            FROM _
-        ) SELECT _.* FROM _
-        LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3
-        AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = "data")
-        AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = "user")
-        AND "objid" = hashtext(quote_ident("schema")||'.'||quote_ident("table"))::oid
+                SELECT "datname", regexp_split_to_array(UNNEST("setconfig"), '=') AS "setconfig" FROM pg_db_role_setting INNER JOIN pg_database ON "setdatabase" = "oid" INNER JOIN pg_user ON "usesysid" = "datdba"
+            ) SELECT "datname", jsonb_object(array_agg("setconfig"[1]), array_agg("setconfig"[2])) AS "setconfig" FROM _ GROUP BY 1
+        ) SELECT    "datname" AS "data",
+                    "usename" AS "user",
+                    EXTRACT(epoch FROM ("setconfig"->>'pg_task.reset')::interval)::bigint AS "reset",
+                    "setconfig"->>'pg_task.schema' AS "schema",
+                    ("setconfig"->>'pg_task.sleep')::bigint AS "sleep",
+                    "setconfig"->>'pg_task.table' AS "table"
+        FROM _ LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = "oid" AND "classid" = "datdba" AND "objid" = hashtext(quote_ident("schema")||'.'||quote_ident("table"))::oid
         WHERE "pid" IS NULL
     );
     BackgroundWorkerUnblockSignals();
