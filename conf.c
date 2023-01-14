@@ -43,7 +43,7 @@ void conf_main(Datum arg) {
                     "setconfig"->>'pg_task.schema' AS "schema",
                     ("setconfig"->>'pg_task.sleep')::bigint AS "sleep",
                     "setconfig"->>'pg_task.table' AS "table"
-        FROM _ INNER JOIN "pg_database" ON "pg_database"."oid" = "setdatabase" INNER JOIN "pg_authid" ON "pg_authid"."oid" = "datdba"
+        FROM _ INNER JOIN "pg_database" ON "pg_database"."oid" = "setdatabase" INNER JOIN "pg_roles" ON "pg_roles"."oid" = "datdba"
         LEFT JOIN "pg_locks" ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = "setdatabase" AND "classid" = "datdba" AND "objid" = hashtext(quote_ident("setconfig"->>'pg_task.schema')||'.'||quote_ident("setconfig"->>'pg_task.table'))::oid
         WHERE "pid" IS NULL
     );
