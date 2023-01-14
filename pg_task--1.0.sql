@@ -43,11 +43,18 @@ DO $do$BEGIN
         CREATE INDEX ON %1$I.%2$I USING btree ("plan");
         CREATE INDEX ON %1$I.%2$I USING btree ("state");
         SELECT pg_catalog.pg_extension_config_dump('%1$I.%2$I', '');
+        ALTER DATABASE %5$I SET "pg_task.reset" TO %6$L;
+        ALTER DATABASE %5$I SET "pg_task.schema" TO %1$L;
+        ALTER DATABASE %5$I SET "pg_task.sleep" TO %7$L;
+        ALTER DATABASE %5$I SET "pg_task.table" TO %2$L;
     $format$,
         current_schema,
         current_setting('pg_task.table'),
         CASE WHEN current_setting('server_version_num')::int >= 120000 THEN $text$GENERATED ALWAYS AS (hashtext("group"||COALESCE("remote", ''))) STORED$text$ ELSE '' END,
-        (SELECT rolname FROM pg_database INNER JOIN pg_roles ON pg_roles.oid = datdba WHERE datname = current_catalog)
+        (SELECT rolname FROM pg_database INNER JOIN pg_roles ON pg_roles.oid = datdba WHERE datname = current_catalog),
+        current_catalog,
+        current_setting('pg_task.reset'),
+        current_setting('pg_task.sleep')
     );
     IF current_setting('server_version_num')::int < 120000 THEN
         EXECUTE FORMAT($format$

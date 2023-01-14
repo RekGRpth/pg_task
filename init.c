@@ -32,8 +32,6 @@ static int task_id;
 static int task_limit;
 static int task_max;
 static int task_sleep;
-static object_access_hook_type next_object_access_hook = NULL;
-static ProcessUtility_hook_type next_ProcessUtility_hook = NULL;
 
 bool init_oid_is_string(Oid oid) {
     switch (oid) {
@@ -188,113 +186,6 @@ void initStringInfoMy(StringInfoData *buf) {
     MemoryContextSwitchTo(oldMemoryContext);
 }
 
-static A_Const *makeAConst(const char *str) {
-    A_Const *v = makeNode(A_Const);
-    String *s = makeString((char *)str);
-    v->val.sval = *s;
-    pfree(s);
-    return v;
-}
-
-static void init_set(const char *data, const char *name, const char *value) {
-    ResourceOwner currentOwner = CurrentResourceOwner;
-    AlterDatabaseSetStmt *stmt = makeNode(AlterDatabaseSetStmt);
-    stmt->dbname = (char *)data;
-    stmt->setstmt = makeNode(VariableSetStmt);
-    if (value) stmt->setstmt->args = list_make1(makeAConst((char *)value));
-    stmt->setstmt->kind = value ? VAR_SET_VALUE : VAR_RESET;
-    stmt->setstmt->name = (char *)name;
-    BeginInternalSubTransaction(NULL);
-    CurrentResourceOwner = currentOwner;
-    (void)AlterDatabaseSet(stmt);
-    ReleaseCurrentSubTransaction();
-    CurrentResourceOwner = currentOwner;
-    list_free_deep(stmt->setstmt->args);
-    pfree(stmt->setstmt);
-    pfree(stmt);
-}
-
-static Oid
-get_extension_schema(Oid ext_oid)
-{
-	Oid			result;
-	Relation	rel;
-	SysScanDesc scandesc;
-	HeapTuple	tuple;
-	ScanKeyData entry[1];
-
-	rel = table_open(ExtensionRelationId, AccessShareLock);
-
-	ScanKeyInit(&entry[0],
-				Anum_pg_extension_oid,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(ext_oid));
-
-	scandesc = systable_beginscan(rel, ExtensionOidIndexId, true,
-								  NULL, 1, entry);
-
-	tuple = systable_getnext(scandesc);
-
-	/* We assume that there can be at most one matching tuple */
-	if (HeapTupleIsValid(tuple))
-		result = ((Form_pg_extension) GETSTRUCT(tuple))->extnamespace;
-	else
-		result = InvalidOid;
-
-	systable_endscan(scandesc);
-
-	table_close(rel, AccessShareLock);
-
-	return result;
-}
-
-static void init_object_access(ObjectAccessType access, Oid classId, Oid objectId, int subId, void *arg) {
-    char *data;
-    if (next_object_access_hook) next_object_access_hook(access, classId, objectId, subId, arg);
-    if (classId != ExtensionRelationId) return;
-    if (access != OAT_DROP) return;
-    if (get_extension_oid("pg_task", true) != objectId) return;
-    if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
-    init_set(data, "pg_task.reset", NULL);
-    init_set(data, "pg_task.schema", NULL);
-    init_set(data, "pg_task.sleep", NULL);
-    init_set(data, "pg_task.table", NULL);
-    pfree(data);
-}
-
-static void init_ProcessUtility_hook(PlannedStmt *pstmt, const char *queryString, bool readOnlyTree, ProcessUtilityContext context, ParamListInfo params, QueryEnvironment *queryEnv, DestReceiver *dest, QueryCompletion *qc) {
-    Node *parsetree = pstmt->utilityStmt;
-    next_ProcessUtility_hook(pstmt, queryString, readOnlyTree, context, params, queryEnv, dest, qc);
-    switch (nodeTag(parsetree)) {
-        case T_CreateExtensionStmt: {
-            CreateExtensionStmt *stmt = (CreateExtensionStmt *)parsetree;
-            if (!strcmp(stmt->extname, "pg_task")) {
-                Oid oid = get_extension_oid("pg_task", false);
-                char *data;
-                char *schema;
-                const char *table = GetConfigOption("pg_task.table", true, true);
-                const char *reset = GetConfigOption("pg_task.reset", true, true);
-                const char *sleep = GetConfigOption("pg_task.sleep", true, true);
-                char *user;
-                Oid ext_oid;
-                if ((ext_oid = get_extension_schema(oid)) == InvalidOid) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema for extension %u does not exist", oid)));
-                if (!(data = get_database_name(MyDatabaseId))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("database %u does not exist", MyDatabaseId)));
-                if (!(schema = get_namespace_name(ext_oid))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("schema %u does not exist", ext_oid)));
-                if (!(user = GetUserNameFromIdMy(GetUserId()))) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("user %u does not exist", GetUserId())));
-                init_set(data, "pg_task.reset", reset);
-                init_set(data, "pg_task.schema", schema);
-                init_set(data, "pg_task.sleep", sleep);
-                init_set(data, "pg_task.table", table);
-//                init_conf(true);
-                pfree(data);
-                pfree(schema);
-                pfree(user);
-            }
-        } break;
-        default: return;
-    }
-}
-
 static void init_xact_callback(XactEvent event, void *arg) {
     if (event != XACT_EVENT_COMMIT) return;
     if (!call_init_conf) return;
@@ -335,10 +226,6 @@ void _PG_init(void) {
 #ifdef GP_VERSION_NUM
     if (!IS_QUERY_DISPATCHER()) return;
 #endif
-    next_object_access_hook = object_access_hook;
-    object_access_hook = init_object_access;
-    next_ProcessUtility_hook = ProcessUtility_hook ? ProcessUtility_hook : standard_ProcessUtility;
-    ProcessUtility_hook = init_ProcessUtility_hook;
     init_conf(false);
     RegisterXactCallback(init_xact_callback, NULL);
 }
