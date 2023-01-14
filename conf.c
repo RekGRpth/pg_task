@@ -37,8 +37,8 @@ void conf_main(Datum arg) {
             WITH _ AS (
                 SELECT "setdatabase", regexp_split_to_array(UNNEST("setconfig"), '=') AS "setconfig" FROM "pg_db_role_setting"
             ) SELECT "setdatabase", jsonb_object(array_agg("setconfig"[1]), array_agg("setconfig"[2])) AS "setconfig" FROM _ GROUP BY 1
-        ) SELECT    "datname" AS "data",
-                    "rolname" AS "user",
+        ) SELECT    "datname"::text AS "data",
+                    "rolname"::text AS "user",
                     EXTRACT(epoch FROM ("setconfig"->>'pg_task.reset')::interval)::bigint AS "reset",
                     "setconfig"->>'pg_task.schema' AS "schema",
                     ("setconfig"->>'pg_task.sleep')::bigint AS "sleep",
