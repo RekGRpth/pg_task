@@ -16,10 +16,10 @@ DO $do$BEGIN
             "repeat" interval NOT NULL DEFAULT current_setting('pg_task.repeat')::interval CHECK ("repeat" >= '0 sec'::interval),
             "timeout" interval NOT NULL DEFAULT current_setting('pg_task.timeout')::interval CHECK ("timeout" >= '0 sec'::interval),
             "count" int NOT NULL DEFAULT current_setting('pg_task.count')::int CHECK ("count" >= 0),
-            "hash" int NOT NULL %2$s,
+            "hash" int NOT NULL %3$s,
             "max" int NOT NULL DEFAULT current_setting('pg_task.max')::int,
             "pid" int,
-            "state" "state" NOT NULL DEFAULT 'PLAN',
+            "state" %2$I."state" NOT NULL DEFAULT 'PLAN',
             "delete" bool NOT NULL DEFAULT current_setting('pg_task.delete')::bool,
             "drift" bool NOT NULL DEFAULT current_setting('pg_task.drift')::bool,
             "header" bool NOT NULL DEFAULT current_setting('pg_task.header')::bool,
@@ -43,6 +43,7 @@ DO $do$BEGIN
         SELECT pg_catalog.pg_extension_config_dump(%1$L, '');
     $format$,
         current_setting('pg_task.table'),
+        current_schema,
         CASE WHEN current_setting('server_version_num')::int >= 120000 THEN $text$GENERATED ALWAYS AS (hashtext("group"||COALESCE("remote", ''))) STORED$text$ ELSE '' END
     );
     IF current_setting('server_version_num')::int < 120000 THEN
