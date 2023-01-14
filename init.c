@@ -9,6 +9,7 @@ int conf_fetch;
 int task_fetch;
 int work_fetch;
 int work_restart;
+static bool call_init_conf = false;
 static bool task_delete;
 static bool task_drift;
 static bool task_header;
@@ -179,7 +180,7 @@ static void init_conf(bool dynamic) {
     } else RegisterBackgroundWorker(&worker);
 }
 
-EXTENSION(pg_task_init_conf) { init_conf(true); PG_RETURN_NULL(); }
+EXTENSION(pg_task_init_conf) { call_init_conf = true; PG_RETURN_NULL(); }
 
 void initStringInfoMy(StringInfoData *buf) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
@@ -294,6 +295,13 @@ static void init_ProcessUtility_hook(PlannedStmt *pstmt, const char *queryString
     }
 }
 
+static void init_xact_callback(XactEvent event, void *arg) {
+    if (event != XACT_EVENT_COMMIT) return;
+    if (!call_init_conf) return;
+    call_init_conf = false;
+    init_conf(true);
+}
+
 void _PG_init(void) {
     if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("This module can only be loaded via shared_preload_libraries")));
     DefineCustomBoolVariable("pg_task.delete", "pg_task delete", "delete task if output is null", &task_delete, true, PGC_USERSET, 0, NULL, NULL, NULL);
@@ -332,6 +340,7 @@ void _PG_init(void) {
     next_ProcessUtility_hook = ProcessUtility_hook ? ProcessUtility_hook : standard_ProcessUtility;
     ProcessUtility_hook = init_ProcessUtility_hook;
     init_conf(false);
+    RegisterXactCallback(init_xact_callback, NULL);
 }
 
 #if PG_VERSION_NUM < 130000
