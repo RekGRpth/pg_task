@@ -377,6 +377,7 @@ void task_free(Task *t) {
 }
 
 void task_main(Datum arg) {
+    const char *application_name;
     dsm_segment *seg;
     shm_toc *toc;
     StringInfoData oid, schema_table;
@@ -397,8 +398,9 @@ void task_main(Datum arg) {
     work.table = quote_identifier(work.shared->table);
     work.user = quote_identifier(work.shared->user);
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user, 0);
-    set_config_option_my("application_name", MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1);
+    application_name = MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1;
+    set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    pgstat_report_appname(application_name);
     set_ps_display_my("main");
     process_session_preload_libraries();
     elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", work.shared->oid, task.shared->id, task.shared->hash, task.shared->max);
