@@ -39,6 +39,7 @@ static char *PQresultErrorMessageMy(const PGresult *res) {
 }
 
 static void work_check(void) {
+    Datum values[] = {CStringGetTextDatum(work.shared->schema), CStringGetTextDatum(work.shared->table), Int64GetDatum(work.shared->sleep), Int64GetDatum(work.shared->reset)};
     static const char *src = SQL(
         WITH j AS (
             SELECT  COALESCE(COALESCE("data", "user"), current_setting('pg_task.data')) AS "data",
@@ -49,16 +50,20 @@ static void work_check(void) {
                     COALESCE(COALESCE("user", "data"), current_setting('pg_task.user')) AS "user"
             FROM    json_to_recordset(current_setting('pg_task.json')::json) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
         ) SELECT    DISTINCT j.* FROM j
-        WHERE "user" = current_user AND "data" = current_catalog AND "schema" = current_setting('pg_task.schema') AND "table" = current_setting('pg_task.table') AND "sleep" = current_setting('pg_task.sleep')::bigint
+        WHERE "user" = current_user AND "data" = current_catalog AND "schema" = $1 AND "table" = $2 AND "sleep" = $3 AND "reset" = $4
     );
+    static Oid argtypes[] = {TEXTOID, TEXTOID, INT8OID, INT8OID};
     static SPIPlanPtr plan = NULL;
+    elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s", work.shared->sleep, work.shared->reset, work.shared->schema, work.shared->table);
     if (ShutdownRequestPending) return;
     set_ps_display_my("check");
     SPI_connect_my(src);
-    if (!plan) plan = SPI_prepare_my(src, 0, NULL);
-    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
+    if (!plan) plan = SPI_prepare_my(src, countof(argtypes), argtypes);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_SELECT);
     if (!SPI_processed) ShutdownRequestPending = true;
     SPI_finish_my();
+    pfree((void *)values[0]);
+    pfree((void *)values[1]);
     set_ps_display_my("idle");
 }
 
