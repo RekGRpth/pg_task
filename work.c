@@ -666,15 +666,11 @@ static void work_update(void) {
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        DO $do$
-            BEGIN
-                BEGIN
-                    ALTER TABLE %1$s ADD COLUMN "data" text;
-                EXCEPTION
-                    WHEN duplicate_column THEN NULL;
-                END;
-            END;
-        $do$
+        DO $do$ BEGIN
+            IF NOT EXISTS (SELECT * FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'data') THEN
+                ALTER TABLE %1$s ADD COLUMN "data" text;
+            END IF;
+        END; $do$
     ), work.schema_table);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
