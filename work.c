@@ -39,7 +39,7 @@ static char *PQresultErrorMessageMy(const PGresult *res) {
 }
 
 static void work_check(void) {
-    Datum values[] = {CStringGetTextDatum(work.shared->schema), CStringGetTextDatum(work.shared->table), Int64GetDatum(work.shared->sleep), Int64GetDatum(work.shared->reset)};
+    Datum values[] = {Int32GetDatum(work.hash)};
     static const char *src = SQL(
         WITH j AS (
             SELECT  COALESCE(COALESCE("data", "user"), current_setting('pg_task.data')) AS "data",
@@ -49,12 +49,11 @@ static void work_check(void) {
                     COALESCE("sleep", current_setting('pg_task.sleep')::bigint) AS "sleep",
                     COALESCE(COALESCE("user", "data"), current_setting('pg_task.user')) AS "user"
             FROM    jsonb_to_recordset(current_setting('pg_task.json')::jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
-        ) SELECT    DISTINCT j.* FROM j
-        WHERE "user" = current_user AND "data" = current_catalog AND "schema" = $1 AND "table" = $2 AND "sleep" = $3 AND "reset" = $4
+        ) SELECT    DISTINCT j.* FROM j WHERE hashtext(concat_ws(' ', "user", "data", "schema", "table", "sleep")) = $1
     );
-    static Oid argtypes[] = {TEXTOID, TEXTOID, INT8OID, INT8OID};
+    static Oid argtypes[] = {INT4OID};
     static SPIPlanPtr plan = NULL;
-    if (ShutdownRequestPending) goto ret;
+    if (ShutdownRequestPending) return;
     set_ps_display_my("check");
     SPI_connect_my(src);
     if (!plan) plan = SPI_prepare_my(src, countof(argtypes), argtypes);
@@ -63,9 +62,6 @@ static void work_check(void) {
     elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, SPI_processed = %li", work.shared->sleep, work.shared->reset, work.shared->schema, work.shared->table, SPI_processed);
     SPI_finish_my();
     set_ps_display_my("idle");
-ret:
-    pfree((void *)values[0]);
-    pfree((void *)values[1]);
 }
 
 static void work_command(Task *t, PGresult *result) {
