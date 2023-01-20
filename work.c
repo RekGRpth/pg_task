@@ -670,49 +670,49 @@ static void work_update(void) {
             IF NOT EXISTS (SELECT * FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'data') THEN
                 ALTER TABLE %1$s ADD COLUMN "data" text;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'active') IS DISTINCT FROM $$(current_setting('pg_task.active'::text))::interval$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'active') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_active'::text))::interval$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "active" SET DEFAULT (current_setting('pg_task.active'::text))::interval;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'live') IS DISTINCT FROM $$(current_setting('pg_task.live'::text))::interval$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'live') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_live'::text))::interval$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "live" SET DEFAULT (current_setting('pg_task.live'::text))::interval;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'repeat') IS DISTINCT FROM $$(current_setting('pg_task.repeat'::text))::interval$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'repeat') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_repeat'::text))::interval$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "repeat" SET DEFAULT (current_setting('pg_task.repeat'::text))::interval;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'timeout') IS DISTINCT FROM $$(current_setting('pg_task.timeout'::text))::interval$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'timeout') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_timeout'::text))::interval$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "timeout" SET DEFAULT (current_setting('pg_task.timeout'::text))::interval;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'count') IS DISTINCT FROM $$(current_setting('pg_task.count'::text))::int$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'count') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_count'::text))::int$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "count" SET DEFAULT (current_setting('pg_task.count'::text))::int;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'max') IS DISTINCT FROM $$(current_setting('pg_task.max'::text))::int$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'max') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_max'::text))::int$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "max" SET DEFAULT (current_setting('pg_task.max'::text))::int;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'delete') IS DISTINCT FROM $$(current_setting('pg_task.delete'::text))::bool$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'delete') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_delete'::text))::bool$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "delete" SET DEFAULT (current_setting('pg_task.delete'::text))::bool;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'drift') IS DISTINCT FROM $$(current_setting('pg_task.drift'::text))::bool$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'drift') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_drift'::text))::bool$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "drift" SET DEFAULT (current_setting('pg_task.drift'::text))::bool;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'header') IS DISTINCT FROM $$(current_setting('pg_task.header'::text))::bool$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'header') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_header'::text))::bool$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "header" SET DEFAULT (current_setting('pg_task.header'::text))::bool;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'string') IS DISTINCT FROM $$(current_setting('pg_task.string'::text))::bool$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'string') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_string'::text))::bool$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "string" SET DEFAULT (current_setting('pg_task.string'::text))::bool;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'delimiter') IS DISTINCT FROM $$(current_setting('pg_task.delimiter'::text))::"char"$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'delimiter') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_delimiter'::text))::"char"$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "delimiter" SET DEFAULT (current_setting('pg_task.delimiter'::text))::"char";
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'escape') IS DISTINCT FROM $$(current_setting('pg_task.escape'::text))::"char"$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'escape') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_escape'::text))::"char"$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "escape" SET DEFAULT (current_setting('pg_task.escape'::text))::"char";
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'quote') IS DISTINCT FROM $$(current_setting('pg_task.quote'::text))::"char"$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'quote') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_quote'::text))::"char"$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "quote" SET DEFAULT (current_setting('pg_task.quote'::text))::"char";
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'group') IS DISTINCT FROM $$(current_setting('pg_task.group'::text))::text$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'group') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_group'::text))::text$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "group" SET DEFAULT (current_setting('pg_task.group'::text))::text;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'null') IS DISTINCT FROM $$(current_setting('pg_task.null'::text))::text$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'null') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_null'::text))::text$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (current_setting('pg_task.null'::text))::text;
             END IF;
         END; $do$
