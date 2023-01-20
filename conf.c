@@ -99,7 +99,7 @@ void conf_main(Datum arg) {
             WITH s AS (
                 WITH s AS (
                     SELECT "setdatabase", "setrole", regexp_split_to_array(UNNEST("setconfig"), '=') AS "setconfig" FROM "pg_db_role_setting"
-                ) SELECT "setdatabase", "setrole", jsonb_object(array_agg("setconfig"[1]), array_agg("setconfig"[2])) AS "setconfig" FROM s GROUP BY 1, 2
+                ) SELECT "setdatabase", "setrole", json_object(array_agg("setconfig"[1]), array_agg("setconfig"[2])) AS "setconfig" FROM s GROUP BY 1, 2
             ) SELECT    COALESCE("data", "user", current_setting('pg_task.data')) AS "data",
                         EXTRACT(epoch FROM COALESCE("reset", (u."setconfig"->>'pg_task.reset')::interval, (d."setconfig"->>'pg_task.reset')::interval, current_setting('pg_task.reset')::interval))::bigint AS "reset",
                         COALESCE("schema", u."setconfig"->>'pg_task.schema', d."setconfig"->>'pg_task.schema', current_setting('pg_task.schema')) AS "schema",
