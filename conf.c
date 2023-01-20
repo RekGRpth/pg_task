@@ -94,12 +94,14 @@ static void conf_work(Work *w) {
 void conf_main(Datum arg) {
     dlist_mutable_iter iter;
     Portal portal;
-    static const char *src = SQL(
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
         WITH j AS (
             WITH s AS (
                 WITH s AS (
                     SELECT "setdatabase", "setrole", regexp_split_to_array(UNNEST("setconfig"), '=') AS "setconfig" FROM "pg_db_role_setting"
-                ) SELECT "setdatabase", "setrole", json_object(array_agg("setconfig"[1]), array_agg("setconfig"[2])) AS "setconfig" FROM s GROUP BY 1, 2
+                ) SELECT "setdatabase", "setrole", %1$s(array_agg("setconfig"[1]), array_agg("setconfig"[2])) AS "setconfig" FROM s GROUP BY 1, 2
             ) SELECT    COALESCE("data", "user", current_setting('pg_task.data')) AS "data",
                         EXTRACT(epoch FROM COALESCE("reset", (u."setconfig"->>'pg_task.reset')::interval, (d."setconfig"->>'pg_task.reset')::interval, current_setting('pg_task.reset')::interval))::bigint AS "reset",
                         COALESCE("schema", u."setconfig"->>'pg_task.schema', d."setconfig"->>'pg_task.schema', current_setting('pg_task.schema')) AS "schema",
@@ -112,6 +114,12 @@ void conf_main(Datum arg) {
         ) SELECT    DISTINCT j.* FROM j
         LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = "data") AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = "user") AND "objid" = hashtext(quote_ident("schema")||'.'||quote_ident("table"))::oid
         WHERE "pid" IS NULL
+    ),
+#if PG_VERSION_NUM >= 90500
+        "jsonb_object"
+#else
+        "json_object"
+#endif
     );
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
@@ -122,8 +130,8 @@ void conf_main(Datum arg) {
     process_session_preload_libraries();
     if (!lock_data_user(MyDatabaseId, GetUserId())) { elog(WARNING, "!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()); return; }
     dlist_init(&head);
-    SPI_connect_my(src);
-    portal = SPI_cursor_open_with_args_my(src, src, 0, NULL, NULL, NULL);
+    SPI_connect_my(src.data);
+    portal = SPI_cursor_open_with_args_my(src.data, src.data, 0, NULL, NULL, NULL);
     do {
         SPI_cursor_fetch(portal, true, conf_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) {
@@ -144,6 +152,7 @@ void conf_main(Datum arg) {
     } while (SPI_processed);
     SPI_cursor_close(portal);
     SPI_finish_my();
+    pfree(src.data);
     set_ps_display_my("idle");
     dlist_foreach_modify(iter, &head) conf_work(dlist_container(Work, node, iter.cur));
     if (!unlock_data_user(MyDatabaseId, GetUserId())) elog(WARNING, "!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId());
