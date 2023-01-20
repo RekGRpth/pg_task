@@ -662,6 +662,26 @@ static void work_timeout(void) {
     set_ps_display_my("idle");
 }
 
+static void work_update(void) {
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        DO $do$
+            BEGIN
+                BEGIN
+                    ALTER TABLE %1$s ADD COLUMN "data" text;
+                EXCEPTION
+                    WHEN duplicate_column THEN NULL;
+                END;
+            END;
+        $do$
+    ), work.schema_table);
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_finish_my();
+    pfree(src.data);
+}
+
 static void work_writeable(Task *t) {
     t->socket(t);
 }
@@ -726,6 +746,7 @@ void work_main(Datum arg) {
     set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
     work_table();
+    work_update();
     work_index(countof(index_hash), index_hash);
     work_index(countof(index_input), index_input);
     work_index(countof(index_parent), index_parent);
