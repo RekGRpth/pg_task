@@ -670,6 +670,9 @@ static void work_update(void) {
             IF NOT EXISTS (SELECT * FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'data') THEN
                 ALTER TABLE %1$s ADD COLUMN "data" text;
             END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'active') IS DISTINCT FROM $$(current_setting('pg_task.active'::text))::interval$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "active" SET DEFAULT (current_setting('pg_task.active'::text))::interval;
+            END IF;
         END; $do$
     ), work.schema_table);
     SPI_connect_my(src.data);
