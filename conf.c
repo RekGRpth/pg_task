@@ -104,10 +104,7 @@ void conf_main(Datum arg) {
                     COALESCE(COALESCE("user", "data"), current_setting('pg_task.user')) AS "user"
             FROM    json_to_recordset(current_setting('pg_task.json')::json) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
         ) SELECT    DISTINCT j.* FROM j
-        LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3
-        AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = "data")
-        AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = "user")
-        AND "objid" = hashtext(quote_ident("schema")||'.'||quote_ident("table"))::oid
+        LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = "data") AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = "user") AND "objid" = hashtext(quote_ident("schema")||'.'||quote_ident("table"))::oid
         WHERE "pid" IS NULL
     );
     BackgroundWorkerUnblockSignals();
