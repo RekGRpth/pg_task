@@ -9,76 +9,76 @@ shared_preload_libraries = 'pg_task'
 by default pg_task
 1) executes
 ```conf
-pg_task.default_count = 1000
+pg_task.count = 1000
 ```
 tasks until exit
 
 2) uses database
 ```conf
-pg_task.default_data = 'postgres'
+pg_task.data = 'postgres'
 ```
 3) deletes task if output is null
 ```conf
-pg_task.default_delete = 'on'
+pg_task.delete = 'on'
 ```
 4) uses in output delimiter
 ```conf
-pg_task.default_delimiter = '\t'
+pg_task.delimiter = '\t'
 ```
 5) uses drift
 ```conf
-pg_task.default_drift = 'on'
+pg_task.drift = 'on'
 ```
 6) groupes tasks by
 ```conf
-pg_task.default_group = 'group'
+pg_task.group = 'group'
 ```
 7) prints headers in output
 ```conf
-pg_task.default_header = 'on'
+pg_task.header = 'on'
 ```
 8) processes tasks
 ```conf
-pg_task.default_live = '1 hour'
+pg_task.live = '1 hour'
 ```
 before exit
 
 9) executes simultaniously
 ```conf
-pg_task.default_max = 0
+pg_task.max = 0
 ```
 tasks
 
 10) prints null in output as
 ```conf
-pg_task.default_null = '\N'
+pg_task.null = '\N'
 ```
 
 11) uses schema
 ```conf
-pg_task.default_schema = 'public'
+pg_task.schema = 'public'
 ```
 for tasks
 
 12) prints only strings in quotes in output
 ```conf
-pg_task.default_string = 'on'
+pg_task.string = 'on'
 ```
 13) uses table
 ```conf
-pg_task.default_table = 'task'
+pg_task.table = 'task'
 ```
 for tasks
 
 14) uses sleep timeout
 ```conf
-pg_task.default_timeout = 1000
+pg_task.sleep = 1000
 ```
 milliseconds
 
 15) uses user
 ```conf
-pg_task.default_user = 'postgres'
+pg_task.user = 'postgres'
 ```
 
 by default pg_task run on default database with default user with default schema with default table with default timeout

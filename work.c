@@ -39,21 +39,33 @@ static char *PQresultErrorMessageMy(const PGresult *res) {
 }
 
 static void work_check(void) {
+    Datum values[] = {CStringGetTextDatum(work.shared->schema), CStringGetTextDatum(work.shared->table), Int64GetDatum(work.shared->sleep), Int64GetDatum(work.shared->reset)};
+    static const char *src = SQL(
+        WITH j AS (
+            SELECT  COALESCE(COALESCE("data", "user"), current_setting('pg_task.data')) AS "data",
+                    EXTRACT(epoch FROM COALESCE("reset", current_setting('pg_task.reset')::interval))::bigint AS "reset",
+                    COALESCE("schema", current_setting('pg_task.schema')) AS "schema",
+                    COALESCE("table", current_setting('pg_task.table')) AS "table",
+                    COALESCE("sleep", current_setting('pg_task.sleep')::bigint) AS "sleep",
+                    COALESCE(COALESCE("user", "data"), current_setting('pg_task.user')) AS "user"
+            FROM    json_to_recordset(current_setting('pg_task.json')::json) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
+        ) SELECT    DISTINCT j.* FROM j
+        WHERE "user" = current_user AND "data" = current_catalog AND "schema" = $1 AND "table" = $2 AND "sleep" = $3 AND "reset" = $4
+    );
+    static Oid argtypes[] = {TEXTOID, TEXTOID, INT8OID, INT8OID};
     static SPIPlanPtr plan = NULL;
-    static StringInfoData src = {0};
-    if (ShutdownRequestPending) return;
+    elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s", work.shared->sleep, work.shared->reset, work.shared->schema, work.shared->table);
+    if (ShutdownRequestPending) goto ret;
     set_ps_display_my("check");
-    if (!src.data) {
-        initStringInfoMy(&src);
-        appendStringInfoString(&src, init_check());
-        appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND "data" = current_catalog AND "schema" = current_setting('pg_task.schema') AND "table" = current_setting('pg_task.table') AND "sleep" = current_setting('pg_task.sleep')::bigint), " ");
-    }
-    SPI_connect_my(src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
-    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
+    SPI_connect_my(src);
+    if (!plan) plan = SPI_prepare_my(src, countof(argtypes), argtypes);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_SELECT);
     if (!SPI_processed) ShutdownRequestPending = true;
     SPI_finish_my();
     set_ps_display_my("idle");
+ret:
+    pfree((void *)values[0]);
+    pfree((void *)values[1]);
 }
 
 static void work_command(Task *t, PGresult *result) {
@@ -650,6 +662,67 @@ static void work_timeout(void) {
     set_ps_display_my("idle");
 }
 
+static void work_update(void) {
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        DO $do$ BEGIN
+            IF NOT EXISTS (SELECT * FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'data') THEN
+                ALTER TABLE %1$s ADD COLUMN "data" text;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'active') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_active'::text))::interval$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "active" SET DEFAULT (current_setting('pg_task.active'::text))::interval;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'live') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_live'::text))::interval$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "live" SET DEFAULT (current_setting('pg_task.live'::text))::interval;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'repeat') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_repeat'::text))::interval$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "repeat" SET DEFAULT (current_setting('pg_task.repeat'::text))::interval;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'timeout') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_timeout'::text))::interval$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "timeout" SET DEFAULT (current_setting('pg_task.timeout'::text))::interval;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'count') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_count'::text))::int$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "count" SET DEFAULT (current_setting('pg_task.count'::text))::int;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'max') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_max'::text))::int$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "max" SET DEFAULT (current_setting('pg_task.max'::text))::int;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'delete') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_delete'::text))::bool$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "delete" SET DEFAULT (current_setting('pg_task.delete'::text))::bool;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'drift') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_drift'::text))::bool$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "drift" SET DEFAULT (current_setting('pg_task.drift'::text))::bool;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'header') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_header'::text))::bool$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "header" SET DEFAULT (current_setting('pg_task.header'::text))::bool;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'string') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_string'::text))::bool$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "string" SET DEFAULT (current_setting('pg_task.string'::text))::bool;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'delimiter') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_delimiter'::text))::"char"$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "delimiter" SET DEFAULT (current_setting('pg_task.delimiter'::text))::"char";
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'escape') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_escape'::text))::"char"$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "escape" SET DEFAULT (current_setting('pg_task.escape'::text))::"char";
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'quote') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_quote'::text))::"char"$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "quote" SET DEFAULT (current_setting('pg_task.quote'::text))::"char";
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'group') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_group'::text))::text$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "group" SET DEFAULT (current_setting('pg_task.group'::text))::text;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'null') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_null'::text))::text$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (current_setting('pg_task.null'::text))::text;
+            END IF;
+        END; $do$
+    ), work.schema_table);
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_finish_my();
+    pfree(src.data);
+}
+
 static void work_writeable(Task *t) {
     t->socket(t);
 }
@@ -714,6 +787,7 @@ void work_main(Datum arg) {
     set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
     work_table();
+    work_update();
     work_index(countof(index_hash), index_hash);
     work_index(countof(index_input), index_input);
     work_index(countof(index_parent), index_parent);

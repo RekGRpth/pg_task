@@ -94,7 +94,25 @@ static void conf_work(Work *w) {
 void conf_main(Datum arg) {
     dlist_mutable_iter iter;
     Portal portal;
-    StringInfoData src;
+    static const char *src = SQL(
+        WITH j AS (
+            WITH s AS (
+                WITH s AS (
+                    SELECT "setdatabase", "setrole", regexp_split_to_array(UNNEST("setconfig"), '=') AS "setconfig" FROM "pg_db_role_setting"
+                ) SELECT "setdatabase", "setrole", jsonb_object(array_agg("setconfig"[1]), array_agg("setconfig"[2])) AS "setconfig" FROM s GROUP BY 1, 2
+            ) SELECT    COALESCE("data", "user", current_setting('pg_task.data')) AS "data",
+                        EXTRACT(epoch FROM COALESCE("reset", (u."setconfig"->>'pg_task.reset')::interval, (d."setconfig"->>'pg_task.reset')::interval, current_setting('pg_task.reset')::interval))::bigint AS "reset",
+                        COALESCE("schema", u."setconfig"->>'pg_task.schema', d."setconfig"->>'pg_task.schema', current_setting('pg_task.schema')) AS "schema",
+                        COALESCE("table", u."setconfig"->>'pg_task.table', d."setconfig"->>'pg_task.table', current_setting('pg_task.table')) AS "table",
+                        COALESCE("sleep", (u."setconfig"->>'pg_task.sleep')::bigint, (d."setconfig"->>'pg_task.sleep')::bigint, current_setting('pg_task.sleep')::bigint) AS "sleep",
+                        COALESCE("user", "data", current_setting('pg_task.user')) AS "user"
+            FROM        json_to_recordset(current_setting('pg_task.json')::json) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
+            LEFT JOIN   s AS d on d."setdatabase" = (SELECT "oid" FROM "pg_database" WHERE "datname" = COALESCE("data", "user", current_setting('pg_task.data')))
+            LEFT JOIN   s AS u on u."setrole" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = COALESCE("user", "data", current_setting('pg_task.user')))
+        ) SELECT    DISTINCT j.* FROM j
+        LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = "data") AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = "user") AND "objid" = hashtext(quote_ident("schema")||'.'||quote_ident("table"))::oid
+        WHERE "pid" IS NULL
+    );
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL, 0);
@@ -104,17 +122,8 @@ void conf_main(Datum arg) {
     process_session_preload_libraries();
     if (!lock_data_user(MyDatabaseId, GetUserId())) { elog(WARNING, "!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()); return; }
     dlist_init(&head);
-    initStringInfoMy(&src);
-    appendStringInfoString(&src, init_check());
-    appendStringInfo(&src, SQL(%1$s
-        LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3
-        AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = "data")
-        AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = "user")
-        AND "objid" = hashtext(quote_ident("schema")||'.'||quote_ident("table"))::oid
-        WHERE "pid" IS NULL)
-    , " ");
-    SPI_connect_my(src.data);
-    portal = SPI_cursor_open_with_args_my(src.data, src.data, 0, NULL, NULL, NULL);
+    SPI_connect_my(src);
+    portal = SPI_cursor_open_with_args_my(src, src, 0, NULL, NULL, NULL);
     do {
         SPI_cursor_fetch(portal, true, conf_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) {
@@ -136,7 +145,6 @@ void conf_main(Datum arg) {
     SPI_cursor_close(portal);
     SPI_finish_my();
     set_ps_display_my("idle");
-    pfree(src.data);
     dlist_foreach_modify(iter, &head) conf_work(dlist_container(Work, node, iter.cur));
     if (!unlock_data_user(MyDatabaseId, GetUserId())) elog(WARNING, "!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId());
 }
