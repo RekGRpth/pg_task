@@ -48,7 +48,7 @@ static void work_check(void) {
                     COALESCE("table", current_setting('pg_task.table')) AS "table",
                     COALESCE("sleep", current_setting('pg_task.sleep')::bigint) AS "sleep",
                     COALESCE(COALESCE("user", "data"), current_setting('pg_task.user')) AS "user"
-            FROM    json_to_recordset(current_setting('pg_task.json')::json) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
+            FROM    jsonb_to_recordset(current_setting('pg_task.json')::jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
         ) SELECT    DISTINCT j.* FROM j
         WHERE "user" = current_user AND "data" = current_catalog AND "schema" = $1 AND "table" = $2 AND "sleep" = $3 AND "reset" = $4
     );
