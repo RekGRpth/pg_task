@@ -96,13 +96,19 @@ void conf_main(Datum arg) {
     Portal portal;
     static const char *src = SQL(
         WITH j AS (
-            SELECT  COALESCE(COALESCE("data", "user"), current_setting('pg_task.data')) AS "data",
-                    EXTRACT(epoch FROM COALESCE("reset", current_setting('pg_task.reset')::interval))::bigint AS "reset",
-                    COALESCE("schema", current_setting('pg_task.schema')) AS "schema",
-                    COALESCE("table", current_setting('pg_task.table')) AS "table",
-                    COALESCE("sleep", current_setting('pg_task.sleep')::bigint) AS "sleep",
-                    COALESCE(COALESCE("user", "data"), current_setting('pg_task.user')) AS "user"
-            FROM    json_to_recordset(current_setting('pg_task.json')::json) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
+            WITH s AS (
+                WITH s AS (
+                    SELECT "setdatabase", "setrole", regexp_split_to_array(UNNEST("setconfig"), '=') AS "setconfig" FROM "pg_db_role_setting"
+                ) SELECT "setdatabase", "setrole", jsonb_object(array_agg("setconfig"[1]), array_agg("setconfig"[2])) AS "setconfig" FROM s GROUP BY 1, 2
+            ) SELECT    COALESCE("data", "user", current_setting('pg_task.data')) AS "data",
+                        EXTRACT(epoch FROM COALESCE("reset", (u."setconfig"->>'pg_task.reset')::interval, (d."setconfig"->>'pg_task.reset')::interval, current_setting('pg_task.reset')::interval))::bigint AS "reset",
+                        COALESCE("schema", u."setconfig"->>'pg_task.schema', d."setconfig"->>'pg_task.schema', current_setting('pg_task.schema')) AS "schema",
+                        COALESCE("table", u."setconfig"->>'pg_task.table', d."setconfig"->>'pg_task.table', current_setting('pg_task.table')) AS "table",
+                        COALESCE("sleep", (u."setconfig"->>'pg_task.sleep')::bigint, (d."setconfig"->>'pg_task.sleep')::bigint, current_setting('pg_task.sleep')::bigint) AS "sleep",
+                        COALESCE("user", "data", current_setting('pg_task.user')) AS "user"
+            FROM        json_to_recordset(current_setting('pg_task.json')::json) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
+            LEFT JOIN   s AS d on d."setdatabase" = (SELECT "oid" FROM "pg_database" WHERE "datname" = COALESCE("data", "user", current_setting('pg_task.data')))
+            LEFT JOIN   s AS u on u."setrole" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = COALESCE("user", "data", current_setting('pg_task.user')))
         ) SELECT    DISTINCT j.* FROM j
         LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = "data") AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = "user") AND "objid" = hashtext(quote_ident("schema")||'.'||quote_ident("table"))::oid
         WHERE "pid" IS NULL
