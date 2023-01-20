@@ -673,6 +673,48 @@ static void work_update(void) {
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'active') IS DISTINCT FROM $$(current_setting('pg_task.active'::text))::interval$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "active" SET DEFAULT (current_setting('pg_task.active'::text))::interval;
             END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'live') IS DISTINCT FROM $$(current_setting('pg_task.live'::text))::interval$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "live" SET DEFAULT (current_setting('pg_task.live'::text))::interval;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'repeat') IS DISTINCT FROM $$(current_setting('pg_task.repeat'::text))::interval$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "repeat" SET DEFAULT (current_setting('pg_task.repeat'::text))::interval;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'timeout') IS DISTINCT FROM $$(current_setting('pg_task.timeout'::text))::interval$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "timeout" SET DEFAULT (current_setting('pg_task.timeout'::text))::interval;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'count') IS DISTINCT FROM $$(current_setting('pg_task.count'::text))::int$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "count" SET DEFAULT (current_setting('pg_task.count'::text))::int;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'max') IS DISTINCT FROM $$(current_setting('pg_task.max'::text))::int$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "max" SET DEFAULT (current_setting('pg_task.max'::text))::int;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'delete') IS DISTINCT FROM $$(current_setting('pg_task.delete'::text))::bool$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "delete" SET DEFAULT (current_setting('pg_task.delete'::text))::bool;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'drift') IS DISTINCT FROM $$(current_setting('pg_task.drift'::text))::bool$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "drift" SET DEFAULT (current_setting('pg_task.drift'::text))::bool;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'header') IS DISTINCT FROM $$(current_setting('pg_task.header'::text))::bool$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "header" SET DEFAULT (current_setting('pg_task.header'::text))::bool;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'string') IS DISTINCT FROM $$(current_setting('pg_task.string'::text))::bool$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "string" SET DEFAULT (current_setting('pg_task.string'::text))::bool;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'delimiter') IS DISTINCT FROM $$(current_setting('pg_task.delimiter'::text))::"char"$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "delimiter" SET DEFAULT (current_setting('pg_task.delimiter'::text))::"char";
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'escape') IS DISTINCT FROM $$(current_setting('pg_task.escape'::text))::"char"$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "escape" SET DEFAULT (current_setting('pg_task.escape'::text))::"char";
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'quote') IS DISTINCT FROM $$(current_setting('pg_task.quote'::text))::"char"$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "quote" SET DEFAULT (current_setting('pg_task.quote'::text))::"char";
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'group') IS DISTINCT FROM $$(current_setting('pg_task.group'::text))::text$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "group" SET DEFAULT (current_setting('pg_task.group'::text))::text;
+            END IF;
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = current_setting('pg_task.schema') AND table_name = current_setting('pg_task.table') AND column_name = 'null') IS DISTINCT FROM $$(current_setting('pg_task.null'::text))::text$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (current_setting('pg_task.null'::text))::text;
+            END IF;
         END; $do$
     ), work.schema_table);
     SPI_connect_my(src.data);
