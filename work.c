@@ -39,17 +39,23 @@ static char *PQresultErrorMessageMy(const PGresult *res) {
 }
 
 static void work_check(void) {
+    static const char *src = SQL(
+        WITH j AS (
+            SELECT  COALESCE(COALESCE("data", "user"), current_setting('pg_task.data')) AS "data",
+                    EXTRACT(epoch FROM COALESCE("reset", current_setting('pg_task.reset')::interval))::bigint AS "reset",
+                    COALESCE("schema", current_setting('pg_task.schema')) AS "schema",
+                    COALESCE("table", current_setting('pg_task.table')) AS "table",
+                    COALESCE("sleep", current_setting('pg_task.sleep')::bigint) AS "sleep",
+                    COALESCE(COALESCE("user", "data"), current_setting('pg_task.user')) AS "user"
+            FROM    json_to_recordset(current_setting('pg_task.json')::json) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
+        ) SELECT    DISTINCT j.* FROM j
+        WHERE "user" = current_user AND "data" = current_catalog AND "schema" = current_setting('pg_task.schema') AND "table" = current_setting('pg_task.table') AND "sleep" = current_setting('pg_task.sleep')::bigint
+    );
     static SPIPlanPtr plan = NULL;
-    static StringInfoData src = {0};
     if (ShutdownRequestPending) return;
     set_ps_display_my("check");
-    if (!src.data) {
-        initStringInfoMy(&src);
-        appendStringInfoString(&src, init_check());
-        appendStringInfo(&src, SQL(%1$sWHERE "user" = current_user AND "data" = current_catalog AND "schema" = current_setting('pg_task.schema') AND "table" = current_setting('pg_task.table') AND "sleep" = current_setting('pg_task.sleep')::bigint), " ");
-    }
-    SPI_connect_my(src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
+    SPI_connect_my(src);
+    if (!plan) plan = SPI_prepare_my(src, 0, NULL);
     SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     if (!SPI_processed) ShutdownRequestPending = true;
     SPI_finish_my();
