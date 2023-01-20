@@ -188,6 +188,7 @@ static void init_assign_string(const char *var, const char *newval, void *extra)
 
 static void init_assign_data(const char *newval, void *extra) { init_assign_string("pg_task.data", newval, extra); }
 static void init_assign_json(const char *newval, void *extra) { init_assign_string("pg_task.json", newval, extra); }
+static void init_assign_reset(const char *newval, void *extra) { init_assign_string("pg_task.reset", newval, extra); }
 static void init_assign_schema(const char *newval, void *extra) { init_assign_string("pg_task.schema", newval, extra); }
 static void init_assign_table(const char *newval, void *extra) { init_assign_string("pg_task.table", newval, extra); }
 static void init_assign_user(const char *newval, void *extra) { init_assign_string("pg_task.user", newval, extra); }
@@ -224,7 +225,7 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_task.null", "pg_task null", "text null representation", &task_null, "\\N", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.quote", "pg_task quote", "results colums quote", &task_quote, "", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.repeat", "pg_task repeat", "repeat task", &task_repeat, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.reset", "pg_task reset", "reset tasks every interval", &task_reset, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.reset", "pg_task reset", "reset tasks every interval", &task_reset, "1 hour", PGC_USERSET, 0, NULL, init_assign_reset, NULL);
     DefineCustomStringVariable("pg_task.schema", "pg_task schema", "schema name for tasks table", &task_schema, "public", PGC_USERSET, 0, NULL, init_assign_schema, NULL);
     DefineCustomStringVariable("pg_task.table", "pg_task table", "table name for tasks table", &task_table, "task", PGC_USERSET, 0, NULL, init_assign_table, NULL);
     DefineCustomStringVariable("pg_task.timeout", "pg_task timeout", "task timeout", &task_timeout, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
