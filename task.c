@@ -294,7 +294,6 @@ void task_error(ErrorData *edata) {
     }
 }
 
-
 static void task_execute(void) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
     MemoryContextResetAndDeleteChildren(MessageContext);
