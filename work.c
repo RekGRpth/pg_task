@@ -54,13 +54,13 @@ static void work_check(void) {
     );
     static Oid argtypes[] = {TEXTOID, TEXTOID, INT8OID, INT8OID};
     static SPIPlanPtr plan = NULL;
-    elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s", work.shared->sleep, work.shared->reset, work.shared->schema, work.shared->table);
     if (ShutdownRequestPending) goto ret;
     set_ps_display_my("check");
     SPI_connect_my(src);
     if (!plan) plan = SPI_prepare_my(src, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_SELECT);
     if (!SPI_processed) ShutdownRequestPending = true;
+    elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, SPI_processed = %li", work.shared->sleep, work.shared->reset, work.shared->schema, work.shared->table, SPI_processed);
     SPI_finish_my();
     set_ps_display_my("idle");
 ret:
