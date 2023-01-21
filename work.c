@@ -547,7 +547,6 @@ static void work_table(void) {
     pfree((void *)rangevar);
     list_free_deep(names);
     resetStringInfo(&src);
-    appendStringInfo(&src, "%i", work.shared->oid);
     pfree(hash.data);
     pfree(src.data);
     set_ps_display_my("idle");
@@ -739,7 +738,7 @@ void work_main(Datum arg) {
     long current_reset = -1;
     long current_timeout = -1;
     shm_toc *toc;
-    StringInfoData schema_table, schema_type, sleep;
+    StringInfoData schema_table, schema_type;
     on_proc_exit(work_proc_exit, (Datum)NULL);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
@@ -791,9 +790,6 @@ void work_main(Datum arg) {
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);
     work_index(countof(index_state), index_state);
-    initStringInfoMy(&sleep);
-    appendStringInfo(&sleep, "%li", work.shared->sleep);
-    pfree(sleep.data);
     set_ps_display_my("idle");
     work_reset();
     while (!ShutdownRequestPending) {
