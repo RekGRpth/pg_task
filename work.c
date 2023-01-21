@@ -731,7 +731,6 @@ void work_main(Datum arg) {
     const char *index_plan[] = {"plan"};
     const char *index_state[] = {"state"};
     Datum datum;
-    dsm_segment *seg;
     instr_time current_reset_time;
     instr_time current_timeout_time;
     instr_time start_time;
@@ -751,13 +750,13 @@ void work_main(Datum arg) {
     Gp_session_role = GP_ROLE_UTILITY;
 #endif
 #endif
-    if (!(seg = dsm_attach(DatumGetUInt32(arg)))) { ereport(WARNING, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment"))); return; }
+    if (!(work.seg = dsm_attach(DatumGetUInt32(arg)))) { ereport(WARNING, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment"))); return; }
 #if PG_VERSION_NUM >= 100000
-    dsm_unpin_segment(dsm_segment_handle(seg));
+    dsm_unpin_segment(dsm_segment_handle(work.seg));
 #else
-    dsm_cleanup_using_control_segment(dsm_segment_handle(seg));
+    dsm_cleanup_using_control_segment(dsm_segment_handle(work.seg));
 #endif
-    if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
+    if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(work.seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     work.shared = shm_toc_lookup_my(toc, 0, false);
     work.data = quote_identifier(work.shared->data);
     work.schema = quote_identifier(work.shared->schema);
