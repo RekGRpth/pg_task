@@ -547,7 +547,6 @@ static void work_table(void) {
     pfree((void *)rangevar);
     list_free_deep(names);
     resetStringInfo(&src);
-    appendStringInfo(&src, "%i", work.shared->oid);
     pfree(hash.data);
     pfree(src.data);
     set_ps_display_my("idle");
