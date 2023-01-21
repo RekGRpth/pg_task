@@ -378,19 +378,18 @@ void task_free(Task *t) {
 
 void task_main(Datum arg) {
     const char *application_name;
-    dsm_segment *seg;
     shm_toc *toc;
     StringInfoData oid, schema_table;
     on_proc_exit(task_proc_exit, (Datum)NULL);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
-    if (!(seg = dsm_attach(DatumGetUInt32(arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
+    if (!(task.seg = dsm_attach(DatumGetUInt32(arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
 #if PG_VERSION_NUM >= 100000
-    dsm_unpin_segment(dsm_segment_handle(seg));
+    dsm_unpin_segment(dsm_segment_handle(task.seg));
 #else
-    dsm_cleanup_using_control_segment(dsm_segment_handle(seg));
+    dsm_cleanup_using_control_segment(dsm_segment_handle(task.seg));
 #endif
-    if (!(toc = shm_toc_attach(PG_TASK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
+    if (!(toc = shm_toc_attach(PG_TASK_MAGIC, dsm_segment_address(task.seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     task.shared = shm_toc_lookup_my(toc, 0, false);
     if (!(work.seg = dsm_attach(task.shared->handle))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(work.seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
