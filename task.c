@@ -294,7 +294,6 @@ void task_error(ErrorData *edata) {
     }
 }
 
-
 static void task_execute(void) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
     MemoryContextResetAndDeleteChildren(MessageContext);
@@ -378,6 +377,7 @@ void task_free(Task *t) {
 }
 
 void task_main(Datum arg) {
+    const char *application_name;
     dsm_segment *seg;
     shm_toc *toc;
     StringInfoData schema_table;
@@ -396,8 +396,9 @@ void task_main(Datum arg) {
     work.schema = quote_identifier(work.shared->schema);
     work.table = quote_identifier(work.shared->table);
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user, 0);
-    SetConfigOption("application_name", MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1, PGC_USERSET, PGC_S_SESSION);
-    pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1);
+    application_name = MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1;
+    SetConfigOption("application_name", application_name, PGC_USERSET, PGC_S_SESSION);
+    pgstat_report_appname(application_name);
     set_ps_display_my("main");
     process_session_preload_libraries();
     elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", work.shared->oid, task.shared->id, task.shared->hash, task.shared->max);
