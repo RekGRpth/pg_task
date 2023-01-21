@@ -754,6 +754,8 @@ void work_main(Datum arg) {
     if (!(seg = dsm_attach(DatumGetUInt32(arg)))) { ereport(WARNING, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment"))); return; }
 #if PG_VERSION_NUM >= 100000
     dsm_unpin_segment(dsm_segment_handle(seg));
+#else
+    dsm_cleanup_using_control_segment(dsm_segment_handle(seg));
 #endif
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     work.shared = shm_toc_lookup_my(toc, 0, false);
