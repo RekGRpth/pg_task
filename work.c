@@ -476,7 +476,6 @@ static void work_table(void) {
     StringInfoData src, hash;
     elog(DEBUG1, "schema_table = %s, schema_type = %s", work.schema_table, work.schema_type);
     set_ps_display_my("table");
-    set_config_option_my("pg_task.table", work.shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(&hash);
 #if PG_VERSION_NUM >= 120000
     appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (hashtext("group"||COALESCE("remote", '%1$s'))) STORED), "");
@@ -547,10 +546,8 @@ static void work_table(void) {
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
-    set_config_option_my("pg_task.table", work.shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     resetStringInfo(&src);
     appendStringInfo(&src, "%i", work.shared->oid);
-    set_config_option_my("pg_task.oid", src.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(hash.data);
     pfree(src.data);
     set_ps_display_my("idle");
@@ -786,7 +783,6 @@ void work_main(Datum arg) {
     work.schema_type = schema_type.data;
     elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.hash);
     work_schema(work.schema);
-    set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
     work_table();
     work_update();
@@ -795,11 +791,8 @@ void work_main(Datum arg) {
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);
     work_index(countof(index_state), index_state);
-    set_config_option_my("pg_task.data", work.shared->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option_my("pg_task.user", work.shared->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(&sleep);
     appendStringInfo(&sleep, "%li", work.shared->sleep);
-    set_config_option_my("pg_task.sleep", sleep.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(sleep.data);
     set_ps_display_my("idle");
     work_reset();
