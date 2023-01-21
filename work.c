@@ -485,6 +485,7 @@ static void work_writeable(Task *t) {
 }
 
 void work_main(Datum arg) {
+    const char *application_name;
     Datum datum;
     dsm_segment *seg;
     instr_time current_reset_time;
@@ -515,14 +516,15 @@ void work_main(Datum arg) {
     work.schema = quote_identifier(work.shared->schema);
     work.table = quote_identifier(work.shared->table);
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user, 0);
-    SetConfigOption("application_name", MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1, PGC_USERSET, PGC_S_SESSION);
-    pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1);
+    application_name = MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1;
+    SetConfigOption("application_name", application_name, PGC_USERSET, PGC_S_SESSION);
+    pgstat_report_appname(application_name);
     set_ps_display_my("main");
     process_session_preload_libraries();
     initStringInfoMy(&schema_table);
     appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);
     work.schema_table = schema_table.data;
-    datum = CStringGetTextDatumMy(work.schema_table);
+    datum = CStringGetTextDatumMy(application_name);
     work.hash = DatumGetInt32(DirectFunctionCall1Coll(hashtext, DEFAULT_COLLATION_OID, datum));
     pfree((void *)datum);
     if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.hash)) { elog(WARNING, "!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.hash); ShutdownRequestPending = true; return; }
