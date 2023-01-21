@@ -87,6 +87,7 @@ static void conf_work(Work *w) {
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     pfree(handle);
+    dsm_pin_segment(w->seg);
     dsm_detach(w->seg);
     pfree(w);
 }
