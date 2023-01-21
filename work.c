@@ -39,7 +39,7 @@ static char *PQresultErrorMessageMy(const PGresult *res) {
 }
 
 static void work_check(void) {
-    Datum values[] = {CStringGetTextDatum(work.shared->schema), CStringGetTextDatum(work.shared->table), Int64GetDatum(work.shared->sleep), Int64GetDatum(work.shared->reset)};
+    Datum values[] = {Int32GetDatum(work.hash)};
     static const char *src = SQL(
         WITH j AS (
             SELECT  COALESCE(COALESCE("data", "user"), current_setting('pg_task.data')) AS "data",
@@ -49,23 +49,19 @@ static void work_check(void) {
                     COALESCE("sleep", current_setting('pg_task.sleep')::bigint) AS "sleep",
                     COALESCE(COALESCE("user", "data"), current_setting('pg_task.user')) AS "user"
             FROM    jsonb_to_recordset(current_setting('pg_task.json')::jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
-        ) SELECT    DISTINCT j.* FROM j
-        WHERE "user" = current_user AND "data" = current_catalog AND "schema" = $1 AND "table" = $2 AND "sleep" = $3 AND "reset" = $4
+        ) SELECT    DISTINCT j.* FROM j WHERE hashtext(concat_ws(' ', 'pg_work', "schema", "table", "sleep")) = $1
     );
-    static Oid argtypes[] = {TEXTOID, TEXTOID, INT8OID, INT8OID};
+    static Oid argtypes[] = {INT4OID};
     static SPIPlanPtr plan = NULL;
-    elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s", work.shared->sleep, work.shared->reset, work.shared->schema, work.shared->table);
-    if (ShutdownRequestPending) goto ret;
+    if (ShutdownRequestPending) return;
     set_ps_display_my("check");
     SPI_connect_my(src);
     if (!plan) plan = SPI_prepare_my(src, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_SELECT);
     if (!SPI_processed) ShutdownRequestPending = true;
+    elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, SPI_processed = %li", work.shared->sleep, work.shared->reset, work.shared->schema, work.shared->table, SPI_processed);
     SPI_finish_my();
     set_ps_display_my("idle");
-ret:
-    pfree((void *)values[0]);
-    pfree((void *)values[1]);
 }
 
 static void work_command(Task *t, PGresult *result) {
@@ -480,7 +476,6 @@ static void work_table(void) {
     StringInfoData src, hash;
     elog(DEBUG1, "schema_table = %s, schema_type = %s", work.schema_table, work.schema_type);
     set_ps_display_my("table");
-    set_config_option_my("pg_task.table", work.shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(&hash);
 #if PG_VERSION_NUM >= 120000
     appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (hashtext("group"||COALESCE("remote", '%1$s'))) STORED), "");
@@ -551,10 +546,8 @@ static void work_table(void) {
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
-    set_config_option_my("pg_task.table", work.shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     resetStringInfo(&src);
     appendStringInfo(&src, "%i", work.shared->oid);
-    set_config_option_my("pg_task.oid", src.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(hash.data);
     pfree(src.data);
     set_ps_display_my("idle");
@@ -732,6 +725,7 @@ static void work_writeable(Task *t) {
 }
 
 void work_main(Datum arg) {
+    const char *application_name;
     const char *index_hash[] = {"hash"};
     const char *index_input[] = {"input"};
     const char *index_parent[] = {"parent"};
@@ -769,14 +763,15 @@ void work_main(Datum arg) {
     work.table = quote_identifier(work.shared->table);
     work.user = quote_identifier(work.shared->user);
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user, 0);
-    set_config_option_my("application_name", MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    pgstat_report_appname(MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1);
+    application_name = MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1;
+    set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    pgstat_report_appname(application_name);
     set_ps_display_my("main");
     process_session_preload_libraries();
     initStringInfoMy(&schema_table);
     appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);
     work.schema_table = schema_table.data;
-    datum = CStringGetTextDatumMy(work.schema_table);
+    datum = CStringGetTextDatumMy(application_name);
     work.hash = DatumGetInt32(DirectFunctionCall1Coll(hashtext, DEFAULT_COLLATION_OID, datum));
     pfree((void *)datum);
     if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.hash)) { elog(WARNING, "!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.hash); ShutdownRequestPending = true; return; }
@@ -788,7 +783,6 @@ void work_main(Datum arg) {
     work.schema_type = schema_type.data;
     elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.hash);
     work_schema(work.schema);
-    set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     work_type();
     work_table();
     work_update();
@@ -797,11 +791,8 @@ void work_main(Datum arg) {
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);
     work_index(countof(index_state), index_state);
-    set_config_option_my("pg_task.data", work.shared->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option_my("pg_task.user", work.shared->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     initStringInfoMy(&sleep);
     appendStringInfo(&sleep, "%li", work.shared->sleep);
-    set_config_option_my("pg_task.sleep", sleep.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pfree(sleep.data);
     set_ps_display_my("idle");
     work_reset();
