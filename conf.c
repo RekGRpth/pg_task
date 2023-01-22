@@ -113,7 +113,7 @@ void conf_main(Datum arg) {
     dlist_mutable_iter iter;
     Portal portal;
     StringInfoData src;
-    struct sigaction act, oldact;
+    struct sigaction act = {0}, oldact = {0};
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         WITH j AS (

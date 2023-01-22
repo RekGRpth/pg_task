@@ -470,6 +470,20 @@ static void work_remote(Task *t) {
     t->group = NULL;
 }
 
+static void work_sigaction(int signum, siginfo_t *siginfo, void *code)  {
+    dlist_mutable_iter iter;
+    elog(DEBUG1, "si_pid = %i", siginfo->si_pid);
+    dlist_foreach_modify(iter, &local) {
+        Task *t = dlist_container(Task, node, iter.cur);
+        if (siginfo->si_pid == t->pid) {
+            dlist_delete(&t->node);
+            dsm_detach(t->seg);
+            task_free(t);
+            pfree(t);
+        }
+    }
+}
+
 static void work_table(void) {
     List *names = stringToQualifiedNameList(work.schema_table);
     const RangeVar *rangevar = makeRangeVarFromNameList(names);
@@ -555,7 +569,6 @@ static void work_table(void) {
 static void work_task(Task *t) {
     BackgroundWorkerHandle *handle = NULL;
     BackgroundWorker worker = {0};
-    pid_t pid;
     size_t len;
     elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", t->shared->id, t->group, t->shared->max, work.shared->oid);
     dlist_delete(&t->node);
@@ -571,15 +584,13 @@ static void work_task(Task *t) {
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
-    switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
+    switch (WaitForBackgroundWorkerStartup(handle, &t->pid)) {
         case BGWH_NOT_YET_STARTED: ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
         case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
         case BGWH_STARTED: break;
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     pfree(handle);
-    task_free(t);
-    pfree(t);
 }
 
 static void work_type(void) {
@@ -741,8 +752,12 @@ void work_main(Datum arg) {
     long current_timeout = -1;
     shm_toc *toc;
     StringInfoData schema_table, schema_type;
+    struct sigaction act = {0}, oldact = {0};
     on_proc_exit(work_proc_exit, (Datum)NULL);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
+    act.sa_sigaction = work_sigaction;
+    act.sa_flags = SA_SIGINFO;
+    sigaction(SIGUSR2, &act, &oldact);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
 #ifdef GP_VERSION_NUM
