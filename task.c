@@ -310,12 +310,7 @@ static void task_execute(void) {
 static void task_proc_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
     if (!code) return;
-#ifdef HAVE_SETSID
-    if (kill(-MyBgworkerEntry->bgw_notify_pid, SIGHUP))
-#else
-    if (kill(MyBgworkerEntry->bgw_notify_pid, SIGHUP))
-#endif
-        ereport(WARNING, (errmsg("could not send signal to process %d: %m", MyBgworkerEntry->bgw_notify_pid)));
+    if (kill(MyBgworkerEntry->bgw_notify_pid, SIGHUP)) ereport(WARNING, (errmsg("could not send signal SIGHUP to process %d: %m", MyBgworkerEntry->bgw_notify_pid)));
 }
 
 static void task_catch(void) {
@@ -399,12 +394,7 @@ void task_main(Datum arg) {
     work.schema = quote_identifier(work.shared->schema);
     work.table = quote_identifier(work.shared->table);
     work.user = quote_identifier(work.shared->user);
-#ifdef HAVE_SETSID
-    if (kill(-MyBgworkerEntry->bgw_notify_pid, SIGUSR2))
-#else
-    if (kill(MyBgworkerEntry->bgw_notify_pid, SIGUSR2))
-#endif
-        ereport(ERROR, (errmsg("could not send signal to process %d: %m", MyBgworkerEntry->bgw_notify_pid)));
+    if (kill(MyBgworkerEntry->bgw_notify_pid, SIGUSR2)) ereport(ERROR, (errmsg("could not send signal SIGUSR2 to process %d: %m", MyBgworkerEntry->bgw_notify_pid)));
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user, 0);
     application_name = MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1;
     set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
