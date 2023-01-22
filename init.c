@@ -122,6 +122,10 @@ Datum CStringGetTextDatumMy(const char *s) {
     return s ? PointerGetDatum(cstring_to_text_my(s)) : (Datum)NULL;
 }
 
+static void init_on_dsm_detach_callback(dsm_segment *seg, Datum arg) {
+    elog(DEBUG1, "seg = %u", dsm_segment_handle(seg));
+}
+
 void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes) {
     shm_toc_estimator e;
     shm_toc *toc;
@@ -132,6 +136,7 @@ void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes) {
     shm_toc_estimate_keys(&e, 1);
     segsize = shm_toc_estimate(&e);
     *seg = dsm_create_my(segsize, 0);
+    on_dsm_detach(*seg, init_on_dsm_detach_callback, (Datum)NULL);
     toc = shm_toc_create(magic, dsm_segment_address(*seg), segsize);
     ptr = shm_toc_allocate(toc, nbytes);
     MemSet(ptr, 0, nbytes);

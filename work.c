@@ -578,8 +578,6 @@ static void work_task(Task *t) {
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     pfree(handle);
-    dsm_pin_segment(t->seg);
-    dsm_detach(t->seg);
     task_free(t);
     pfree(t);
 }
@@ -724,6 +722,10 @@ static void work_writeable(Task *t) {
     t->socket(t);
 }
 
+static void work_on_dsm_detach_callback(dsm_segment *seg, Datum arg) {
+    elog(DEBUG1, "seg = %u", dsm_segment_handle(seg));
+}
+
 void work_main(Datum arg) {
     const char *application_name;
     const char *index_hash[] = {"hash"};
@@ -751,18 +753,15 @@ void work_main(Datum arg) {
     Gp_session_role = GP_ROLE_UTILITY;
 #endif
 #endif
-    if (!(work.seg = dsm_attach(DatumGetUInt32(arg)))) { ereport(WARNING, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment"))); return; }
-#if PG_VERSION_NUM >= 100000
-    dsm_unpin_segment(dsm_segment_handle(work.seg));
-#else
-    dsm_cleanup_using_control_segment(dsm_segment_handle(work.seg));
-#endif
+    if (!(work.seg = dsm_attach(DatumGetUInt32(arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
+    on_dsm_detach(work.seg, work_on_dsm_detach_callback, (Datum)NULL);
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(work.seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     work.shared = shm_toc_lookup_my(toc, 0, false);
     work.data = quote_identifier(work.shared->data);
     work.schema = quote_identifier(work.shared->schema);
     work.table = quote_identifier(work.shared->table);
     work.user = quote_identifier(work.shared->user);
+    kill(MyBgworkerEntry->bgw_notify_pid, SIGUSR2);
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user, 0);
     application_name = MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1;
     set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);

@@ -146,6 +146,7 @@ typedef struct Work {
     dlist_node node;
     dsm_segment *seg;
     int hash;
+    pid_t pid;
     WorkShared *shared;
 } Work;
 

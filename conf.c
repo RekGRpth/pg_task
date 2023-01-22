@@ -5,6 +5,11 @@ extern int conf_fetch;
 extern int work_restart;
 static dlist_head head;
 
+static void conf_latch(void) {
+    ResetLatch(MyLatch);
+    CHECK_FOR_INTERRUPTS();
+}
+
 static void conf_data(Work *w) {
     List *names = stringToQualifiedNameList(w->data);
     StringInfoData src;
@@ -28,6 +33,23 @@ static void conf_data(Work *w) {
     list_free_deep(names);
     pfree(src.data);
     set_ps_display_my("idle");
+}
+
+static void conf_sigaction(int signum, siginfo_t *siginfo, void *code)  {
+    dlist_mutable_iter iter;
+    elog(DEBUG1, "si_pid = %i", siginfo->si_pid);
+    dlist_foreach_modify(iter, &head) {
+        Work *w = dlist_container(Work, node, iter.cur);
+        if (siginfo->si_pid == w->pid) {
+            dlist_delete(&w->node);
+            dsm_detach(w->seg);
+            pfree(w);
+        }
+    }
+    if (dlist_is_empty(&head)) {
+        ShutdownRequestPending = true;
+        SetLatch(MyLatch);
+    }
 }
 
 static void conf_user(Work *w) {
@@ -58,10 +80,8 @@ static void conf_user(Work *w) {
 static void conf_work(Work *w) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker = {0};
-    pid_t pid;
     size_t len;
     set_ps_display_my("work");
-    dlist_delete(&w->node);
     w->data = quote_identifier(w->shared->data);
     w->user = quote_identifier(w->shared->user);
     conf_user(w);
@@ -80,22 +100,20 @@ static void conf_work(Work *w) {
     worker.bgw_restart_time = work_restart;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
-    switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
+    switch (WaitForBackgroundWorkerStartup(handle, &w->pid)) {
         case BGWH_NOT_YET_STARTED: ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
         case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
         case BGWH_STARTED: break;
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     pfree(handle);
-    dsm_pin_segment(w->seg);
-    dsm_detach(w->seg);
-    pfree(w);
 }
 
 void conf_main(Datum arg) {
     dlist_mutable_iter iter;
     Portal portal;
     StringInfoData src;
+    struct sigaction act, oldact;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         WITH j AS (
@@ -122,6 +140,9 @@ void conf_main(Datum arg) {
         "json_object"
 #endif
     );
+    act.sa_sigaction = conf_sigaction;
+    act.sa_flags = SA_SIGINFO;
+    sigaction(SIGUSR2, &act, &oldact);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL, 0);
@@ -156,5 +177,10 @@ void conf_main(Datum arg) {
     pfree(src.data);
     set_ps_display_my("idle");
     dlist_foreach_modify(iter, &head) conf_work(dlist_container(Work, node, iter.cur));
+    while (!ShutdownRequestPending) {
+        int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
+        if (rc & WL_LATCH_SET) conf_latch();
+        if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
+    }
     if (!unlock_data_user(MyDatabaseId, GetUserId())) elog(WARNING, "!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId());
 }
