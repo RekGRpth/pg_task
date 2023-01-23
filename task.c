@@ -13,7 +13,7 @@ extern Work work;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 Task task;
 
-static bool task_live(Task *t) {
+static bool task_live(const Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start)};
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPIPlanPtr plan = NULL;
@@ -46,7 +46,7 @@ static bool task_live(Task *t) {
     return ShutdownRequestPending || !t->shared->id;
 }
 
-static void task_delete(Task *t) {
+static void task_delete(const Task *t) {
     Datum values[] = {Int64GetDatum(t->shared->id)};
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
@@ -70,7 +70,7 @@ static void task_delete(Task *t) {
     set_ps_display_my("idle");
 }
 
-static void task_insert(Task *t) {
+static void task_insert(const Task *t) {
     Datum values[] = {Int64GetDatum(t->shared->id)};
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
@@ -97,7 +97,7 @@ static void task_insert(Task *t) {
     set_ps_display_my("idle");
 }
 
-static void task_update(Task *t) {
+static void task_update(const Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash)};
     Portal portal;
     static Oid argtypes[] = {INT4OID};
