@@ -10,7 +10,7 @@ static void conf_latch(void) {
     CHECK_FOR_INTERRUPTS();
 }
 
-static void conf_data(Work *w) {
+static void conf_data(const Work *w) {
     List *names = stringToQualifiedNameList(w->data);
     StringInfoData src;
     elog(DEBUG1, "user = %s, data = %s", w->shared->user, w->shared->data);
@@ -52,7 +52,7 @@ static void conf_sigaction(int signum, siginfo_t *siginfo, void *code)  {
     }
 }
 
-static void conf_user(Work *w) {
+static void conf_user(const Work *w) {
     List *names = stringToQualifiedNameList(w->user);
     StringInfoData src;
     elog(DEBUG1, "user = %s", w->shared->user);
