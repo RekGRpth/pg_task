@@ -80,7 +80,7 @@ static void work_events(WaitEventSet *set) {
     }
 }
 
-static void work_fatal(Task *t, PGresult *result) {
+static void work_fatal(Task *t, const PGresult *result) {
     char *value = NULL;
     char *value2 = NULL;
     char *value3 = NULL;
@@ -285,7 +285,7 @@ static void work_schema(const char *schema_quote) {
     set_ps_display_my("idle");
 }
 
-static void work_headers(Task *t, PGresult *result) {
+static void work_headers(Task *t, const PGresult *result) {
     if (t->output.len) appendStringInfoString(&t->output, "\n");
     for (int col = 0; col < PQnfields(result); col++) {
         if (col > 0) appendStringInfoChar(&t->output, t->delimiter);
@@ -293,7 +293,7 @@ static void work_headers(Task *t, PGresult *result) {
     }
 }
 
-static void work_success(Task *t, PGresult *result, int row) {
+static void work_success(Task *t, const PGresult *result, int row) {
     if (!t->output.data) initStringInfoMy(&t->output);
     if (t->header && !row && PQnfields(result) > 1) work_headers(t, result);
     if (t->output.len) appendStringInfoString(&t->output, "\n");
