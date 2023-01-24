@@ -6,7 +6,7 @@ extern Task task;
 static dlist_head local;
 static dlist_head remote;
 static emit_log_hook_type emit_log_hook_prev = NULL;
-Work work;
+Work work = {0};
 
 static void work_query(Task *t);
 

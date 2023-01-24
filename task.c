@@ -11,7 +11,7 @@ extern char *task_null;
 extern int task_fetch;
 extern Work work;
 static emit_log_hook_type emit_log_hook_prev = NULL;
-Task task;
+Task task = {0};
 
 static bool task_live(const Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start)};
@@ -363,11 +363,11 @@ static bool task_timeout(void) {
 }
 
 void task_free(Task *t) {
-    if (t->error.data) { pfree(t->error.data); t->error.data = NULL; }
+    if (t->error.data) { pfree(t->error.data); t->error.data = NULL; t->error.len = 0; }
     if (t->group) { pfree(t->group); t->group = NULL; }
     if (t->input) { pfree(t->input); t->input = NULL; }
     if (t->null) { pfree(t->null); t->null = NULL; }
-    if (t->output.data) { pfree(t->output.data); t->output.data = NULL; }
+    if (t->output.data) { pfree(t->output.data); t->output.data = NULL; t->output.len = 0; }
     if (t->remote) { pfree(t->remote); t->remote = NULL; }
 }
 
