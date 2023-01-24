@@ -3,7 +3,6 @@
 extern char *task_null;
 extern int work_fetch;
 extern Task task;
-static dlist_head head;
 static dlist_head local;
 static dlist_head remote;
 static emit_log_hook_type emit_log_hook_prev = NULL;
@@ -74,7 +73,7 @@ static void work_events(WaitEventSet *set) {
     dlist_mutable_iter iter;
     AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
     AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
-    dlist_foreach_modify(iter, &head) {
+    dlist_foreach_modify(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
         AddWaitEventToSet(set, t->event, PQsocket(t->conn), NULL, t);
     }
@@ -147,7 +146,7 @@ static void work_finish(Task *t) {
 static int work_nevents(void) {
     dlist_mutable_iter iter;
     int nevents = 2;
-    dlist_foreach_modify(iter, &head) {
+    dlist_foreach_modify(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
         if (PQstatus(t->conn) == CONNECTION_BAD) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
         if (PQsocket(t->conn) == PGINVALID_SOCKET) { ereport_my(WARNING, true, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsocket == PGINVALID_SOCKET"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
@@ -383,7 +382,7 @@ static void work_connect(Task *t) {
 static void work_proc_exit(int code, Datum arg) {
     dlist_mutable_iter iter;
     elog(DEBUG1, "code = %i", code);
-    dlist_foreach_modify(iter, &head) {
+    dlist_foreach_modify(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
         if (PQstatus(t->conn) == CONNECTION_OK) {
             char errbuf[256];
@@ -411,7 +410,7 @@ static void work_remote(Task *t) {
     StringInfoData name, value;
     elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : task_null, t->shared->max, work.shared->oid);
     dlist_delete(&t->node);
-    dlist_push_head(&head, &t->node);
+    dlist_push_head(&remote, &t->node);
     if (!opts) { ereport_my(WARNING, true, (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), errdetail("%s", work_errstr(err)))); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
@@ -569,6 +568,8 @@ static void work_task(Task *t) {
     BackgroundWorker worker = {0};
     size_t len;
     elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", t->shared->id, t->group, t->shared->max, work.shared->oid);
+    dlist_delete(&t->node);
+    dlist_push_head(&local, &t->node);
     if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
     if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work.shared->user, work.shared->data, work.shared->schema, work.shared->table, t->group)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
@@ -607,12 +608,14 @@ static void work_type(void) {
 
 static void work_timeout(void) {
     Datum values[] = {ObjectIdGetDatum(work.shared->oid)};
+    dlist_head head;
     dlist_mutable_iter iter;
     Portal portal;
     static Oid argtypes[] = {OIDOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     set_ps_display_my("timeout");
+    dlist_init(&head);
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
@@ -651,13 +654,15 @@ static void work_timeout(void) {
             t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false));
             t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false));
             elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : task_null, t->shared->max);
-            dlist_push_head(t->remote ? &remote : &local, &t->node);
+            dlist_push_head(&head, &t->node);
         }
     } while (SPI_processed);
     SPI_cursor_close(portal);
     SPI_finish_my();
-    dlist_foreach_modify(iter, &local) work_task(dlist_container(Task, node, iter.cur));
-    dlist_foreach_modify(iter, &remote) work_remote(dlist_container(Task, node, iter.cur));
+    dlist_foreach_modify(iter, &head) {
+        Task *t = dlist_container(Task, node, iter.cur);
+        t->remote ? work_remote(t) : work_task(t);
+    }
     set_ps_display_my("idle");
 }
 
@@ -787,7 +792,6 @@ void work_main(Datum arg) {
     work.hash = DatumGetInt32(DirectFunctionCall1Coll(hashtext, DEFAULT_COLLATION_OID, datum));
     pfree((void *)datum);
     if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.hash)) { elog(WARNING, "!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.hash); ShutdownRequestPending = true; return; }
-    dlist_init(&head);
     dlist_init(&local);
     dlist_init(&remote);
     initStringInfoMy(&schema_type);
