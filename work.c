@@ -143,6 +143,13 @@ static void work_finish(Task *t) {
     pfree(t);
 }
 
+static void work_free(Task *t) {
+    dlist_delete(&t->node);
+    dsm_detach(t->seg);
+    task_free(t);
+    pfree(t);
+}
+
 static int work_nevents(void) {
     dlist_mutable_iter iter;
     int nevents = 2;
@@ -472,12 +479,7 @@ static void work_sigaction(int signum, siginfo_t *siginfo, void *code)  {
     elog(DEBUG1, "si_pid = %i", siginfo->si_pid);
     dlist_foreach_modify(iter, &local) {
         Task *t = dlist_container(Task, node, iter.cur);
-        if (siginfo->si_pid == t->pid) {
-            dlist_delete(&t->node);
-            dsm_detach(t->seg);
-            task_free(t);
-            pfree(t);
-        }
+        if (siginfo->si_pid == t->pid) work_free(t);
     }
 }
 
