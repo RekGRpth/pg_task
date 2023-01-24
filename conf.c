@@ -35,16 +35,18 @@ static void conf_data(const Work *w) {
     set_ps_display_my("idle");
 }
 
+static void conf_free(Work *w) {
+    dlist_delete(&w->node);
+    dsm_detach(w->seg);
+    pfree(w);
+}
+
 static void conf_sigaction(int signum, siginfo_t *siginfo, void *code)  {
     dlist_mutable_iter iter;
     elog(DEBUG1, "si_pid = %i", siginfo->si_pid);
     dlist_foreach_modify(iter, &head) {
         Work *w = dlist_container(Work, node, iter.cur);
-        if (siginfo->si_pid == w->pid) {
-            dlist_delete(&w->node);
-            dsm_detach(w->seg);
-            pfree(w);
-        }
+        if (siginfo->si_pid == w->pid) conf_free(w);
     }
     if (dlist_is_empty(&head)) {
         ShutdownRequestPending = true;
