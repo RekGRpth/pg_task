@@ -231,7 +231,6 @@ void task_error(ErrorData *edata) {
     if ((emit_log_hook = emit_log_hook_prev)) (*emit_log_hook)(edata);
     if (!task.error.data) initStringInfoMy(&task.error);
     if (!task.output.data) initStringInfoMy(&task.output);
-    if (task.remote && edata->elevel == WARNING) edata->elevel = ERROR;
     appendStringInfo(&task.output, SQL(%sROLLBACK), task.output.len ? "\n" : "");
     task.skip++;
     if (task.error.len) appendStringInfoChar(&task.error, '\n');
