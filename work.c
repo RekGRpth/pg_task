@@ -10,7 +10,7 @@ Work work = {0};
 
 static void work_query(Task *t);
 
-#define work_ereport(finish, ...) do { \
+#define work_ereport(finish_or_free, ...) do { \
     bool remote = t->remote; \
     emit_log_hook_prev = emit_log_hook; \
     emit_log_hook = task_error; \
@@ -23,7 +23,7 @@ static void work_query(Task *t);
     PG_END_TRY(); \
     *t = task; \
     MemSet(&task, 0, sizeof(task)); \
-    if (task_done(t) || finish) remote ? work_finish(t) : work_free(t); \
+    if (task_done(t) || finish_or_free) remote ? work_finish(t) : work_free(t); \
 } while(0)
 
 static char *work_errstr(char *err) {
