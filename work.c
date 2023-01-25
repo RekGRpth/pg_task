@@ -772,7 +772,7 @@ void work_main(Datum arg) {
     Gp_session_role = GP_ROLE_UTILITY;
 #endif
 #endif
-    if (!(work.seg = dsm_attach(DatumGetUInt32(arg)))) { ereport(WARNING, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment"))); return; }
+    if (!(work.seg = dsm_attach(DatumGetUInt32(arg)))) { ereport(WARNING, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment"))); return; } // exit without error to start conf
     on_dsm_detach(work.seg, work_on_dsm_detach_callback, (Datum)NULL);
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(work.seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     work.shared = shm_toc_lookup_my(toc, 0, false);
