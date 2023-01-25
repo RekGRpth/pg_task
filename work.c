@@ -11,9 +11,9 @@ Work work = {0};
 static void work_query(Task *t);
 
 #define ereport_my(elevel, finish, ...) do { \
-    task = *t; \
     emit_log_hook_prev = emit_log_hook; \
     emit_log_hook = task_error; \
+    task = *t; \
     PG_TRY(); \
         ereport(elevel, __VA_ARGS__); \
     PG_CATCH(); \
@@ -21,8 +21,8 @@ static void work_query(Task *t);
         FlushErrorState(); \
     PG_END_TRY(); \
     *t = task; \
-    if (task_done(t) || finish) work_finish(t); \
     MemSet(&task, 0, sizeof(task)); \
+    if (task_done(t) || finish) work_finish(t); \
 } while(0)
 
 static char *work_errstr(char *err) {
