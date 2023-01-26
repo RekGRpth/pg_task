@@ -11,7 +11,7 @@ Work work = {0};
 static void work_query(Task *t);
 
 #define work_ereport(finish_or_free, ...) do { \
-    bool remote = t->remote; \
+    bool remote = t->remote != NULL; \
     emit_log_hook_prev = emit_log_hook; \
     emit_log_hook = task_error; \
     task = *t; \
