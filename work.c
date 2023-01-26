@@ -54,7 +54,7 @@ static void work_check(void) {
                     COALESCE("sleep", current_setting('pg_task.sleep')::bigint) AS "sleep",
                     COALESCE(COALESCE("user", "data"), current_setting('pg_task.user')) AS "user"
             FROM    jsonb_to_recordset(current_setting('pg_task.json')::jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
-        ) SELECT    DISTINCT j.* FROM j WHERE hashtext(concat_ws(' ', 'pg_work', "schema", "table", "sleep")) = $1
+        ) SELECT    DISTINCT j.* FROM j WHERE "user" = current_user AND "data" = current_catalog AND hashtext(concat_ws(' ', 'pg_work', "schema", "table", "sleep")) = $1
     );
     static Oid argtypes[] = {INT4OID};
     static SPIPlanPtr plan = NULL;
