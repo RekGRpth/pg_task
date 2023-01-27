@@ -46,6 +46,23 @@ static bool task_live(const Task *t) {
     return ShutdownRequestPending || !t->shared->id;
 }
 
+static void task_columns(const Task *t) {
+    Datum values[] = {CStringGetTextDatumMy(work.shared->schema), CStringGetTextDatumMy(work.shared->table)};
+    static Oid argtypes[] = {TEXTOID, TEXTOID};
+    static const char *src = SQL(
+        SELECT string_agg(quote_ident(column_name), ', ') AS columns FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name NOT IN ('id', 'plan', 'parent', 'start', 'stop', 'hash', 'pid', 'state', 'error', 'output')
+    );
+//    BeginInternalSubTransaction(NULL);
+    SPI_execute_with_args_my(src, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
+//    ReleaseCurrentSubTransaction();
+    if (SPI_processed != 1) elog(WARNING, "columns id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed); else {
+        work.columns = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "columns", false));
+        elog(DEBUG1, "columns id = %li, %s", t->shared->id, work.columns);
+    }
+    if (values[0]) pfree((void *)values[0]);
+    if (values[1]) pfree((void *)values[1]);
+}
+
 static void task_delete(const Task *t) {
     Datum values[] = {Int64GetDatum(t->shared->id)};
     static Oid argtypes[] = {INT8OID};
@@ -78,18 +95,20 @@ static void task_insert(const Task *t) {
     elog(DEBUG1, "id = %li", t->shared->id);
     set_ps_display_my("insert");
     if (!src.data) {
+        if (!work.columns) task_columns(t);
+        if (!work.columns) return;
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT * FROM %1$s AS t
                 WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 FOR UPDATE OF t
-            ) INSERT INTO %1$s AS t ("parent", "plan", "active", "live", "repeat", "timeout", "count", "max", "delete", "drift", "header", "string", "delimiter", "escape", "quote", "group", "input", "null", "remote", "data")
-            SELECT "id", CASE
+            ) INSERT INTO %1$s AS t ("parent", "plan", %2$s) SELECT "id", CASE
                 WHEN "drift" THEN CURRENT_TIMESTAMP + "repeat"
                 ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p + "repeat" FROM r WHERE p <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
-            END AS "plan", "active", "live", "repeat", "timeout", "count", "max", "delete", "drift", "header", "string", "delimiter", "escape", "quote", "group", "input", "null", "remote", "data" FROM s WHERE "repeat" > '0 sec' LIMIT 1 RETURNING t.id
-        ), work.schema_table);
+            END AS "plan", %2$s FROM s WHERE "repeat" > '0 sec' LIMIT 1 RETURNING t.id
+        ), work.schema_table, work.columns);
     }
+    elog(DEBUG1, "insert id = %li, %s", t->shared->id, src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING);
     if (SPI_processed != 1) elog(WARNING, "insert id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed);
