@@ -1,11 +1,13 @@
 #include "include.h"
 
 extern char *task_null;
+extern int work_close;
 extern int work_fetch;
 extern Task task;
-static volatile dlist_head local;
 static dlist_head remote;
 static emit_log_hook_type emit_log_hook_prev = NULL;
+static volatile dlist_head local;
+static volatile TimeoutId timeout;
 Work work = {0};
 
 static void work_query(Task *t);
@@ -167,6 +169,19 @@ static int work_nevents(void) {
         nevents++;
     }
     return nevents;
+}
+
+static void work_handler(void) {
+    dlist_mutable_iter iter;
+    TimestampTz finish = get_timeout_finish_time(timeout), min = 0;
+    elog(DEBUG1, "%s", timestamptz_to_str(finish));
+    dlist_foreach_modify(iter, (dlist_head *)&local) {
+        Task *t = dlist_container(Task, node, iter.cur);
+        TimestampTz start = TimestampTzPlusMilliseconds(t->start, work_close);
+        if (finish >= start) { work_ereport(true, ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task timeout"))); }
+        else if (min == 0 || min >= start) min = start;
+    }
+    if (!dlist_is_empty((dlist_head *)&local)) enable_timeout_at(timeout, min);
 }
 
 static void work_index(int count, const char *const *indexes) {
@@ -597,6 +612,8 @@ static void work_task(Task *t) {
         case BGWH_STARTED: break;
         case BGWH_STOPPED: work_ereport(true, ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
+    t->start = GetCurrentTimestamp();
+    if (!get_timeout_active(timeout)) enable_timeout_at(timeout, TimestampTzPlusMilliseconds(t->start, work_close));
     pfree(handle);
 }
 
@@ -769,6 +786,7 @@ void work_main(Datum arg) {
     act.sa_sigaction = work_sigaction;
     act.sa_flags = SA_SIGINFO;
     sigaction(SIGUSR2, &act, &oldact);
+    timeout = RegisterTimeout(USER_TIMEOUT, work_handler);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
 #ifdef GP_VERSION_NUM

@@ -1,8 +1,8 @@
 #include "include.h"
 
 extern char *task_null;
+extern int conf_close;
 extern int conf_fetch;
-extern int conf_timeout;
 extern int work_restart;
 static volatile dlist_head head;
 static volatile TimeoutId timeout;
@@ -43,33 +43,36 @@ static void conf_free(Work *w) {
     pfree(w);
 }
 
-static void conf_sigaction(int signum, siginfo_t *siginfo, void *code)  {
-    dlist_mutable_iter iter;
-    elog(DEBUG1, "si_pid = %i", siginfo->si_pid);
-    dlist_foreach_modify(iter, (dlist_head *)&head) {
-        Work *w = dlist_container(Work, node, iter.cur);
-        if (siginfo->si_pid == w->pid) conf_free(w);
-    }
-    if (dlist_is_empty((dlist_head *)&head)) {
-        ShutdownRequestPending = true;
-        SetLatch(MyLatch);
-    }
-}
-
-static void conf_timeout_handler(void) {
+static void conf_handler(void) {
     dlist_mutable_iter iter;
     TimestampTz finish = get_timeout_finish_time(timeout), min = 0;
     elog(DEBUG1, "%s", timestamptz_to_str(finish));
     dlist_foreach_modify(iter, (dlist_head *)&head) {
         Work *w = dlist_container(Work, node, iter.cur);
-        TimestampTz start = TimestampTzPlusMilliseconds(w->start, conf_timeout);
+        TimestampTz start = TimestampTzPlusMilliseconds(w->start, conf_close);
         if (finish >= start) conf_free(w);
         else if (min == 0 || min >= start) min = start;
+    }
+    if (!dlist_is_empty((dlist_head *)&head)) enable_timeout_at(timeout, min); else {
+        ShutdownRequestPending = true;
+        SetLatch(MyLatch);
+    }
+}
+
+static void conf_sigaction(int signum, siginfo_t *siginfo, void *code)  {
+    dlist_mutable_iter iter;
+    elog(DEBUG1, "si_pid = %i", siginfo->si_pid);
+    dlist_foreach_modify(iter, (dlist_head *)&head) {
+        Work *w = dlist_container(Work, node, iter.cur);
+        if (siginfo->si_pid == w->pid) {
+            ereport(WARNING, (errcode(ERRCODE_QUERY_CANCELED), errmsg("work timeout")));
+            conf_free(w);
+        }
     }
     if (dlist_is_empty((dlist_head *)&head)) {
         ShutdownRequestPending = true;
         SetLatch(MyLatch);
-    } else enable_timeout_at(timeout, min);
+    }
 }
 
 static void conf_user(const Work *w) {
@@ -127,7 +130,7 @@ static void conf_work(Work *w) {
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     w->start = GetCurrentTimestamp();
-    if (!get_timeout_active(timeout)) enable_timeout_at(timeout, TimestampTzPlusMilliseconds(w->start, conf_timeout));
+    if (!get_timeout_active(timeout)) enable_timeout_at(timeout, TimestampTzPlusMilliseconds(w->start, conf_close));
     pfree(handle);
 }
 
@@ -165,7 +168,7 @@ void conf_main(Datum arg) {
     act.sa_sigaction = conf_sigaction;
     act.sa_flags = SA_SIGINFO;
     sigaction(SIGUSR2, &act, &oldact);
-    timeout = RegisterTimeout(USER_TIMEOUT, conf_timeout_handler);
+    timeout = RegisterTimeout(USER_TIMEOUT, conf_handler);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL, 0);

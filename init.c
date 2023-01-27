@@ -3,9 +3,10 @@
 PG_MODULE_MAGIC;
 
 char *task_null;
+int conf_close;
 int conf_fetch;
-int conf_timeout;
 int task_fetch;
+int work_close;
 int work_fetch;
 int work_restart;
 static bool task_delete;
@@ -221,15 +222,16 @@ void _PG_init(void) {
     DefineCustomBoolVariable("pg_task.drift", "pg_task drift", "compute next repeat time by plan instead current", &task_drift, false, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.header", "pg_task header", "show headers", &task_header, true, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.string", "pg_task string", "quote string only", &task_string, true, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_conf.close", "pg_conf close", "conf close ms", &conf_close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.fetch", "pg_conf fetch", "fetch at once", &conf_fetch, 10, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.restart", "pg_conf restart", "conf restart interval", &conf_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_conf.timeout", "pg_conf timeout", "work timeout ms", &conf_timeout, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.count", "pg_task count", "do count tasks before exit", &task_count, 0, 0, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.fetch", "pg_task fetch", "fetch tasks at once", &task_fetch, 100, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.id", "pg_task id", "task id", &task_id, 0, INT_MIN, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.limit", "pg_task limit", "limit tasks at once", &task_limit, 1000, 0, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.max", "pg_task max", "maximum parallel tasks", &task_max, 0, INT_MIN, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.sleep", "pg_task sleep", "check tasks every sleep milliseconds", &task_sleep, 1000, 1, INT_MAX, PGC_USERSET, 0, NULL, init_assign_sleep, NULL);
+    DefineCustomIntVariable("pg_work.close", "pg_work close", "work close ms", &work_close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.fetch", "pg_work fetch", "fetch at once", &work_fetch, 100, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.restart", "pg_work restart", "work restart interval", &work_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.active", "pg_task active", "task active after plan time", &task_active, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
