@@ -147,6 +147,7 @@ typedef struct Work {
     dsm_segment *seg;
     int hash;
     pid_t pid;
+    TimestampTz start;
     WorkShared *shared;
 } Work;
 
