@@ -126,6 +126,10 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 
 #define PG_WORK_MAGIC 0x776f726b
 
+#ifndef get_timeout_active
+#define get_timeout_active get_timeout_finish_time
+#endif
+
 typedef struct WorkShared {
     char data[NAMEDATALEN];
     char schema[NAMEDATALEN];
