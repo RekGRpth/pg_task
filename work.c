@@ -67,7 +67,7 @@ static void work_check(void) {
     if (!plan) plan = SPI_prepare_my(src, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_SELECT);
     if (!SPI_processed) ShutdownRequestPending = true;
-    elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, SPI_processed = %li", work.shared->sleep, work.shared->reset, work.shared->schema, work.shared->table, SPI_processed);
+    elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, SPI_processed = %li", work.shared->sleep, work.shared->reset, work.shared->schema, work.shared->table, (long)SPI_processed);
     SPI_finish_my();
     set_ps_display_my("idle");
 }
