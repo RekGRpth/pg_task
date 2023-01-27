@@ -50,8 +50,10 @@ static void conf_handler(void) {
     dlist_foreach_modify(iter, (dlist_head *)&head) {
         Work *w = dlist_container(Work, node, iter.cur);
         TimestampTz start = TimestampTzPlusMilliseconds(w->start, conf_close);
-        if (finish >= start) conf_free(w);
-        else if (min == 0 || min >= start) min = start;
+        if (finish >= start) {
+            ereport(WARNING, (errcode(ERRCODE_QUERY_CANCELED), errmsg("work timeout")));
+            conf_free(w);
+        } else if (min == 0 || min >= start) min = start;
     }
     if (!dlist_is_empty((dlist_head *)&head)) enable_timeout_at(timeout, min); else {
         ShutdownRequestPending = true;
@@ -64,10 +66,7 @@ static void conf_sigaction(int signum, siginfo_t *siginfo, void *code)  {
     elog(DEBUG1, "si_pid = %i", siginfo->si_pid);
     dlist_foreach_modify(iter, (dlist_head *)&head) {
         Work *w = dlist_container(Work, node, iter.cur);
-        if (siginfo->si_pid == w->pid) {
-            ereport(WARNING, (errcode(ERRCODE_QUERY_CANCELED), errmsg("work timeout")));
-            conf_free(w);
-        }
+        if (siginfo->si_pid == w->pid) conf_free(w);
     }
     if (dlist_is_empty((dlist_head *)&head)) {
         ShutdownRequestPending = true;
