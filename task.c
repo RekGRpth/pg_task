@@ -52,9 +52,7 @@ static void task_columns(const Task *t) {
     static const char *src = SQL(
         SELECT string_agg(quote_ident(column_name), ', ') AS columns FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name NOT IN ('id', 'plan', 'parent', 'start', 'stop', 'hash', 'pid', 'state', 'error', 'output')
     );
-//    BeginInternalSubTransaction(NULL);
     SPI_execute_with_args_my(src, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
-//    ReleaseCurrentSubTransaction();
     if (SPI_processed != 1) elog(WARNING, "columns id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed); else {
         work.columns = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "columns", false));
         elog(DEBUG1, "columns id = %li, %s", t->shared->id, work.columns);
@@ -108,7 +106,6 @@ static void task_insert(const Task *t) {
             END AS "plan", %2$s FROM s WHERE "repeat" > '0 sec' LIMIT 1 RETURNING t.id
         ), work.schema_table, work.columns);
     }
-    elog(DEBUG1, "insert id = %li, %s", t->shared->id, src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING);
     if (SPI_processed != 1) elog(WARNING, "insert id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed);
