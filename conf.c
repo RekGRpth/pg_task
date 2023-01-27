@@ -3,7 +3,7 @@
 extern char *task_null;
 extern int conf_fetch;
 extern int work_restart;
-static dlist_head head;
+static volatile dlist_head head;
 
 static void conf_latch(void) {
     ResetLatch(MyLatch);
@@ -44,11 +44,11 @@ static void conf_free(Work *w) {
 static void conf_sigaction(int signum, siginfo_t *siginfo, void *code)  {
     dlist_mutable_iter iter;
     elog(DEBUG1, "si_pid = %i", siginfo->si_pid);
-    dlist_foreach_modify(iter, &head) {
+    dlist_foreach_modify(iter, (dlist_head *)&head) {
         Work *w = dlist_container(Work, node, iter.cur);
         if (siginfo->si_pid == w->pid) conf_free(w);
     }
-    if (dlist_is_empty(&head)) {
+    if (dlist_is_empty((dlist_head *)&head)) {
         ShutdownRequestPending = true;
         SetLatch(MyLatch);
     }
@@ -153,7 +153,7 @@ void conf_main(Datum arg) {
     set_ps_display_my("main");
     process_session_preload_libraries();
     if (!lock_data_user(MyDatabaseId, GetUserId())) { elog(WARNING, "!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()); return; }
-    dlist_init(&head);
+    dlist_init((dlist_head *)&head);
     SPI_connect_my(src.data);
     portal = SPI_cursor_open_with_args_my(src.data, src.data, 0, NULL, NULL, NULL);
     do {
@@ -171,14 +171,14 @@ void conf_main(Datum arg) {
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false)), w->shared->table, sizeof(w->shared->table));
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false)), w->shared->user, sizeof(w->shared->user));
             elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, sleep = %li, reset = %li", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset);
-            dlist_push_head(&head, &w->node);
+            dlist_push_head((dlist_head *)&head, &w->node);
         }
     } while (SPI_processed);
     SPI_cursor_close(portal);
     SPI_finish_my();
     pfree(src.data);
     set_ps_display_my("idle");
-    dlist_foreach_modify(iter, &head) conf_work(dlist_container(Work, node, iter.cur));
+    dlist_foreach_modify(iter, (dlist_head *)&head) conf_work(dlist_container(Work, node, iter.cur));
     while (!ShutdownRequestPending) {
         int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
         if (rc & WL_LATCH_SET) conf_latch();

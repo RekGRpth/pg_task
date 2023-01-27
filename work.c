@@ -3,7 +3,7 @@
 extern char *task_null;
 extern int work_fetch;
 extern Task task;
-static dlist_head local;
+static volatile dlist_head local;
 static dlist_head remote;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 Work work = {0};
@@ -484,7 +484,7 @@ static void work_remote(Task *t) {
 static void work_sigaction(int signum, siginfo_t *siginfo, void *code)  {
     dlist_mutable_iter iter;
     elog(DEBUG1, "si_pid = %i", siginfo->si_pid);
-    dlist_foreach_modify(iter, &local) {
+    dlist_foreach_modify(iter, (dlist_head *)&local) {
         Task *t = dlist_container(Task, node, iter.cur);
         if (siginfo->si_pid == t->pid) work_free(t);
     }
@@ -578,7 +578,7 @@ static void work_task(Task *t) {
     size_t len;
     elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", t->shared->id, t->group, t->shared->max, work.shared->oid);
     dlist_delete(&t->node);
-    dlist_push_head(&local, &t->node);
+    dlist_push_head((dlist_head *)&local, &t->node);
     if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) { work_ereport(true, ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name)))); return; }
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) { work_ereport(true, ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name)))); return; }
     if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work.shared->user, work.shared->data, work.shared->schema, work.shared->table, t->group)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
@@ -801,7 +801,7 @@ void work_main(Datum arg) {
     work.hash = DatumGetInt32(DirectFunctionCall1Coll(hashtext, DEFAULT_COLLATION_OID, datum));
     pfree((void *)datum);
     if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.hash)) { elog(WARNING, "!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.hash); ShutdownRequestPending = true; return; } // exit without error to disable restart, then not start conf
-    dlist_init(&local);
+    dlist_init((dlist_head *)&local);
     dlist_init(&remote);
     initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work.schema);
