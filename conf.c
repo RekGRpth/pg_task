@@ -171,6 +171,7 @@ void conf_main(Datum arg) {
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL, 0);
+    CurrentResourceOwner = AuxProcessResourceOwner;
     set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pgstat_report_appname("pg_conf");
     set_ps_display_my("main");
