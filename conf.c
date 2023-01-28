@@ -61,6 +61,10 @@ static void conf_handler(void) {
     }
 }
 
+static void conf_proc_exit(int code, Datum arg) {
+    elog(DEBUG1, "code = %i", code);
+}
+
 static void conf_sigaction(int signum, siginfo_t *siginfo, void *code)  {
     dlist_mutable_iter iter;
     elog(DEBUG1, "si_pid = %i", siginfo->si_pid);
@@ -168,6 +172,7 @@ void conf_main(Datum arg) {
     act.sa_flags = SA_SIGINFO;
     sigaction(SIGUSR2, &act, &oldact);
     timeout = RegisterTimeout(USER_TIMEOUT, conf_handler);
+    on_proc_exit(conf_proc_exit, (Datum)NULL);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL, 0);

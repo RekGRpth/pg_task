@@ -274,7 +274,6 @@ static void work_reload(void) {
     ConfigReloadPending = false;
     ProcessConfigFile(PGC_SIGHUP);
     work_check();
-    if (!ShutdownRequestPending) work_reset();
 }
 
 static void work_latch(void) {

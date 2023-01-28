@@ -324,8 +324,6 @@ static void task_execute(void) {
 
 static void task_proc_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
-    if (!code) return;
-    if (kill(MyBgworkerEntry->bgw_notify_pid, SIGHUP)) ereport(WARNING, (errmsg("could not send signal SIGHUP to process %d: %m", MyBgworkerEntry->bgw_notify_pid)));
 }
 
 static void task_catch(void) {
