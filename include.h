@@ -216,6 +216,7 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote);
 void append_with_tabs(StringInfo buf, const char *str);
 void conf_main(Datum main_arg);
+extern PGDLLIMPORT ResourceOwner SPIResourceOwner;
 #if PG_VERSION_NUM < 120000
 extern PGDLLIMPORT ResourceOwner AuxProcessResourceOwner;
 void CreateAuxProcessResourceOwner(void);

@@ -9,6 +9,7 @@ int task_fetch;
 int work_close;
 int work_fetch;
 int work_restart;
+ResourceOwner SPIResourceOwner = NULL;
 static bool task_delete;
 static bool task_drift;
 static bool task_header;
