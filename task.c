@@ -5,9 +5,9 @@ extern char *task_null;
 extern int task_fetch;
 extern Work work;
 static emit_log_hook_type emit_log_hook_prev = NULL;
-Task task;
+Task task = {0};
 
-static bool task_live(Task *t) {
+static bool task_live(const Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start)};
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPIPlanPtr plan = NULL;
@@ -40,7 +40,22 @@ static bool task_live(Task *t) {
     return ShutdownRequestPending || !t->shared->id;
 }
 
-static void task_delete(Task *t) {
+static void task_columns(const Task *t) {
+    Datum values[] = {CStringGetTextDatumMy(work.shared->schema), CStringGetTextDatumMy(work.shared->table)};
+    static Oid argtypes[] = {TEXTOID, TEXTOID};
+    static const char *src = SQL(
+        SELECT string_agg(quote_ident(column_name), ', ') AS columns FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name NOT IN ('id', 'plan', 'parent', 'start', 'stop', 'hash', 'pid', 'state', 'error', 'output')
+    );
+    SPI_execute_with_args_my(src, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
+    if (SPI_processed != 1) elog(WARNING, "columns id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed); else {
+        work.columns = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "columns", false));
+        elog(DEBUG1, "columns id = %li, %s", t->shared->id, work.columns);
+    }
+    if (values[0]) pfree((void *)values[0]);
+    if (values[1]) pfree((void *)values[1]);
+}
+
+static void task_delete(const Task *t) {
     Datum values[] = {Int64GetDatum(t->shared->id)};
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
@@ -64,7 +79,7 @@ static void task_delete(Task *t) {
     set_ps_display_my("idle");
 }
 
-static void task_insert(Task *t) {
+static void task_insert(const Task *t) {
     Datum values[] = {Int64GetDatum(t->shared->id)};
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
@@ -72,17 +87,18 @@ static void task_insert(Task *t) {
     elog(DEBUG1, "id = %li", t->shared->id);
     set_ps_display_my("insert");
     if (!src.data) {
+        if (!work.columns) task_columns(t);
+        if (!work.columns) return;
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT * FROM %1$s AS t
                 WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 FOR UPDATE OF t
-            ) INSERT INTO %1$s AS t ("parent", "plan", "active", "live", "repeat", "timeout", "count", "max", "delete", "drift", "header", "string", "delimiter", "escape", "quote", "group", "input", "null", "remote", "data")
-            SELECT "id", CASE
+            ) INSERT INTO %1$s AS t ("parent", "plan", %2$s) SELECT "id", CASE
                 WHEN "drift" THEN CURRENT_TIMESTAMP + "repeat"
                 ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p + "repeat" FROM r WHERE p <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
-            END AS "plan", "active", "live", "repeat", "timeout", "count", "max", "delete", "drift", "header", "string", "delimiter", "escape", "quote", "group", "input", "null", "remote", "data" FROM s WHERE "repeat" > '0 sec' LIMIT 1 RETURNING t.id
-        ), work.schema_table);
+            END AS "plan", %2$s FROM s WHERE "repeat" > '0 sec' LIMIT 1 RETURNING t.id
+        ), work.schema_table, work.columns);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING);
@@ -91,7 +107,7 @@ static void task_insert(Task *t) {
     set_ps_display_my("idle");
 }
 
-static void task_update(Task *t) {
+static void task_update(const Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash)};
     Portal portal;
     static Oid argtypes[] = {INT4OID};
@@ -225,7 +241,6 @@ void task_error(ErrorData *edata) {
     if ((emit_log_hook = emit_log_hook_prev)) (*emit_log_hook)(edata);
     if (!task.error.data) initStringInfoMy(&task.error);
     if (!task.output.data) initStringInfoMy(&task.output);
-    if (task.remote && edata->elevel == WARNING) edata->elevel = ERROR;
     appendStringInfo(&task.output, SQL(%sROLLBACK), task.output.len ? "\n" : "");
     task.skip++;
     if (task.error.len) appendStringInfoChar(&task.error, '\n');
@@ -340,13 +355,6 @@ static void task_execute(void) {
 
 static void task_proc_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
-    if (!code) return;
-#ifdef HAVE_SETSID
-    if (kill(-MyBgworkerEntry->bgw_notify_pid, SIGHUP))
-#else
-    if (kill(MyBgworkerEntry->bgw_notify_pid, SIGHUP))
-#endif
-        ereport(WARNING, (errmsg("could not send signal to process %d: %m", MyBgworkerEntry->bgw_notify_pid)));
 }
 
 static void task_catch(void) {
@@ -386,46 +394,49 @@ static bool task_timeout(void) {
 }
 
 void task_free(Task *t) {
-    if (t->error.data) { pfree(t->error.data); t->error.data = NULL; }
+    if (t->error.data) { pfree(t->error.data); t->error.data = NULL; t->error.len = 0; }
     if (t->group) { pfree(t->group); t->group = NULL; }
     if (t->input) { pfree(t->input); t->input = NULL; }
     if (t->null) { pfree(t->null); t->null = NULL; }
-    if (t->output.data) { pfree(t->output.data); t->output.data = NULL; }
+    if (t->output.data) { pfree(t->output.data); t->output.data = NULL; t->output.len = 0; }
     if (t->remote) { pfree(t->remote); t->remote = NULL; }
+}
+
+static void task_on_dsm_detach_callback(dsm_segment *seg, Datum arg) {
+    elog(DEBUG1, "seg = %u", dsm_segment_handle(seg));
 }
 
 void task_main(Datum arg) {
     const char *application_name;
-    dsm_segment *seg;
     shm_toc *toc;
     StringInfoData oid, schema_table;
     on_proc_exit(task_proc_exit, (Datum)NULL);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
-    if (!(seg = dsm_attach(DatumGetUInt32(arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
-#if PG_VERSION_NUM >= 100000
-    dsm_unpin_segment(dsm_segment_handle(seg));
-#endif
-    if (!(toc = shm_toc_attach(PG_TASK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
+    if (!(task.seg = dsm_attach(DatumGetUInt32(arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
+    on_dsm_detach(task.seg, task_on_dsm_detach_callback, (Datum)NULL);
+    if (!(toc = shm_toc_attach(PG_TASK_MAGIC, dsm_segment_address(task.seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     task.shared = shm_toc_lookup_my(toc, 0, false);
-    if (!(seg = dsm_attach(task.shared->handle))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
-    if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
+    if (!(work.seg = dsm_attach(task.shared->handle))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
+    on_dsm_detach(work.seg, task_on_dsm_detach_callback, (Datum)NULL);
+    if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(work.seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
     work.shared = shm_toc_lookup_my(toc, 0, false);
     work.data = quote_identifier(work.shared->data);
     work.schema = quote_identifier(work.shared->schema);
     work.table = quote_identifier(work.shared->table);
     work.user = quote_identifier(work.shared->user);
+    if (kill(MyBgworkerEntry->bgw_notify_pid, SIGUSR2)) ereport(ERROR, (errmsg("could not send signal SIGUSR2 to process %d: %m", MyBgworkerEntry->bgw_notify_pid)));
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user, 0);
+    CurrentResourceOwner = AuxProcessResourceOwner;
+    MemoryContextSwitchTo(TopMemoryContext);
     application_name = MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1;
     set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pgstat_report_appname(application_name);
     set_ps_display_my("main");
     process_session_preload_libraries();
     elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", work.shared->oid, task.shared->id, task.shared->hash, task.shared->max);
-    set_config_option_my("pg_task.data", work.shared->data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     set_config_option_my("pg_task.table", work.shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
-    set_config_option_my("pg_task.user", work.shared->user, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     initStringInfoMy(&schema_table);
     appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);

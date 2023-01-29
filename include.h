@@ -124,6 +124,10 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 
 #define PG_WORK_MAGIC 0x776f726b
 
+#ifndef get_timeout_active
+#define get_timeout_active get_timeout_finish_time
+#endif
+
 typedef struct WorkShared {
     char data[NAMEDATALEN];
     char schema[NAMEDATALEN];
@@ -137,6 +141,7 @@ typedef struct WorkShared {
 typedef struct Work {
     char *schema_table;
     char *schema_type;
+    const char *columns;
     const char *data;
     const char *schema;
     const char *table;
@@ -144,6 +149,8 @@ typedef struct Work {
     dlist_node node;
     dsm_segment *seg;
     int hash;
+    pid_t pid;
+    TimestampTz start;
     WorkShared *shared;
 } Work;
 
@@ -207,6 +214,7 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote);
 void append_with_tabs(StringInfo buf, const char *str);
 void conf_main(Datum main_arg);
+extern PGDLLIMPORT ResourceOwner SPIResourceOwner;
 #if PG_VERSION_NUM < 120000
 extern PGDLLIMPORT ResourceOwner AuxProcessResourceOwner;
 void CreateAuxProcessResourceOwner(void);

@@ -1,11 +1,18 @@
 #include "include.h"
 
 extern char *task_null;
+extern int conf_close;
 extern int conf_fetch;
 extern int work_restart;
-static dlist_head head;
+static volatile dlist_head head;
+static volatile TimeoutId timeout;
 
-static void conf_data(Work *w) {
+static void conf_latch(void) {
+    ResetLatch(MyLatch);
+    CHECK_FOR_INTERRUPTS();
+}
+
+static void conf_data(const Work *w) {
     List *names = stringToQualifiedNameList(w->data);
     StringInfoData src;
     elog(DEBUG1, "user = %s, data = %s", w->shared->user, w->shared->data);
@@ -30,7 +37,48 @@ static void conf_data(Work *w) {
     set_ps_display_my("idle");
 }
 
-static void conf_user(Work *w) {
+static void conf_free(Work *w) {
+    dlist_delete(&w->node);
+    dsm_detach(w->seg);
+    pfree(w);
+}
+
+static void conf_handler(void) {
+    dlist_mutable_iter iter;
+    TimestampTz finish = get_timeout_finish_time(timeout), min = 0;
+    elog(DEBUG1, "%s", timestamptz_to_str(finish));
+    dlist_foreach_modify(iter, (dlist_head *)&head) {
+        Work *w = dlist_container(Work, node, iter.cur);
+        TimestampTz start = TimestampTzPlusMilliseconds(w->start, conf_close);
+        if (finish >= start) {
+            ereport(WARNING, (errcode(ERRCODE_QUERY_CANCELED), errmsg("work timeout")));
+            conf_free(w);
+        } else if (min == 0 || min >= start) min = start;
+    }
+    if (!dlist_is_empty((dlist_head *)&head)) enable_timeout_at(timeout, min); else {
+        ShutdownRequestPending = true;
+        SetLatch(MyLatch);
+    }
+}
+
+static void conf_proc_exit(int code, Datum arg) {
+    elog(DEBUG1, "code = %i", code);
+}
+
+static void conf_sigaction(int signum, siginfo_t *siginfo, void *code)  {
+    dlist_mutable_iter iter;
+    elog(DEBUG1, "si_pid = %i", siginfo->si_pid);
+    dlist_foreach_modify(iter, (dlist_head *)&head) {
+        Work *w = dlist_container(Work, node, iter.cur);
+        if (siginfo->si_pid == w->pid) conf_free(w);
+    }
+    if (dlist_is_empty((dlist_head *)&head)) {
+        ShutdownRequestPending = true;
+        SetLatch(MyLatch);
+    }
+}
+
+static void conf_user(const Work *w) {
     List *names = stringToQualifiedNameList(w->user);
     StringInfoData src;
     elog(DEBUG1, "user = %s", w->shared->user);
@@ -58,10 +106,8 @@ static void conf_user(Work *w) {
 static void conf_work(Work *w) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker = {0};
-    pid_t pid;
     size_t len;
     set_ps_display_my("work");
-    dlist_delete(&w->node);
     w->data = quote_identifier(w->shared->data);
     w->user = quote_identifier(w->shared->user);
     conf_user(w);
@@ -80,21 +126,22 @@ static void conf_work(Work *w) {
     worker.bgw_restart_time = work_restart;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
-    switch (WaitForBackgroundWorkerStartup(handle, &pid)) {
+    switch (WaitForBackgroundWorkerStartup(handle, &w->pid)) {
         case BGWH_NOT_YET_STARTED: ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
         case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
         case BGWH_STARTED: break;
         case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
+    w->start = GetCurrentTimestamp();
+    if (!get_timeout_active(timeout)) enable_timeout_at(timeout, TimestampTzPlusMilliseconds(w->start, conf_close));
     pfree(handle);
-    dsm_detach(w->seg);
-    pfree(w);
 }
 
 void conf_main(Datum arg) {
     dlist_mutable_iter iter;
     Portal portal;
     StringInfoData src;
+    struct sigaction act = {0}, oldact = {0};
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         WITH j AS (
@@ -121,15 +168,22 @@ void conf_main(Datum arg) {
         "json_object"
 #endif
     );
+    act.sa_sigaction = conf_sigaction;
+    act.sa_flags = SA_SIGINFO;
+    sigaction(SIGUSR2, &act, &oldact);
+    timeout = RegisterTimeout(USER_TIMEOUT, conf_handler);
+    on_proc_exit(conf_proc_exit, (Datum)NULL);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL, 0);
+    CurrentResourceOwner = AuxProcessResourceOwner;
+    MemoryContextSwitchTo(TopMemoryContext);
     set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
     pgstat_report_appname("pg_conf");
     set_ps_display_my("main");
     process_session_preload_libraries();
     if (!lock_data_user(MyDatabaseId, GetUserId())) { elog(WARNING, "!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()); return; }
-    dlist_init(&head);
+    dlist_init((dlist_head *)&head);
     SPI_connect_my(src.data);
     portal = SPI_cursor_open_with_args_my(src.data, src.data, 0, NULL, NULL, NULL);
     do {
@@ -147,13 +201,18 @@ void conf_main(Datum arg) {
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false)), w->shared->table, sizeof(w->shared->table));
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false)), w->shared->user, sizeof(w->shared->user));
             elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, sleep = %li, reset = %li", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset);
-            dlist_push_head(&head, &w->node);
+            dlist_push_head((dlist_head *)&head, &w->node);
         }
     } while (SPI_processed);
     SPI_cursor_close(portal);
     SPI_finish_my();
     pfree(src.data);
     set_ps_display_my("idle");
-    dlist_foreach_modify(iter, &head) conf_work(dlist_container(Work, node, iter.cur));
+    dlist_foreach_modify(iter, (dlist_head *)&head) conf_work(dlist_container(Work, node, iter.cur));
+    while (!ShutdownRequestPending) {
+        int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
+        if (rc & WL_LATCH_SET) conf_latch();
+        if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
+    }
     if (!unlock_data_user(MyDatabaseId, GetUserId())) elog(WARNING, "!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId());
 }
