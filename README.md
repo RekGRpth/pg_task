@@ -1,7 +1,6 @@
 PostgreSQL and Greenplum job scheduler pg_task allows to execute any sql command at any specific time at background asynchronously
 
-# pg_task config
-to run pg_task add it to line
+first, add pg_task to shared_preload_libraries
 ```conf
 shared_preload_libraries = 'pg_task'
 ```
