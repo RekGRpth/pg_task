@@ -1,6 +1,6 @@
-PostgreSQL and Greenplum job scheduler pg_task allows to execute any sql command at any specific time at background asynchronously
+PostgreSQL and Greenplum job scheduler `pg_task` allows to execute any sql command at any specific time at background asynchronously
 
-first, add pg_task to shared_preload_libraries
+first, add `pg_task` to `shared_preload_libraries`
 ```conf
 shared_preload_libraries = 'pg_task'
 ```
@@ -52,7 +52,7 @@ to run task on remote database use sql command
 INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host')
 ```
 
-pg_task creates folowing GUCs
+`pg_task` creates folowing GUCs
 
 | Name | Type | Default | Level | Description |
 | --- | --- | --- | --- | --- |
@@ -89,7 +89,7 @@ pg_task creates folowing GUCs
 | pg_task.user | text | postgres | config | user name for tasks table |
 | pg_task.active | interval | 1 week | config, database, user, session | task active before now |
 
-pg_task creates table with folowing columns
+`pg_task` creates table with folowing columns
 
 | Name | Type | Nullable? | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -124,11 +124,11 @@ pg_task creates table with folowing columns
 
 but you may add any needed colums and/or make partitions
 
-by default pg_task runs on default database with default user with default schema with default table with default timeout
+by default `pg_task` runs on default database with default user with default schema with default table with default timeout
 
 to run specific database and/or specific user and/or specific schema and/or specific table and/or specific timeout, set config (in json format)
 ```conf
 pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"data":"database3","schema":"schema3"},{"data":"database4","table":"table4"},{"data":"database5","timeout":100}]'
 ```
 
-if database and/or user and/or schema and/or table does not exist then pg_task create it/their
+if database and/or user and/or schema and/or table does not exist then `pg_task` create it/their
