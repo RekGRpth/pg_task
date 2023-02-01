@@ -92,7 +92,7 @@ if database and/or user and/or schema and/or table does not exist then pg_task c
 
 # pg_task using
 
-by default pg_task create table with folowing columns
+by default pg_task creates table with folowing columns
 
 | Name | Type | Nullable? | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -119,6 +119,22 @@ by default pg_task create table with folowing columns
 | remote | text | NULL | | connect to remote database (if need) |
 
 but you may add any needed colums and/or make partitions
+
+pg_task creates folowing GUCs
+
+| Name | Type | Default | Level | Description |
+| --- | --- | --- | --- | --- |
+| pg_task.delete | boolean | true | config, database, user, session | delete task if output is null |
+| pg_task.drift | boolean | false | config, database, user, session | compute next repeat time by plan instead current |
+| pg_task.count | integer | 0 | config, database, user, session | do count tasks before exit |
+| pg_task.id | bigint | 0 | session | task id |
+| pg_task.max | bigint | 0 | config, database, user, session | maximum parallel tasks |
+| pg_task.active | interval | 1 hour | config, database, user, session | task active after plan time |
+| pg_task.group | text | group | config, database, user, session | task active after plan time |
+| pg_task.live | interval | 0 sec | config, database, user, session | exit until timeout |
+| pg_task.repeat | interval | 0 sec | config, database, user, session | repeat task |
+| pg_task.timeout | interval | 0 sec | config, database, user, session | task timeout |
+| pg_task.active | interval | 1 week | config, database, user, session | task active before now |
 
 to run task more quickly execute sql command
 ```sql
