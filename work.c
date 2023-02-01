@@ -536,9 +536,9 @@ static void work_table(void) {
         CREATE TABLE %1$s (
             "id" bigserial NOT NULL PRIMARY KEY,
             "parent" bigint DEFAULT NULLIF(current_setting('pg_task.id')::bigint, 0),
-            "plan" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            "start" timestamp with time zone,
-            "stop" timestamp with time zone,
+            "plan" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "start" timestamptz,
+            "stop" timestamptz,
             "active" interval NOT NULL DEFAULT current_setting('pg_task.active')::interval CHECK ("active" > '0 sec'::interval),
             "live" interval NOT NULL DEFAULT current_setting('pg_task.live')::interval CHECK ("live" >= '0 sec'::interval),
             "repeat" interval NOT NULL DEFAULT current_setting('pg_task.repeat')::interval CHECK ("repeat" >= '0 sec'::interval),
