@@ -10,17 +10,17 @@ to run task more quickly execute sql command
 INSERT INTO task (input) VALUES ('SELECT now()')
 ```
 
-to run task after 5 minutes write plannded time
+to run task after 5 minutes point plannded time
 ```sql
 INSERT INTO task (plan, input) VALUES (now() + '5 min':INTERVAL, 'SELECT now()')
 ```
 
-to run task at specific time so write
+to run task at specific time point it
 ```sql
 INSERT INTO task (plan, input) VALUES ('2029-07-01 12:51:00', 'SELECT now()')
 ```
 
-to repeat task every 5 minutes write
+to repeat task every 5 minutes point repeat interval
 ```sql
 INSERT INTO task (repeat, input) VALUES ('5 min', 'SELECT now()')
 ```
@@ -51,92 +51,6 @@ to run task on remote database use sql command
 ```sql
 INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host')
 ```
-
-by default pg_task
-1) executes
-```conf
-pg_task.count = 1000
-```
-tasks until exit
-
-2) uses database
-```conf
-pg_task.data = 'postgres'
-```
-3) deletes task if output is null
-```conf
-pg_task.delete = 'on'
-```
-4) uses in output delimiter
-```conf
-pg_task.delimiter = '\t'
-```
-5) uses drift
-```conf
-pg_task.drift = 'on'
-```
-6) groupes tasks by
-```conf
-pg_task.group = 'group'
-```
-7) prints headers in output
-```conf
-pg_task.header = 'on'
-```
-8) processes tasks
-```conf
-pg_task.live = '1 hour'
-```
-before exit
-
-9) executes simultaniously
-```conf
-pg_task.max = 0
-```
-tasks
-
-10) prints null in output as
-```conf
-pg_task.null = '\N'
-```
-
-11) uses schema
-```conf
-pg_task.schema = 'public'
-```
-for tasks
-
-12) prints only strings in quotes in output
-```conf
-pg_task.string = 'on'
-```
-13) uses table
-```conf
-pg_task.table = 'task'
-```
-for tasks
-
-14) uses sleep timeout
-```conf
-pg_task.sleep = 1000
-```
-milliseconds
-
-15) uses user
-```conf
-pg_task.user = 'postgres'
-```
-
-by default pg_task run on default database with default user with default schema with default table with default timeout
-
-to run specific database and/or specific user and/or specific schema and/or specific table and/or specific timeout, set config (in json format)
-```conf
-pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"data":"database3","schema":"schema3"},{"data":"database4","table":"table4"},{"data":"database5","timeout":100}]'
-```
-
-if database and/or user and/or schema and/or table does not exist then pg_task create it/their
-
-# pg_task using
 
 pg_task creates folowing GUCs
 
@@ -209,3 +123,12 @@ pg_task creates table with folowing columns
 | remote | text | NULL | | connect to remote database (if need) |
 
 but you may add any needed colums and/or make partitions
+
+by default pg_task runs on default database with default user with default schema with default table with default timeout
+
+to run specific database and/or specific user and/or specific schema and/or specific table and/or specific timeout, set config (in json format)
+```conf
+pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"data":"database3","schema":"schema3"},{"data":"database4","table":"table4"},{"data":"database5","timeout":100}]'
+```
+
+if database and/or user and/or schema and/or table does not exist then pg_task create it/their
