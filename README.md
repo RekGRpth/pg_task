@@ -94,43 +94,27 @@ if database and/or user and/or schema and/or table does not exist then pg_task c
 
 by default pg_task create table with folowing columns
 
-id bigserial - primary key
-
-parent bigint - parent task (if exists)
-
-plan timestamp - planned time of start
-
-start timestamp - actual time of start
-
-stop timestamp - actual time of stop
-
-group text - task groupping
-
-max int - maximum concurently tasks in group
-
-pid int - id of process executing task
-
-input text - sql to execute
-
-output text - received result
-
-error text - occured error
-
-state state - PLAN, TAKE, WORK, DONE or STOP
-
-timeout interval - allowed time to run
-
-delete boolean - autodelete (if output is null)
-
-repeat interval - autorepeat interval
-
-drift boolean - see below
-
-count integer - maximum tasks executed by current worker
-
-live interval - maximum time of live of current worker
-
-remote text - connect to remote database (if need)
+| Name | Type | Description |
+| --- | --- | --- |
+| id | bigserial | primary key |
+| parent | bigint | parent task (like foreign key to id, if exists) |
+| plan | timestamp | planned time of start |
+| start | timestamp | actual time of start |
+| stop | timestamp | actual time of stop |
+| group | text | task groupping |
+| max | int | maximum concurently tasks in group |
+| pid | int | id of process executing task |
+| input | text | sql to execute |
+| output | text | received result |
+| error | text | occured error |
+| state | state | task state (PLAN, TAKE, WORK, DONE or STOP) |
+| timeout | interval | allowed time to run |
+| delete | boolean | autodelete (if output is null) |
+| repeat | interval | autorepeat interval |
+| drift | boolean | see below |
+| count | integer | maximum tasks executed by current worker |
+| live | interval | maximum time of live of current worker |
+| remote | text | connect to remote database (if need) |
 
 but you may add any needed colums and/or make partitions
 
