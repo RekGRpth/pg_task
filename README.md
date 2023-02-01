@@ -6,6 +6,53 @@ to run pg_task add it to line
 shared_preload_libraries = 'pg_task'
 ```
 
+to run task more quickly execute sql command
+```sql
+INSERT INTO task (input) VALUES ('SELECT now()')
+```
+
+to run task after 5 minutes write plannded time
+```sql
+INSERT INTO task (plan, input) VALUES (now() + '5 min':INTERVAL, 'SELECT now()')
+```
+
+to run task at specific time so write
+```sql
+INSERT INTO task (plan, input) VALUES ('2029-07-01 12:51:00', 'SELECT now()')
+```
+
+to repeat task every 5 minutes write
+```sql
+INSERT INTO task (repeat, input) VALUES ('5 min', 'SELECT now()')
+```
+
+if write so
+```sql
+INSERT INTO task (repeat, input, drift) VALUES ('5 min', 'SELECT now()', false)
+```
+then repeat task will start after 5 minutes after task done (instead after planned time as default)
+
+if exception occures it catched and writed in error as text
+```sql
+INSERT INTO task (input) VALUES ('SELECT 1/0')
+```
+
+if some group needs concurently run only 2 tasks then use command
+```sql
+INSERT INTO task (group, max, input) VALUES ('group', 1, 'SELECT now()')
+```
+
+if in this group there are more tasks and they are executing concurently by 2 then command
+```sql
+INSERT INTO task (group, max, input) VALUES ('group', 2, 'SELECT now()')
+```
+will execute task as more early in this group (as like priority)
+
+to run task on remote database use sql command
+```sql
+INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host')
+```
+
 by default pg_task
 1) executes
 ```conf
@@ -163,50 +210,3 @@ pg_task creates table with folowing columns
 | remote | text | NULL | | connect to remote database (if need) |
 
 but you may add any needed colums and/or make partitions
-
-to run task more quickly execute sql command
-```sql
-INSERT INTO task (input) VALUES ('SELECT now()')
-```
-
-to run task after 5 minutes write plannded time
-```sql
-INSERT INTO task (plan, input) VALUES (now() + '5 min':INTERVAL, 'SELECT now()')
-```
-
-to run task at specific time so write
-```sql
-INSERT INTO task (plan, input) VALUES ('2029-07-01 12:51:00', 'SELECT now()')
-```
-
-to repeat task every 5 minutes write
-```sql
-INSERT INTO task (repeat, input) VALUES ('5 min', 'SELECT now()')
-```
-
-if write so
-```sql
-INSERT INTO task (repeat, input, drift) VALUES ('5 min', 'SELECT now()', false)
-```
-then repeat task will start after 5 minutes after task done (instead after planned time as default)
-
-if exception occures it catched and writed in error as text
-```sql
-INSERT INTO task (input) VALUES ('SELECT 1/0')
-```
-
-if some group needs concurently run only 2 tasks then use command
-```sql
-INSERT INTO task (group, max, input) VALUES ('group', 1, 'SELECT now()')
-```
-
-if in this group there are more tasks and they are executing concurently by 2 then command
-```sql
-INSERT INTO task (group, max, input) VALUES ('group', 2, 'SELECT now()')
-```
-will execute task as more early in this group (as like priority)
-
-to run task on remote database use sql command
-```sql
-INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host')
-```
