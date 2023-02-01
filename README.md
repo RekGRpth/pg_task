@@ -112,9 +112,16 @@ by default pg_task creates table with folowing columns
 | state | enum state (PLAN, TAKE, WORK, DONE, STOP) | NOT NULL | PLAN | task state  |
 | delete | boolean | NOT NULL | pg_task.delete | autodelete, when output and error are nulls |
 | drift | boolean | NOT NULL | pg_task.drift | see below |
+| header | boolean | NOT NULL | pg_task.header | header |
+| string | boolean | NOT NULL | pg_task.string | string |
+| delimiter | char | NOT NULL | pg_task.delimiter | delimiter |
+| escape | char | NOT NULL | pg_task.escape | escape |
+| quote | char | NOT NULL | pg_task.quote | quote |
+| data | text | NULL | | some user data |
 | error | text | NULL | | occured error |
 | group | text | NOT NULL | pg_task.group | task groupping |
 | input | text | NOT NULL | | sql to execute |
+| null | text | NOT NULL | pg_task.null | null value |
 | output | text | NULL | | received result |
 | remote | text | NULL | | connect to remote database (if need) |
 
