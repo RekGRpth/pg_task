@@ -98,14 +98,35 @@ pg_task creates folowing GUCs
 | --- | --- | --- | --- | --- |
 | pg_task.delete | boolean | true | config, database, user, session | delete task if output is null |
 | pg_task.drift | boolean | false | config, database, user, session | compute next repeat time by plan instead current |
+| pg_task.header | boolean | true | config, database, user, session | show headers |
+| pg_task.string | boolean | true | config, database, user, session | quote string only |
+| pg_conf.close | integer | 60 * 1000 | config, database, superuser, session | conf close ms |
+| pg_conf.fetch | integer | 10 | config, database, superuser, session | fetch at once |
+| pg_conf.restart | integer | 60 | config, database, superuser, session | conf restart interval |
 | pg_task.count | integer | 0 | config, database, user, session | do count tasks before exit |
+| pg_task.fetch | integer | 100 | config, database, user, session | fetch tasks at once |
 | pg_task.id | bigint | 0 | session | task id |
-| pg_task.max | bigint | 0 | config, database, user, session | maximum parallel tasks |
+| pg_task.limit | integer | 1000 | session | limit tasks at once |
+| pg_task.max | integer | 0 | config, database, user, session | maximum parallel tasks |
+| pg_task.sleep | integer | 1000 | config, database, user, session | check tasks every sleep milliseconds |
+| pg_work.close | integer | 60 * 1000 | config, database, superuser, session | work close ms |
+| pg_work.fetch | integer | 100 | config, database, superuser, session | work at once |
+| pg_work.restart | integer | 60 | config, database, superuser, session | work restart interval |
 | pg_task.active | interval | 1 hour | config, database, user, session | task active after plan time |
-| pg_task.group | text | group | config, database, user, session | task active after plan time |
+| pg_task.data | text | postgres | config | database name for tasks table |
+| pg_task.delimiter | char | \t | config, database, user, session | results colums delimiter |
+| pg_task.escape | char | | config, database, user, session | results colums escape |
+| pg_task.group | text | group | config, database, user, session | group tasks name |
+| pg_task.json | json | [{"data":"postgres"}] | config | json configuration: available keys are: user, data, schema, table, sleep, count and live |
 | pg_task.live | interval | 0 sec | config, database, user, session | exit until timeout |
+| pg_task.null | text | \N | config, database, user, session | text null representation |
+| pg_task.quote | char | | config, database, user, session | "results colums quote |
 | pg_task.repeat | interval | 0 sec | config, database, user, session | repeat task |
+| pg_task.reset | interval | 1 hour | config, database, user, session | reset tasks every interval |
+| pg_task.schema | text | public | config, database, user, session | schema name for tasks table |
+| pg_task.table | text | task | config, database, user, session | table name for tasks table |
 | pg_task.timeout | interval | 0 sec | config, database, user, session | task timeout |
+| pg_task.user | text | postgres | config | user name for tasks table |
 | pg_task.active | interval | 1 week | config, database, user, session | task active before now |
 
 pg_task creates table with folowing columns
