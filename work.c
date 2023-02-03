@@ -565,6 +565,7 @@ static void work_table(void) {
         );
         COMMENT ON TABLE %1$s IS 'Tasks';
         COMMENT ON COLUMN %1$s."id" IS 'Primary key';
+        COMMENT ON COLUMN %1$s."parent" IS 'Parent task id (if exists, like foreign key to id, but without constraint, for performance)';
         COMMENT ON COLUMN %1$s."delete" IS 'Auto delete task when both output and error are nulls';
         COMMENT ON COLUMN %1$s."drift" IS 'Compute next repeat time by stop time instead by plan time';
         COMMENT ON COLUMN %1$s."header" IS 'Show columns headers in output';

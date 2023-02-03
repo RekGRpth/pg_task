@@ -58,7 +58,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | Name | Type | Nullable? | Default | Description |
 | --- | --- | --- | --- | --- |
 | id | bigserial | NOT NULL | autoincrement | Primary key |
-| parent | bigint | NULL | pg_task.id | parent task id (like foreign key to id, if exists) |
+| parent | bigint | NULL | pg_task.id | Parent task id (if exists, like foreign key to id, but without constraint, for performance) |
 | plan | timestamptz | NOT NULL | CURRENT_TIMESTAMP | planned date and time of start |
 | start | timestamptz | NULL | | actual time of start |
 | stop | timestamptz | NULL | | actual time of stop |
