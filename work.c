@@ -574,6 +574,7 @@ static void work_table(void) {
         COMMENT ON COLUMN %1$s."repeat" IS 'Non-negative auto repeat tasks interval';
         COMMENT ON COLUMN %1$s."timeout" IS 'Non-negative allowed time for task run';
         COMMENT ON COLUMN %1$s."count" IS 'Non-negative maximum count of tasks, are executed by current background worker process before exit';
+        COMMENT ON COLUMN %1$s."hash" IS 'Hash for identifying tasks group';
         COMMENT ON COLUMN %1$s."max" IS 'Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds';
         COMMENT ON COLUMN %1$s."delete" IS 'Auto delete task when both output and error are nulls';
         COMMENT ON COLUMN %1$s."drift" IS 'Compute next repeat time by stop time instead by plan time';
