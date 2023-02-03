@@ -38,7 +38,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_work.restart | int | 60 | config, database, superuser, session | Restart work interval, seconds |
 | pg_task.active | interval | 1 hour | config, database, user, session | Positive period after plan time, when task is active for executing |
 | pg_task.data | text | postgres | config | Database name for tasks table |
-| pg_task.delimiter | char | \t | config, database, user, session | results colums delimiter |
+| pg_task.delimiter | char | \t | config, database, user, session | Results columns delimiter |
 | pg_task.escape | char | | config, database, user, session | results colums escape |
 | pg_task.group | text | group | config, database, user, session | group tasks name |
 | pg_task.json | json | [{"data":"postgres"}] | config | json configuration: available keys are: user, data, schema, table, sleep, count and live |
@@ -75,7 +75,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | drift | bool | NOT NULL | pg_task.drift | Compute next repeat time by stop time instead by plan time |
 | header | bool | NOT NULL | pg_task.header | Show columns headers in output |
 | string | bool | NOT NULL | pg_task.string | string |
-| delimiter | char | NOT NULL | pg_task.delimiter | delimiter |
+| delimiter | char | NOT NULL | pg_task.delimiter | Results columns delimiter |
 | escape | char | NOT NULL | pg_task.escape | escape |
 | quote | char | NOT NULL | pg_task.quote | Quote only strings |
 | data | text | NULL | | some user data |

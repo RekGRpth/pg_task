@@ -567,12 +567,13 @@ static void work_table(void) {
         COMMENT ON COLUMN %1$s."id" IS 'Primary key';
         COMMENT ON COLUMN %1$s."parent" IS 'Parent task id (if exists, like foreign key to id, but without constraint, for performance)';
         COMMENT ON COLUMN %1$s."active" IS 'Positive period after plan time, when task is active for executing';
+        COMMENT ON COLUMN %1$s."count" IS 'Non-negative maximum count of tasks, are executed by current background worker process before exit';
         COMMENT ON COLUMN %1$s."max" IS 'Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds';
         COMMENT ON COLUMN %1$s."delete" IS 'Auto delete task when both output and error are nulls';
         COMMENT ON COLUMN %1$s."drift" IS 'Compute next repeat time by stop time instead by plan time';
         COMMENT ON COLUMN %1$s."header" IS 'Show columns headers in output';
+        COMMENT ON COLUMN %1$s."delimiter" IS 'Results columns delimiter';
         COMMENT ON COLUMN %1$s."quote" IS 'Quote only strings';
-        COMMENT ON COLUMN %1$s."count" IS 'Non-negative maximum count of tasks, are executed by current background worker process before exit';
     ), work.schema_table, work.schema_type,
 #if PG_VERSION_NUM >= 120000
         hash.data
