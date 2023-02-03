@@ -30,7 +30,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.count | int | 0 | config, database, user, session | Non-negative maximum count of tasks, are executed by current background worker process before exit |
 | pg_task.fetch | int | 100 | config, database, user, session | Fetch task rows at once |
 | pg_task.id | bigint | 0 | session | Current task id |
-| pg_task.limit | int | 1000 | session | limit tasks at once |
+| pg_task.limit | int | 1000 | session | Limit task rows at once |
 | pg_task.max | int | 0 | config, database, user, session | maximum parallel tasks |
 | pg_task.sleep | int | 1000 | config, database, user, session | check tasks every sleep milliseconds |
 | pg_work.close | int | 60 * 1000 | config, database, superuser, session | Close work, milliseconds |
