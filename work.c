@@ -568,6 +568,7 @@ static void work_table(void) {
         COMMENT ON COLUMN %1$s."drift" IS 'Compute next repeat time by stop time instead by plan time';
         COMMENT ON COLUMN %1$s."header" IS 'Show columns headers in output';
         COMMENT ON COLUMN %1$s."quote" IS 'Quote only strings';
+        COMMENT ON COLUMN %1$s."count" IS 'Non-negative maximum count of tasks, are executed by current background worker process before exit';
     ), work.schema_table, work.schema_type,
 #if PG_VERSION_NUM >= 120000
         hash.data
