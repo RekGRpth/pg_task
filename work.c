@@ -590,6 +590,7 @@ static void work_table(void) {
         COMMENT ON COLUMN %1$s."group" IS 'Task grouping by name';
         COMMENT ON COLUMN %1$s."input" IS 'Sql command(s) to execute';
         COMMENT ON COLUMN %1$s."null" IS 'Null text value representation';
+        COMMENT ON COLUMN %1$s."output" IS 'Received result(s)';
     ), work.schema_table, work.schema_type,
 #if PG_VERSION_NUM >= 120000
         hash.data
