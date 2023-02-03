@@ -573,9 +573,10 @@ static void work_table(void) {
         COMMENT ON COLUMN %1$s."delete" IS 'Auto delete task when both output and error are nulls';
         COMMENT ON COLUMN %1$s."drift" IS 'Compute next repeat time by stop time instead by plan time';
         COMMENT ON COLUMN %1$s."header" IS 'Show columns headers in output';
+        COMMENT ON COLUMN %1$s."string" IS 'Quote only strings';
         COMMENT ON COLUMN %1$s."delimiter" IS 'Results columns delimiter';
         COMMENT ON COLUMN %1$s."escape" IS 'Results columns escape';
-        COMMENT ON COLUMN %1$s."quote" IS 'Quote only strings';
+        COMMENT ON COLUMN %1$s."quote" IS 'Results columns quote';
         COMMENT ON COLUMN %1$s."group" IS 'Task grouping by name';
         COMMENT ON COLUMN %1$s."null" IS 'Null text value representation';
     ), work.schema_table, work.schema_type,

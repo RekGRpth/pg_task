@@ -44,7 +44,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.json | json | [{"data":"postgres"}] | config | Json configuration, available keys: data, reset, schema, table, sleep and user |
 | pg_task.live | interval | 0 sec | config, database, user, session | Non-negative maximum time of live of current background worker process before exit |
 | pg_task.null | text | \N | config, database, user, session | Null text value representation |
-| pg_task.quote | char | | config, database, user, session | "results colums quote |
+| pg_task.quote | char | | config, database, user, session | Results columns quote |
 | pg_task.repeat | interval | 0 sec | config, database, user, session | repeat task |
 | pg_task.reset | interval | 1 hour | config, database, user, session | reset tasks every interval |
 | pg_task.schema | text | public | config, database, user, session | schema name for tasks table |
@@ -74,10 +74,10 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | delete | bool | NOT NULL | pg_task.delete | Auto delete task when both output and error are nulls |
 | drift | bool | NOT NULL | pg_task.drift | Compute next repeat time by stop time instead by plan time |
 | header | bool | NOT NULL | pg_task.header | Show columns headers in output |
-| string | bool | NOT NULL | pg_task.string | string |
+| string | bool | NOT NULL | pg_task.string | Quote only strings |
 | delimiter | char | NOT NULL | pg_task.delimiter | Results columns delimiter |
 | escape | char | NOT NULL | pg_task.escape | Results columns escape |
-| quote | char | NOT NULL | pg_task.quote | Quote only strings |
+| quote | char | NOT NULL | pg_task.quote | Results columns quote |
 | data | text | NULL | | some user data |
 | error | text | NULL | | occured error |
 | group | text | NOT NULL | pg_task.group | Task grouping by name |

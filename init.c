@@ -243,7 +243,7 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_task.json", "pg_task json", "Json configuration, available keys: data, reset, schema, table, sleep and user", &task_json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign_json, NULL);
     DefineCustomStringVariable("pg_task.live", "pg_task live", "Non-negative maximum time of live of current background worker process before exit", &task_live, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.null", "pg_task null", "Null text value representation", &task_null, "\\N", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.quote", "pg_task quote", "results colums quote", &task_quote, "", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.quote", "pg_task quote", "Results columns quote", &task_quote, "", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.repeat", "pg_task repeat", "repeat task", &task_repeat, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.reset", "pg_task reset", "reset tasks every interval", &task_reset, "1 hour", PGC_USERSET, 0, NULL, init_assign_reset, NULL);
     DefineCustomStringVariable("pg_task.schema", "pg_task schema", "schema name for tasks table", &task_schema, "public", PGC_USERSET, 0, NULL, init_assign_schema, NULL);
