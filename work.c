@@ -520,7 +520,7 @@ static void work_table(void) {
         initStringInfoMy(&function);
         appendStringInfo(&function, "%1$s_hash_generate", work.shared->table);
         function_quote = quote_identifier(function.data);
-        appendStringInfo(&hash, SQL(;CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
+        appendStringInfo(&hash, SQL(CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
             IF tg_op = 'INSERT' OR (new.group, new.remote) IS DISTINCT FROM (old.group, old.remote) THEN
                 new.hash = hashtext(new.group||COALESCE(new.remote, '%3$s'));
             END IF;
@@ -562,7 +562,9 @@ static void work_table(void) {
             "null" text NOT NULL DEFAULT current_setting('pg_task.null'),
             "output" text,
             "remote" text
-        )
+        );
+        COMMENT ON TABLE %1$s IS 'Tasks';
+        COMMENT ON COLUMN %1$s."delete" IS 'auto delete task when both output and error are nulls';
     ), work.schema_table, work.schema_type,
 #if PG_VERSION_NUM >= 120000
         hash.data
