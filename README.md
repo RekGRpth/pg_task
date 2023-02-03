@@ -42,7 +42,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.escape | char | | config, database, user, session | Results columns escape |
 | pg_task.group | text | group | config, database, user, session | Task grouping by name |
 | pg_task.json | json | [{"data":"postgres"}] | config | Json configuration, available keys: data, reset, schema, table, sleep and user |
-| pg_task.live | interval | 0 sec | config, database, user, session | exit until timeout |
+| pg_task.live | interval | 0 sec | config, database, user, session | Non-negative maximum time of live of current background worker process before exit |
 | pg_task.null | text | \N | config, database, user, session | text null representation |
 | pg_task.quote | char | | config, database, user, session | "results colums quote |
 | pg_task.repeat | interval | 0 sec | config, database, user, session | repeat task |
@@ -63,7 +63,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | start | timestamptz | NULL | | actual time of start |
 | stop | timestamptz | NULL | | actual time of stop |
 | active | interval | NOT NULL | pg_task.active | Positive period after plan time, when task is active for executing |
-| live | interval | NOT NULL | pg_task.live | non-negative maximum time of live of current worker |
+| live | interval | NOT NULL | pg_task.live | Non-negative maximum time of live of current background worker process before exit |
 | repeat | interval | NOT NULL | pg_task.repeat | autorepeat non-negative interval |
 | timeout | interval | NOT NULL | pg_task.timeout | allowed non-negative time to run |
 | count | int | NOT NULL | pg_task.count | Non-negative maximum count of tasks, are executed by current background worker process before exit |
