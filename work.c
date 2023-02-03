@@ -588,6 +588,7 @@ static void work_table(void) {
         COMMENT ON COLUMN %1$s."data" IS 'Some user data';
         COMMENT ON COLUMN %1$s."error" IS 'Catched error';
         COMMENT ON COLUMN %1$s."group" IS 'Task grouping by name';
+        COMMENT ON COLUMN %1$s."input" IS 'Sql command(s) to execute';
         COMMENT ON COLUMN %1$s."null" IS 'Null text value representation';
     ), work.schema_table, work.schema_type,
 #if PG_VERSION_NUM >= 120000
