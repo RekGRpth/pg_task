@@ -37,7 +37,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_work.fetch | int | 100 | config, database, superuser, session | Fetch work rows at once |
 | pg_work.restart | int | 60 | config, database, superuser, session | Restart work interval, seconds |
 | pg_task.active | interval | 1 hour | config, database, user, session | Positive period after plan time, when task is active for executing |
-| pg_task.data | text | postgres | config | database name for tasks table |
+| pg_task.data | text | postgres | config | Database name for tasks table |
 | pg_task.delimiter | char | \t | config, database, user, session | results colums delimiter |
 | pg_task.escape | char | | config, database, user, session | results colums escape |
 | pg_task.group | text | group | config, database, user, session | group tasks name |
