@@ -41,7 +41,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.delimiter | char | \t | config, database, user, session | Results columns delimiter |
 | pg_task.escape | char | | config, database, user, session | Results columns escape |
 | pg_task.group | text | group | config, database, user, session | Task grouping by name |
-| pg_task.json | json | [{"data":"postgres"}] | config | json configuration: available keys are: user, data, schema, table, sleep, count and live |
+| pg_task.json | json | [{"data":"postgres"}] | config | Json configuration, available keys: data, reset, schema, table, sleep and user |
 | pg_task.live | interval | 0 sec | config, database, user, session | exit until timeout |
 | pg_task.null | text | \N | config, database, user, session | text null representation |
 | pg_task.quote | char | | config, database, user, session | "results colums quote |
