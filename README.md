@@ -21,7 +21,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | Name | Type | Default | Level | Description |
 | --- | --- | --- | --- | --- |
 | pg_task.delete | bool | true | config, database, user, session | Auto delete task when both output and error are nulls |
-| pg_task.drift | bool | false | config, database, user, session | compute next repeat time by plan instead current |
+| pg_task.drift | bool | false | config, database, user, session | Compute next repeat time by stop time instead by plan time |
 | pg_task.header | bool | true | config, database, user, session | show headers |
 | pg_task.string | bool | true | config, database, user, session | quote string only |
 | pg_conf.close | int | 60 * 1000 | config, database, superuser, session | conf close ms |
@@ -72,7 +72,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pid | int | NULL | | id of process executing task |
 | state | enum state (PLAN, TAKE, WORK, DONE, STOP) | NOT NULL | PLAN | task state  |
 | delete | bool | NOT NULL | pg_task.delete | Auto delete task when both output and error are nulls |
-| drift | bool | NOT NULL | pg_task.drift | see below |
+| drift | bool | NOT NULL | pg_task.drift | Compute next repeat time by stop time instead by plan time |
 | header | bool | NOT NULL | pg_task.header | header |
 | string | bool | NOT NULL | pg_task.string | string |
 | delimiter | char | NOT NULL | pg_task.delimiter | delimiter |

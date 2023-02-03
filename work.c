@@ -565,6 +565,7 @@ static void work_table(void) {
         );
         COMMENT ON TABLE %1$s IS 'Tasks';
         COMMENT ON COLUMN %1$s."delete" IS 'Auto delete task when both output and error are nulls';
+        COMMENT ON COLUMN %1$s."drift" IS 'Compute next repeat time by stop time instead by plan time';
     ), work.schema_table, work.schema_type,
 #if PG_VERSION_NUM >= 120000
         hash.data
