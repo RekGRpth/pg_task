@@ -25,16 +25,16 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.header | bool | true | config, database, user, session | Show columns headers in output |
 | pg_task.string | bool | true | config, database, user, session | Quote only strings |
 | pg_conf.close | int | 60 * 1000 | config, database, superuser, session | Close conf, milliseconds |
-| pg_conf.fetch | int | 10 | config, database, superuser, session | fetch at once |
+| pg_conf.fetch | int | 10 | config, database, superuser, session | Fetch conf rows at once |
 | pg_conf.restart | int | 60 | config, database, superuser, session | conf restart interval |
 | pg_task.count | int | 0 | config, database, user, session | do count tasks before exit |
-| pg_task.fetch | int | 100 | config, database, user, session | fetch tasks at once |
+| pg_task.fetch | int | 100 | config, database, user, session | Fetch task rows at once |
 | pg_task.id | bigint | 0 | session | task id |
 | pg_task.limit | int | 1000 | session | limit tasks at once |
 | pg_task.max | int | 0 | config, database, user, session | maximum parallel tasks |
 | pg_task.sleep | int | 1000 | config, database, user, session | check tasks every sleep milliseconds |
 | pg_work.close | int | 60 * 1000 | config, database, superuser, session | Close work, milliseconds |
-| pg_work.fetch | int | 100 | config, database, superuser, session | work at once |
+| pg_work.fetch | int | 100 | config, database, superuser, session | Fetch work rows at once |
 | pg_work.restart | int | 60 | config, database, superuser, session | work restart interval |
 | pg_task.active | interval | 1 hour | config, database, user, session | task active after plan time |
 | pg_task.data | text | postgres | config | database name for tasks table |
