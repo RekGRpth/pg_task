@@ -235,7 +235,7 @@ void _PG_init(void) {
     DefineCustomIntVariable("pg_work.close", "pg_work close", "Close work, milliseconds", &work_close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.fetch", "pg_work fetch", "Fetch work rows at once", &work_fetch, 100, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.restart", "pg_work restart", "Restart work interval, seconds", &work_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.active", "pg_task active", "task active after plan time", &task_active, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.active", "pg_task active", "Positive period after plan time, when task is active for executing", &task_active, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.data", "pg_task data", "database name for tasks table", &task_data, "postgres", PGC_SIGHUP, 0, NULL, init_assign_data, NULL);
     DefineCustomStringVariable("pg_task.delimiter", "pg_task delimiter", "results colums delimiter", &task_delimiter, "\t", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.escape", "pg_task escape", "results colums escape", &task_escape, "", PGC_USERSET, 0, NULL, NULL, NULL);

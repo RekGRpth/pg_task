@@ -36,7 +36,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_work.close | int | 60 * 1000 | config, database, superuser, session | Close work, milliseconds |
 | pg_work.fetch | int | 100 | config, database, superuser, session | Fetch work rows at once |
 | pg_work.restart | int | 60 | config, database, superuser, session | Restart work interval, seconds |
-| pg_task.active | interval | 1 hour | config, database, user, session | task active after plan time |
+| pg_task.active | interval | 1 hour | config, database, user, session | Positive period after plan time, when task is active for executing |
 | pg_task.data | text | postgres | config | database name for tasks table |
 | pg_task.delimiter | char | \t | config, database, user, session | results colums delimiter |
 | pg_task.escape | char | | config, database, user, session | results colums escape |
@@ -62,7 +62,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | plan | timestamptz | NOT NULL | CURRENT_TIMESTAMP | planned date and time of start |
 | start | timestamptz | NULL | | actual time of start |
 | stop | timestamptz | NULL | | actual time of stop |
-| active | interval | NOT NULL | pg_task.active | positive period, when task is active for executing |
+| active | interval | NOT NULL | pg_task.active | Positive period after plan time, when task is active for executing |
 | live | interval | NOT NULL | pg_task.live | non-negative maximum time of live of current worker |
 | repeat | interval | NOT NULL | pg_task.repeat | autorepeat non-negative interval |
 | timeout | interval | NOT NULL | pg_task.timeout | allowed non-negative time to run |
