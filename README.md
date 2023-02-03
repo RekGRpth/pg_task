@@ -1,55 +1,19 @@
 PostgreSQL and Greenplum job scheduler `pg_task` allows to execute any sql command at any specific time at background asynchronously
 
-first, add `pg_task` to `shared_preload_libraries`
+first
 ```conf
-shared_preload_libraries = 'pg_task'
+shared_preload_libraries = 'pg_task' # add pg_task to shared_preload_libraries
 ```
-
-to run task more quickly execute sql command
+second
 ```sql
-INSERT INTO task (input) VALUES ('SELECT now()')
-```
-
-to run task after 5 minutes point plannded time
-```sql
-INSERT INTO task (plan, input) VALUES (now() + '5 min':INTERVAL, 'SELECT now()')
-```
-
-to run task at specific time point it
-```sql
-INSERT INTO task (plan, input) VALUES ('2029-07-01 12:51:00', 'SELECT now()')
-```
-
-to repeat task every 5 minutes point repeat interval
-```sql
-INSERT INTO task (repeat, input) VALUES ('5 min', 'SELECT now()')
-```
-
-if write so
-```sql
-INSERT INTO task (repeat, input, drift) VALUES ('5 min', 'SELECT now()', false)
-```
-then repeat task will start after 5 minutes after task done (instead after planned time as default)
-
-if exception occures it catched and writed in error as text
-```sql
-INSERT INTO task (input) VALUES ('SELECT 1/0')
-```
-
-if some group needs concurently run only 2 tasks then use command
-```sql
-INSERT INTO task (group, max, input) VALUES ('group', 1, 'SELECT now()')
-```
-
-if in this group there are more tasks and they are executing concurently by 2 then command
-```sql
-INSERT INTO task (group, max, input) VALUES ('group', 2, 'SELECT now()')
-```
-will execute task as more early in this group (as like priority)
-
-to run task on remote database use sql command
-```sql
-INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host')
+INSERT INTO task (input) VALUES ('SELECT now()'); -- to run sql more quickly use only input
+INSERT INTO task (plan, input) VALUES (now() + '5 min':INTERVAL, 'SELECT now()'); -- to run sql after 5 minutes point plan(ned time)
+INSERT INTO task (plan, input) VALUES ('2029-07-01 12:51:00', 'SELECT now()'); -- to run sql at specific time point it as plan(ned time)
+INSERT INTO task (repeat, input) VALUES ('5 min', 'SELECT now()'); -- to repeat sql every 5 minutes point repeat( interval)
+INSERT INTO task (input) VALUES ('SELECT 1/0'); -- exception is catched and writed in error as text
+INSERT INTO task (group, max, input) VALUES ('group', 1, 'SELECT now()'); -- if some group needs concurently run only 2 parallel sqls then use max = 1
+INSERT INTO task (group, max, input) VALUES ('group', 2, 'SELECT now()'); -- if in this group there are more sqls and they are executing concurently by 2 then passing max = 2 will execute sql as more early in this group (it is like priority)
+INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host'); -- to run sql on remote database use remote
 ```
 
 `pg_task` creates folowing GUCs
