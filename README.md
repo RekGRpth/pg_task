@@ -23,7 +23,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.delete | bool | true | config, database, user, session | Auto delete task when both output and error are nulls |
 | pg_task.drift | bool | false | config, database, user, session | Compute next repeat time by stop time instead by plan time |
 | pg_task.header | bool | true | config, database, user, session | Show columns headers in output |
-| pg_task.string | bool | true | config, database, user, session | quote string only |
+| pg_task.string | bool | true | config, database, user, session | Quote only strings |
 | pg_conf.close | int | 60 * 1000 | config, database, superuser, session | conf close ms |
 | pg_conf.fetch | int | 10 | config, database, superuser, session | fetch at once |
 | pg_conf.restart | int | 60 | config, database, superuser, session | conf restart interval |
@@ -77,7 +77,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | string | bool | NOT NULL | pg_task.string | string |
 | delimiter | char | NOT NULL | pg_task.delimiter | delimiter |
 | escape | char | NOT NULL | pg_task.escape | escape |
-| quote | char | NOT NULL | pg_task.quote | quote |
+| quote | char | NOT NULL | pg_task.quote | Quote only strings |
 | data | text | NULL | | some user data |
 | error | text | NULL | | occured error |
 | group | text | NOT NULL | pg_task.group | task groupping |
