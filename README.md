@@ -24,7 +24,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.drift | bool | false | config, database, user, session | Compute next repeat time by stop time instead by plan time |
 | pg_task.header | bool | true | config, database, user, session | Show columns headers in output |
 | pg_task.string | bool | true | config, database, user, session | Quote only strings |
-| pg_conf.close | int | 60 * 1000 | config, database, superuser, session | conf close ms |
+| pg_conf.close | int | 60 * 1000 | config, database, superuser, session | Close conf, milliseconds |
 | pg_conf.fetch | int | 10 | config, database, superuser, session | fetch at once |
 | pg_conf.restart | int | 60 | config, database, superuser, session | conf restart interval |
 | pg_task.count | int | 0 | config, database, user, session | do count tasks before exit |
@@ -33,7 +33,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.limit | int | 1000 | session | limit tasks at once |
 | pg_task.max | int | 0 | config, database, user, session | maximum parallel tasks |
 | pg_task.sleep | int | 1000 | config, database, user, session | check tasks every sleep milliseconds |
-| pg_work.close | int | 60 * 1000 | config, database, superuser, session | work close ms |
+| pg_work.close | int | 60 * 1000 | config, database, superuser, session | Close work, milliseconds |
 | pg_work.fetch | int | 100 | config, database, superuser, session | work at once |
 | pg_work.restart | int | 60 | config, database, superuser, session | work restart interval |
 | pg_task.active | interval | 1 hour | config, database, user, session | task active after plan time |
