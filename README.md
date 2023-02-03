@@ -48,7 +48,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.repeat | interval | 0 sec | config, database, user, session | Non-negative auto repeat tasks interval |
 | pg_task.reset | interval | 1 hour | config, database, user, session | Interval of reset tasks |
 | pg_task.schema | text | public | config, database, user, session | Schema name for tasks table |
-| pg_task.table | text | task | config, database, user, session | table name for tasks table |
+| pg_task.table | text | task | config, database, user, session | Table name for tasks table |
 | pg_task.timeout | interval | 0 sec | config, database, user, session | task timeout |
 | pg_task.user | text | postgres | config | user name for tasks table |
 | pg_task.active | interval | 1 week | config, database, user, session | task active before now |
