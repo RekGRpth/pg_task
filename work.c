@@ -567,6 +567,7 @@ static void work_table(void) {
         COMMENT ON COLUMN %1$s."id" IS 'Primary key';
         COMMENT ON COLUMN %1$s."parent" IS 'Parent task id (if exists, like foreign key to id, but without constraint, for performance)';
         COMMENT ON COLUMN %1$s."plan" IS 'Planned date and time of start';
+        COMMENT ON COLUMN %1$s."start" IS 'Actual date and time of start';
         COMMENT ON COLUMN %1$s."active" IS 'Positive period after plan time, when task is active for executing';
         COMMENT ON COLUMN %1$s."live" IS 'Non-negative maximum time of live of current background worker process before exit';
         COMMENT ON COLUMN %1$s."repeat" IS 'Non-negative auto repeat tasks interval';
