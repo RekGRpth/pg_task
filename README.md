@@ -39,7 +39,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.active | interval | 1 hour | config, database, user, session | Positive period after plan time, when task is active for executing |
 | pg_task.data | text | postgres | config | Database name for tasks table |
 | pg_task.delimiter | char | \t | config, database, user, session | Results columns delimiter |
-| pg_task.escape | char | | config, database, user, session | results colums escape |
+| pg_task.escape | char | | config, database, user, session | Results columns escape |
 | pg_task.group | text | group | config, database, user, session | group tasks name |
 | pg_task.json | json | [{"data":"postgres"}] | config | json configuration: available keys are: user, data, schema, table, sleep, count and live |
 | pg_task.live | interval | 0 sec | config, database, user, session | exit until timeout |
@@ -76,7 +76,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | header | bool | NOT NULL | pg_task.header | Show columns headers in output |
 | string | bool | NOT NULL | pg_task.string | string |
 | delimiter | char | NOT NULL | pg_task.delimiter | Results columns delimiter |
-| escape | char | NOT NULL | pg_task.escape | escape |
+| escape | char | NOT NULL | pg_task.escape | Results columns escape |
 | quote | char | NOT NULL | pg_task.quote | Quote only strings |
 | data | text | NULL | | some user data |
 | error | text | NULL | | occured error |
