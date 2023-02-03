@@ -43,7 +43,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.group | text | group | config, database, user, session | Task grouping by name |
 | pg_task.json | json | [{"data":"postgres"}] | config | Json configuration, available keys: data, reset, schema, table, sleep and user |
 | pg_task.live | interval | 0 sec | config, database, user, session | Non-negative maximum time of live of current background worker process before exit |
-| pg_task.null | text | \N | config, database, user, session | text null representation |
+| pg_task.null | text | \N | config, database, user, session | Null text value representation |
 | pg_task.quote | char | | config, database, user, session | "results colums quote |
 | pg_task.repeat | interval | 0 sec | config, database, user, session | repeat task |
 | pg_task.reset | interval | 1 hour | config, database, user, session | reset tasks every interval |
@@ -82,7 +82,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | error | text | NULL | | occured error |
 | group | text | NOT NULL | pg_task.group | Task grouping by name |
 | input | text | NOT NULL | | sql to execute |
-| null | text | NOT NULL | pg_task.null | null value |
+| null | text | NOT NULL | pg_task.null | Null text value representation |
 | output | text | NULL | | received result |
 | remote | text | NULL | | connect to remote database (if need) |
 

@@ -577,6 +577,7 @@ static void work_table(void) {
         COMMENT ON COLUMN %1$s."escape" IS 'Results columns escape';
         COMMENT ON COLUMN %1$s."quote" IS 'Quote only strings';
         COMMENT ON COLUMN %1$s."group" IS 'Task grouping by name';
+        COMMENT ON COLUMN %1$s."null" IS 'Null text value representation';
     ), work.schema_table, work.schema_type,
 #if PG_VERSION_NUM >= 120000
         hash.data
