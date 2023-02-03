@@ -26,7 +26,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.string | bool | true | config, database, user, session | Quote only strings |
 | pg_conf.close | int | 60 * 1000 | config, database, superuser, session | Close conf, milliseconds |
 | pg_conf.fetch | int | 10 | config, database, superuser, session | Fetch conf rows at once |
-| pg_conf.restart | int | 60 | config, database, superuser, session | conf restart interval |
+| pg_conf.restart | int | 60 | config, database, superuser, session | Restart conf interval, seconds |
 | pg_task.count | int | 0 | config, database, user, session | do count tasks before exit |
 | pg_task.fetch | int | 100 | config, database, user, session | Fetch task rows at once |
 | pg_task.id | bigint | 0 | session | task id |
@@ -35,7 +35,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.sleep | int | 1000 | config, database, user, session | check tasks every sleep milliseconds |
 | pg_work.close | int | 60 * 1000 | config, database, superuser, session | Close work, milliseconds |
 | pg_work.fetch | int | 100 | config, database, superuser, session | Fetch work rows at once |
-| pg_work.restart | int | 60 | config, database, superuser, session | work restart interval |
+| pg_work.restart | int | 60 | config, database, superuser, session | Restart work interval, seconds |
 | pg_task.active | interval | 1 hour | config, database, user, session | task active after plan time |
 | pg_task.data | text | postgres | config | database name for tasks table |
 | pg_task.delimiter | char | \t | config, database, user, session | results colums delimiter |
