@@ -219,7 +219,7 @@ void initStringInfoMy(StringInfoData *buf) {
 
 void _PG_init(void) {
     if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("This module can only be loaded via shared_preload_libraries")));
-    DefineCustomBoolVariable("pg_task.delete", "pg_task delete", "delete task if output is null", &task_delete, true, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomBoolVariable("pg_task.delete", "pg_task delete", "Auto delete task when both output and error are nulls", &task_delete, true, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.drift", "pg_task drift", "compute next repeat time by plan instead current", &task_drift, false, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.header", "pg_task header", "show headers", &task_header, true, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.string", "pg_task string", "quote string only", &task_string, true, PGC_USERSET, 0, NULL, NULL, NULL);
