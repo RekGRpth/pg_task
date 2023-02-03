@@ -40,7 +40,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.data | text | postgres | config | Database name for tasks table |
 | pg_task.delimiter | char | \t | config, database, user, session | Results columns delimiter |
 | pg_task.escape | char | | config, database, user, session | Results columns escape |
-| pg_task.group | text | group | config, database, user, session | group tasks name |
+| pg_task.group | text | group | config, database, user, session | Task grouping by name |
 | pg_task.json | json | [{"data":"postgres"}] | config | json configuration: available keys are: user, data, schema, table, sleep, count and live |
 | pg_task.live | interval | 0 sec | config, database, user, session | exit until timeout |
 | pg_task.null | text | \N | config, database, user, session | text null representation |
@@ -80,7 +80,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | quote | char | NOT NULL | pg_task.quote | Quote only strings |
 | data | text | NULL | | some user data |
 | error | text | NULL | | occured error |
-| group | text | NOT NULL | pg_task.group | task groupping |
+| group | text | NOT NULL | pg_task.group | Task grouping by name |
 | input | text | NOT NULL | | sql to execute |
 | null | text | NOT NULL | pg_task.null | null value |
 | output | text | NULL | | received result |
