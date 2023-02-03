@@ -78,7 +78,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | delimiter | char | NOT NULL | pg_task.delimiter | Results columns delimiter |
 | escape | char | NOT NULL | pg_task.escape | Results columns escape |
 | quote | char | NOT NULL | pg_task.quote | Results columns quote |
-| data | text | NULL | | some user data |
+| data | text | NULL | | Some user data |
 | error | text | NULL | | occured error |
 | group | text | NOT NULL | pg_task.group | Task grouping by name |
 | input | text | NOT NULL | | sql to execute |
