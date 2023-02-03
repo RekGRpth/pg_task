@@ -591,6 +591,7 @@ static void work_table(void) {
         COMMENT ON COLUMN %1$s."input" IS 'Sql command(s) to execute';
         COMMENT ON COLUMN %1$s."null" IS 'Null text value representation';
         COMMENT ON COLUMN %1$s."output" IS 'Received result(s)';
+        COMMENT ON COLUMN %1$s."remote" IS 'Connect to remote database (if need)';
     ), work.schema_table, work.schema_type,
 #if PG_VERSION_NUM >= 120000
         hash.data

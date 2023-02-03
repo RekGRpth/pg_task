@@ -84,7 +84,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | input | text | NOT NULL | | Sql command(s) to execute |
 | null | text | NOT NULL | pg_task.null | Null text value representation |
 | output | text | NULL | | Received result(s) |
-| remote | text | NULL | | connect to remote database (if need) |
+| remote | text | NULL | | Connect to remote database (if need) |
 
 but you may add any needed colums and/or make partitions
 
