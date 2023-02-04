@@ -809,6 +809,13 @@ void work_main(Datum arg) {
     shm_toc *toc;
     StringInfoData schema_table, schema_type;
     struct sigaction act = {0}, oldact = {0};
+#ifdef GP_VERSION_NUM
+    Gp_role = GP_ROLE_DISPATCH;
+    optimizer = false;
+#if PG_VERSION_NUM < 120000
+    Gp_session_role = GP_ROLE_DISPATCH;
+#endif
+#endif
     on_proc_exit(work_proc_exit, (Datum)NULL);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     act.sa_sigaction = work_sigaction;
@@ -849,7 +856,6 @@ void work_main(Datum arg) {
     elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.hash);
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_UTILITY;
-    optimizer = false;
 #if PG_VERSION_NUM < 120000
     Gp_session_role = GP_ROLE_UTILITY;
 #endif
