@@ -817,13 +817,6 @@ void work_main(Datum arg) {
     timeout = RegisterTimeout(USER_TIMEOUT, work_handler);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
-#ifdef GP_VERSION_NUM
-    optimizer = false;
-    Gp_role = GP_ROLE_UTILITY;
-#if PG_VERSION_NUM < 120000
-    Gp_session_role = GP_ROLE_UTILITY;
-#endif
-#endif
     if (!(work.seg = dsm_attach(DatumGetUInt32(arg)))) { ereport(WARNING, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment"))); return; } // exit without error to disable restart, then start conf
     on_dsm_detach(work.seg, work_on_dsm_detach_callback, (Datum)NULL);
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(work.seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
@@ -854,6 +847,13 @@ void work_main(Datum arg) {
     appendStringInfo(&schema_type, "%s.state", work.schema);
     work.schema_type = schema_type.data;
     elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.hash);
+#ifdef GP_VERSION_NUM
+    Gp_role = GP_ROLE_UTILITY;
+    optimizer = false;
+#if PG_VERSION_NUM < 120000
+    Gp_session_role = GP_ROLE_UTILITY;
+#endif
+#endif
     work_schema(work.schema);
     work_type();
     work_table();
@@ -863,6 +863,12 @@ void work_main(Datum arg) {
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);
     work_index(countof(index_state), index_state);
+#ifdef GP_VERSION_NUM
+    Gp_role = GP_ROLE_DISPATCH;
+#if PG_VERSION_NUM < 120000
+    Gp_session_role = GP_ROLE_DISPATCH;
+#endif
+#endif
     set_ps_display_my("idle");
     work_reset();
     while (!ShutdownRequestPending) {
