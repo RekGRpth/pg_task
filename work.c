@@ -820,8 +820,7 @@ void work_main(Datum arg) {
 #ifdef GP_VERSION_NUM
     optimizer = false;
     Gp_role = GP_ROLE_UTILITY;
-#if PG_VERSION_NUM >= 120000
-#else
+#if PG_VERSION_NUM < 120000
     Gp_session_role = GP_ROLE_UTILITY;
 #endif
 #endif
