@@ -520,7 +520,7 @@ static void work_table(void) {
         initStringInfoMy(&function);
         appendStringInfo(&function, "%1$s_hash_generate", work.shared->table);
         function_quote = quote_identifier(function.data);
-        appendStringInfo(&hash, SQL(;CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
+        appendStringInfo(&hash, SQL(CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
             IF tg_op = 'INSERT' OR (new.group, new.remote) IS DISTINCT FROM (old.group, old.remote) THEN
                 new.hash = hashtext(new.group||COALESCE(new.remote, '%3$s'));
             END IF;
@@ -536,9 +536,9 @@ static void work_table(void) {
         CREATE TABLE %1$s (
             "id" bigserial NOT NULL PRIMARY KEY,
             "parent" bigint DEFAULT NULLIF(current_setting('pg_task.id')::bigint, 0),
-            "plan" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            "start" timestamp with time zone,
-            "stop" timestamp with time zone,
+            "plan" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "start" timestamptz,
+            "stop" timestamptz,
             "active" interval NOT NULL DEFAULT current_setting('pg_task.active')::interval CHECK ("active" > '0 sec'::interval),
             "live" interval NOT NULL DEFAULT current_setting('pg_task.live')::interval CHECK ("live" >= '0 sec'::interval),
             "repeat" interval NOT NULL DEFAULT current_setting('pg_task.repeat')::interval CHECK ("repeat" >= '0 sec'::interval),
@@ -562,7 +562,36 @@ static void work_table(void) {
             "null" text NOT NULL DEFAULT current_setting('pg_task.null'),
             "output" text,
             "remote" text
-        )
+        );
+        COMMENT ON TABLE %1$s IS 'Tasks';
+        COMMENT ON COLUMN %1$s."id" IS 'Primary key';
+        COMMENT ON COLUMN %1$s."parent" IS 'Parent task id (if exists, like foreign key to id, but without constraint, for performance)';
+        COMMENT ON COLUMN %1$s."plan" IS 'Planned date and time of start';
+        COMMENT ON COLUMN %1$s."start" IS 'Actual date and time of start';
+        COMMENT ON COLUMN %1$s."stop" IS 'Actual date and time of stop';
+        COMMENT ON COLUMN %1$s."active" IS 'Positive period after plan time, when task is active for executing';
+        COMMENT ON COLUMN %1$s."live" IS 'Non-negative maximum time of live of current background worker process before exit';
+        COMMENT ON COLUMN %1$s."repeat" IS 'Non-negative auto repeat tasks interval';
+        COMMENT ON COLUMN %1$s."timeout" IS 'Non-negative allowed time for task run';
+        COMMENT ON COLUMN %1$s."count" IS 'Non-negative maximum count of tasks, are executed by current background worker process before exit';
+        COMMENT ON COLUMN %1$s."hash" IS 'Hash for identifying tasks group';
+        COMMENT ON COLUMN %1$s."max" IS 'Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds';
+        COMMENT ON COLUMN %1$s."pid" IS 'Id of process executing task';
+        COMMENT ON COLUMN %1$s."state" IS 'Task state';
+        COMMENT ON COLUMN %1$s."delete" IS 'Auto delete task when both output and error are nulls';
+        COMMENT ON COLUMN %1$s."drift" IS 'Compute next repeat time by stop time instead by plan time';
+        COMMENT ON COLUMN %1$s."header" IS 'Show columns headers in output';
+        COMMENT ON COLUMN %1$s."string" IS 'Quote only strings';
+        COMMENT ON COLUMN %1$s."delimiter" IS 'Results columns delimiter';
+        COMMENT ON COLUMN %1$s."escape" IS 'Results columns escape';
+        COMMENT ON COLUMN %1$s."quote" IS 'Results columns quote';
+        COMMENT ON COLUMN %1$s."data" IS 'Some user data';
+        COMMENT ON COLUMN %1$s."error" IS 'Catched error';
+        COMMENT ON COLUMN %1$s."group" IS 'Task grouping by name';
+        COMMENT ON COLUMN %1$s."input" IS 'Sql command(s) to execute';
+        COMMENT ON COLUMN %1$s."null" IS 'Null text value representation';
+        COMMENT ON COLUMN %1$s."output" IS 'Received result(s)';
+        COMMENT ON COLUMN %1$s."remote" IS 'Connect to remote database (if need)';
     ), work.schema_table, work.schema_type,
 #if PG_VERSION_NUM >= 120000
         hash.data
@@ -780,6 +809,13 @@ void work_main(Datum arg) {
     shm_toc *toc;
     StringInfoData schema_table, schema_type;
     struct sigaction act = {0}, oldact = {0};
+#ifdef GP_VERSION_NUM
+    Gp_role = GP_ROLE_DISPATCH;
+    optimizer = false;
+#if PG_VERSION_NUM < 120000
+    Gp_session_role = GP_ROLE_DISPATCH;
+#endif
+#endif
     on_proc_exit(work_proc_exit, (Datum)NULL);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     act.sa_sigaction = work_sigaction;
@@ -788,14 +824,6 @@ void work_main(Datum arg) {
     timeout = RegisterTimeout(USER_TIMEOUT, work_handler);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
-#ifdef GP_VERSION_NUM
-    optimizer = false;
-    Gp_role = GP_ROLE_UTILITY;
-#if PG_VERSION_NUM >= 120000
-#else
-    Gp_session_role = GP_ROLE_UTILITY;
-#endif
-#endif
     if (!(work.seg = dsm_attach(DatumGetUInt32(arg)))) { ereport(WARNING, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment"))); return; } // exit without error to disable restart, then start conf
     on_dsm_detach(work.seg, work_on_dsm_detach_callback, (Datum)NULL);
     if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(work.seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
@@ -826,6 +854,12 @@ void work_main(Datum arg) {
     appendStringInfo(&schema_type, "%s.state", work.schema);
     work.schema_type = schema_type.data;
     elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.hash);
+#ifdef GP_VERSION_NUM
+    Gp_role = GP_ROLE_UTILITY;
+#if PG_VERSION_NUM < 120000
+    Gp_session_role = GP_ROLE_UTILITY;
+#endif
+#endif
     work_schema(work.schema);
     work_type();
     work_table();
@@ -835,6 +869,12 @@ void work_main(Datum arg) {
     work_index(countof(index_parent), index_parent);
     work_index(countof(index_plan), index_plan);
     work_index(countof(index_state), index_state);
+#ifdef GP_VERSION_NUM
+    Gp_role = GP_ROLE_DISPATCH;
+#if PG_VERSION_NUM < 120000
+    Gp_session_role = GP_ROLE_DISPATCH;
+#endif
+#endif
     set_ps_display_my("idle");
     work_reset();
     while (!ShutdownRequestPending) {
