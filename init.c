@@ -138,7 +138,7 @@ void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes) {
     shm_toc_estimate_chunk(&e, nbytes);
     shm_toc_estimate_keys(&e, 1);
     segsize = shm_toc_estimate(&e);
-    *seg = dsm_create_my(segsize, 0);
+    *seg = dsm_create_my(segsize);
     on_dsm_detach(*seg, init_on_dsm_detach_callback, (Datum)NULL);
     toc = shm_toc_create(magic, dsm_segment_address(*seg), segsize);
     ptr = shm_toc_allocate(toc, nbytes);
