@@ -7,7 +7,6 @@ extern int work_fetch;
 extern Task task;
 static dlist_head remote;
 static emit_log_hook_type emit_log_hook_prev = NULL;
-//static volatile bool InterruptPendingMy = false;
 static volatile dlist_head local;
 static volatile TimeoutId timeout;
 static volatile uint64 idle_count = 0;
@@ -177,7 +176,6 @@ static int work_nevents(void) {
 static void work_handler(void) {
     dlist_mutable_iter iter;
     TimestampTz finish = get_timeout_finish_time(timeout), min = 0;
-    elog(DEBUG1, "%s", timestamptz_to_str(finish));
     dlist_foreach_modify(iter, (dlist_head *)&local) {
         Task *t = dlist_container(Task, node, iter.cur);
         TimestampTz start = TimestampTzPlusMilliseconds(t->start, work_close);
@@ -283,7 +281,6 @@ static void work_latch(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
     if (ConfigReloadPending) work_reload();
-//    if (InterruptPendingMy) InterruptPendingMy = false;
 }
 
 static void work_readable(Task *t) {
@@ -814,9 +811,8 @@ static void work_on_dsm_detach_callback(dsm_segment *seg, Datum arg) {
     elog(DEBUG1, "seg = %u", dsm_segment_handle(seg));
 }
 
-static void StatementCancelHandlerMy(SIGNAL_ARGS) {
+static void work_idle(SIGNAL_ARGS) {
     int save_errno = errno;
-//    if (!proc_exit_inprogress) InterruptPendingMy = true;
     idle_count = 0;
     SetLatch(MyLatch);
     errno = save_errno;
@@ -848,7 +844,7 @@ void work_main(Datum arg) {
 #endif
     on_proc_exit(work_proc_exit, (Datum)NULL);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
-    pqsignal(SIGINT, StatementCancelHandlerMy);
+    pqsignal(SIGINT, work_idle);
     act.sa_sigaction = work_sigaction;
     act.sa_flags = SA_SIGINFO;
     sigaction(SIGUSR2, &act, &oldact);
@@ -921,7 +917,7 @@ void work_main(Datum arg) {
             INSTR_TIME_SET_CURRENT(start_time_sleep);
             current_sleep = work.shared->sleep;
         }
-        if (idle_count >= task_idle) current_sleep = current_reset;
+        if (idle_count >= (long)task_idle) current_sleep = current_reset;
         nevents = WaitEventSetWaitMy(set, Min(current_reset, current_sleep), events, nevents);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
