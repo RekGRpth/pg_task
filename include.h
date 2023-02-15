@@ -33,6 +33,9 @@
 #include <libpq/libpq-be.h>
 #include <miscadmin.h>
 #include <nodes/makefuncs.h>
+#if PG_VERSION_NUM >= 160000
+#include <nodes/miscnodes.h>
+#endif
 #include <parser/analyze.h>
 #include <parser/parse_type.h>
 #include <pgstat.h>
@@ -126,7 +129,7 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 
 #if PG_VERSION_NUM >= 160000
 #define parseTypeStringMy(str, typeid_p, typmod_p) parseTypeString(str, typeid_p, typmod_p, (Node *)&(ErrorSaveContext){T_ErrorSaveContext})
-#define stringToQualifiedNameListMy(string) stringToQualifiedNameList(string, (Node *)&(ErrorSaveContext){T_ErrorSaveContext})
+#define stringToQualifiedNameListMy(string) stringToQualifiedNameList(string, NULL)
 #else
 #define parseTypeStringMy(str, typeid_p, typmod_p) parseTypeString(str, typeid_p, typmod_p, true)
 #define stringToQualifiedNameListMy(string) stringToQualifiedNameList(string)
