@@ -125,8 +125,8 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #endif
 
 #if PG_VERSION_NUM >= 160000
-#define parseTypeStringMy(str, typeid_p, typmod_p) parseTypeString(str, typeid_p, typmod_p, NULL)
-#define stringToQualifiedNameListMy(string) stringToQualifiedNameList(string, NULL)
+#define parseTypeStringMy(str, typeid_p, typmod_p) parseTypeString(str, typeid_p, typmod_p, (Node *)&(ErrorSaveContext){T_ErrorSaveContext})
+#define stringToQualifiedNameListMy(string) stringToQualifiedNameList(string, (Node *)&(ErrorSaveContext){T_ErrorSaveContext})
 #else
 #define parseTypeStringMy(str, typeid_p, typmod_p) parseTypeString(str, typeid_p, typmod_p, true)
 #define stringToQualifiedNameListMy(string) stringToQualifiedNameList(string)
