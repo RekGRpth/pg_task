@@ -1,13 +1,16 @@
 #include "include.h"
 
 extern char *task_null;
+extern int task_idle;
 extern int work_close;
 extern int work_fetch;
 extern Task task;
 static dlist_head remote;
 static emit_log_hook_type emit_log_hook_prev = NULL;
+//static volatile bool InterruptPendingMy = false;
 static volatile dlist_head local;
 static volatile TimeoutId timeout;
+static volatile uint64 idle_count = 0;
 Work work = {0};
 
 static void work_query(Task *t);
@@ -280,6 +283,7 @@ static void work_latch(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
     if (ConfigReloadPending) work_reload();
+//    if (InterruptPendingMy) InterruptPendingMy = false;
 }
 
 static void work_readable(Task *t) {
@@ -533,7 +537,8 @@ static void work_sleep(void) {
     static Oid argtypes[] = {OIDOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    set_ps_display_my("timeout");
+    elog(DEBUG1, "idle_count = %lu", idle_count);
+    set_ps_display_my("sleep");
     dlist_init(&head);
     if (!src.data) {
         initStringInfoMy(&src);
@@ -578,9 +583,12 @@ static void work_sleep(void) {
     } while (SPI_processed);
     SPI_cursor_close(portal);
     SPI_finish_my();
-    dlist_foreach_modify(iter, &head) {
-        Task *t = dlist_container(Task, node, iter.cur);
-        t->remote ? work_remote(t) : work_task(t);
+    if (dlist_is_empty(&head)) idle_count++; else {
+        idle_count = 0;
+        dlist_foreach_modify(iter, &head) {
+            Task *t = dlist_container(Task, node, iter.cur);
+            t->remote ? work_remote(t) : work_task(t);
+        }
     }
     set_ps_display_my("idle");
 }
@@ -614,9 +622,9 @@ static void work_table(void) {
             IF tg_op = 'INSERT' OR (new.group, new.remote) IS DISTINCT FROM (old.group, old.remote) THEN
                 new.hash = hashtext(new.group||COALESCE(new.remote, '%3$s'));
             END IF;
-            return new;
+            RETURN new;
         end;$$ LANGUAGE plpgsql;
-        CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s()), work.schema, function_quote, "", work.schema_table);
+        CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s();), work.schema, function_quote, "", work.schema_table);
         if (function_quote != function.data) pfree((void *)function_quote);
         pfree(function.data);
     }
@@ -689,10 +697,23 @@ static void work_table(void) {
         ""
 #endif
     );
-#if PG_VERSION_NUM >= 120000
-#else
+#if PG_VERSION_NUM < 120000
     appendStringInfoString(&src, hash.data);
 #endif
+    if (true) {
+        const char *function_quote;
+        StringInfoData function;
+        initStringInfoMy(&function);
+        appendStringInfo(&function, "%1$s_wake_up", work.shared->table);
+        function_quote = quote_identifier(function.data);
+        appendStringInfo(&src, SQL(CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
+            PERFORM pg_cancel_backend(pid) FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = current_catalog) AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = current_user);
+            RETURN NULL;
+        end;$$ LANGUAGE plpgsql;
+        CREATE TRIGGER wake_up AFTER INSERT ON %3$s FOR EACH STATEMENT EXECUTE PROCEDURE %1$s.%2$s();), work.schema, function_quote, work.schema_table);
+        if (function_quote != function.data) pfree((void *)function_quote);
+        pfree(function.data);
+    }
     SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     work.shared->oid = RangeVarGetRelid(rangevar, NoLock, false);
@@ -793,6 +814,14 @@ static void work_on_dsm_detach_callback(dsm_segment *seg, Datum arg) {
     elog(DEBUG1, "seg = %u", dsm_segment_handle(seg));
 }
 
+static void StatementCancelHandlerMy(SIGNAL_ARGS) {
+    int save_errno = errno;
+//    if (!proc_exit_inprogress) InterruptPendingMy = true;
+    idle_count = 0;
+    SetLatch(MyLatch);
+    errno = save_errno;
+}
+
 void work_main(Datum arg) {
     const char *application_name;
     const char *index_hash[] = {"hash"};
@@ -819,6 +848,7 @@ void work_main(Datum arg) {
 #endif
     on_proc_exit(work_proc_exit, (Datum)NULL);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
+    pqsignal(SIGINT, StatementCancelHandlerMy);
     act.sa_sigaction = work_sigaction;
     act.sa_flags = SA_SIGINFO;
     sigaction(SIGUSR2, &act, &oldact);
@@ -891,6 +921,7 @@ void work_main(Datum arg) {
             INSTR_TIME_SET_CURRENT(start_time_sleep);
             current_sleep = work.shared->sleep;
         }
+        if (idle_count >= task_idle) current_sleep = current_reset;
         nevents = WaitEventSetWaitMy(set, Min(current_reset, current_sleep), events, nevents);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
