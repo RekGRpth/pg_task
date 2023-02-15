@@ -660,7 +660,7 @@ static void work_type(void) {
     set_ps_display_my("idle");
 }
 
-static void work_timeout(void) {
+static void work_sleep(void) {
     Datum values[] = {ObjectIdGetDatum(work.shared->oid)};
     dlist_head head;
     dlist_mutable_iter iter;
@@ -904,7 +904,7 @@ void work_main(Datum arg) {
             current_reset = work.shared->reset - (long)INSTR_TIME_GET_MILLISEC(current_reset_time);
             if (current_reset <= 0) work_reset();
         }
-        if (current_sleep <= 0) work_timeout();
+        if (current_sleep <= 0) work_sleep();
         FreeWaitEventSet(set);
         pfree(events);
     }
