@@ -24,7 +24,7 @@ static void conf_data(const Work *w) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
         stmt->dbname = w->shared->data;
-        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString(w->shared->user), -1));
+        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString(w->shared->user)));
         pstate->p_sourcetext = src.data;
         createdb_my(pstate, stmt);
         list_free_deep(stmt->options);
@@ -90,7 +90,7 @@ static void conf_user(const Work *w) {
         CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
         ParseState *pstate = make_parsestate(NULL);
         stmt->role = w->shared->user;
-        stmt->options = list_make1(makeDefElemMy("canlogin", (Node *)makeInteger(1), -1));
+        stmt->options = list_make1(makeDefElemMy("canlogin", (Node *)makeInteger(1)));
         pstate->p_sourcetext = src.data;
         CreateRoleMy(pstate, stmt);
         list_free_deep(stmt->options);
@@ -175,10 +175,10 @@ void conf_main(Datum arg) {
     on_proc_exit(conf_proc_exit, (Datum)NULL);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
-    BackgroundWorkerInitializeConnectionMy("postgres", NULL, 0);
+    BackgroundWorkerInitializeConnectionMy("postgres", NULL);
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
-    set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR, false);
+    set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     pgstat_report_appname("pg_conf");
     set_ps_display_my("main");
     process_session_preload_libraries();
@@ -210,7 +210,7 @@ void conf_main(Datum arg) {
     set_ps_display_my("idle");
     dlist_foreach_modify(iter, (dlist_head *)&head) conf_work(dlist_container(Work, node, iter.cur));
     while (!ShutdownRequestPending) {
-        int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0, PG_WAIT_EXTENSION);
+        int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0);
         if (rc & WL_LATCH_SET) conf_latch();
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
     }

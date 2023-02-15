@@ -73,48 +73,48 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #endif
 
 #if PG_VERSION_NUM >= 90500
-#define dsm_create_my(size, flags) dsm_create(size, flags)
-#define set_config_option_my(name, value, context, source, action, changeVal, elevel, is_reload) set_config_option(name, value, context, source, action, changeVal, elevel, is_reload)
+#define dsm_create_my(size) dsm_create(size, 0)
+#define set_config_option_my(name, value, context, source, action, changeVal, elevel) set_config_option(name, value, context, source, action, changeVal, elevel, false)
 #else
-#define dsm_create_my(size, flags) dsm_create(size)
+#define dsm_create_my(size) dsm_create(size)
 #define MyLatch (&MyProc->procLatch)
-#define set_config_option_my(name, value, context, source, action, changeVal, elevel, is_reload) set_config_option(name, value, context, source, action, changeVal, elevel)
+#define set_config_option_my(name, value, context, source, action, changeVal, elevel) set_config_option(name, value, context, source, action, changeVal, elevel)
 #endif
 
 #if PG_VERSION_NUM >= 100000
 #define createdb_my(pstate, stmt) createdb(pstate, stmt)
 #define CreateRoleMy(pstate, stmt) CreateRole(pstate, stmt)
-#define makeDefElemMy(name, arg, location) makeDefElem(name, arg, location)
-#define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key, noError)
-#define WaitEventSetWaitMy(set, timeout, occurred_events, nevents, wait_event_info) WaitEventSetWait(set, timeout, occurred_events, nevents, wait_event_info)
-#define WaitLatchMy(latch, wakeEvents, timeout, wait_event_info) WaitLatch(latch, wakeEvents, timeout, wait_event_info)
+#define makeDefElemMy(name, arg) makeDefElem(name, arg, -1)
+#define shm_toc_lookup_my(toc, key) shm_toc_lookup(toc, key, false)
+#define WaitEventSetWaitMy(set, timeout, occurred_events, nevents) WaitEventSetWait(set, timeout, occurred_events, nevents, PG_WAIT_EXTENSION)
+#define WaitLatchMy(latch, wakeEvents, timeout) WaitLatch(latch, wakeEvents, timeout, PG_WAIT_EXTENSION)
 #else
 #define createdb_my(pstate, stmt) createdb(stmt)
 #define CreateRoleMy(pstate, stmt) CreateRole(stmt)
-#define makeDefElemMy(name, arg, location) makeDefElem(name, arg)
+#define makeDefElemMy(name, arg) makeDefElem(name, arg)
 #ifdef GP_VERSION_NUM
-#define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key, noError)
+#define shm_toc_lookup_my(toc, key) shm_toc_lookup(toc, key, false)
 #else
-#define shm_toc_lookup_my(toc, key, noError) shm_toc_lookup(toc, key)
+#define shm_toc_lookup_my(toc, key) shm_toc_lookup(toc, key)
 #endif
 #define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
-#define WaitEventSetWaitMy(set, timeout, occurred_events, nevents, wait_event_info) WaitEventSetWait(set, timeout, occurred_events, nevents)
-#define WaitLatchMy(latch, wakeEvents, timeout, wait_event_info) WaitLatch(latch, wakeEvents, timeout)
+#define WaitEventSetWaitMy(set, timeout, occurred_events, nevents) WaitEventSetWait(set, timeout, occurred_events, nevents)
+#define WaitLatchMy(latch, wakeEvents, timeout) WaitLatch(latch, wakeEvents, timeout)
 #endif
 
 #if PG_VERSION_NUM >= 110000
-#define BackgroundWorkerInitializeConnectionMy(dbname, username, flags) BackgroundWorkerInitializeConnection(dbname, username, flags)
+#define BackgroundWorkerInitializeConnectionMy(dbname, username) BackgroundWorkerInitializeConnection(dbname, username, 0)
 #else
-#define BackgroundWorkerInitializeConnectionMy(dbname, username, flags) BackgroundWorkerInitializeConnection(dbname, username)
+#define BackgroundWorkerInitializeConnectionMy(dbname, username) BackgroundWorkerInitializeConnection(dbname, username)
 #endif
 
 #if PG_VERSION_NUM >= 120000
-#define relation_openrv_extended_my(relation, lockmode, missing_ok, noWait) relation_openrv_extended(relation, lockmode, missing_ok)
+#define relation_openrv_extended_my(relation, lockmode, missing_ok) relation_openrv_extended(relation, lockmode, false)
 #else
 #ifdef GP_VERSION_NUM
-#define relation_openrv_extended_my(relation, lockmode, missing_ok, noWait) relation_openrv_extended(relation, lockmode, missing_ok, noWait)
+#define relation_openrv_extended_my(relation, lockmode, missing_ok) relation_openrv_extended(relation, lockmode, missing_ok, false)
 #else
-#define relation_openrv_extended_my(relation, lockmode, missing_ok, noWait) relation_openrv_extended(relation, lockmode, missing_ok)
+#define relation_openrv_extended_my(relation, lockmode, missing_ok) relation_openrv_extended(relation, lockmode, missing_ok)
 #endif
 #endif
 
