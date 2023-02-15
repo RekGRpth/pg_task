@@ -213,7 +213,7 @@ static void work_index(int count, const char *const *indexes) {
     appendStringInfoString(&src, ")");
     initStringInfoMy(&idx);
     appendStringInfo(&idx, "%s.%s", work.schema, name_quote);
-    names = stringToQualifiedNameList(idx.data);
+    names = stringToQualifiedNameListMy(idx.data);
     rangevar = makeRangeVarFromNameList(names);
     elog(DEBUG1, "index = %s, schema_table = %s", idx.data, work.schema_table);
     SPI_connect_my(src.data);
@@ -298,7 +298,7 @@ static void work_done(Task *t) {
 }
 
 static void work_schema(const char *schema_quote) {
-    List *names = stringToQualifiedNameList(schema_quote);
+    List *names = stringToQualifiedNameListMy(schema_quote);
     StringInfoData src;
     elog(DEBUG1, "schema = %s", schema_quote);
     set_ps_display_my("schema");
@@ -505,7 +505,7 @@ static void work_sigaction(int signum, siginfo_t *siginfo, void *code)  {
 }
 
 static void work_table(void) {
-    List *names = stringToQualifiedNameList(work.schema_table);
+    List *names = stringToQualifiedNameListMy(work.schema_table);
     const RangeVar *rangevar = makeRangeVarFromNameList(names);
     StringInfoData src, hash;
     elog(DEBUG1, "schema_table = %s, schema_type = %s", work.schema_table, work.schema_type);

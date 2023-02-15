@@ -13,7 +13,7 @@ static void conf_latch(void) {
 }
 
 static void conf_data(const Work *w) {
-    List *names = stringToQualifiedNameList(w->data);
+    List *names = stringToQualifiedNameListMy(w->data);
     StringInfoData src;
     elog(DEBUG1, "user = %s, data = %s", w->shared->user, w->shared->data);
     set_ps_display_my("data");
@@ -79,7 +79,7 @@ static void conf_sigaction(int signum, siginfo_t *siginfo, void *code)  {
 }
 
 static void conf_user(const Work *w) {
-    List *names = stringToQualifiedNameList(w->user);
+    List *names = stringToQualifiedNameListMy(w->user);
     StringInfoData src;
     elog(DEBUG1, "user = %s", w->shared->user);
     set_ps_display_my("user");

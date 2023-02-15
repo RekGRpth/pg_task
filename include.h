@@ -124,6 +124,12 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #define set_ps_display_my(activity) set_ps_display(activity, false)
 #endif
 
+#if PG_VERSION_NUM >= 160000
+#define stringToQualifiedNameListMy(string) stringToQualifiedNameList(string, NULL)
+#else
+#define stringToQualifiedNameListMy(string) stringToQualifiedNameList(string)
+#endif
+
 #define PG_WORK_MAGIC 0x776f726b
 
 #ifndef get_timeout_active
