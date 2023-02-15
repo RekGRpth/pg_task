@@ -217,22 +217,28 @@ char *TextDatumGetCStringMy(Datum datum);
 const char *error_severity(int elevel);
 Datum CStringGetTextDatumMy(const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
+#if PG_VERSION_NUM < 120000
+extern PGDLLIMPORT ResourceOwner AuxProcessResourceOwner;
+#endif
+extern PGDLLIMPORT ResourceOwner SPIResourceOwner;
 int severity_error(const char *error);
+PGDLLEXPORT void conf_main(Datum main_arg);
+PGDLLEXPORT void task_main(Datum main_arg);
+PGDLLEXPORT void work_main(Datum main_arg);
 Portal SPI_cursor_open_my(const char *name, SPIPlanPtr plan, Datum *values, const char *nulls);
 Portal SPI_cursor_open_with_args_my(const char *name, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote);
 void append_with_tabs(StringInfo buf, const char *str);
-void conf_main(Datum main_arg);
-extern PGDLLIMPORT ResourceOwner SPIResourceOwner;
 #if PG_VERSION_NUM < 120000
-extern PGDLLIMPORT ResourceOwner AuxProcessResourceOwner;
 void CreateAuxProcessResourceOwner(void);
-void ReleaseAuxProcessResources(bool isCommit);
 #endif
 void initStringInfoMy(StringInfoData *buf);
 void init_conf(bool dynamic);
 void _PG_init(void);
+#if PG_VERSION_NUM < 120000
+void ReleaseAuxProcessResources(bool isCommit);
+#endif
 void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes);
 void SPI_connect_my(const char *src);
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res);
@@ -240,7 +246,5 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_finish_my(void);
 void task_error(ErrorData *edata);
 void task_free(Task *t);
-void task_main(Datum main_arg);
-void work_main(Datum main_arg);
 
 #endif // _INCLUDE_H_
