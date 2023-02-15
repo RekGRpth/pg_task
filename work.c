@@ -653,7 +653,7 @@ static void work_type(void) {
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'STOP')), work.schema_type);
     SPI_connect_my(src.data);
-    parseTypeString(work.schema_type, &type, &typmod, true);
+    parseTypeStringMy(work.schema_type, &type, &typmod);
     if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
     pfree(src.data);
