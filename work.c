@@ -801,9 +801,10 @@ void work_main(Datum arg) {
     const char *index_plan[] = {"plan"};
     const char *index_state[] = {"state"};
     Datum datum;
-    instr_time current_reset_time;
-    instr_time current_sleep_time;
-    instr_time start_time;
+    instr_time current_time_reset;
+    instr_time current_time_sleep;
+    instr_time start_time_reset;
+    instr_time start_time_sleep;
     long current_reset = -1;
     long current_sleep = -1;
     shm_toc *toc;
@@ -882,12 +883,15 @@ void work_main(Datum arg) {
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
         WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
         work_events(set);
+        if (current_reset <= 0) {
+            INSTR_TIME_SET_CURRENT(start_time_reset);
+            current_reset = work.shared->reset;
+        }
         if (current_sleep <= 0) {
-            INSTR_TIME_SET_CURRENT(start_time);
+            INSTR_TIME_SET_CURRENT(start_time_sleep);
             current_sleep = work.shared->sleep;
         }
-        if (current_reset <= 0) current_reset = work.shared->reset;
-        nevents = WaitEventSetWaitMy(set, current_sleep, events, nevents);
+        nevents = WaitEventSetWaitMy(set, Min(current_reset, current_sleep), events, nevents);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) work_latch();
@@ -895,15 +899,13 @@ void work_main(Datum arg) {
             if (event->events & WL_SOCKET_READABLE) work_readable(event->user_data);
             if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
-        INSTR_TIME_SET_CURRENT(current_sleep_time);
-        INSTR_TIME_SUBTRACT(current_sleep_time, start_time);
-        current_sleep = work.shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_sleep_time);
-        if (work.shared->reset >= 0) {
-            INSTR_TIME_SET_CURRENT(current_reset_time);
-            INSTR_TIME_SUBTRACT(current_reset_time, start_time);
-            current_reset = work.shared->reset - (long)INSTR_TIME_GET_MILLISEC(current_reset_time);
-            if (current_reset <= 0) work_reset();
-        }
+        INSTR_TIME_SET_CURRENT(current_time_reset);
+        INSTR_TIME_SUBTRACT(current_time_reset, start_time_reset);
+        current_reset = work.shared->reset - (long)INSTR_TIME_GET_MILLISEC(current_time_reset);
+        if (current_reset <= 0) work_reset();
+        INSTR_TIME_SET_CURRENT(current_time_sleep);
+        INSTR_TIME_SUBTRACT(current_time_sleep, start_time_sleep);
+        current_sleep = work.shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_time_sleep);
         if (current_sleep <= 0) work_sleep();
         FreeWaitEventSet(set);
         pfree(events);
