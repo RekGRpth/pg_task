@@ -749,7 +749,7 @@ static void work_update(void) {
     function_quote = quote_identifier(function.data);
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        DO $do$ BEGIN
+        DO $DO$ BEGIN
             IF NOT EXISTS (SELECT * FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'data') THEN
                 ALTER TABLE %1$s ADD COLUMN "data" text;
             END IF;
@@ -799,9 +799,13 @@ static void work_update(void) {
                 ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (current_setting('pg_task.null'::text))::text;
             END IF;
             IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'wake_up') THEN
+                CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER AS $$BEGIN
+                    PERFORM pg_cancel_backend(pid) FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = current_catalog) AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = current_user);
+                    RETURN NULL;
+                end;$$ LANGUAGE plpgsql;
                 CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH STATEMENT EXECUTE PROCEDURE %4$s.%5$s();
             END IF;
-        END; $do$
+        END; $DO$
     ), work.schema_table, schema, table, work.schema, function.data);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
