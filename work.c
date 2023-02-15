@@ -741,7 +741,12 @@ static void work_type(void) {
 static void work_update(void) {
     char *schema = quote_literal_cstr(work.shared->schema);
     char *table = quote_literal_cstr(work.shared->table);
+    const char *function_quote;
+    StringInfoData function;
     StringInfoData src;
+    initStringInfoMy(&function);
+    appendStringInfo(&function, "%1$s_wake_up", work.shared->table);
+    function_quote = quote_identifier(function.data);
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         DO $do$ BEGIN
@@ -793,11 +798,16 @@ static void work_update(void) {
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'null') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_null'::text))::text$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (current_setting('pg_task.null'::text))::text;
             END IF;
+            IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'wake_up') THEN
+                CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH STATEMENT EXECUTE PROCEDURE %4$s.%5$s();
+            END IF;
         END; $do$
-    ), work.schema_table, schema, table);
+    ), work.schema_table, schema, table, work.schema, function.data);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
+    if (function_quote != function.data) pfree((void *)function_quote);
+    pfree(function.data);
     pfree(src.data);
     pfree(schema);
     pfree(table);
