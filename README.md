@@ -20,39 +20,39 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 
 | Name | Type | Default | Level | Description |
 | --- | --- | --- | --- | --- |
-| pg_task.delete | bool | true | config, database, user, session | Auto delete task when both output and error are nulls |
-| pg_task.drift | bool | false | config, database, user, session | Compute next repeat time by stop time instead by plan time |
-| pg_task.header | bool | true | config, database, user, session | Show columns headers in output |
-| pg_task.string | bool | true | config, database, user, session | Quote only strings |
-| pg_conf.close | int | 60 * 1000 | config, database, superuser, session | Close conf, milliseconds |
-| pg_conf.fetch | int | 10 | config, database, superuser, session | Fetch conf rows at once |
-| pg_conf.restart | int | 60 | config, database, superuser, session | Restart conf interval, seconds |
-| pg_task.count | int | 0 | config, database, user, session | Non-negative maximum count of tasks, are executed by current background worker process before exit |
-| pg_task.fetch | int | 100 | config, database, user, session | Fetch task rows at once |
-| pg_task.id | bigint | 0 | session | Current task id |
-| pg_task.limit | int | 1000 | session | Limit task rows at once |
-| pg_task.max | int | 0 | config, database, user, session | Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds |
-| pg_task.sleep | int | 1000 | config, database, user, session | Check tasks every sleep milliseconds |
-| pg_work.close | int | 60 * 1000 | config, database, superuser, session | Close work, milliseconds |
-| pg_work.fetch | int | 100 | config, database, superuser, session | Fetch work rows at once |
-| pg_work.restart | int | 60 | config, database, superuser, session | Restart work interval, seconds |
-| pg_task.active | interval | 1 hour | config, database, user, session | Positive period after plan time, when task is active for executing |
+| pg_task.delete | bool | true | config, database, user | Auto delete task when both output and error are nulls |
+| pg_task.drift | bool | false | config, database, user | Compute next repeat time by stop time instead by plan time |
+| pg_task.header | bool | true | config, database, user | Show columns headers in output |
+| pg_task.string | bool | true | config, database, user | Quote only strings |
+| pg_conf.close | int | 60 * 1000 | config, database, superuser | Close conf, milliseconds |
+| pg_conf.fetch | int | 10 | config, database, superuser | Fetch conf rows at once |
+| pg_conf.restart | int | 60 | config, database, superuser | Restart conf interval, seconds |
+| pg_task.count | int | 0 | config, database, user | Non-negative maximum count of tasks, are executed by current background worker process before exit |
+| pg_task.fetch | int | 100 | config, database, user | Fetch task rows at once |
+| pg_task.id | bigint | 0 | session | Current task id (for read only) |
+| pg_task.limit | int | 1000 | config, database, user | Limit task rows at once |
+| pg_task.max | int | 0 | config, database, user | Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds |
+| pg_task.sleep | int | 1000 | config, database, user | Check tasks every sleep milliseconds |
+| pg_work.close | int | 60 * 1000 | config, database, superuser | Close work, milliseconds |
+| pg_work.fetch | int | 100 | config, database, superuser | Fetch work rows at once |
+| pg_work.restart | int | 60 | config, database, superuser | Restart work interval, seconds |
+| pg_task.active | interval | 1 hour | config, database, user | Positive period after plan time, when task is active for executing |
 | pg_task.data | text | postgres | config | Database name for tasks table |
-| pg_task.delimiter | char | \t | config, database, user, session | Results columns delimiter |
-| pg_task.escape | char | | config, database, user, session | Results columns escape |
-| pg_task.group | text | group | config, database, user, session | Task grouping by name |
-| pg_task.idle | int | 60 | config, database, user, session | Idle task count |
+| pg_task.delimiter | char | \t | config, database, user | Results columns delimiter |
+| pg_task.escape | char | | config, database, user | Results columns escape |
+| pg_task.group | text | group | config, database, user | Task grouping by name |
+| pg_task.idle | int | 60 | config, database, user | Idle task count |
 | pg_task.json | json | [{"data":"postgres"}] | config | Json configuration, available keys: data, reset, schema, table, sleep and user |
-| pg_task.live | interval | 0 sec | config, database, user, session | Non-negative maximum time of live of current background worker process before exit |
-| pg_task.null | text | \N | config, database, user, session | Null text value representation |
-| pg_task.quote | char | | config, database, user, session | Results columns quote |
-| pg_task.repeat | interval | 0 sec | config, database, user, session | Non-negative auto repeat tasks interval |
-| pg_task.reset | interval | 1 hour | config, database, user, session | Interval of reset tasks |
-| pg_task.schema | text | public | config, database, user, session | Schema name for tasks table |
-| pg_task.table | text | task | config, database, user, session | Table name for tasks table |
-| pg_task.timeout | interval | 0 sec | config, database, user, session | Non-negative allowed time for task run |
+| pg_task.live | interval | 0 sec | config, database, user | Non-negative maximum time of live of current background worker process before exit |
+| pg_task.null | text | \N | config, database, user | Null text value representation |
+| pg_task.quote | char | | config, database, user | Results columns quote |
+| pg_task.repeat | interval | 0 sec | config, database, user | Non-negative auto repeat tasks interval |
+| pg_task.reset | interval | 1 hour | config, database, user | Interval of reset tasks |
+| pg_task.schema | text | public | config, database, user | Schema name for tasks table |
+| pg_task.table | text | task | config, database, user | Table name for tasks table |
+| pg_task.timeout | interval | 0 sec | config, database, user | Non-negative allowed time for task run |
 | pg_task.user | text | postgres | config | User name for tasks table |
-| pg_work.active | interval | 1 week | config, database, user, session | Tasks filter interval for partitioning |
+| pg_work.active | interval | 1 week | config, database, user | Tasks filter interval for partitioning |
 
 `pg_task` creates table with folowing columns
 
@@ -89,11 +89,11 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 
 but you may add any needed colums and/or make partitions
 
-by default `pg_task` runs on default database with default user with default schema with default table with default timeout
+by default `pg_task` runs on default database with default user with default schema with default table with default sleep
 
-to run specific database and/or specific user and/or specific schema and/or specific table and/or specific timeout, set config (in json format)
+to run specific database and/or specific user and/or specific schema and/or specific table and/or specific sleep, set config (in json format)
 ```conf
-pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"data":"database3","schema":"schema3"},{"data":"database4","table":"table4"},{"data":"database5","timeout":100}]'
+pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"data":"database3","schema":"schema3"},{"data":"database4","table":"table4"},{"data":"database5","sleep":100}]'
 ```
 
 if database and/or user and/or schema and/or table does not exist then `pg_task` create it/their
