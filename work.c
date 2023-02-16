@@ -5,6 +5,7 @@ extern int task_idle;
 extern int work_close;
 extern int work_fetch;
 extern Task task;
+long current_timeout;
 static dlist_head remote;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 static volatile dlist_head local;
@@ -267,6 +268,34 @@ static void work_reset(void) {
         for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     } while (SPI_processed);
     SPI_cursor_close(portal);
+    SPI_finish_my();
+    set_ps_display_my("idle");
+}
+
+static void work_timeout(void) {
+    Datum values[] = {ObjectIdGetDatum(work.shared->oid)};
+    static Oid argtypes[] = {OIDOID};
+    static SPIPlanPtr plan = NULL;
+    static StringInfoData src = {0};
+    set_ps_display_my("timeout");
+    if (!src.data) {
+        initStringInfoMy(&src);
+        appendStringInfo(&src, SQL(
+            WITH r AS (
+                SELECT "plan" + current_setting('pg_task.reset')::interval AS "plan" FROM %1$s AS t
+                LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = $1 AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
+                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" IN ('TAKE', 'WORK') AND l.pid IS NULL
+                ORDER BY 1 LIMIT 1
+            ), s AS (
+                SELECT "plan" FROM %1$s WHERE "state" = 'PLAN' AND "plan" > CURRENT_TIMESTAMP ORDER BY 1 LIMIT 1
+            ) SELECT COALESCE(LEAST(EXTRACT(epoch FROM (r.plan - CURRENT_TIMESTAMP))::bigint, EXTRACT(epoch FROM (s.plan - CURRENT_TIMESTAMP))::bigint), -1) as "min" FROM r, s
+        ), work.schema_table);
+    }
+    SPI_connect_my(src.data);
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    SPI_execute_plan_my(plan, values, NULL, SPI_OK_SELECT);
+    current_timeout = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "min", false)) : -1;
+    elog(DEBUG1, "current_timeout = %li", current_timeout);
     SPI_finish_my();
     set_ps_display_my("idle");
 }
@@ -917,8 +946,9 @@ void work_main(Datum arg) {
             INSTR_TIME_SET_CURRENT(start_time_sleep);
             current_sleep = work.shared->sleep;
         }
-        if (idle_count >= (uint64)task_idle) current_sleep = current_reset;
-        nevents = WaitEventSetWaitMy(set, Min(current_reset, current_sleep), events, nevents);
+        current_timeout = Min(current_reset, current_sleep);
+        if (idle_count >= (uint64)task_idle) work_timeout();
+        nevents = WaitEventSetWaitMy(set, current_timeout, events, nevents);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_LATCH_SET) work_latch();
