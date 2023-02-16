@@ -50,25 +50,28 @@ static char *PQresultErrorMessageMy(const PGresult *res) {
 }
 
 static void work_check(void) {
-    Datum values[] = {Int32GetDatum(work.hash)};
-    static const char *src = SQL(
-        WITH j AS (
-            SELECT  COALESCE(COALESCE("data", "user"), current_setting('pg_task.data')) AS "data",
-                    EXTRACT(epoch FROM COALESCE("reset", current_setting('pg_task.reset')::interval))::bigint AS "reset",
-                    COALESCE("schema", current_setting('pg_task.schema')) AS "schema",
-                    COALESCE("table", current_setting('pg_task.table')) AS "table",
-                    COALESCE("sleep", current_setting('pg_task.sleep')::bigint) AS "sleep",
-                    COALESCE(COALESCE("user", "data"), current_setting('pg_task.user')) AS "user"
-            FROM    jsonb_to_recordset(current_setting('pg_task.json')::jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
-        ) SELECT    DISTINCT j.* FROM j WHERE "user" = current_user AND "data" = current_catalog AND hashtext(concat_ws(' ', 'pg_work', "schema", "table", "sleep")) = $1
-    );
-    static Oid argtypes[] = {INT4OID};
     static SPIPlanPtr plan = NULL;
+    static StringInfoData src = {0};
     if (ShutdownRequestPending) return;
     set_ps_display_my("check");
-    SPI_connect_my(src);
-    if (!plan) plan = SPI_prepare_my(src, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_SELECT);
+    if (!src.data) {
+        initStringInfoMy(&src);
+        appendStringInfo(&src, SQL(
+            WITH j AS (
+                SELECT  COALESCE(COALESCE("data", "user"), current_setting('pg_task.data')) AS "data",
+                        EXTRACT(epoch FROM COALESCE("reset", current_setting('pg_task.reset')::interval))::bigint AS "reset",
+                        COALESCE("schema", current_setting('pg_task.schema')) AS "schema",
+                        COALESCE("table", current_setting('pg_task.table')) AS "table",
+                        COALESCE("sleep", current_setting('pg_task.sleep')::bigint) AS "sleep",
+                        COALESCE(COALESCE("user", "data"), current_setting('pg_task.user')) AS "user"
+                FROM    jsonb_to_recordset(current_setting('pg_task.json')::jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
+            ) SELECT    DISTINCT j.* FROM j WHERE "user" = current_user AND "data" = current_catalog AND hashtext(concat_ws(' ', 'pg_work', "schema", "table", "sleep")) = %1$i
+
+        ), work.hash);
+    }
+    SPI_connect_my(src.data);
+    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
+    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     if (!SPI_processed) ShutdownRequestPending = true;
     elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, SPI_processed = %li", work.shared->sleep, work.shared->reset, work.shared->schema, work.shared->table, (long)SPI_processed);
     SPI_finish_my();
