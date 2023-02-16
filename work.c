@@ -274,8 +274,6 @@ static void work_reset(void) {
 }
 
 static void work_timeout(void) {
-    Datum values[] = {ObjectIdGetDatum(work.shared->oid)};
-    static Oid argtypes[] = {OIDOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     set_ps_display_my("timeout");
@@ -284,17 +282,17 @@ static void work_timeout(void) {
         appendStringInfo(&src, SQL(
            SELECT COALESCE(LEAST(EXTRACT(epoch FROM ((
                 SELECT "plan" + current_setting('pg_task.reset')::interval AS "plan" FROM %1$s AS t
-                LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = $1 AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
+                LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = %2$i AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
                 WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" IN ('TAKE', 'WORK') AND l.pid IS NULL
                 ORDER BY 1 LIMIT 1
            ) - CURRENT_TIMESTAMP))::bigint, EXTRACT(epoch FROM ((
                 SELECT "plan" FROM %1$s WHERE "state" = 'PLAN' AND "plan" > CURRENT_TIMESTAMP ORDER BY 1 LIMIT 1
            ) - CURRENT_TIMESTAMP))::bigint), -1) as "min"
-        ), work.schema_table);
+        ), work.schema_table, work.shared->oid);
     }
     SPI_connect_my(src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(plan, values, NULL, SPI_OK_SELECT);
+    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
+    SPI_execute_plan_my(plan, NULL, NULL, SPI_OK_SELECT);
     current_timeout = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "min", false)) : -1;
     elog(DEBUG1, "current_timeout = %li", current_timeout);
     SPI_finish_my();
