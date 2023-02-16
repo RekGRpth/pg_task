@@ -281,14 +281,14 @@ static void work_timeout(void) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            WITH r AS (
+           SELECT COALESCE(LEAST(EXTRACT(epoch FROM ((
                 SELECT "plan" + current_setting('pg_task.reset')::interval AS "plan" FROM %1$s AS t
                 LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = $1 AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
                 WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" IN ('TAKE', 'WORK') AND l.pid IS NULL
                 ORDER BY 1 LIMIT 1
-            ), s AS (
+           ) - CURRENT_TIMESTAMP))::bigint, EXTRACT(epoch FROM ((
                 SELECT "plan" FROM %1$s WHERE "state" = 'PLAN' AND "plan" > CURRENT_TIMESTAMP ORDER BY 1 LIMIT 1
-            ) SELECT COALESCE(LEAST(EXTRACT(epoch FROM (r.plan - CURRENT_TIMESTAMP))::bigint, EXTRACT(epoch FROM (s.plan - CURRENT_TIMESTAMP))::bigint), -1) as "min" FROM r, s
+           ) - CURRENT_TIMESTAMP))::bigint), -1) as "min"
         ), work.schema_table);
     }
     SPI_connect_my(src.data);
@@ -298,6 +298,7 @@ static void work_timeout(void) {
     elog(DEBUG1, "current_timeout = %li", current_timeout);
     SPI_finish_my();
     set_ps_display_my("idle");
+    idle_count = 0;
 }
 
 static void work_reload(void) {
