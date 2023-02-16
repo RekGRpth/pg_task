@@ -556,11 +556,9 @@ static void work_task(Task *t) {
 }
 
 static void work_sleep(void) {
-    Datum values[] = {ObjectIdGetDatum(work.shared->oid)};
     dlist_head head;
     dlist_mutable_iter iter;
     Portal portal;
-    static Oid argtypes[] = {OIDOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     elog(DEBUG1, "idle_count = %lu", idle_count);
@@ -570,16 +568,16 @@ static void work_sleep(void) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH l AS (
-                SELECT count("classid") AS "classid", "objid" FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessShareLock' AND "granted" AND "objsubid" = 5 AND "database" = $1 GROUP BY "objid"
+                SELECT count("classid") AS "classid", "objid" FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessShareLock' AND "granted" AND "objsubid" = 5 AND "database" = %2$i GROUP BY "objid"
             ), s AS (
                 SELECT "id", t.hash, CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" = "hash"
                 WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN' AND CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) >= 0
-                ORDER BY 3 DESC, 1 LIMIT current_setting('pg_task.limit')::int FOR UPDATE OF t %2$s
+                ORDER BY 3 DESC, 1 LIMIT current_setting('pg_task.limit')::int FOR UPDATE OF t %3$s
             ), u AS (
                 SELECT "id", "count" - row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") + 1 AS "count" FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM u
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND t.id = u.id AND u.count >= 0 RETURNING t.id, "hash", "group", "remote", "max"
-        ), work.schema_table,
+        ), work.schema_table, work.shared->oid,
 #if PG_VERSION_NUM >= 90500
         "SKIP LOCKED"
 #else
@@ -588,8 +586,8 @@ static void work_sleep(void) {
         );
     }
     SPI_connect_my(src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    portal = SPI_cursor_open_my(src.data, plan, values, NULL);
+    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
+    portal = SPI_cursor_open_my(src.data, plan, NULL, NULL);
     do {
         SPI_cursor_fetch(portal, true, work_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) {
