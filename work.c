@@ -697,20 +697,6 @@ static void work_table(void) {
 #if PG_VERSION_NUM < 120000
     appendStringInfoString(&src, hash.data);
 #endif
-    if (true) {
-        const char *function_quote;
-        StringInfoData function;
-        initStringInfoMy(&function);
-        appendStringInfo(&function, "%1$s_wake_up", work.shared->table);
-        function_quote = quote_identifier(function.data);
-        appendStringInfo(&src, SQL(CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
-            PERFORM pg_cancel_backend(pid) FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = current_catalog) AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = current_user);
-            RETURN NULL;
-        end;$$ LANGUAGE plpgsql;
-        CREATE TRIGGER wake_up AFTER INSERT ON %3$s FOR EACH STATEMENT EXECUTE PROCEDURE %1$s.%2$s();), work.schema, function_quote, work.schema_table);
-        if (function_quote != function.data) pfree((void *)function_quote);
-        pfree(function.data);
-    }
     SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     work.shared->oid = RangeVarGetRelid(rangevar, NoLock, false);
@@ -798,15 +784,15 @@ static void work_update(void) {
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'null') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_null'::text))::text$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (current_setting('pg_task.null'::text))::text;
             END IF;
+            CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER AS $$BEGIN
+                PERFORM pg_cancel_backend(pid) FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = current_catalog) AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = current_user) AND "objid" = %6$i;
+                RETURN NULL;
+            end;$$ LANGUAGE plpgsql;
             IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'wake_up') THEN
-                CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER AS $$BEGIN
-                    PERFORM pg_cancel_backend(pid) FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = current_catalog) AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = current_user);
-                    RETURN NULL;
-                end;$$ LANGUAGE plpgsql;
                 CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH STATEMENT EXECUTE PROCEDURE %4$s.%5$s();
             END IF;
         END; $DO$
-    ), work.schema_table, schema, table, work.schema, function.data);
+    ), work.schema_table, schema, table, work.schema, function.data, work.hash);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
