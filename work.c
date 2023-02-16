@@ -615,12 +615,12 @@ static void work_table(void) {
         initStringInfoMy(&function);
         appendStringInfo(&function, "%1$s_hash_generate", work.shared->table);
         function_quote = quote_identifier(function.data);
-        appendStringInfo(&hash, SQL(CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $$BEGIN
+        appendStringInfo(&hash, SQL(CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $function$BEGIN
             IF tg_op = 'INSERT' OR (new.group, new.remote) IS DISTINCT FROM (old.group, old.remote) THEN
                 new.hash = hashtext(new.group||COALESCE(new.remote, '%3$s'));
             END IF;
             RETURN new;
-        end;$$ LANGUAGE plpgsql;
+        end;$function$ LANGUAGE plpgsql;
         CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s();), work.schema, function_quote, "", work.schema_table);
         if (function_quote != function.data) pfree((void *)function_quote);
         pfree(function.data);
@@ -784,10 +784,10 @@ static void work_update(void) {
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'null') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_null'::text))::text$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (current_setting('pg_task.null'::text))::text;
             END IF;
-            CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER AS $$BEGIN
+            CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER AS $function$BEGIN
                 PERFORM pg_cancel_backend(pid) FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = current_catalog) AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = current_user) AND "objid" = %6$i;
                 RETURN NULL;
-            end;$$ LANGUAGE plpgsql;
+            end;$function$ LANGUAGE plpgsql;
             IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'wake_up') THEN
                 CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH STATEMENT EXECUTE PROCEDURE %4$s.%5$s();
             END IF;
