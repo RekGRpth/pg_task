@@ -239,9 +239,7 @@ static void work_index(int count, const char *const *indexes) {
 }
 
 static void work_reset(void) {
-    Datum values[] = {ObjectIdGetDatum(work.shared->oid)};
     Portal portal;
-    static Oid argtypes[] = {OIDOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     set_ps_display_my("reset");
@@ -250,12 +248,12 @@ static void work_reset(void) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT "id" FROM %1$s AS t
-                LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = $1 AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
+                LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = %2$i AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
                 WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" IN ('TAKE', 'WORK') AND l.pid IS NULL
-                FOR UPDATE OF t %2$s
+                FOR UPDATE OF t %3$s
             ) UPDATE %1$s AS t SET "state" = 'PLAN', "start" = NULL, "stop" = NULL, "pid" = NULL FROM s
             WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
-        ), work.schema_table,
+        ), work.schema_table, work.shared->oid,
 #if PG_VERSION_NUM >= 90500
             "SKIP LOCKED"
 #else
@@ -264,8 +262,8 @@ static void work_reset(void) {
         );
     }
     SPI_connect_my(src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    portal = SPI_cursor_open_my(src.data, plan, values, NULL);
+    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
+    portal = SPI_cursor_open_my(src.data, plan, NULL, NULL);
     do {
         SPI_cursor_fetch(portal, true, work_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
