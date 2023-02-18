@@ -23,13 +23,9 @@ static bool task_live(const Task *t) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            WITH s AS (
-                SELECT "id" FROM %1$s AS t
-                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN' AND "hash" = $1 AND "max" >= $2 AND CASE
-                    WHEN "count" > 0 AND "live" > '0 sec' THEN "count" > $3 AND $4 + "live" > CURRENT_TIMESTAMP ELSE "count" > $3 OR $4 + "live" > CURRENT_TIMESTAMP
-                END ORDER BY "max" DESC, "id" LIMIT 1 FOR UPDATE OF t %2$s
-            ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s
-            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
+            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" <= CURRENT_TIMESTAMP AND "state" = 'PLAN' AND "hash" = $1 AND "max" >= $2 AND CASE
+                WHEN "count" > 0 AND "live" > '0 sec' THEN "count" > $3 AND $4 + "live" > CURRENT_TIMESTAMP ELSE "count" > $3 OR $4 + "live" > CURRENT_TIMESTAMP
+            END ORDER BY "max" DESC, "id" LIMIT 1 FOR UPDATE OF t %2$s) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id = s.id RETURNING t.id
         ), work.schema_table,
 #if PG_VERSION_NUM >= 90500
         "SKIP LOCKED"
@@ -70,13 +66,7 @@ static void task_delete(const Task *t) {
     set_ps_display_my("delete");
     if (!src.data) {
         initStringInfoMy(&src);
-        appendStringInfo(&src, SQL(
-            WITH s AS (
-                SELECT "id" FROM %1$s AS t
-                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 FOR UPDATE OF t
-            ) DELETE FROM %1$s AS t
-            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 RETURNING t.id
-        ), work.schema_table);
+        appendStringInfo(&src, SQL(WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" = $1 FOR UPDATE OF t) DELETE FROM %1$s AS t WHERE "id" = $1 RETURNING t.id), work.schema_table);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_DELETE_RETURNING);
@@ -97,12 +87,8 @@ static void task_repeat(const Task *t) {
         if (!work.columns) return;
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            WITH s AS (
-                SELECT * FROM %1$s AS t
-                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 FOR UPDATE OF t
-            ) INSERT INTO %1$s AS t ("parent", "plan", %2$s) SELECT "id", CASE
-                WHEN "drift" THEN CURRENT_TIMESTAMP + "repeat"
-                ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p + "repeat" FROM r WHERE p <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
+            WITH s AS (SELECT * FROM %1$s AS t WHERE "id" = $1 FOR UPDATE OF t) INSERT INTO %1$s AS t ("parent", "plan", %2$s) SELECT "id", CASE
+                WHEN "drift" THEN CURRENT_TIMESTAMP + "repeat" ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p + "repeat" FROM r WHERE p <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
             END AS "plan", %2$s FROM s WHERE "repeat" > '0 sec' LIMIT 1 RETURNING t.id
         ), work.schema_table, work.columns);
     }
@@ -125,11 +111,8 @@ bool task_done(Task *t) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            WITH s AS (
-                SELECT "id" FROM %1$s AS t
-                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 FOR UPDATE OF t
-            ) UPDATE %1$s AS t SET "state" = 'DONE', "stop" = CURRENT_TIMESTAMP, "output" = $2, "error" = $3 FROM s
-            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id
+            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" = $1 FOR UPDATE OF t)
+            UPDATE %1$s AS t SET "state" = 'DONE', "stop" = CURRENT_TIMESTAMP, "output" = $2, "error" = $3 FROM s WHERE t.id = s.id
             RETURNING "delete" AND "output" IS NULL AS "delete", "repeat" > '0 sec' AS "repeat", "max" >= 0 AND ("count" > 0 OR "live" > '0 sec') AS "live"
         ), work.schema_table);
     }
@@ -177,11 +160,8 @@ bool task_work(Task *t) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            WITH s AS (
-                SELECT "id" FROM %1$s AS t
-                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "id" = $1 FOR UPDATE OF t
-            ) UPDATE %1$s AS t SET "state" = 'WORK', "start" = CURRENT_TIMESTAMP, "pid" = $2 FROM s
-            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id
+            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" = $1 FOR UPDATE OF t)
+            UPDATE %1$s AS t SET "state" = 'WORK', "start" = CURRENT_TIMESTAMP, "pid" = $2 FROM s WHERE t.id = s.id
             RETURNING "group", "hash", "input", EXTRACT(epoch FROM "timeout")::int * 1000 AS "timeout", "header", "string", "null", "delimiter", "quote", "escape", "plan" + "active" > CURRENT_TIMESTAMP AS "active", "remote"
         ), work.schema_table);
     }
