@@ -278,12 +278,12 @@ static void work_timeout(void) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
            SELECT COALESCE(LEAST(EXTRACT(epoch FROM ((
-                SELECT "plan" + current_setting('pg_task.reset')::interval AS "plan" FROM %1$s AS t
+                SELECT "plan" + current_setting('pg_task.reset')::interval - CURRENT_TIMESTAMP AS "plan" FROM %1$s AS t
                 LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = %2$i AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
                 WHERE "state" IN ('TAKE', 'WORK') AND l.pid IS NULL ORDER BY 1 LIMIT 1
-           ) - CURRENT_TIMESTAMP))::bigint, EXTRACT(epoch FROM ((
-                SELECT "plan" FROM %1$s WHERE "state" = 'PLAN' AND "plan" > CURRENT_TIMESTAMP ORDER BY 1 LIMIT 1
-           ) - CURRENT_TIMESTAMP))::bigint), -1) as "min"
+           )))::bigint, EXTRACT(epoch FROM ((
+                SELECT "plan" - CURRENT_TIMESTAMP AS "plan" FROM %1$s WHERE "state" = 'PLAN' AND "plan" > CURRENT_TIMESTAMP ORDER BY 1 LIMIT 1
+           )))::bigint), -1) as "min"
         ), work.schema_table, work.shared->oid);
     }
     SPI_connect_my(src.data);
