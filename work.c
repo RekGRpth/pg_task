@@ -818,14 +818,14 @@ static void work_update(void) {
                 END IF;
                 RETURN NEW;
             end;$function$ LANGUAGE plpgsql;
-            IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'update') THEN
+            IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'update' AND trigger_catalog = CURRENT_CATALOG AND trigger_schema = %2$s AND event_object_schema = %2$s AND action_orientation = 'ROW' AND action_timing = 'BEFORE' AND event_manipulation = 'INSERT') THEN
                 CREATE TRIGGER update BEFORE INSERT ON %1$s FOR EACH ROW WHEN (NEW.max < 0) EXECUTE PROCEDURE %4$s.%5$s();
             END IF;
             CREATE OR REPLACE FUNCTION %4$s.%6$s() RETURNS TRIGGER AS $function$BEGIN
                 PERFORM pg_cancel_backend(pid) FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = current_catalog) AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = current_user) AND "objid" = %7$i;
                 RETURN NULL;
             end;$function$ LANGUAGE plpgsql;
-            IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'wake_up') THEN
+            IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'wake_up' AND trigger_catalog = CURRENT_CATALOG AND trigger_schema = %2$s AND event_object_schema = %2$s AND action_orientation = 'STATEMENT' AND action_timing = 'AFTER' AND event_manipulation = 'INSERT') THEN
                 CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH STATEMENT EXECUTE PROCEDURE %4$s.%6$s();
             END IF;
         END; $DO$
