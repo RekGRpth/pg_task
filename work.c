@@ -59,7 +59,7 @@ static void work_check(void) {
         appendStringInfo(&src, SQL(
             WITH j AS (
                 SELECT  COALESCE(COALESCE("data", "user"), current_setting('pg_task.data')) AS "data",
-                        EXTRACT(epoch FROM COALESCE("reset", current_setting('pg_task.reset')::interval))::int * 1000 AS "reset",
+                        EXTRACT(epoch FROM COALESCE("reset", current_setting('pg_task.reset')::interval))::bigint * 1000 AS "reset",
                         COALESCE("schema", current_setting('pg_task.schema')) AS "schema",
                         COALESCE("table", current_setting('pg_task.table')) AS "table",
                         COALESCE("sleep", current_setting('pg_task.sleep')::bigint) AS "sleep",
@@ -281,9 +281,9 @@ static void work_timeout(void) {
                 SELECT GREATEST("plan" + current_setting('pg_task.reset')::interval - CURRENT_TIMESTAMP, '0 sec'::interval) AS "plan" FROM %1$s AS t
                 LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = %2$i AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
                 WHERE "state" IN ('TAKE', 'WORK') AND l.pid IS NULL ORDER BY 1 LIMIT 1
-           )))::int * 1000, EXTRACT(epoch FROM ((
+           )))::bigint * 1000, EXTRACT(epoch FROM ((
                 SELECT "plan" - CURRENT_TIMESTAMP AS "plan" FROM %1$s WHERE "state" = 'PLAN' AND "plan" >= CURRENT_TIMESTAMP ORDER BY 1 LIMIT 1
-           )))::int * 1000), -1) as "min"
+           )))::bigint * 1000), -1) as "min"
         ), work.schema_table, work.shared->oid);
     }
     SPI_connect_my(src.data);
