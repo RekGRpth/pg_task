@@ -812,7 +812,10 @@ static void work_update(void) {
                 ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (current_setting('pg_task.null'::text))::text;
             END IF;
             CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER AS $function$BEGIN
-                SELECT plan + concat_ws(' ', (-"max")::text, 'msec')::interval FROM %1$s WHERE state = 'PLAN' AND plan >= CURRENT_TIMESTAMP AND hash = NEW.hash ORDER BY plan LIMIT 1 INTO NEW.plan;
+                NEW.plan = (SELECT plan + concat_ws(' ', (-NEW.max)::text, 'msec')::interval FROM %1$s WHERE state IN ('PLAN', 'TAKE', 'WORK') AND plan >= CURRENT_TIMESTAMP - concat_ws(' ', (-NEW.max)::text, 'msec')::interval AND (NEW.group, NEW.remote) IS NOT DISTINCT FROM ("group", remote) ORDER BY plan DESC LIMIT 1);
+                IF NEW.plan IS NULL THEN
+                    NEW.plan = CURRENT_TIMESTAMP;
+                END IF;
                 RETURN NEW;
             end;$function$ LANGUAGE plpgsql;
             IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'update') THEN
