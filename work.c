@@ -812,7 +812,7 @@ static void work_update(void) {
                 ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (current_setting('pg_task.null'::text))::text;
             END IF;
             CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER AS $function$BEGIN
-                NEW.plan = (SELECT plan + concat_ws(' ', (-NEW.max)::text, 'msec')::interval FROM %1$s WHERE state IN ('PLAN', 'TAKE', 'WORK') AND plan >= CURRENT_TIMESTAMP - concat_ws(' ', (-NEW.max)::text, 'msec')::interval AND (NEW.group, NEW.remote) IS NOT DISTINCT FROM ("group", remote) ORDER BY plan DESC LIMIT 1);
+                SELECT plan + concat_ws(' ', (-NEW.max)::text, 'msec')::interval FROM %1$s WHERE state IN ('PLAN', 'TAKE', 'WORK') AND plan >= CURRENT_TIMESTAMP - concat_ws(' ', (-NEW.max)::text, 'msec')::interval AND (NEW.group, NEW.remote) IS NOT DISTINCT FROM ("group", remote) ORDER BY plan DESC LIMIT 1 INTO NEW.plan;
                 IF NEW.plan IS NULL THEN
                     NEW.plan = CURRENT_TIMESTAMP;
                 END IF;
