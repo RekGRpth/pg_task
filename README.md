@@ -52,7 +52,6 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.table | text | task | config, database, user | Table name for tasks table |
 | pg_task.timeout | interval | 0 sec | config, database, user | Non-negative allowed time for task run |
 | pg_task.user | text | postgres | config | User name for tasks table |
-| pg_work.active | interval | 1 week | config, database, user | Tasks filter interval for partitioning |
 
 `pg_task` creates table with folowing columns
 

@@ -59,7 +59,7 @@ static void work_check(void) {
         appendStringInfo(&src, SQL(
             WITH j AS (
                 SELECT  COALESCE(COALESCE("data", "user"), current_setting('pg_task.data')) AS "data",
-                        EXTRACT(epoch FROM COALESCE("reset", current_setting('pg_task.reset')::interval))::bigint AS "reset",
+                        EXTRACT(epoch FROM COALESCE("reset", current_setting('pg_task.reset')::interval))::bigint * 1000 AS "reset",
                         COALESCE("schema", current_setting('pg_task.schema')) AS "schema",
                         COALESCE("table", current_setting('pg_task.table')) AS "table",
                         COALESCE("sleep", current_setting('pg_task.sleep')::bigint) AS "sleep",
@@ -247,12 +247,9 @@ static void work_reset(void) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH s AS (
-                SELECT "id" FROM %1$s AS t
-                LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = %2$i AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
-                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" IN ('TAKE', 'WORK') AND l.pid IS NULL
-                FOR UPDATE OF t %3$s
-            ) UPDATE %1$s AS t SET "state" = 'PLAN', "start" = NULL, "stop" = NULL, "pid" = NULL FROM s
-            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND t.id = s.id RETURNING t.id
+                SELECT "id" FROM %1$s AS t LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = %2$i AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
+                WHERE "state" IN ('TAKE', 'WORK') AND l.pid IS NULL FOR UPDATE OF t %3$s
+            ) UPDATE %1$s AS t SET "state" = 'PLAN', "start" = NULL, "stop" = NULL, "pid" = NULL FROM s WHERE t.id = s.id RETURNING t.id
         ), work.schema_table, work.shared->oid,
 #if PG_VERSION_NUM >= 90500
             "SKIP LOCKED"
@@ -281,13 +278,12 @@ static void work_timeout(void) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
            SELECT COALESCE(LEAST(EXTRACT(epoch FROM ((
-                SELECT "plan" + current_setting('pg_task.reset')::interval AS "plan" FROM %1$s AS t
+                SELECT GREATEST("plan" + current_setting('pg_task.reset')::interval - CURRENT_TIMESTAMP, '0 sec'::interval) AS "plan" FROM %1$s AS t
                 LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = %2$i AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
-                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" IN ('TAKE', 'WORK') AND l.pid IS NULL
-                ORDER BY 1 LIMIT 1
-           ) - CURRENT_TIMESTAMP))::bigint, EXTRACT(epoch FROM ((
-                SELECT "plan" FROM %1$s WHERE "state" = 'PLAN' AND "plan" > CURRENT_TIMESTAMP ORDER BY 1 LIMIT 1
-           ) - CURRENT_TIMESTAMP))::bigint), -1) as "min"
+                WHERE "state" IN ('TAKE', 'WORK') AND l.pid IS NULL ORDER BY 1 LIMIT 1
+           )))::bigint * 1000, EXTRACT(epoch FROM ((
+                SELECT "plan" - CURRENT_TIMESTAMP AS "plan" FROM %1$s WHERE "state" = 'PLAN' AND "plan" >= CURRENT_TIMESTAMP ORDER BY 1 LIMIT 1
+           )))::bigint * 1000), -1) as "min"
         ), work.schema_table, work.shared->oid);
     }
     SPI_connect_my(src.data);
@@ -571,12 +567,11 @@ static void work_sleep(void) {
                 SELECT count("classid") AS "classid", "objid" FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessShareLock' AND "granted" AND "objsubid" = 5 AND "database" = %2$i GROUP BY "objid"
             ), s AS (
                 SELECT "id", t.hash, CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" = "hash"
-                WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND "state" = 'PLAN' AND CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) >= 0
+                WHERE "plan" <= CURRENT_TIMESTAMP AND "state" = 'PLAN' AND CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) >= 0
                 ORDER BY 3 DESC, 1 LIMIT current_setting('pg_task.limit')::int FOR UPDATE OF t %3$s
             ), u AS (
                 SELECT "id", "count" - row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") + 1 AS "count" FROM s ORDER BY s.count DESC, id
-            ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM u
-            WHERE "plan" BETWEEN CURRENT_TIMESTAMP - current_setting('pg_work.active')::interval AND CURRENT_TIMESTAMP AND t.id = u.id AND u.count >= 0 RETURNING t.id, "hash", "group", "remote", "max"
+            ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM u WHERE t.id = u.id AND u.count >= 0 RETURNING t.id, "hash", "group", "remote", "max"
         ), work.schema_table, work.shared->oid,
 #if PG_VERSION_NUM >= 90500
         "SKIP LOCKED"
@@ -643,10 +638,10 @@ static void work_table(void) {
         appendStringInfo(&function, "%1$s_hash_generate", work.shared->table);
         function_quote = quote_identifier(function.data);
         appendStringInfo(&hash, SQL(CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $function$BEGIN
-            IF tg_op = 'INSERT' OR (new.group, new.remote) IS DISTINCT FROM (old.group, old.remote) THEN
-                new.hash = hashtext(new.group||COALESCE(new.remote, '%3$s'));
+            IF tg_op = 'INSERT' OR (NEW.group, NEW.remote) IS DISTINCT FROM (OLD.group, OLD.remote) THEN
+                NEW.hash = hashtext(NEW.group||COALESCE(NEW.remote, '%3$s'));
             END IF;
-            RETURN new;
+            RETURN NEW;
         end;$function$ LANGUAGE plpgsql;
         CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s();), work.schema, function_quote, "", work.schema_table);
         if (function_quote != function.data) pfree((void *)function_quote);
@@ -754,12 +749,17 @@ static void work_type(void) {
 static void work_update(void) {
     char *schema = quote_literal_cstr(work.shared->schema);
     char *table = quote_literal_cstr(work.shared->table);
-    const char *function_quote;
-    StringInfoData function;
+    const char *update_quote;
+    const char *wake_up_quote;
     StringInfoData src;
-    initStringInfoMy(&function);
-    appendStringInfo(&function, "%1$s_wake_up", work.shared->table);
-    function_quote = quote_identifier(function.data);
+    StringInfoData update;
+    StringInfoData wake_up;
+    initStringInfoMy(&update);
+    appendStringInfo(&update, "%1$s_update", work.shared->table);
+    update_quote = quote_identifier(update.data);
+    initStringInfoMy(&wake_up);
+    appendStringInfo(&wake_up, "%1$s_wake_up", work.shared->table);
+    wake_up_quote = quote_identifier(wake_up.data);
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         DO $DO$ BEGIN
@@ -812,22 +812,34 @@ static void work_update(void) {
                 ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (current_setting('pg_task.null'::text))::text;
             END IF;
             CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER AS $function$BEGIN
-                PERFORM pg_cancel_backend(pid) FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = current_catalog) AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = current_user) AND "objid" = %6$i;
+                SELECT plan + concat_ws(' ', (-NEW.max)::text, 'msec')::interval FROM %1$s WHERE state IN ('PLAN', 'TAKE', 'WORK') AND plan >= CURRENT_TIMESTAMP - concat_ws(' ', (-NEW.max)::text, 'msec')::interval AND (NEW.group, NEW.remote) IS NOT DISTINCT FROM ("group", remote) ORDER BY plan DESC LIMIT 1 INTO NEW.plan;
+                IF NEW.plan IS NULL THEN
+                    NEW.plan = CURRENT_TIMESTAMP;
+                END IF;
+                RETURN NEW;
+            end;$function$ LANGUAGE plpgsql;
+            IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'update' AND trigger_schema = %2$s AND event_object_schema = %2$s AND action_orientation = 'ROW' AND action_timing = 'BEFORE' AND event_manipulation = 'INSERT') THEN
+                CREATE TRIGGER update BEFORE INSERT ON %1$s FOR EACH ROW WHEN (NEW.max < 0) EXECUTE PROCEDURE %4$s.%5$s();
+            END IF;
+            CREATE OR REPLACE FUNCTION %4$s.%6$s() RETURNS TRIGGER AS $function$BEGIN
+                PERFORM pg_cancel_backend(pid) FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = current_catalog) AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = current_user) AND "objid" = %7$i;
                 RETURN NULL;
             end;$function$ LANGUAGE plpgsql;
-            IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'wake_up') THEN
-                CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH STATEMENT EXECUTE PROCEDURE %4$s.%5$s();
+            IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'wake_up' AND trigger_schema = %2$s AND event_object_schema = %2$s AND action_orientation = 'STATEMENT' AND action_timing = 'AFTER' AND event_manipulation = 'INSERT') THEN
+                CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH STATEMENT EXECUTE PROCEDURE %4$s.%6$s();
             END IF;
         END; $DO$
-    ), work.schema_table, schema, table, work.schema, function.data, work.hash);
+    ), work.schema_table, schema, table, work.schema, update_quote, wake_up_quote, work.hash);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
-    if (function_quote != function.data) pfree((void *)function_quote);
-    pfree(function.data);
-    pfree(src.data);
+    if (update_quote != update.data) pfree((void *)update_quote);
+    if (wake_up_quote != wake_up.data) pfree((void *)wake_up_quote);
     pfree(schema);
+    pfree(src.data);
     pfree(table);
+    pfree(update.data);
+    pfree(wake_up.data);
 }
 
 static void work_writeable(Task *t) {
