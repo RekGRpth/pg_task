@@ -64,7 +64,7 @@ static void work_check(void) {
                         COALESCE("table", current_setting('pg_task.table')) AS "table",
                         COALESCE("sleep", current_setting('pg_task.sleep')::pg_catalog.int8) AS "sleep",
                         COALESCE(COALESCE("user", "data"), current_setting('pg_task.user')) AS "user"
-                FROM    jsonb_to_recordset(current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
+                FROM    jsonb_to_recordset(current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" int8, "user" text)
             ) SELECT    DISTINCT j.* FROM j WHERE "user" = current_user AND "data" = current_catalog AND hashtext(concat_ws(' ', 'pg_work', "schema", "table", "sleep")) = %1$i
 
         ), work.hash);
@@ -651,8 +651,8 @@ static void work_table(void) {
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         CREATE TABLE %1$s (
-            "id" bigserial NOT NULL PRIMARY KEY,
-            "parent" bigint DEFAULT NULLIF(current_setting('pg_task.id')::pg_catalog.int8, 0),
+            "id" serial8 NOT NULL PRIMARY KEY,
+            "parent" int8 DEFAULT NULLIF(current_setting('pg_task.id')::pg_catalog.int8, 0),
             "plan" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
             "start" timestamptz,
             "stop" timestamptz,
