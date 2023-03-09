@@ -778,10 +778,10 @@ static void work_update(void) {
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'timeout') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_timeout'::text))::interval$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "timeout" SET DEFAULT (current_setting('pg_task.timeout'))::pg_catalog.interval;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'count') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_count'::text))::int$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'count') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_count'::text))::integer$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "count" SET DEFAULT (current_setting('pg_task.count'))::pg_catalog.int4;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'max') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_max'::text))::int$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'max') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_max'::text))::integer$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "max" SET DEFAULT (current_setting('pg_task.max'))::pg_catalog.int4;
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'delete') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_delete'::text))::bool$$ THEN
