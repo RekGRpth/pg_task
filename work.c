@@ -59,12 +59,12 @@ static void work_check(void) {
         appendStringInfo(&src, SQL(
             WITH j AS (
                 SELECT  COALESCE(COALESCE("data", "user"), current_setting('pg_task.data')) AS "data",
-                        EXTRACT(epoch FROM COALESCE("reset", current_setting('pg_task.reset')::interval))::bigint * 1000 AS "reset",
+                        EXTRACT(epoch FROM COALESCE("reset", current_setting('pg_task.reset')::pg_catalog.interval))::pg_catalog.int8 * 1000 AS "reset",
                         COALESCE("schema", current_setting('pg_task.schema')) AS "schema",
                         COALESCE("table", current_setting('pg_task.table')) AS "table",
-                        COALESCE("sleep", current_setting('pg_task.sleep')::bigint) AS "sleep",
+                        COALESCE("sleep", current_setting('pg_task.sleep')::pg_catalog.int8) AS "sleep",
                         COALESCE(COALESCE("user", "data"), current_setting('pg_task.user')) AS "user"
-                FROM    jsonb_to_recordset(current_setting('pg_task.json')::jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
+                FROM    jsonb_to_recordset(current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" bigint, "user" text)
             ) SELECT    DISTINCT j.* FROM j WHERE "user" = current_user AND "data" = current_catalog AND hashtext(concat_ws(' ', 'pg_work', "schema", "table", "sleep")) = %1$i
 
         ), work.hash);
@@ -278,12 +278,12 @@ static void work_timeout(void) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
            SELECT COALESCE(LEAST(EXTRACT(epoch FROM ((
-                SELECT GREATEST("plan" + current_setting('pg_task.reset')::interval - CURRENT_TIMESTAMP, '0 sec'::interval) AS "plan" FROM %1$s AS t
+                SELECT GREATEST("plan" + current_setting('pg_task.reset')::pg_catalog.interval - CURRENT_TIMESTAMP, '0 sec'::pg_catalog.interval) AS "plan" FROM %1$s AS t
                 LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = %2$i AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
                 WHERE "state" IN ('TAKE', 'WORK') AND l.pid IS NULL ORDER BY 1 LIMIT 1
-           )))::bigint * 1000, EXTRACT(epoch FROM ((
+           )))::pg_catalog.int8 * 1000, EXTRACT(epoch FROM ((
                 SELECT "plan" - CURRENT_TIMESTAMP AS "plan" FROM %1$s WHERE "state" = 'PLAN' AND "plan" >= CURRENT_TIMESTAMP ORDER BY 1 LIMIT 1
-           )))::bigint * 1000), -1) as "min"
+           )))::pg_catalog.int8 * 1000), -1) as "min"
         ), work.schema_table, work.shared->oid);
     }
     SPI_connect_my(src.data);
@@ -568,7 +568,7 @@ static void work_sleep(void) {
             ), s AS (
                 SELECT "id", t.hash, CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" = "hash"
                 WHERE "plan" <= CURRENT_TIMESTAMP AND "state" = 'PLAN' AND CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) >= 0
-                ORDER BY 3 DESC, 1 LIMIT current_setting('pg_task.limit')::int FOR UPDATE OF t %3$s
+                ORDER BY 3 DESC, 1 LIMIT current_setting('pg_task.limit')::pg_catalog.int4 FOR UPDATE OF t %3$s
             ), u AS (
                 SELECT "id", "count" - row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") + 1 AS "count" FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM u WHERE t.id = u.id AND u.count >= 0 RETURNING t.id, "hash", "group", "remote", "max"
@@ -652,26 +652,26 @@ static void work_table(void) {
     appendStringInfo(&src, SQL(
         CREATE TABLE %1$s (
             "id" bigserial NOT NULL PRIMARY KEY,
-            "parent" bigint DEFAULT NULLIF(current_setting('pg_task.id')::bigint, 0),
+            "parent" bigint DEFAULT NULLIF(current_setting('pg_task.id')::pg_catalog.int8, 0),
             "plan" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
             "start" timestamptz,
             "stop" timestamptz,
-            "active" interval NOT NULL DEFAULT current_setting('pg_task.active')::interval CHECK ("active" > '0 sec'::interval),
-            "live" interval NOT NULL DEFAULT current_setting('pg_task.live')::interval CHECK ("live" >= '0 sec'::interval),
-            "repeat" interval NOT NULL DEFAULT current_setting('pg_task.repeat')::interval CHECK ("repeat" >= '0 sec'::interval),
-            "timeout" interval NOT NULL DEFAULT current_setting('pg_task.timeout')::interval CHECK ("timeout" >= '0 sec'::interval),
-            "count" int NOT NULL DEFAULT current_setting('pg_task.count')::int CHECK ("count" >= 0),
+            "active" interval NOT NULL DEFAULT current_setting('pg_task.active')::pg_catalog.interval CHECK ("active" > '0 sec'::pg_catalog.interval),
+            "live" interval NOT NULL DEFAULT current_setting('pg_task.live')::pg_catalog.interval CHECK ("live" >= '0 sec'::pg_catalog.interval),
+            "repeat" interval NOT NULL DEFAULT current_setting('pg_task.repeat')::pg_catalog.interval CHECK ("repeat" >= '0 sec'::pg_catalog.interval),
+            "timeout" interval NOT NULL DEFAULT current_setting('pg_task.timeout')::pg_catalog.interval CHECK ("timeout" >= '0 sec'::pg_catalog.interval),
+            "count" int NOT NULL DEFAULT current_setting('pg_task.count')::pg_catalog.int4 CHECK ("count" >= 0),
             "hash" int NOT NULL %3$s,
-            "max" int NOT NULL DEFAULT current_setting('pg_task.max')::int,
+            "max" int NOT NULL DEFAULT current_setting('pg_task.max')::pg_catalog.int4,
             "pid" int,
-            "state" %2$s NOT NULL DEFAULT 'PLAN'::%2$s,
-            "delete" bool NOT NULL DEFAULT current_setting('pg_task.delete')::bool,
-            "drift" bool NOT NULL DEFAULT current_setting('pg_task.drift')::bool,
-            "header" bool NOT NULL DEFAULT current_setting('pg_task.header')::bool,
-            "string" bool NOT NULL DEFAULT current_setting('pg_task.string')::bool,
-            "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.delimiter')::"char",
-            "escape" "char" NOT NULL DEFAULT current_setting('pg_task.escape')::"char",
-            "quote" "char" NOT NULL DEFAULT current_setting('pg_task.quote')::"char",
+            "state" %2$s NOT NULL DEFAULT 'PLAN',
+            "delete" bool NOT NULL DEFAULT current_setting('pg_task.delete')::pg_catalog.bool,
+            "drift" bool NOT NULL DEFAULT current_setting('pg_task.drift')::pg_catalog.bool,
+            "header" bool NOT NULL DEFAULT current_setting('pg_task.header')::pg_catalog.bool,
+            "string" bool NOT NULL DEFAULT current_setting('pg_task.string')::pg_catalog.bool,
+            "delimiter" "char" NOT NULL DEFAULT current_setting('pg_task.delimiter')::pg_catalog."char",
+            "escape" "char" NOT NULL DEFAULT current_setting('pg_task.escape')::pg_catalog."char",
+            "quote" "char" NOT NULL DEFAULT current_setting('pg_task.quote')::pg_catalog."char",
             "data" text,
             "error" text,
             "group" text NOT NULL DEFAULT current_setting('pg_task.group'),
@@ -767,52 +767,52 @@ static void work_update(void) {
                 ALTER TABLE %1$s ADD COLUMN "data" text;
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'active') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_active'::text))::interval$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "active" SET DEFAULT (current_setting('pg_task.active'::text))::interval;
+                ALTER TABLE %1$s ALTER COLUMN "active" SET DEFAULT (current_setting('pg_task.active'))::pg_catalog.interval;
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'live') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_live'::text))::interval$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "live" SET DEFAULT (current_setting('pg_task.live'::text))::interval;
+                ALTER TABLE %1$s ALTER COLUMN "live" SET DEFAULT (current_setting('pg_task.live'))::pg_catalog.interval;
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'repeat') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_repeat'::text))::interval$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "repeat" SET DEFAULT (current_setting('pg_task.repeat'::text))::interval;
+                ALTER TABLE %1$s ALTER COLUMN "repeat" SET DEFAULT (current_setting('pg_task.repeat'))::pg_catalog.interval;
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'timeout') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_timeout'::text))::interval$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "timeout" SET DEFAULT (current_setting('pg_task.timeout'::text))::interval;
+                ALTER TABLE %1$s ALTER COLUMN "timeout" SET DEFAULT (current_setting('pg_task.timeout'))::pg_catalog.interval;
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'count') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_count'::text))::int$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "count" SET DEFAULT (current_setting('pg_task.count'::text))::int;
+                ALTER TABLE %1$s ALTER COLUMN "count" SET DEFAULT (current_setting('pg_task.count'))::pg_catalog.int4;
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'max') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_max'::text))::int$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "max" SET DEFAULT (current_setting('pg_task.max'::text))::int;
+                ALTER TABLE %1$s ALTER COLUMN "max" SET DEFAULT (current_setting('pg_task.max'))::pg_catalog.int4;
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'delete') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_delete'::text))::bool$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "delete" SET DEFAULT (current_setting('pg_task.delete'::text))::bool;
+                ALTER TABLE %1$s ALTER COLUMN "delete" SET DEFAULT (current_setting('pg_task.delete'))::pg_catalog.bool;
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'drift') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_drift'::text))::bool$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "drift" SET DEFAULT (current_setting('pg_task.drift'::text))::bool;
+                ALTER TABLE %1$s ALTER COLUMN "drift" SET DEFAULT (current_setting('pg_task.drift'))::pg_catalog.bool;
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'header') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_header'::text))::bool$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "header" SET DEFAULT (current_setting('pg_task.header'::text))::bool;
+                ALTER TABLE %1$s ALTER COLUMN "header" SET DEFAULT (current_setting('pg_task.header'))::pg_catalog.bool;
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'string') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_string'::text))::bool$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "string" SET DEFAULT (current_setting('pg_task.string'::text))::bool;
+                ALTER TABLE %1$s ALTER COLUMN "string" SET DEFAULT (current_setting('pg_task.string'))::pg_catalog.bool;
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'delimiter') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_delimiter'::text))::"char"$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "delimiter" SET DEFAULT (current_setting('pg_task.delimiter'::text))::"char";
+                ALTER TABLE %1$s ALTER COLUMN "delimiter" SET DEFAULT (current_setting('pg_task.delimiter'))::pg_catalog."char";
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'escape') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_escape'::text))::"char"$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "escape" SET DEFAULT (current_setting('pg_task.escape'::text))::"char";
+                ALTER TABLE %1$s ALTER COLUMN "escape" SET DEFAULT (current_setting('pg_task.escape'))::pg_catalog."char";
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'quote') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_quote'::text))::"char"$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "quote" SET DEFAULT (current_setting('pg_task.quote'::text))::"char";
+                ALTER TABLE %1$s ALTER COLUMN "quote" SET DEFAULT (current_setting('pg_task.quote'))::pg_catalog."char";
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'group') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_group'::text))::text$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "group" SET DEFAULT (current_setting('pg_task.group'::text))::text;
+                ALTER TABLE %1$s ALTER COLUMN "group" SET DEFAULT (current_setting('pg_task.group'))::pg_catalog.text;
             END IF;
             IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'null') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_null'::text))::text$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (current_setting('pg_task.null'::text))::text;
+                ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (current_setting('pg_task.null'))::pg_catalog.text;
             END IF;
             CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER AS $function$BEGIN
-                SELECT plan + concat_ws(' ', (-NEW.max)::text, 'msec')::interval FROM %1$s WHERE state IN ('PLAN', 'TAKE', 'WORK') AND plan >= CURRENT_TIMESTAMP - concat_ws(' ', (-NEW.max)::text, 'msec')::interval AND (NEW.group, NEW.remote) IS NOT DISTINCT FROM ("group", remote) ORDER BY plan DESC LIMIT 1 INTO NEW.plan;
+                SELECT plan + concat_ws(' ', (-NEW.max)::pg_catalog.text, 'msec')::pg_catalog.interval FROM %1$s WHERE state IN ('PLAN', 'TAKE', 'WORK') AND plan >= CURRENT_TIMESTAMP - concat_ws(' ', (-NEW.max)::pg_catalog.text, 'msec')::pg_catalog.interval AND (NEW.group, NEW.remote) IS NOT DISTINCT FROM ("group", remote) ORDER BY plan DESC LIMIT 1 INTO NEW.plan;
                 IF NEW.plan IS NULL THEN
                     NEW.plan = CURRENT_TIMESTAMP;
                 END IF;
