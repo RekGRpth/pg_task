@@ -282,7 +282,7 @@ static void work_timeout(void) {
                 LEFT JOIN "pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = %2$i AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
                 WHERE "state" IN ('TAKE', 'WORK') AND l.pid IS NULL ORDER BY 1 LIMIT 1
            )))::pg_catalog.int8 * 1000, EXTRACT(epoch FROM ((
-                SELECT "plan" - CURRENT_TIMESTAMP AS "plan" FROM %1$s WHERE "state" = 'PLAN' AND "plan" >= CURRENT_TIMESTAMP ORDER BY 1 LIMIT 1
+                SELECT "plan" + concat_ws(' ', (-CASE WHEN "max" >= 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval - CURRENT_TIMESTAMP AS "plan" FROM %1$s WHERE "state" = 'PLAN' AND "plan" + concat_ws(' ', (-CASE WHEN "max" >= 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval >= CURRENT_TIMESTAMP ORDER BY 1 LIMIT 1
            )))::pg_catalog.int8 * 1000), -1) as "min"
         ), work.schema_table, work.shared->oid);
     }
