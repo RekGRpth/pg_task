@@ -749,14 +749,9 @@ static void work_type(void) {
 static void work_update(void) {
     char *schema = quote_literal_cstr(work.shared->schema);
     char *table = quote_literal_cstr(work.shared->table);
-    const char *update_quote;
     const char *wake_up_quote;
     StringInfoData src;
-    StringInfoData update;
     StringInfoData wake_up;
-    initStringInfoMy(&update);
-    appendStringInfo(&update, "%1$s_update", work.shared->table);
-    update_quote = quote_identifier(update.data);
     initStringInfoMy(&wake_up);
     appendStringInfo(&wake_up, "%1$s_wake_up", work.shared->table);
     wake_up_quote = quote_identifier(wake_up.data);
@@ -812,33 +807,21 @@ static void work_update(void) {
                 ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (current_setting('pg_task.null'));
             END IF;
             CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER AS $function$BEGIN
-                SELECT plan + concat_ws(' ', (-NEW.max)::pg_catalog.text, 'msec')::pg_catalog.interval FROM %1$s WHERE state IN ('PLAN', 'TAKE', 'WORK') AND plan >= CURRENT_TIMESTAMP - concat_ws(' ', (-NEW.max)::pg_catalog.text, 'msec')::pg_catalog.interval AND (NEW.group, NEW.remote) IS NOT DISTINCT FROM ("group", remote) ORDER BY plan DESC LIMIT 1 INTO NEW.plan;
-                IF NEW.plan IS NULL THEN
-                    NEW.plan = CURRENT_TIMESTAMP;
-                END IF;
-                RETURN NEW;
-            END;$function$ LANGUAGE plpgsql;
-            IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'update' AND trigger_schema = %2$s AND event_object_schema = %2$s AND action_orientation = 'ROW' AND action_timing = 'BEFORE' AND event_manipulation = 'INSERT') THEN
-                CREATE TRIGGER update BEFORE INSERT ON %1$s FOR EACH ROW WHEN (NEW.max < 0) EXECUTE PROCEDURE %4$s.%5$s();
-            END IF;
-            CREATE OR REPLACE FUNCTION %4$s.%6$s() RETURNS TRIGGER AS $function$BEGIN
-                PERFORM pg_cancel_backend(pid) FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = current_catalog) AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = current_user) AND "objid" = %7$i;
+                PERFORM pg_cancel_backend(pid) FROM "pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = current_catalog) AND "classid" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = current_user) AND "objid" = %6$i;
                 RETURN NULL;
             END;$function$ LANGUAGE plpgsql;
             IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'wake_up' AND trigger_schema = %2$s AND event_object_schema = %2$s AND action_orientation = 'STATEMENT' AND action_timing = 'AFTER' AND event_manipulation = 'INSERT') THEN
-                CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH STATEMENT EXECUTE PROCEDURE %4$s.%6$s();
+                CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH STATEMENT EXECUTE PROCEDURE %4$s.%5$s();
             END IF;
         END; $DO$
-    ), work.schema_table, schema, table, work.schema, update_quote, wake_up_quote, work.hash);
+    ), work.schema_table, schema, table, work.schema, wake_up_quote, work.hash);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
-    if (update_quote != update.data) pfree((void *)update_quote);
     if (wake_up_quote != wake_up.data) pfree((void *)wake_up_quote);
     pfree(schema);
     pfree(src.data);
     pfree(table);
-    pfree(update.data);
     pfree(wake_up.data);
 }
 
