@@ -112,8 +112,8 @@ static void task_update(const Task *t) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT "id" FROM %1$s AS t
-                WHERE "plan" <= CURRENT_TIMESTAMP AND "state" = 'PLAN' AND "hash" = $1 AND "max" < 0 FOR UPDATE OF t
-            ) UPDATE %1$s AS t SET "plan" = CASE WHEN "drift" THEN CURRENT_TIMESTAMP ELSE "plan" END + concat_ws(' ', (-"max")::pg_catalog.text, 'msec')::pg_catalog.interval FROM s
+                WHERE "plan" + concat_ws(' ', (-"max")::pg_catalog.text, 'msec')::pg_catalog.interval <= CURRENT_TIMESTAMP AND "state" = 'PLAN' AND "hash" = $1 AND "max" < 0 FOR UPDATE OF t
+            ) UPDATE %1$s AS t SET "plan" = CASE WHEN "drift" THEN CURRENT_TIMESTAMP ELSE "plan" + concat_ws(' ', (-"max")::pg_catalog.text, 'msec')::pg_catalog.interval END FROM s
             WHERE t.id = s.id RETURNING t.id
         ), work.schema_table);
     }
