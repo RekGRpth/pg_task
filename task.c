@@ -113,7 +113,7 @@ static void task_update(const Task *t) {
             WITH s AS (
                 SELECT "id" FROM %1$s AS t
                 WHERE "plan" + concat_ws(' ', (-"max")::pg_catalog.text, 'msec')::pg_catalog.interval <= CURRENT_TIMESTAMP AND "state" = 'PLAN' AND "hash" = $1 AND "max" < 0 FOR UPDATE OF t
-            ) UPDATE %1$s AS t SET "plan" = CASE WHEN "drift" THEN CURRENT_TIMESTAMP ELSE "plan" + concat_ws(' ', (-"max")::pg_catalog.text, 'msec')::pg_catalog.interval END FROM s
+            ) UPDATE %1$s AS t SET "plan" = CASE WHEN "drift" THEN CURRENT_TIMESTAMP ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p + concat_ws(' ', (-"max")::pg_catalog.text, 'msec')::pg_catalog.interval FROM r WHERE p <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1) END FROM s
             WHERE t.id = s.id RETURNING t.id
         ), work.schema_table);
     }
