@@ -155,6 +155,6 @@ INSERT INTO task (timeout, input) VALUES ('5 sec', 'SELECT pg_sleep(10)'); -- в
 ```conf
 pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"data":"database3","schema":"schema3"},{"data":"database4","table":"table4"},{"data":"database5","sleep":100}]'
 ```
-запустит планировщик в базе database1 под пользователем database1 (т.к. если не указан пользователь, то его имя берётся как имя базы), в базе database2 под пользователем username2, в базе database3 под пользователем database3 в схеме schema3, в базе database4 под пользователем database4 с табуляцией table4, и наконец в базе database5 под пользователем database5 и с интервалом проверки задач в 100 миллисекунд, при этом остальные неуказанные поля будут браться по-умолчанию.
+запустит планировщик в базе database1 под пользователем database1 (т.к. если не указан пользователь, то его имя берётся как имя базы), в базе database2 под пользователем username2, в базе database3 под пользователем database3 в схеме schema3, в базе database4 под пользователем database4 с таблицей table4, и наконец в базе database5 под пользователем database5 и с интервалом проверки задач в 100 миллисекунд, при этом остальные неуказанные поля будут браться по-умолчанию.
 
 ## Будущее или как устроен планировщик.
