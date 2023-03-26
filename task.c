@@ -69,13 +69,13 @@ static void task_delete(const Task *t) {
     set_ps_display_my("idle");
 }
 
-static void task_repeat(const Task *t) {
+static void task_insert(const Task *t) {
     Datum values[] = {Int64GetDatum(t->shared->id)};
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     elog(DEBUG1, "id = %li", t->shared->id);
-    set_ps_display_my("repeat");
+    set_ps_display_my("insert");
     if (!src.data) {
         if (!work.columns) task_columns(t);
         if (!work.columns) return;
@@ -88,13 +88,41 @@ static void task_repeat(const Task *t) {
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(plan, values, NULL, SPI_OK_INSERT_RETURNING);
-    if (SPI_processed != 1) elog(WARNING, "repeat id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed);
-    else elog(DEBUG1, "repeat id = %li", DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false)));
+    if (SPI_processed != 1) elog(WARNING, "insert id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed);
+    else elog(DEBUG1, "insert id = %li", DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false)));
+    set_ps_display_my("idle");
+}
+
+static void task_update(const Task *t) {
+    Datum values[] = {Int32GetDatum(t->shared->hash)};
+    Portal portal;
+    static Oid argtypes[] = {INT4OID};
+    static SPIPlanPtr plan = NULL;
+    static StringInfoData src = {0};
+    elog(DEBUG1, "hash = %i", t->shared->hash);
+    set_ps_display_my("update");
+    if (!src.data) {
+        initStringInfoMy(&src);
+        appendStringInfo(&src, SQL(
+            WITH s AS (
+                SELECT "id" FROM %1$s AS t
+                WHERE "plan" + concat_ws(' ', (-"max")::pg_catalog.text, 'msec')::pg_catalog.interval <= CURRENT_TIMESTAMP AND "state" = 'PLAN' AND "hash" = $1 AND "max" < 0 FOR UPDATE OF t
+            ) UPDATE %1$s AS t SET "plan" = CASE WHEN "drift" THEN CURRENT_TIMESTAMP ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p + concat_ws(' ', (-"max")::pg_catalog.text, 'msec')::pg_catalog.interval FROM r WHERE p <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1) END FROM s
+            WHERE t.id = s.id RETURNING t.id
+        ), work.schema_table);
+    }
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    portal = SPI_cursor_open_my(src.data, plan, values, NULL);
+    do {
+        SPI_cursor_fetch(portal, true, task_fetch);
+        for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, update id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
+    } while (SPI_processed);
+    SPI_cursor_close(portal);
     set_ps_display_my("idle");
 }
 
 bool task_done(Task *t) {
-    bool delete = false, exit = true, repeat = false;
+    bool delete = false, exit = true, insert = false, update = false;
     char nulls[] = {' ', t->output.data ? ' ' : 'n', t->error.data ? ' ' : 'n'};
     Datum values[] = {Int64GetDatum(t->shared->id), CStringGetTextDatumMy(t->output.data), CStringGetTextDatumMy(t->error.data)};
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
@@ -107,7 +135,7 @@ bool task_done(Task *t) {
         appendStringInfo(&src, SQL(
             WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" = $1 FOR UPDATE OF t)
             UPDATE %1$s AS t SET "state" = 'DONE', "stop" = CURRENT_TIMESTAMP, "output" = $2, "error" = $3 FROM s WHERE t.id = s.id
-            RETURNING "delete" AND "output" IS NULL AS "delete", "repeat" > '0 sec' AS "repeat", "max" >= 0 AND ("count" > 0 OR "live" > '0 sec') AS "live"
+            RETURNING "delete" AND "output" IS NULL AS "delete", "repeat" > '0 sec' AS "insert", "max" >= 0 AND ("count" > 0 OR "live" > '0 sec') AS "live", "max" < 0 AS "update"
         ), work.schema_table);
     }
     SPI_connect_my(src.data);
@@ -116,13 +144,15 @@ bool task_done(Task *t) {
     if (SPI_processed != 1) elog(WARNING, "id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed); else {
         delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false));
         exit = !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false));
-        repeat = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "repeat", false));
-        elog(DEBUG1, "delete = %s, exit = %s, repeat = %s", delete ? "true" : "false", exit ? "true" : "false", repeat ? "true" : "false");
+        insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false));
+        update = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "update", false));
+        elog(DEBUG1, "delete = %s, exit = %s, insert = %s, update = %s", delete ? "true" : "false", exit ? "true" : "false", insert ? "true" : "false", update ? "true" : "false");
     }
     if (values[1]) pfree((void *)values[1]);
     if (values[2]) pfree((void *)values[2]);
-    if (repeat) task_repeat(t);
+    if (insert) task_insert(t);
     if (delete) task_delete(t);
+    if (update) task_update(t);
     if (t->lock && !unlock_table_id(work.shared->oid, t->shared->id)) { elog(WARNING, "!unlock_table_id(%i, %li)", work.shared->oid, t->shared->id); exit = true; }
     t->lock = false;
     exit = exit || task_live(t);
@@ -156,7 +186,7 @@ bool task_work(Task *t) {
         appendStringInfo(&src, SQL(
             WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" = $1 FOR UPDATE OF t)
             UPDATE %1$s AS t SET "state" = 'WORK', "start" = CURRENT_TIMESTAMP, "pid" = $2 FROM s WHERE t.id = s.id
-            RETURNING "group", "hash", "input", EXTRACT(epoch FROM "timeout")::int * 1000 AS "timeout", "header", "string", "null", "delimiter", "quote", "escape", "plan" + "active" > CURRENT_TIMESTAMP AS "active", "remote"
+            RETURNING "group", "hash", "input", EXTRACT(epoch FROM "timeout")::pg_catalog.int4 * 1000 AS "timeout", "header", "string", "null", "delimiter", "quote", "escape", "plan" + "active" > CURRENT_TIMESTAMP AS "active", "remote"
         ), work.schema_table);
     }
     SPI_connect_my(src.data);
