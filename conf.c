@@ -142,6 +142,22 @@ void conf_main(Datum arg) {
     Portal portal;
     StringInfoData src;
     struct sigaction act = {0}, oldact = {0};
+    act.sa_sigaction = conf_sigaction;
+    act.sa_flags = SA_SIGINFO;
+    sigaction(SIGUSR2, &act, &oldact);
+    timeout = RegisterTimeout(USER_TIMEOUT, conf_handler);
+    on_proc_exit(conf_proc_exit, (Datum)NULL);
+    BackgroundWorkerUnblockSignals();
+    CreateAuxProcessResourceOwner();
+    BackgroundWorkerInitializeConnectionMy("postgres", NULL);
+    CurrentResourceOwner = AuxProcessResourceOwner;
+    MemoryContextSwitchTo(TopMemoryContext);
+    set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+    pgstat_report_appname("pg_conf");
+    set_ps_display_my("main");
+    process_session_preload_libraries();
+    if (!lock_data_user(MyDatabaseId, GetUserId())) { elog(WARNING, "!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()); return; }
+    dlist_init((dlist_head *)&head);
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         WITH j AS (
@@ -168,22 +184,6 @@ void conf_main(Datum arg) {
         "json_object"
 #endif
     );
-    act.sa_sigaction = conf_sigaction;
-    act.sa_flags = SA_SIGINFO;
-    sigaction(SIGUSR2, &act, &oldact);
-    timeout = RegisterTimeout(USER_TIMEOUT, conf_handler);
-    on_proc_exit(conf_proc_exit, (Datum)NULL);
-    BackgroundWorkerUnblockSignals();
-    CreateAuxProcessResourceOwner();
-    BackgroundWorkerInitializeConnectionMy("postgres", NULL);
-    CurrentResourceOwner = AuxProcessResourceOwner;
-    MemoryContextSwitchTo(TopMemoryContext);
-    set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
-    pgstat_report_appname("pg_conf");
-    set_ps_display_my("main");
-    process_session_preload_libraries();
-    if (!lock_data_user(MyDatabaseId, GetUserId())) { elog(WARNING, "!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()); return; }
-    dlist_init((dlist_head *)&head);
     SPI_connect_my(src.data);
     portal = SPI_cursor_open_with_args_my(src.data, src.data, 0, NULL, NULL, NULL);
     do {
