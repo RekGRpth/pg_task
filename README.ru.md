@@ -28,7 +28,7 @@
 2) [pg_cron](https://github.com/citusdata/pg_cron) - cron прямо в базе
 3) [pg_background](https://github.com/vibhorkum/pg_background) - выполнение запроса в фоне асинхронно
 
-и конечно же коммерческий планировщик [pgpro_scheduler](https://habr.com/ru/company/postgrespro/blog/335798/)
+и конечно же коммерческий планировщик [pgpro_scheduler](https://habr.com/ru/company/postgrespro/blog/335798/).
 Позже, когда я уже написал свой планировщик, я случайно нашёл ещё один открытый именно планировщик [generic-scheduler](https://github.com/okbob/generic-scheduler).
 
 Сначала я попытался заюзать асинхронные очереди [PGQ](https://github.com/pgq/pgq).
