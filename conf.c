@@ -187,8 +187,7 @@ void conf_main(Datum arg) {
     SPI_connect_my(src.data);
     portal = SPI_cursor_open_with_args_my(src.data, src.data, 0, NULL, NULL, NULL);
     do {
-        SPI_freetuptable(SPI_tuptable);
-        SPI_cursor_fetch(portal, true, conf_fetch);
+        SPI_cursor_fetch_my(portal, true, conf_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
             TupleDesc tupdesc = SPI_tuptable->tupdesc;
@@ -205,8 +204,7 @@ void conf_main(Datum arg) {
             dlist_push_head((dlist_head *)&head, &w->node);
         }
     } while (SPI_processed);
-    SPI_freetuptable(SPI_tuptable);
-    SPI_cursor_close(portal);
+    SPI_cursor_close_my(portal);
     SPI_finish_my();
     pfree(src.data);
     set_ps_display_my("idle");

@@ -114,12 +114,10 @@ static void task_update(const Task *t) {
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL);
     do {
-        SPI_freetuptable(SPI_tuptable);
-        SPI_cursor_fetch(portal, true, task_fetch);
+        SPI_cursor_fetch_my(portal, true, task_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, update id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     } while (SPI_processed);
-    SPI_freetuptable(SPI_tuptable);
-    SPI_cursor_close(portal);
+    SPI_cursor_close_my(portal);
     set_ps_display_my("idle");
 }
 

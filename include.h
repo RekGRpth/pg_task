@@ -242,6 +242,8 @@ void ReleaseAuxProcessResources(bool isCommit);
 #endif
 void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes);
 void SPI_connect_my(const char *src);
+void SPI_cursor_close_my(Portal portal);
+void SPI_cursor_fetch_my(Portal portal, bool forward, long count);
 void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int res);
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res);
 void SPI_finish_my(void);
