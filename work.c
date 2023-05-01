@@ -807,7 +807,7 @@ static void work_update(void) {
                 ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (current_setting('pg_task.null'));
             END IF;
             CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER AS $function$BEGIN
-                PERFORM pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_database" WHERE "datname" = current_catalog) AND "classid" = (SELECT "oid" FROM "pg_catalog"."pg_authid" WHERE "rolname" = current_user) AND "objid" = %6$i;
+                PERFORM pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" = current_catalog) AND "classid" = (SELECT "oid" FROM "pg_catalog"."pg_authid" WHERE "rolname" = current_user) AND "objid" = %6$i;
                 RETURN NULL;
             END;$function$ LANGUAGE plpgsql;
             IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'wake_up' AND trigger_schema = %2$s AND event_object_schema = %2$s AND action_orientation = 'STATEMENT' AND action_timing = 'AFTER' AND event_manipulation = 'INSERT') THEN
