@@ -172,8 +172,8 @@ void conf_main(Datum arg) {
                         COALESCE("sleep", (u."setconfig"->>'pg_task.sleep')::pg_catalog.int8, (d."setconfig"->>'pg_task.sleep')::pg_catalog.int8, current_setting('pg_task.sleep')::pg_catalog.int8) AS "sleep",
                         COALESCE("user", "data", current_setting('pg_task.user')) AS "user"
             FROM        jsonb_to_recordset(current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" int8, "user" text)
-            LEFT JOIN   s AS d on d."setdatabase" = (SELECT "oid" FROM "pg_database" WHERE "datname" = COALESCE("data", "user", current_setting('pg_task.data')))
-            LEFT JOIN   s AS u on u."setrole" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = COALESCE("user", "data", current_setting('pg_task.user')))
+            LEFT JOIN   s AS d on d."setdatabase" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_database" WHERE "datname" OPERATOR(pg_catalog.=) COALESCE("data", "user", current_setting('pg_task.data')))
+            LEFT JOIN   s AS u on u."setrole" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_authid" WHERE "rolname" OPERATOR(pg_catalog.=) COALESCE("user", "data", current_setting('pg_task.user')))
         ) SELECT    DISTINCT j.* FROM j
         LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_database" WHERE "datname" OPERATOR(pg_catalog.=) "data") AND "classid" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_authid" WHERE "rolname" OPERATOR(pg_catalog.=) "user") AND "objid" OPERATOR(pg_catalog.=) pg_catalog.hashtext(concat_ws(' ', 'pg_work', "schema", "table", "sleep"))::pg_catalog.oid
         WHERE "pid" IS NULL
