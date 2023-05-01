@@ -638,7 +638,7 @@ static void work_table(void) {
         function_quote = quote_identifier(function.data);
         appendStringInfo(&hash, SQL(CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $function$BEGIN
             IF tg_op OPERATOR(pg_catalog.=) 'INSERT' OR (NEW.group, NEW.remote) IS DISTINCT FROM (OLD.group, OLD.remote) THEN
-                NEW.hash = pg_catalog.hashtext(NEW.group||COALESCE(NEW.remote, '%3$s'));
+                NEW.hash = pg_catalog.hashtext(NEW.group OPERATOR(pg_catalog.||) COALESCE(NEW.remote, '%3$s'));
             END IF;
             RETURN NEW;
         END;$function$ LANGUAGE plpgsql;
