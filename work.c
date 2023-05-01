@@ -757,59 +757,59 @@ static void work_update(void) {
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         DO $DO$ BEGIN
-            IF NOT EXISTS (SELECT * FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'data') THEN
+            IF NOT EXISTS (SELECT * FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'data') THEN
                 ALTER TABLE %1$s ADD COLUMN "data" text;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'active') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_active'::text))::interval$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'active') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_active'::text))::interval$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "active" SET DEFAULT (pg_catalog.current_setting('pg_task.active'))::pg_catalog.interval;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'live') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_live'::text))::interval$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'live') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_live'::text))::interval$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "live" SET DEFAULT (pg_catalog.current_setting('pg_task.live'))::pg_catalog.interval;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'repeat') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_repeat'::text))::interval$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'repeat') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_repeat'::text))::interval$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "repeat" SET DEFAULT (pg_catalog.current_setting('pg_task.repeat'))::pg_catalog.interval;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'timeout') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_timeout'::text))::interval$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'timeout') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_timeout'::text))::interval$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "timeout" SET DEFAULT (pg_catalog.current_setting('pg_task.timeout'))::pg_catalog.interval;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'count') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_count'::text))::integer$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'count') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_count'::text))::integer$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "count" SET DEFAULT (pg_catalog.current_setting('pg_task.count'))::pg_catalog.int4;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'max') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_max'::text))::integer$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'max') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_max'::text))::integer$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "max" SET DEFAULT (pg_catalog.current_setting('pg_task.max'))::pg_catalog.int4;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'delete') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_delete'::text))::bool$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'delete') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_delete'::text))::bool$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "delete" SET DEFAULT (pg_catalog.current_setting('pg_task.delete'))::pg_catalog.bool;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'drift') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_drift'::text))::bool$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'drift') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_drift'::text))::bool$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "drift" SET DEFAULT (pg_catalog.current_setting('pg_task.drift'))::pg_catalog.bool;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'header') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_header'::text))::bool$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'header') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_header'::text))::bool$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "header" SET DEFAULT (pg_catalog.current_setting('pg_task.header'))::pg_catalog.bool;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'string') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_string'::text))::bool$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'string') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_string'::text))::bool$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "string" SET DEFAULT (pg_catalog.current_setting('pg_task.string'))::pg_catalog.bool;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'delimiter') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_delimiter'::text))::"char"$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'delimiter') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_delimiter'::text))::"char"$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "delimiter" SET DEFAULT (pg_catalog.current_setting('pg_task.delimiter'))::pg_catalog.char;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'escape') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_escape'::text))::"char"$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'escape') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_escape'::text))::"char"$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "escape" SET DEFAULT (pg_catalog.current_setting('pg_task.escape'))::pg_catalog.char;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'quote') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_quote'::text))::"char"$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'quote') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_quote'::text))::"char"$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "quote" SET DEFAULT (pg_catalog.current_setting('pg_task.quote'))::pg_catalog.char;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'group') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_group'::text))::text$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'group') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_group'::text))::text$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "group" SET DEFAULT (pg_catalog.current_setting('pg_task.group'));
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema = %2$s AND table_name = %3$s AND column_name = 'null') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_null'::text))::text$$ THEN
+            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'null') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_null'::text))::text$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (pg_catalog.current_setting('pg_task.null'));
             END IF;
             CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER AS $function$BEGIN
-                PERFORM pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 3 AND "database" = (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" = current_catalog) AND "classid" = (SELECT "oid" FROM "pg_catalog"."pg_authid" WHERE "rolname" = current_user) AND "objid" = %6$i;
+                PERFORM pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "classid" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_authid" WHERE "rolname" OPERATOR(pg_catalog.=) current_user) AND "objid" OPERATOR(pg_catalog.=) %6$i;
                 RETURN NULL;
             END;$function$ LANGUAGE plpgsql;
-            IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table = %3$s AND trigger_name = 'wake_up' AND trigger_schema = %2$s AND event_object_schema = %2$s AND action_orientation = 'STATEMENT' AND action_timing = 'AFTER' AND event_manipulation = 'INSERT') THEN
+            IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table OPERATOR(pg_catalog.=) %3$s AND trigger_name OPERATOR(pg_catalog.=) 'wake_up' AND trigger_schema OPERATOR(pg_catalog.=) %2$s AND event_object_schema OPERATOR(pg_catalog.=) %2$s AND action_orientation OPERATOR(pg_catalog.=) 'STATEMENT' AND action_timing OPERATOR(pg_catalog.=) 'AFTER' AND event_manipulation OPERATOR(pg_catalog.=) 'INSERT') THEN
                 CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH STATEMENT EXECUTE PROCEDURE %4$s.%5$s();
             END IF;
         END; $DO$
