@@ -66,6 +66,13 @@ void SPI_connect_my(const char *src) {
 }
 
 void SPI_cursor_close_my(Portal portal) {
+    char msec_str[32];
+    switch (check_log_duration(msec_str, was_logged)) {
+        case 1: ereport(LOG, (errmsg("duration: %s ms", msec_str), errhidestmt(true))); break;
+        case 2: ereport(LOG, (errmsg("duration: %s ms  statement: %s", msec_str, debug_query_string), errhidestmt(true))); break;
+    }
+    was_logged = false;
+    debug_query_string = NULL;
     SPI_freetuptable(SPI_tuptable);
     SPI_cursor_close(portal);
 }
