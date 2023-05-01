@@ -1,5 +1,11 @@
 #include "include.h"
 
+static bool check_log_statement(void) {
+    if (log_statement == LOGSTMT_NONE) return false;
+    if (log_statement == LOGSTMT_ALL) return true;
+    return false;
+}
+
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null) {
     bool isnull;
     Datum datum = SPI_getbinval(tuple, tupdesc, SPI_fnumber(tupdesc, fname), &isnull);
@@ -21,6 +27,7 @@ Portal SPI_cursor_open_my(const char *name, SPIPlanPtr plan, Datum *values, cons
 Portal SPI_cursor_open_with_args_my(const char *name, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
     Portal portal;
     SPI_freetuptable(SPI_tuptable);
+    if (check_log_statement()) ereport(LOG, (errmsg("statement: %s", src), errhidestmt(true)));
     CurrentResourceOwner = SPIResourceOwner;
     if (!(portal = SPI_cursor_open_with_args(name, src, nargs, argtypes, values, nulls, false, 0))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open_with_args failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
     CurrentResourceOwner = AuxProcessResourceOwner;
@@ -31,6 +38,7 @@ Portal SPI_cursor_open_with_args_my(const char *name, const char *src, int nargs
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     int rc;
     SPIPlanPtr plan;
+    if (check_log_statement()) ereport(LOG, (errmsg("statement: %s", src), errhidestmt(true)));
     CurrentResourceOwner = SPIResourceOwner;
     if (!(plan = SPI_prepare(src, nargs, argtypes))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_prepare failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
     if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_keepplan failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
@@ -75,6 +83,7 @@ void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int 
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res) {
     int rc;
     SPI_freetuptable(SPI_tuptable);
+    if (check_log_statement()) ereport(LOG, (errmsg("statement: %s", src), errhidestmt(true)));
     CurrentResourceOwner = SPIResourceOwner;
     if ((rc = SPI_execute_with_args(src, nargs, argtypes, values, nulls, false, 0)) != res) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_execute_with_args failed"), errdetail("%s while expecting %s", SPI_result_code_string(rc), SPI_result_code_string(res)), errcontext("%s", src)));
     CurrentResourceOwner = AuxProcessResourceOwner;
