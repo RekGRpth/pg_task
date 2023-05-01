@@ -87,7 +87,7 @@ static void task_insert(const Task *t) {
         if (!work.columns) return;
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            WITH s AS (SELECT * FROM %1$s AS t WHERE "id" = $1 FOR UPDATE OF t) INSERT INTO %1$s AS t ("parent", "plan", %2$s) SELECT "id", CASE
+            WITH s AS (SELECT * FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 FOR UPDATE OF t) INSERT INTO %1$s AS t ("parent", "plan", %2$s) SELECT "id", CASE
                 WHEN "drift" THEN CURRENT_TIMESTAMP + "repeat" ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p + "repeat" FROM r WHERE p <= CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
             END AS "plan", %2$s FROM s WHERE "repeat" > '0 sec' LIMIT 1 RETURNING t.id
         ), work.schema_table, work.columns);
