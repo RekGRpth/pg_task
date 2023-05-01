@@ -166,7 +166,7 @@ void conf_main(Datum arg) {
                     SELECT "setdatabase", "setrole", regexp_split_to_array(UNNEST("setconfig"), '=') AS "setconfig" FROM "pg_db_role_setting"
                 ) SELECT "setdatabase", "setrole", %1$s(array_agg("setconfig"[1]), array_agg("setconfig"[2])) AS "setconfig" FROM s GROUP BY 1, 2
             ) SELECT    COALESCE("data", "user", current_setting('pg_task.data')) AS "data",
-                        EXTRACT(epoch FROM COALESCE("reset", (u."setconfig"->>'pg_task.reset')::pg_catalog.interval, (d."setconfig"->>'pg_task.reset')::pg_catalog.interval, current_setting('pg_task.reset')::pg_catalog.interval))::pg_catalog.int8 * 1000 AS "reset",
+                        EXTRACT(epoch FROM COALESCE("reset", (u."setconfig"->>'pg_task.reset')::pg_catalog.interval, (d."setconfig"->>'pg_task.reset')::pg_catalog.interval, current_setting('pg_task.reset')::pg_catalog.interval))::pg_catalog.int8 OPERATOR(pg_catalog.=) 1000 AS "reset",
                         COALESCE("schema", u."setconfig"->>'pg_task.schema', d."setconfig"->>'pg_task.schema', current_setting('pg_task.schema')) AS "schema",
                         COALESCE("table", u."setconfig"->>'pg_task.table', d."setconfig"->>'pg_task.table', current_setting('pg_task.table')) AS "table",
                         COALESCE("sleep", (u."setconfig"->>'pg_task.sleep')::pg_catalog.int8, (d."setconfig"->>'pg_task.sleep')::pg_catalog.int8, current_setting('pg_task.sleep')::pg_catalog.int8) AS "sleep",
