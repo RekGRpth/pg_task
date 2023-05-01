@@ -19,6 +19,7 @@ Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fnam
 Portal SPI_cursor_open_my(const char *name, SPIPlanPtr plan, Datum *values, const char *nulls) {
     Portal portal;
     SPI_freetuptable(SPI_tuptable);
+    if ((was_logged = check_log_statement())) ereport(LOG, (errmsg("statement: %s", debug_query_string), errhidestmt(true)));
     CurrentResourceOwner = SPIResourceOwner;
     if (!(portal = SPI_cursor_open(name, plan, values, nulls, false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open failed"), errdetail("%s", SPI_result_code_string(SPI_result))));
     CurrentResourceOwner = AuxProcessResourceOwner;
