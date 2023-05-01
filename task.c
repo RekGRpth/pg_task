@@ -24,7 +24,7 @@ static bool task_live(const Task *t) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND "hash" OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.>=) $2 AND CASE
-                WHEN "count" OPERATOR(pg_catalog.>) 0 AND "live" OPERATOR(pg_catalog.>) '0 sec' THEN "count" OPERATOR(pg_catalog.>) $3 AND $4 + "live" OPERATOR(pg_catalog.>) CURRENT_TIMESTAMP ELSE "count" OPERATOR(pg_catalog.>) $3 OR $4 + "live" OPERATOR(pg_catalog.>) CURRENT_TIMESTAMP
+                WHEN "count" OPERATOR(pg_catalog.>) 0 AND "live" OPERATOR(pg_catalog.>) '0 sec' THEN "count" OPERATOR(pg_catalog.>) $3 AND $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) CURRENT_TIMESTAMP ELSE "count" OPERATOR(pg_catalog.>) $3 OR $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) CURRENT_TIMESTAMP
             END ORDER BY "max" DESC, "id" LIMIT 1 FOR UPDATE OF t %2$s) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id
         ), work.schema_table,
 #if PG_VERSION_NUM >= 90500
