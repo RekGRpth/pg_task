@@ -59,7 +59,7 @@ static void work_check(void) {
         appendStringInfo(&src, SQL(
             WITH j AS (
                 SELECT  COALESCE(COALESCE("data", "user"), pg_catalog.current_setting('pg_task.data')) AS "data",
-                        EXTRACT(epoch FROM COALESCE("reset", pg_catalog.current_setting('pg_task.reset')::pg_catalog.interval))::pg_catalog.int8 * 1000 AS "reset",
+                        EXTRACT(epoch FROM COALESCE("reset", pg_catalog.current_setting('pg_task.reset')::pg_catalog.interval))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000 AS "reset",
                         COALESCE("schema", pg_catalog.current_setting('pg_task.schema')) AS "schema",
                         COALESCE("table", pg_catalog.current_setting('pg_task.table')) AS "table",
                         COALESCE("sleep", pg_catalog.current_setting('pg_task.sleep')::pg_catalog.int8) AS "sleep",
