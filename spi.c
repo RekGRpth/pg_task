@@ -40,6 +40,7 @@ Portal SPI_cursor_open_with_args_my(const char *name, const char *src, int nargs
 }
 
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
+    char msec_str[32];
     int rc;
     SPIPlanPtr plan;
     debug_query_string = src;
@@ -47,6 +48,12 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     CurrentResourceOwner = SPIResourceOwner;
     if (!(plan = SPI_prepare(src, nargs, argtypes))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_prepare failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
     if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_keepplan failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
+    switch (check_log_duration(msec_str, was_logged)) {
+        case 1: ereport(LOG, (errmsg("duration: %s ms", msec_str), errhidestmt(true))); break;
+        case 2: ereport(LOG, (errmsg("duration: %s ms  statement: %s", msec_str, src), errhidestmt(true))); break;
+    }
+    was_logged = false;
+    debug_query_string = NULL;
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
     return plan;
