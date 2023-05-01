@@ -66,7 +66,6 @@ static void work_check(void) {
                         COALESCE(COALESCE("user", "data"), pg_catalog.current_setting('pg_task.user')) AS "user"
                 FROM    pg_catalog.jsonb_to_recordset(pg_catalog.current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" int8, "user" text)
             ) SELECT    DISTINCT j.* FROM j WHERE "user" = current_user AND "data" = current_catalog AND pg_catalog.hashtext(pg_catalog.concat_ws(' ', 'pg_work', "schema", "table", "sleep")) = %1$i
-
         ), work.hash);
     }
     SPI_connect_my(src.data);
