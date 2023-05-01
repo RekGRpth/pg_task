@@ -41,6 +41,7 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
 
 void SPI_connect_my(const char *src) {
     int rc;
+    debug_query_string = src;
     pgstat_report_activity(STATE_RUNNING, src);
     SetCurrentStatementStartTimestamp();
     StartTransactionCommand();
@@ -90,6 +91,7 @@ void SPI_finish_my(void) {
 #endif
     CommitTransactionCommand();
     pgstat_report_stat(false);
+    debug_query_string = NULL;
     pgstat_report_activity(STATE_IDLE, NULL);
     SPIResourceOwner = NULL;
     CurrentResourceOwner = AuxProcessResourceOwner;
