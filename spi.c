@@ -85,6 +85,7 @@ void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int 
         case 1: ereport(LOG, (errmsg("duration: %s ms", msec_str), errhidestmt(true))); break;
         case 2: ereport(LOG, (errmsg("duration: %s ms  statement: %s", msec_str, debug_query_string), errhidestmt(true))); break;
     }
+    was_logged = false;
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
 }
@@ -101,6 +102,8 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
         case 1: ereport(LOG, (errmsg("duration: %s ms", msec_str), errhidestmt(true))); break;
         case 2: ereport(LOG, (errmsg("duration: %s ms  statement: %s", msec_str, src), errhidestmt(true))); break;
     }
+    was_logged = false;
+    debug_query_string = NULL;
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
 }
@@ -114,6 +117,7 @@ void SPI_finish_my(void) {
     ProcessCompletedNotifies();
 #endif
     CommitTransactionCommand();
+    was_logged = false;
     pgstat_report_stat(false);
     debug_query_string = NULL;
     pgstat_report_activity(STATE_IDLE, NULL);
