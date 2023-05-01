@@ -141,7 +141,7 @@ bool task_done(Task *t) {
         appendStringInfo(&src, SQL(
             WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 FOR UPDATE OF t)
             UPDATE %1$s AS t SET "state" = 'DONE', "stop" = CURRENT_TIMESTAMP, "output" = $2, "error" = $3 FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id
-            RETURNING "delete" AND "output" IS NULL AS "delete", "repeat" OPERATOR(pg_catalog.>) '0 sec' AS "insert", "max" OPERATOR(pg_catalog.>=) 0 AND ("count" OPERATOR(pg_catalog.>) 0 OR "live" OPERATOR(pg_catalog.>) '0 sec') AS "live", "max" < 0 AS "update"
+            RETURNING "delete" AND "output" IS NULL AS "delete", "repeat" OPERATOR(pg_catalog.>) '0 sec' AS "insert", "max" OPERATOR(pg_catalog.>=) 0 AND ("count" OPERATOR(pg_catalog.>) 0 OR "live" OPERATOR(pg_catalog.>) '0 sec') AS "live", "max" OPERATOR(pg_catalog.<) 0 AS "update"
         ), work.schema_table);
     }
     SPI_connect_my(src.data);
