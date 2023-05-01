@@ -29,6 +29,7 @@ Portal SPI_cursor_open_my(const char *name, SPIPlanPtr plan, Datum *values, cons
 Portal SPI_cursor_open_with_args_my(const char *name, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
     Portal portal;
     SPI_freetuptable(SPI_tuptable);
+    debug_query_string = src;
     if ((was_logged = check_log_statement())) ereport(LOG, (errmsg("statement: %s", src), errhidestmt(true)));
     CurrentResourceOwner = SPIResourceOwner;
     if (!(portal = SPI_cursor_open_with_args(name, src, nargs, argtypes, values, nulls, false, 0))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open_with_args failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
@@ -40,6 +41,7 @@ Portal SPI_cursor_open_with_args_my(const char *name, const char *src, int nargs
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     int rc;
     SPIPlanPtr plan;
+    debug_query_string = src;
     if ((was_logged = check_log_statement())) ereport(LOG, (errmsg("statement: %s", src), errhidestmt(true)));
     CurrentResourceOwner = SPIResourceOwner;
     if (!(plan = SPI_prepare(src, nargs, argtypes))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_prepare failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
@@ -85,6 +87,7 @@ void SPI_execute_plan_my(SPIPlanPtr plan, Datum *values, const char *nulls, int 
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res) {
     int rc;
     SPI_freetuptable(SPI_tuptable);
+    debug_query_string = src;
     if ((was_logged = check_log_statement())) ereport(LOG, (errmsg("statement: %s", src), errhidestmt(true)));
     CurrentResourceOwner = SPIResourceOwner;
     if ((rc = SPI_execute_with_args(src, nargs, argtypes, values, nulls, false, 0)) != res) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_execute_with_args failed"), errdetail("%s while expecting %s", SPI_result_code_string(rc), SPI_result_code_string(res)), errcontext("%s", src)));
