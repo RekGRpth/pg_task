@@ -171,7 +171,7 @@ void conf_main(Datum arg) {
                         COALESCE("table", u."setconfig"->>'pg_task.table', d."setconfig"->>'pg_task.table', pg_catalog.current_setting('pg_task.table')) AS "table",
                         COALESCE("sleep", (u."setconfig"->>'pg_task.sleep')::pg_catalog.int8, (d."setconfig"->>'pg_task.sleep')::pg_catalog.int8, pg_catalog.current_setting('pg_task.sleep')::pg_catalog.int8) AS "sleep",
                         COALESCE("user", "data", pg_catalog.current_setting('pg_task.user')) AS "user"
-            FROM        jsonb_to_recordset(pg_catalog.current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" int8, "user" text)
+            FROM        pg_catalog.jsonb_to_recordset(pg_catalog.current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" int8, "user" text)
             LEFT JOIN   s AS d on d."setdatabase" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) COALESCE("data", "user", pg_catalog.current_setting('pg_task.data')))
             LEFT JOIN   s AS u on u."setrole" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_authid" WHERE "rolname" OPERATOR(pg_catalog.=) COALESCE("user", "data", pg_catalog.current_setting('pg_task.user')))
         ) SELECT    DISTINCT j.* FROM j
