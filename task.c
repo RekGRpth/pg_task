@@ -23,9 +23,9 @@ static bool task_live(const Task *t) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" <= CURRENT_TIMESTAMP AND "state" = 'PLAN' AND "hash" = $1 AND "max" >= $2 AND CASE
+            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" <= CURRENT_TIMESTAMP AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND "hash" OPERATOR(pg_catalog.=) $1 AND "max" >= $2 AND CASE
                 WHEN "count" > 0 AND "live" > '0 sec' THEN "count" > $3 AND $4 + "live" > CURRENT_TIMESTAMP ELSE "count" > $3 OR $4 + "live" > CURRENT_TIMESTAMP
-            END ORDER BY "max" DESC, "id" LIMIT 1 FOR UPDATE OF t %2$s) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id = s.id RETURNING t.id
+            END ORDER BY "max" DESC, "id" LIMIT 1 FOR UPDATE OF t %2$s) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id
         ), work.schema_table,
 #if PG_VERSION_NUM >= 90500
         "SKIP LOCKED"
