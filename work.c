@@ -65,7 +65,7 @@ static void work_check(void) {
                         COALESCE("sleep", pg_catalog.current_setting('pg_task.sleep')::pg_catalog.int8) AS "sleep",
                         COALESCE(COALESCE("user", "data"), pg_catalog.current_setting('pg_task.user')) AS "user"
                 FROM    jsonb_to_recordset(pg_catalog.current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" int8, "user" text)
-            ) SELECT    DISTINCT j.* FROM j WHERE "user" = current_user AND "data" = current_catalog AND pg_catalog.hashtext(concat_ws(' ', 'pg_work', "schema", "table", "sleep")) = %1$i
+            ) SELECT    DISTINCT j.* FROM j WHERE "user" = current_user AND "data" = current_catalog AND pg_catalog.hashtext(pg_catalog.concat_ws(' ', 'pg_work', "schema", "table", "sleep")) = %1$i
 
         ), work.hash);
     }
@@ -282,7 +282,7 @@ static void work_timeout(void) {
                 LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" = 'userlock' AND "mode" = 'AccessExclusiveLock' AND "granted" AND "objsubid" = 4 AND "database" = %2$i AND "classid" = "id">>32 AND "objid" = "id"<<32>>32
                 WHERE "state" IN ('TAKE', 'WORK') AND l.pid IS NULL ORDER BY 1 LIMIT 1
            )))::pg_catalog.int8 * 1000, EXTRACT(epoch FROM ((
-                SELECT "plan" + concat_ws(' ', (-CASE WHEN "max" >= 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval - CURRENT_TIMESTAMP AS "plan" FROM %1$s WHERE "state" = 'PLAN' AND "plan" + concat_ws(' ', (-CASE WHEN "max" >= 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval >= CURRENT_TIMESTAMP ORDER BY 1 LIMIT 1
+                SELECT "plan" + pg_catalog.concat_ws(' ', (-CASE WHEN "max" >= 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval - CURRENT_TIMESTAMP AS "plan" FROM %1$s WHERE "state" = 'PLAN' AND "plan" + pg_catalog.concat_ws(' ', (-CASE WHEN "max" >= 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval >= CURRENT_TIMESTAMP ORDER BY 1 LIMIT 1
            )))::pg_catalog.int8 * 1000), -1) as "min"
         ), work.schema_table, work.shared->oid);
     }
@@ -567,7 +567,7 @@ static void work_sleep(void) {
                 SELECT count("classid") AS "classid", "objid" FROM "pg_catalog"."pg_locks" WHERE "locktype" = 'userlock' AND "mode" = 'AccessShareLock' AND "granted" AND "objsubid" = 5 AND "database" = %2$i GROUP BY "objid"
             ), s AS (
                 SELECT "id", t.hash, CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" = "hash"
-                WHERE "plan" + concat_ws(' ', (-CASE WHEN "max" >= 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval <= CURRENT_TIMESTAMP AND "state" = 'PLAN' AND CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) >= 0
+                WHERE "plan" + pg_catalog.concat_ws(' ', (-CASE WHEN "max" >= 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval <= CURRENT_TIMESTAMP AND "state" = 'PLAN' AND CASE WHEN "max" >= 0 THEN "max" ELSE 0 END - COALESCE("classid", 0) >= 0
                 ORDER BY 3 DESC, 1 LIMIT pg_catalog.current_setting('pg_task.limit')::pg_catalog.int4 FOR UPDATE OF t %3$s
             ), u AS (
                 SELECT "id", "count" - row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") + 1 AS "count" FROM s ORDER BY s.count DESC, id
