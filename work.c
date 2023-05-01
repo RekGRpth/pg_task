@@ -65,7 +65,7 @@ static void work_check(void) {
                         COALESCE("sleep", current_setting('pg_task.sleep')::pg_catalog.int8) AS "sleep",
                         COALESCE(COALESCE("user", "data"), current_setting('pg_task.user')) AS "user"
                 FROM    jsonb_to_recordset(current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" int8, "user" text)
-            ) SELECT    DISTINCT j.* FROM j WHERE "user" = current_user AND "data" = current_catalog AND hashtext(concat_ws(' ', 'pg_work', "schema", "table", "sleep")) = %1$i
+            ) SELECT    DISTINCT j.* FROM j WHERE "user" = current_user AND "data" = current_catalog AND pg_catalog.hashtext(concat_ws(' ', 'pg_work', "schema", "table", "sleep")) = %1$i
 
         ), work.hash);
     }
@@ -629,7 +629,7 @@ static void work_table(void) {
     set_ps_display_my("table");
     initStringInfoMy(&hash);
 #if PG_VERSION_NUM >= 120000
-    appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (hashtext("group"||COALESCE("remote", '%1$s'))) STORED), "");
+    appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (pg_catalog.hashtext("group"||COALESCE("remote", '%1$s'))) STORED), "");
 #else
     if (true) {
         const char *function_quote;
@@ -639,7 +639,7 @@ static void work_table(void) {
         function_quote = quote_identifier(function.data);
         appendStringInfo(&hash, SQL(CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER AS $function$BEGIN
             IF tg_op = 'INSERT' OR (NEW.group, NEW.remote) IS DISTINCT FROM (OLD.group, OLD.remote) THEN
-                NEW.hash = hashtext(NEW.group||COALESCE(NEW.remote, '%3$s'));
+                NEW.hash = pg_catalog.hashtext(NEW.group||COALESCE(NEW.remote, '%3$s'));
             END IF;
             RETURN NEW;
         END;$function$ LANGUAGE plpgsql;

@@ -175,7 +175,7 @@ void conf_main(Datum arg) {
             LEFT JOIN   s AS d on d."setdatabase" = (SELECT "oid" FROM "pg_database" WHERE "datname" = COALESCE("data", "user", current_setting('pg_task.data')))
             LEFT JOIN   s AS u on u."setrole" = (SELECT "oid" FROM "pg_authid" WHERE "rolname" = COALESCE("user", "data", current_setting('pg_task.user')))
         ) SELECT    DISTINCT j.* FROM j
-        LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_database" WHERE "datname" OPERATOR(pg_catalog.=) "data") AND "classid" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_authid" WHERE "rolname" OPERATOR(pg_catalog.=) "user") AND "objid" OPERATOR(pg_catalog.=) hashtext(concat_ws(' ', 'pg_work', "schema", "table", "sleep"))::pg_catalog.oid
+        LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_database" WHERE "datname" OPERATOR(pg_catalog.=) "data") AND "classid" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_authid" WHERE "rolname" OPERATOR(pg_catalog.=) "user") AND "objid" OPERATOR(pg_catalog.=) pg_catalog.hashtext(concat_ws(' ', 'pg_work', "schema", "table", "sleep"))::pg_catalog.oid
         WHERE "pid" IS NULL
     ),
 #if PG_VERSION_NUM >= 90500
