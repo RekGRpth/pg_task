@@ -569,7 +569,7 @@ static void work_sleep(void) {
                 WHERE "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) OPERATOR(pg_catalog.>=) 0
                 ORDER BY 3 DESC, 1 LIMIT pg_catalog.current_setting('pg_task.limit')::pg_catalog.int4 FOR UPDATE OF t %3$s
             ), u AS (
-                SELECT "id", "count" OPERATOR(pg_catalog.-) row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM s ORDER BY s.count DESC, id
+                SELECT "id", "count" OPERATOR(pg_catalog.-) pg_catalog.row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM u WHERE t.id OPERATOR(pg_catalog.=) u.id AND u.count OPERATOR(pg_catalog.>=) 0 RETURNING t.id, "hash", "group", "remote", "max"
         ), work.schema_table, work.shared->oid,
 #if PG_VERSION_NUM >= 90500
