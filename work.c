@@ -628,7 +628,7 @@ static void work_table(void) {
     set_ps_display_my("table");
     initStringInfoMy(&hash);
 #if PG_VERSION_NUM >= 120000
-    appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (pg_catalog.hashtext("group"||COALESCE("remote", '%1$s'))) STORED), "");
+    appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%1$s'))) STORED), "");
 #else
     if (true) {
         const char *function_quote;
