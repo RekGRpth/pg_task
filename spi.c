@@ -87,7 +87,7 @@ void SPI_cursor_close_my(const char *src, Portal portal) {
     check_log_duration_my(src);
 }
 
-void SPI_cursor_fetch_my(const char *src, Portal portal, bool forward, long count) {
+void SPI_cursor_fetch_my(Portal portal, bool forward, long count) {
     CurrentResourceOwner = SPIResourceOwner;
     SPI_freetuptable(SPI_tuptable);
     SPI_cursor_fetch(portal, forward, count);

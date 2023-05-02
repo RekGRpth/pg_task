@@ -261,7 +261,7 @@ static void work_reset(void) {
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     portal = SPI_cursor_open_my(src.data, plan, NULL, NULL);
     do {
-        SPI_cursor_fetch_my(src.data, portal, true, work_fetch);
+        SPI_cursor_fetch_my(portal, true, work_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
     } while (SPI_processed);
     SPI_cursor_close_my(src.data, portal);
@@ -583,7 +583,7 @@ static void work_sleep(void) {
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     portal = SPI_cursor_open_my(src.data, plan, NULL, NULL);
     do {
-        SPI_cursor_fetch_my(src.data, portal, true, work_fetch);
+        SPI_cursor_fetch_my(portal, true, work_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
             Task *t = MemoryContextAllocZero(TopMemoryContext, sizeof(*t));
