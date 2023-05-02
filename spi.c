@@ -37,6 +37,7 @@ Portal SPI_cursor_open_my(const char *src, SPIPlanPtr plan, Datum *values, const
     if (!(portal = SPI_cursor_open(src, plan, values, nulls, false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open failed"), errdetail("%s", SPI_result_code_string(SPI_result))));
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
+    check_log_duration_my(src, "bind");
     return portal;
 }
 
@@ -48,6 +49,7 @@ Portal SPI_cursor_open_with_args_my(const char *src, int nargs, Oid *argtypes, D
     if (!(portal = SPI_cursor_open_with_args(src, src, nargs, argtypes, values, nulls, false, 0))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open_with_args failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
+    check_log_duration_my(src, "bind");
     return portal;
 }
 
@@ -78,21 +80,22 @@ void SPI_connect_my(const char *src) {
     MemoryContextSwitchTo(TopMemoryContext);
 }
 
-void SPI_cursor_close_my(const char *src, Portal portal) {
+void SPI_cursor_close_my(Portal portal) {
     CurrentResourceOwner = SPIResourceOwner;
     SPI_freetuptable(SPI_tuptable);
     SPI_cursor_close(portal);
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
-    check_log_duration_my(src, "execute fetch from");
 }
 
-void SPI_cursor_fetch_my(Portal portal, bool forward, long count) {
+void SPI_cursor_fetch_my(const char *src, Portal portal, bool forward, long count) {
+    check_log_statement_my(src);
     CurrentResourceOwner = SPIResourceOwner;
     SPI_freetuptable(SPI_tuptable);
     SPI_cursor_fetch(portal, forward, count);
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
+    check_log_duration_my(src, "execute fetch from");
 }
 
 void SPI_execute_plan_my(const char *src, SPIPlanPtr plan, Datum *values, const char *nulls, int res) {
