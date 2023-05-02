@@ -11,7 +11,7 @@ static void check_log_statement_my(const char *src) {
     if (was_logged) ereport(LOG, (errmsg("statement: %s", src), errhidestmt(true)));
 }
 
-static void check_log_duration_my(const char *src, const char *stmt) {
+static void check_log_duration_my(const char *stmt, const char *src) {
     char msec_str[32];
     switch (check_log_duration(msec_str, was_logged)) {
         case 1: ereport(LOG, (errmsg("duration: %s ms", msec_str), errhidestmt(true))); break;
@@ -37,7 +37,7 @@ Portal SPI_cursor_open_my(const char *src, SPIPlanPtr plan, Datum *values, const
     if (!(portal = SPI_cursor_open(NULL, plan, values, nulls, false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open failed"), errdetail("%s", SPI_result_code_string(SPI_result))));
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
-    check_log_duration_my(src, "bind");
+    check_log_duration_my("bind", src);
     return portal;
 }
 
@@ -49,7 +49,7 @@ Portal SPI_cursor_open_with_args_my(const char *src, int nargs, Oid *argtypes, D
     if (!(portal = SPI_cursor_open_with_args(NULL, src, nargs, argtypes, values, nulls, false, 0))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open_with_args failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
-    check_log_duration_my(src, "bind");
+    check_log_duration_my("bind", src);
     return portal;
 }
 
@@ -62,7 +62,7 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_keepplan failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
-    check_log_duration_my(src, "parse");
+    check_log_duration_my("parse", src);
     return plan;
 }
 
@@ -95,7 +95,7 @@ void SPI_cursor_fetch_my(const char *src, Portal portal, bool forward, long coun
     SPI_cursor_fetch(portal, forward, count);
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
-    check_log_duration_my(src, "execute fetch from");
+    check_log_duration_my("execute fetch from", src);
 }
 
 void SPI_execute_plan_my(const char *src, SPIPlanPtr plan, Datum *values, const char *nulls, int res) {
@@ -106,7 +106,7 @@ void SPI_execute_plan_my(const char *src, SPIPlanPtr plan, Datum *values, const 
     if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != res) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_execute_plan failed"), errdetail("%s while expecting %s", SPI_result_code_string(rc), SPI_result_code_string(res))));
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
-    check_log_duration_my(src, "execute");
+    check_log_duration_my("execute", src);
 }
 
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res) {
@@ -117,7 +117,7 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
     if ((rc = SPI_execute_with_args(src, nargs, argtypes, values, nulls, false, 0)) != res) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_execute_with_args failed"), errdetail("%s while expecting %s", SPI_result_code_string(rc), SPI_result_code_string(res)), errcontext("%s", src)));
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
-    check_log_duration_my(src, "statement");
+    check_log_duration_my("statement", src);
 }
 
 void SPI_finish_my(void) {
