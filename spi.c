@@ -3,6 +3,7 @@
 static bool was_logged;
 
 static bool check_log_statement(void) {
+    SetCurrentStatementStartTimestamp();
     if (log_statement == LOGSTMT_NONE) was_logged = false;
     else if (log_statement == LOGSTMT_ALL) was_logged = true;
     else was_logged = false;
@@ -22,7 +23,6 @@ Portal SPI_cursor_open_my(const char *src, SPIPlanPtr plan, Datum *values, const
     SPI_freetuptable(SPI_tuptable);
     debug_query_string = src;
     if (check_log_statement()) ereport(LOG, (errmsg("statement: %s", src), errhidestmt(true)));
-    SetCurrentStatementStartTimestamp();
     CurrentResourceOwner = SPIResourceOwner;
     if (!(portal = SPI_cursor_open(src, plan, values, nulls, false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open failed"), errdetail("%s", SPI_result_code_string(SPI_result))));
     CurrentResourceOwner = AuxProcessResourceOwner;
@@ -35,7 +35,6 @@ Portal SPI_cursor_open_with_args_my(const char *src, int nargs, Oid *argtypes, D
     SPI_freetuptable(SPI_tuptable);
     debug_query_string = src;
     if (check_log_statement()) ereport(LOG, (errmsg("statement: %s", src), errhidestmt(true)));
-    SetCurrentStatementStartTimestamp();
     CurrentResourceOwner = SPIResourceOwner;
     if (!(portal = SPI_cursor_open_with_args(src, src, nargs, argtypes, values, nulls, false, 0))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open_with_args failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
     CurrentResourceOwner = AuxProcessResourceOwner;
@@ -49,7 +48,6 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     SPIPlanPtr plan;
     debug_query_string = src;
     if (check_log_statement()) ereport(LOG, (errmsg("statement: %s", src), errhidestmt(true)));
-    SetCurrentStatementStartTimestamp();
     CurrentResourceOwner = SPIResourceOwner;
     if (!(plan = SPI_prepare(src, nargs, argtypes))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_prepare failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
     if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_keepplan failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
@@ -101,7 +99,6 @@ void SPI_execute_plan_my(const char *src, SPIPlanPtr plan, Datum *values, const 
     SPI_freetuptable(SPI_tuptable);
     debug_query_string = src;
     if (check_log_statement()) ereport(LOG, (errmsg("statement: %s", src), errhidestmt(true)));
-    SetCurrentStatementStartTimestamp();
     CurrentResourceOwner = SPIResourceOwner;
     if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != res) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_execute_plan failed"), errdetail("%s while expecting %s", SPI_result_code_string(rc), SPI_result_code_string(res))));
     switch (check_log_duration(msec_str, was_logged)) {
@@ -120,7 +117,6 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
     SPI_freetuptable(SPI_tuptable);
     debug_query_string = src;
     if (check_log_statement()) ereport(LOG, (errmsg("statement: %s", src), errhidestmt(true)));
-    SetCurrentStatementStartTimestamp();
     CurrentResourceOwner = SPIResourceOwner;
     if ((rc = SPI_execute_with_args(src, nargs, argtypes, values, nulls, false, 0)) != res) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_execute_with_args failed"), errdetail("%s while expecting %s", SPI_result_code_string(rc), SPI_result_code_string(res)), errcontext("%s", src)));
     switch (check_log_duration(msec_str, was_logged)) {
