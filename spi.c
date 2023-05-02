@@ -34,7 +34,7 @@ Portal SPI_cursor_open_my(const char *src, SPIPlanPtr plan, Datum *values, const
     SPI_freetuptable(SPI_tuptable);
     check_log_statement_my(src);
     CurrentResourceOwner = SPIResourceOwner;
-    if (!(portal = SPI_cursor_open(src, plan, values, nulls, false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open failed"), errdetail("%s", SPI_result_code_string(SPI_result))));
+    if (!(portal = SPI_cursor_open(NULL, plan, values, nulls, false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open failed"), errdetail("%s", SPI_result_code_string(SPI_result))));
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
     check_log_duration_my(src, "bind");
