@@ -1,5 +1,7 @@
 #include "include.h"
 
+#include <executor/spi_priv.h>
+
 typedef enum STMT_TYPE {
     STMT_BIND,
     STMT_EXECUTE,
@@ -20,6 +22,30 @@ static const char *stmt_type(STMT_TYPE stmt) {
     }
 }
 
+static void errdetail_params_my(int nargs, Oid *argtypes, Datum *values, const char *nulls) {
+    if (values && nargs > 0 && !IsAbortedTransactionBlockState()) { /* We mustn't call user-defined I/O functions when in an aborted xact */
+        StringInfoData buf;
+        MemoryContext oldcontext = MemoryContextSwitchTo(MessageContext); /* Make sure any trash is generated in MessageContext */
+        initStringInfo(&buf);
+        for (int i = 0; i < nargs; i++) {
+            appendStringInfo(&buf, "%s$%d = ", i > 0 ? ", " : "", i + 1);
+            if ((nulls && nulls[i] == 'n') || !OidIsValid(argtypes[i])) appendStringInfoString(&buf, "NULL"); else {
+                char *pstring = OidOutputFunctionCall(argtypes[i], values[i]);
+                appendStringInfoCharMacro(&buf, '\'');
+                for (char *p = pstring; *p; p++)  {
+                    if (*p == '\'') appendStringInfoCharMacro(&buf, *p); /* double single quotes */
+                    appendStringInfoCharMacro(&buf, *p);
+                }
+                appendStringInfoCharMacro(&buf, '\'');
+                pfree(pstring);
+            }
+        }
+        errdetail("parameters: %s", buf.data);
+        pfree(buf.data);
+        MemoryContextSwitchTo(oldcontext);
+    }
+}
+
 static void check_log_statement_my(STMT_TYPE stmt, const char *src, bool logged) {
     if (!logged) was_logged = false;
     else if (log_statement == LOGSTMT_NONE) was_logged = false;
@@ -31,11 +57,11 @@ static void check_log_statement_my(STMT_TYPE stmt, const char *src, bool logged)
     else if (was_logged) ereport(LOG, (errmsg("%s: %s", stmt_type(stmt), src), errhidestmt(true)));
 }
 
-static void check_log_duration_my(STMT_TYPE stmt, const char *src) {
+static void check_log_duration_my(STMT_TYPE stmt, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
     char msec_str[32];
     switch (check_log_duration(msec_str, was_logged)) {
         case 1: ereport(LOG, (errmsg("duration: %s ms", msec_str), errhidestmt(true))); break;
-        case 2: ereport(LOG, (errmsg("duration: %s ms  %s: %s", msec_str, stmt_type(stmt), src), errhidestmt(true))); break;
+        case 2: ereport(LOG, (errmsg("duration: %s ms  %s: %s", msec_str, stmt_type(stmt), src), errhidestmt(true), errdetail_params_my(nargs, argtypes, values, nulls))); break;
     }
     debug_query_string = NULL;
     was_logged = false;
@@ -57,7 +83,7 @@ Portal SPI_cursor_open_my(const char *src, SPIPlanPtr plan, Datum *values, const
     if (!(portal = SPI_cursor_open(NULL, plan, values, nulls, false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open failed"), errdetail("%s", SPI_result_code_string(SPI_result))));
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
-    check_log_duration_my(STMT_BIND, src);
+    check_log_duration_my(STMT_BIND, src, plan->nargs, plan->argtypes, values, nulls);
     return portal;
 }
 
@@ -69,7 +95,7 @@ Portal SPI_cursor_open_with_args_my(const char *src, int nargs, Oid *argtypes, D
     if (!(portal = SPI_cursor_open_with_args(NULL, src, nargs, argtypes, values, nulls, false, 0))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open_with_args failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
-    check_log_duration_my(STMT_BIND, src);
+    check_log_duration_my(STMT_BIND, src, nargs, argtypes, values, nulls);
     return portal;
 }
 
@@ -82,7 +108,7 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_keepplan failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
-    check_log_duration_my(STMT_PARSE, src);
+    check_log_duration_my(STMT_PARSE, src, 0, NULL, NULL, NULL);
     return plan;
 }
 
@@ -115,7 +141,7 @@ void SPI_cursor_fetch_my(const char *src, Portal portal, bool forward, long coun
     SPI_cursor_fetch(portal, forward, count);
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
-    check_log_duration_my(STMT_FETCH, src);
+    check_log_duration_my(STMT_FETCH, src, 0, NULL, NULL, NULL);
 }
 
 void SPI_execute_plan_my(const char *src, SPIPlanPtr plan, Datum *values, const char *nulls, int res) {
@@ -126,7 +152,7 @@ void SPI_execute_plan_my(const char *src, SPIPlanPtr plan, Datum *values, const 
     if ((rc = SPI_execute_plan(plan, values, nulls, false, 0)) != res) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_execute_plan failed"), errdetail("%s while expecting %s", SPI_result_code_string(rc), SPI_result_code_string(res))));
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
-    check_log_duration_my(STMT_EXECUTE, src);
+    check_log_duration_my(STMT_EXECUTE, src, plan->nargs, plan->argtypes, values, nulls);
 }
 
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res) {
@@ -137,7 +163,7 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
     if ((rc = SPI_execute_with_args(src, nargs, argtypes, values, nulls, false, 0)) != res) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_execute_with_args failed"), errdetail("%s while expecting %s", SPI_result_code_string(rc), SPI_result_code_string(res)), errcontext("%s", src)));
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
-    check_log_duration_my(STMT_STATEMENT, src);
+    check_log_duration_my(STMT_STATEMENT, src, nargs, argtypes, values, nulls);
 }
 
 void SPI_finish_my(void) {
