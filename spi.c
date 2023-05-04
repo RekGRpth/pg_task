@@ -30,7 +30,11 @@ static void errdetail_params_my(int nargs, Oid *argtypes, Datum *values, const c
         for (int i = 0; i < nargs; i++) {
             appendStringInfo(&buf, "%s$%d = ", i > 0 ? ", " : "", i + 1);
             if ((nulls && nulls[i] == 'n') || !OidIsValid(argtypes[i])) appendStringInfoString(&buf, "NULL"); else {
-                char *pstring = OidOutputFunctionCall(argtypes[i], values[i]);
+                bool typisvarlena;
+                char *pstring;
+                Oid typoutput;
+                getTypeOutputInfo(argtypes[i], &typoutput, &typisvarlena);
+                pstring = OidOutputFunctionCall(typoutput, values[i]);
                 appendStringInfoCharMacro(&buf, '\'');
                 for (char *p = pstring; *p; p++)  {
                     if (*p == '\'') appendStringInfoCharMacro(&buf, *p); /* double single quotes */
