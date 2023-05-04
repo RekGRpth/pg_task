@@ -40,7 +40,7 @@ static void task_columns(const Task *t) {
     Datum values[] = {CStringGetTextDatumMy(work.shared->schema), CStringGetTextDatumMy(work.shared->table)};
     static Oid argtypes[] = {TEXTOID, TEXTOID};
     static const char *src = SQL(
-        SELECT pg_catalog.string_agg(pg_catalog.quote_ident(column_name), ', ') AS columns FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) $1 AND table_name OPERATOR(pg_catalog.=) $2 AND column_name NOT IN ('id', 'plan', 'parent', 'start', 'stop', 'hash', 'pid', 'state', 'error', 'output')
+        SELECT pg_catalog.string_agg(pg_catalog.quote_ident(column_name), ', ') AS columns FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) $1 AND table_name OPERATOR(pg_catalog.=) $2 AND column_name OPERATOR(pg_catalog.!=) ANY(ARRAY['id', 'plan', 'parent', 'start', 'stop', 'hash', 'pid', 'state', 'error', 'output'])
     );
     SPI_execute_with_args_my(src, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
     if (SPI_processed != 1) elog(WARNING, "columns id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed); else {
