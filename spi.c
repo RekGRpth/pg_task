@@ -22,7 +22,7 @@ static const char *stmt_type(STMT_TYPE stmt) {
     }
 }
 
-static void errdetail_params_my(int nargs, Oid *argtypes, Datum *values, const char *nulls) {
+static int errdetail_params_my(int nargs, Oid *argtypes, Datum *values, const char *nulls) {
     if (values && nargs > 0 && !IsAbortedTransactionBlockState()) {
         MemoryContext tmpCxt = AllocSetContextCreate(CurrentMemoryContext, "BuildParamLogString", ALLOCSET_DEFAULT_SIZES);
         MemoryContext oldcontext = MemoryContextSwitchTo(tmpCxt);
@@ -48,6 +48,7 @@ static void errdetail_params_my(int nargs, Oid *argtypes, Datum *values, const c
         MemoryContextSwitchTo(oldcontext);
         MemoryContextDelete(tmpCxt);
     }
+    return 0;
 }
 
 static void check_log_statement_my(STMT_TYPE stmt, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, bool logged) {
