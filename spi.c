@@ -23,9 +23,10 @@ static const char *stmt_type(STMT_TYPE stmt) {
 }
 
 static void errdetail_params_my(int nargs, Oid *argtypes, Datum *values, const char *nulls) {
-    if (values && nargs > 0 && !IsAbortedTransactionBlockState()) { /* We mustn't call user-defined I/O functions when in an aborted xact */
+    if (values && nargs > 0 && !IsAbortedTransactionBlockState()) {
+        MemoryContext tmpCxt = AllocSetContextCreate(CurrentMemoryContext, "BuildParamLogString", ALLOCSET_DEFAULT_SIZES);
+        MemoryContext oldcontext = MemoryContextSwitchTo(tmpCxt);
         StringInfoData buf;
-        MemoryContext oldcontext = MemoryContextSwitchTo(MessageContext); /* Make sure any trash is generated in MessageContext */
         initStringInfo(&buf);
         for (int i = 0; i < nargs; i++) {
             appendStringInfo(&buf, "%s$%d = ", i > 0 ? ", " : "", i + 1);
@@ -37,16 +38,15 @@ static void errdetail_params_my(int nargs, Oid *argtypes, Datum *values, const c
                 pstring = OidOutputFunctionCall(typoutput, values[i]);
                 appendStringInfoCharMacro(&buf, '\'');
                 for (char *p = pstring; *p; p++)  {
-                    if (*p == '\'') appendStringInfoCharMacro(&buf, *p); /* double single quotes */
+                    if (*p == '\'') appendStringInfoCharMacro(&buf, *p);
                     appendStringInfoCharMacro(&buf, *p);
                 }
                 appendStringInfoCharMacro(&buf, '\'');
-                pfree(pstring);
             }
         }
         errdetail("parameters: %s", buf.data);
-        pfree(buf.data);
         MemoryContextSwitchTo(oldcontext);
+        MemoryContextDelete(tmpCxt);
     }
 }
 
