@@ -72,9 +72,12 @@ static void check_log_duration_my(STMT_TYPE stmt, const char *src, int nargs, Oi
     was_logged = false;
 }
 
-Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null) {
+Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid) {
     bool isnull;
-    Datum datum = SPI_getbinval(tuple, tupdesc, SPI_fnumber(tupdesc, fname), &isnull);
+    Datum datum;
+    int fnumber = SPI_fnumber(tupdesc, fname);
+    if (SPI_gettypeid(tupdesc, fnumber) != typeid) ereport(ERROR, (errcode(ERRCODE_MOST_SPECIFIC_TYPE_MISMATCH), errmsg("type of column \"%s\" must be \"%i\"", fname, typeid)));
+    datum = SPI_getbinval(tuple, tupdesc, fnumber, &isnull);
     if (allow_null) return datum;
     if (isnull) ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("column \"%s\" must not be null", fname)));
     return datum;

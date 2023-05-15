@@ -262,7 +262,7 @@ static void work_reset(void) {
     portal = SPI_cursor_open_my(src.data, plan, NULL, NULL);
     do {
         SPI_cursor_fetch_my(src.data, portal, true, work_fetch);
-        for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false)));
+        for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false, INT8OID)));
     } while (SPI_processed);
     SPI_cursor_close_my(portal);
     SPI_finish_my();
@@ -288,7 +288,7 @@ static void work_timeout(void) {
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(src.data, plan, NULL, NULL, SPI_OK_SELECT);
-    current_timeout = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "min", false)) : -1;
+    current_timeout = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "min", false, INT8OID)) : -1;
     elog(DEBUG1, "current_timeout = %li", current_timeout);
     SPI_finish_my();
     set_ps_display_my("idle");
@@ -588,13 +588,13 @@ static void work_sleep(void) {
             HeapTuple val = SPI_tuptable->vals[row];
             Task *t = MemoryContextAllocZero(TopMemoryContext, sizeof(*t));
             TupleDesc tupdesc = SPI_tuptable->tupdesc;
-            t->group = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "group", false));
-            t->remote = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "remote", true));
+            t->group = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "group", false, TEXTOID));
+            t->remote = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "remote", true, TEXTOID));
             t->shared = t->remote ? MemoryContextAllocZero(TopMemoryContext, sizeof(*t->shared)) : shm_toc_allocate_my(PG_TASK_MAGIC, &t->seg, sizeof(*t->shared));
             t->shared->handle = DatumGetUInt32(MyBgworkerEntry->bgw_main_arg);
-            t->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false));
-            t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false));
-            t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false));
+            t->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
+            t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false, INT8OID));
+            t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false, INT4OID));
             elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : task_null, t->shared->max);
             dlist_push_head(&head, &t->node);
         }
