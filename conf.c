@@ -165,12 +165,12 @@ void conf_main(Datum arg) {
                 WITH s AS (
                     SELECT "setdatabase", "setrole", pg_catalog.regexp_split_to_array(pg_catalog.unnest("setconfig"), '=') AS "setconfig" FROM "pg_catalog"."pg_db_role_setting"
                 ) SELECT "setdatabase", "setrole", pg_catalog.%1$s(pg_catalog.array_agg("setconfig"[1]), pg_catalog.array_agg("setconfig"[2])) AS "setconfig" FROM s GROUP BY 1, 2
-            ) SELECT    COALESCE("data", "user", pg_catalog.current_setting('pg_task.data')) AS "data",
-                        EXTRACT(epoch FROM COALESCE("reset", (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, pg_catalog.current_setting('pg_task.reset')::pg_catalog.interval))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000 AS "reset",
-                        COALESCE("schema", u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.schema', d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.schema', pg_catalog.current_setting('pg_task.schema')) AS "schema",
-                        COALESCE("table", u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.table', d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.table', pg_catalog.current_setting('pg_task.table')) AS "table",
-                        COALESCE("sleep", (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep')::pg_catalog.int8, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep')::pg_catalog.int8, pg_catalog.current_setting('pg_task.sleep')::pg_catalog.int8) AS "sleep",
-                        COALESCE("user", "data", pg_catalog.current_setting('pg_task.user')) AS "user"
+            ) SELECT    COALESCE("data", "user", pg_catalog.current_setting('pg_task.data'))::pg_catalog.text AS "data",
+                        (EXTRACT(epoch FROM COALESCE("reset", (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, pg_catalog.current_setting('pg_task.reset')::pg_catalog.interval))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int8 AS "reset",
+                        COALESCE("schema", u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.schema', d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.schema', pg_catalog.current_setting('pg_task.schema'))::pg_catalog.text AS "schema",
+                        COALESCE("table", u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.table', d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.table', pg_catalog.current_setting('pg_task.table'))::pg_catalog.text AS "table",
+                        COALESCE("sleep", (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep')::pg_catalog.int8, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep')::pg_catalog.int8, pg_catalog.current_setting('pg_task.sleep')::pg_catalog.int8)::pg_catalog.int8 AS "sleep",
+                        COALESCE("user", "data", pg_catalog.current_setting('pg_task.user'))::pg_catalog.text AS "user"
             FROM        pg_catalog.jsonb_to_recordset(pg_catalog.current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" int8, "user" text)
             LEFT JOIN   s AS d on d."setdatabase" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) COALESCE("data", "user", pg_catalog.current_setting('pg_task.data')))
             LEFT JOIN   s AS u on u."setrole" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_authid" WHERE "rolname" OPERATOR(pg_catalog.=) COALESCE("user", "data", pg_catalog.current_setting('pg_task.user')))
