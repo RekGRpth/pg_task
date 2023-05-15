@@ -217,7 +217,7 @@ bool unlock_table_pid_hash(Oid table, int pid, int hash);
 char *TextDatumGetCStringMy(Datum datum);
 const char *error_severity(int elevel);
 Datum CStringGetTextDatumMy(const char *s);
-Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null);
+Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid);
 #if PG_VERSION_NUM < 120000
 extern PGDLLIMPORT ResourceOwner AuxProcessResourceOwner;
 #endif
