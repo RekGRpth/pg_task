@@ -211,8 +211,8 @@ void conf_main(Datum arg) {
     dlist_foreach_modify(iter, (dlist_head *)&head) conf_work(dlist_container(Work, node, iter.cur));
     while (!ShutdownRequestPending) {
         int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0);
-        if (rc & WL_LATCH_SET) conf_latch();
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
+        if (rc & WL_LATCH_SET) conf_latch();
     }
     if (!unlock_data_user(MyDatabaseId, GetUserId())) elog(WARNING, "!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId());
 }
