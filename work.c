@@ -551,9 +551,11 @@ static void work_task(Task *t) {
 }
 
 static void work_sleep(void) {
+    Datum values[] = {Int32GetDatum(work.shared->run)};
     dlist_head head;
     dlist_mutable_iter iter;
     Portal portal;
+    static Oid argtypes[] = {INT4OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     elog(DEBUG1, "idle_count = %lu", idle_count);
@@ -564,9 +566,11 @@ static void work_sleep(void) {
         appendStringInfo(&src, SQL(
             WITH l AS (
                 SELECT pg_catalog.count("classid") AS "classid", "objid" FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessShareLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 5 AND "database" OPERATOR(pg_catalog.=) %2$i GROUP BY "objid"
+            ), a AS (
+                SELECT pg_catalog.count("classid") AS "run" FROM l
             ), s AS (
                 SELECT "id", t.hash, CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" OPERATOR(pg_catalog.=) "hash"
-                WHERE "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) OPERATOR(pg_catalog.>=) 0
+                WHERE "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) OPERATOR(pg_catalog.>=) 0 AND (SELECT "run" FROM a) OPERATOR(pg_catalog.<) $1
                 ORDER BY 3 DESC, 1 LIMIT pg_catalog.current_setting('pg_task.limit')::pg_catalog.int4 FOR UPDATE OF t %3$s
             ), u AS (
                 SELECT "id", "count" OPERATOR(pg_catalog.-) pg_catalog.row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM s ORDER BY s.count DESC, id
@@ -580,8 +584,8 @@ static void work_sleep(void) {
         );
     }
     SPI_connect_my(src.data);
-    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
-    portal = SPI_cursor_open_my(src.data, plan, NULL, NULL);
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    portal = SPI_cursor_open_my(src.data, plan, values, NULL);
     do {
         SPI_cursor_fetch_my(src.data, portal, true, work_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) {
