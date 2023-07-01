@@ -431,9 +431,9 @@ void task_main(Datum arg) {
     if (!lock_table_pid_hash(work.shared->oid, task.pid, task.shared->hash)) { elog(WARNING, "!lock_table_pid_hash(%i, %i, %i)", work.shared->oid, task.pid, task.shared->hash); return; }
     while (!ShutdownRequestPending) {
         int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0);
-        if (rc & WL_TIMEOUT) if (task_timeout()) ShutdownRequestPending = true;
-        if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
+        if (rc & WL_LATCH_SET) task_latch();
+        if (rc & WL_TIMEOUT) if (task_timeout()) ShutdownRequestPending = true;
     }
     if (!unlock_table_pid_hash(work.shared->oid, task.pid, task.shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work.shared->oid, task.pid, task.shared->hash);
 }

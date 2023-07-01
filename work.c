@@ -943,8 +943,8 @@ void work_main(Datum arg) {
         nevents = WaitEventSetWaitMy(set, current_timeout, events, nevents);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
-            if (event->events & WL_LATCH_SET) work_latch();
             if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
+            if (event->events & WL_LATCH_SET) work_latch();
             if (event->events & WL_SOCKET_READABLE) work_readable(event->user_data);
             if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
