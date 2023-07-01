@@ -146,6 +146,7 @@ typedef struct WorkShared {
     char user[NAMEDATALEN];
     int64 reset;
     int64 sleep;
+    int run;
     Oid oid;
 } WorkShared;
 
