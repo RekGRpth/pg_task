@@ -141,6 +141,10 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #define get_timeout_active get_timeout_finish_time
 #endif
 
+#ifndef MemoryContextResetAndDeleteChildren
+#define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
+#endif
+
 typedef struct WorkShared {
     char data[NAMEDATALEN];
     char schema[NAMEDATALEN];
