@@ -930,7 +930,7 @@ void work_main(Datum arg) {
     while (!ShutdownRequestPending) {
         int nevents = work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
-        WaitEventSet *set = CreateWaitEventSet(TopMemoryContext, nevents);
+        WaitEventSet *set = CreateWaitEventSetMy(nevents);
         work_events(set);
         if (current_reset <= 0) {
             INSTR_TIME_SET_CURRENT(start_time_reset);

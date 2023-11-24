@@ -135,6 +135,12 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #define stringToQualifiedNameListMy(string) stringToQualifiedNameList(string)
 #endif
 
+#if PG_VERSION_NUM >= 170000
+#define CreateWaitEventSetMy(nevents) CreateWaitEventSet(NULL, nevents)
+#else
+#define CreateWaitEventSetMy(nevents) CreateWaitEventSet(TopMemoryContext, nevents)
+#endif
+
 #define PG_WORK_MAGIC 0x776f726b
 
 #ifndef get_timeout_active
