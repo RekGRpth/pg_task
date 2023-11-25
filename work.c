@@ -148,21 +148,17 @@ static void work_fatal(Task *t, const PGresult *result) {
     }
 }
 
-static void work_finish(Task *t) {
+static void work_free(Task *t) {
     dlist_delete(&t->node);
-    PQfinish(t->conn);
-    if (!proc_exit_inprogress && t->pid && !unlock_table_pid_hash(work.shared->oid, t->pid, t->shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work.shared->oid, t->pid, t->shared->hash);
     task_free(t);
     pfree(t->shared);
     pfree(t);
 }
 
-static void work_free(Task *t) {
-    dlist_delete(&t->node);
-//    dsm_detach(t->seg);
-    task_free(t);
-    pfree(t->shared);
-    pfree(t);
+static void work_finish(Task *t) {
+    PQfinish(t->conn);
+    if (!proc_exit_inprogress && t->pid && !unlock_table_pid_hash(work.shared->oid, t->pid, t->shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work.shared->oid, t->pid, t->shared->hash);
+    work_free(t);
 }
 
 static int work_nevents(void) {
