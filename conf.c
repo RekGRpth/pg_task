@@ -7,7 +7,7 @@ extern int work_restart;
 extern WorkShared *workshared;
 static volatile dlist_head head;
 
-static void conf_data(Work *w) {
+static void conf_data(const Work *w) {
     List *names = stringToQualifiedNameListMy(w->data);
     StringInfoData src;
     elog(DEBUG1, "user = %s, data = %s", w->shared->user, w->shared->data);
@@ -42,7 +42,7 @@ static void conf_proc_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
 }
 
-static void conf_user(Work *w) {
+static void conf_user(const Work *w) {
     List *names = stringToQualifiedNameListMy(w->user);
     StringInfoData src;
     elog(DEBUG1, "user = %s", w->shared->user);
