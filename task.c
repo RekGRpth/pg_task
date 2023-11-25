@@ -15,7 +15,7 @@ extern Work work;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 Task task = {0};
 
-static bool task_live(Task *t) {
+static bool task_live(const Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start)};
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPIPlanPtr plan = NULL;
