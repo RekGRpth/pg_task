@@ -307,8 +307,7 @@ static void task_execute(void) {
 static void task_proc_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-//    workshared[DatumGetInt32(arg)].in_use = false;
-    MemSet(&taskshared[DatumGetInt32(arg)], 0, sizeof(TaskShared));
+    MemSet(&taskshared[DatumGetInt32(arg)], 0, sizeof(*taskshared));
     LWLockRelease(BackgroundWorkerLock);
 }
 
@@ -373,9 +372,9 @@ void task_free(Task *t) {
 void task_main(Datum arg) {
     const char *application_name;
     StringInfoData oid, schema_table;
-    task.shared = *taskshared;
-    work.shared = *workshared;
-    SetLatch(taskshared->latch);
+    elog(DEBUG1, "arg = %i", DatumGetInt32(arg));
+    task.shared = taskshared[DatumGetInt32(arg)];
+    work.shared = workshared[task.shared.slot];
     on_proc_exit(task_proc_exit, arg);
     BackgroundWorkerUnblockSignals();
     work.data = quote_identifier(work.shared.data);

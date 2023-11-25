@@ -66,6 +66,25 @@ static void conf_user(Work *w) {
     set_ps_display_my("idle");
 }
 
+static int conf_bgw_main_arg(WorkShared *ws) {
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    for (int slot = 0; slot < max_worker_processes; slot++) if (!workshared[slot].in_use) {
+        workshared[slot] = *ws;
+        workshared[slot].in_use = true;
+        LWLockRelease(BackgroundWorkerLock);
+        elog(DEBUG1, "slot = %i", slot);
+        return slot;
+    }
+    LWLockRelease(BackgroundWorkerLock);
+    ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not find empty slot")));
+}
+
+static void conf_workshared_free(int slot) {
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    MemSet(&workshared[slot], 0, sizeof(*workshared));
+    LWLockRelease(BackgroundWorkerLock);
+}
+
 static void conf_work(Work *w) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker = {0};
@@ -84,23 +103,21 @@ static void conf_work(Work *w) {
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
+    worker.bgw_main_arg = conf_bgw_main_arg(&w->shared);
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = work_restart;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    *workshared = w->shared;
-    workshared->latch = MyLatch;
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
-    switch (WaitForBackgroundWorkerStartup(handle, &w->pid)) {
-        case BGWH_NOT_YET_STARTED: ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
-        case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
-        case BGWH_STARTED: elog(DEBUG1, "started"); break;
-        case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) {
+        conf_workshared_free(worker.bgw_main_arg);
+        ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
     }
-    (void)WaitLatchMy(MyLatch, WL_LATCH_SET, 0);
-    elog(DEBUG1, "latched");
-    ResetLatch(MyLatch);
-    pfree(handle);
-    conf_free(w);
+    switch (WaitForBackgroundWorkerStartup(handle, &w->pid)) {
+        case BGWH_NOT_YET_STARTED: conf_workshared_free(worker.bgw_main_arg); ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
+        case BGWH_POSTMASTER_DIED: conf_workshared_free(worker.bgw_main_arg); ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
+        case BGWH_STARTED: elog(DEBUG1, "started"); conf_free(w); break;
+        case BGWH_STOPPED: conf_workshared_free(worker.bgw_main_arg); ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
+    }
+    if (handle) pfree(handle);
 }
 
 void conf_main(Datum arg) {

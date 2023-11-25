@@ -423,6 +423,11 @@ static void work_connect(Task *t) {
 static void work_proc_exit(int code, Datum arg) {
     dlist_mutable_iter iter;
     elog(DEBUG1, "code = %i", code);
+    if (!code) {
+        LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+        MemSet(&workshared[DatumGetInt32(arg)], 0, sizeof(*workshared));
+        LWLockRelease(BackgroundWorkerLock);
+    }
     dlist_foreach_modify(iter, &head) {
         Task *t = dlist_container(Task, node, iter.cur);
         if (PQstatus(t->conn) == CONNECTION_OK) {
@@ -508,6 +513,25 @@ static void work_remote(Task *t) {
     t->group = NULL;
 }
 
+static int work_bgw_main_arg(TaskShared *ts) {
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    for (int slot = 0; slot < max_worker_processes; slot++) if (!taskshared[slot].in_use) {
+        taskshared[slot] = *ts;
+        taskshared[slot].in_use = true;
+        LWLockRelease(BackgroundWorkerLock);
+        elog(DEBUG1, "slot = %i", slot);
+        return slot;
+    }
+    LWLockRelease(BackgroundWorkerLock);
+    ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not find empty slot")));
+}
+
+static void work_taskshared_free(int slot) {
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    MemSet(&taskshared[slot], 0, sizeof(*taskshared));
+    LWLockRelease(BackgroundWorkerLock);
+}
+
 static void work_task(Task *t) {
     BackgroundWorkerHandle *handle = NULL;
     BackgroundWorker worker = {0};
@@ -520,24 +544,21 @@ static void work_task(Task *t) {
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) { work_ereport(true, ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type)))); return; }
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
+    worker.bgw_main_arg = work_bgw_main_arg(&t->shared);
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    *taskshared = t->shared;
-    taskshared->latch = MyLatch;
-    *workshared = work.shared;
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) { work_ereport(true, ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\"."))); return; }
-    switch (WaitForBackgroundWorkerStartup(handle, &t->pid)) {
-        case BGWH_NOT_YET_STARTED: work_ereport(true, ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
-        case BGWH_POSTMASTER_DIED: work_ereport(true, ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
-        case BGWH_STARTED: elog(DEBUG1, "started id = %li", t->shared.id); break;
-        case BGWH_STOPPED: work_ereport(true, ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
+    t->shared.slot = DatumGetUInt32(MyBgworkerEntry->bgw_main_arg);
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) {
+        work_taskshared_free(worker.bgw_main_arg);
+        work_ereport(true, ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
+    } else switch (WaitForBackgroundWorkerStartup(handle, &t->pid)) {
+        case BGWH_NOT_YET_STARTED: work_taskshared_free(worker.bgw_main_arg); work_ereport(true, ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
+        case BGWH_POSTMASTER_DIED: work_taskshared_free(worker.bgw_main_arg); work_ereport(true, ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
+        case BGWH_STARTED: elog(DEBUG1, "started id = %li", t->shared.id); work_free(t); break;
+        case BGWH_STOPPED: work_taskshared_free(worker.bgw_main_arg); work_ereport(true, ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
-    (void)WaitLatchMy(MyLatch, WL_LATCH_SET, 0);
-    elog(DEBUG1, "latched id = %li", t->shared.id);
-    ResetLatch(MyLatch);
-    pfree(handle);
-    work_free(t);
+    if (handle) pfree(handle);
 }
 
 static void work_sleep(void) {
@@ -831,8 +852,8 @@ void work_main(Datum arg) {
     long current_reset = -1;
     long current_sleep = -1;
     StringInfoData schema_table, schema_type;
-    work.shared = *workshared;
-    SetLatch(workshared->latch);
+    elog(DEBUG1, "arg = %i", DatumGetInt32(arg));
+    work.shared = workshared[DatumGetInt32(arg)];
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_DISPATCH;
     optimizer = false;

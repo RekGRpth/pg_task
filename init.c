@@ -196,22 +196,29 @@ static void init_assign_sleep(int newval, void *extra) { init_assign_int("pg_tas
 static void init_assign_table(const char *newval, void *extra) { init_assign_string("pg_task.table", newval, extra); }
 static void init_assign_user(const char *newval, void *extra) { init_assign_string("pg_task.user", newval, extra); }
 
+static size_t init_taskshared_memsize(void) {
+    return mul_size(max_worker_processes, sizeof(*taskshared));
+}
+
+static size_t init_workshared_memsize(void) {
+    return mul_size(max_worker_processes, sizeof(*workshared));
+}
 
 #if PG_VERSION_NUM >= 150000
 static void init_shmem_request_hook(void) {
     if (prev_shmem_request_hook) prev_shmem_request_hook();
-    RequestAddinShmemSpace(sizeof(*taskshared));
-    RequestAddinShmemSpace(sizeof(*workshared));
+    RequestAddinShmemSpace(init_taskshared_memsize());
+    RequestAddinShmemSpace(init_workshared_memsize());
 }
 #endif
 
 static void init_shmem_startup_hook(void) {
     bool found;
     if (prev_shmem_startup_hook) prev_shmem_startup_hook();
-    taskshared = ShmemInitStruct("pg_taskshared", sizeof(*taskshared), &found);
-    if (!found) MemSet(taskshared, 0, sizeof(*taskshared));
-    workshared = ShmemInitStruct("pg_workshared", sizeof(*workshared), &found);
-    if (!found) MemSet(workshared, 0, sizeof(*workshared));
+    taskshared = ShmemInitStruct("pg_taskshared", init_taskshared_memsize(), &found);
+    if (!found) MemSet(taskshared, 0, init_taskshared_memsize());
+    workshared = ShmemInitStruct("pg_workshared", init_workshared_memsize(), &found);
+    if (!found) MemSet(workshared, 0, init_workshared_memsize());
 }
 
 void initStringInfoMy(StringInfoData *buf) {
@@ -265,8 +272,8 @@ void _PG_init(void) {
     prev_shmem_request_hook = shmem_request_hook;
     shmem_request_hook = init_shmem_request_hook;
 #elif PG_VERSION_NUM >= 90600
-    RequestAddinShmemSpace(sizeof(*taskshared));
-    RequestAddinShmemSpace(sizeof(*workshared));
+    RequestAddinShmemSpace(init_taskshared_memsize());
+    RequestAddinShmemSpace(init_workshared_memsize());
 #endif
     init_conf(false);
 }

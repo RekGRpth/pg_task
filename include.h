@@ -144,6 +144,7 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 
 
 typedef struct WorkShared {
+    bool in_use;
     char data[NAMEDATALEN];
     char schema[NAMEDATALEN];
     char table[NAMEDATALEN];
@@ -151,7 +152,6 @@ typedef struct WorkShared {
     int64 reset;
     int64 sleep;
     int run;
-    Latch *latch;
     Oid oid;
 } WorkShared;
 
@@ -170,10 +170,11 @@ typedef struct Work {
 } Work;
 
 typedef struct TaskShared {
+    bool in_use;
     int64 id;
     int hash;
     int max;
-    Latch *latch;
+    int slot;
 } TaskShared;
 
 typedef struct Task {
