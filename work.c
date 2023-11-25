@@ -417,7 +417,7 @@ static void work_connect(Task *t) {
     }
 }
 
-static void work_proc_exit(int code, Datum arg) {
+static void work_shmem_exit(int code, Datum arg) {
     dlist_mutable_iter iter;
     elog(DEBUG1, "code = %i", code);
     if (!code) {
@@ -859,7 +859,7 @@ void work_main(Datum arg) {
     Gp_session_role = GP_ROLE_DISPATCH;
 #endif
 #endif
-    on_proc_exit(work_proc_exit, arg);
+    on_shmem_exit(work_shmem_exit, arg);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGINT, work_idle);
     BackgroundWorkerUnblockSignals();

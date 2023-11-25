@@ -38,7 +38,7 @@ static void conf_free(Work *w) {
     pfree(w);
 }
 
-static void conf_proc_exit(int code, Datum arg) {
+static void conf_shmem_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
 }
 
@@ -125,7 +125,7 @@ void conf_main(Datum arg) {
     dlist_mutable_iter iter;
     Portal portal;
     StringInfoData src;
-    on_proc_exit(conf_proc_exit, (Datum)NULL);
+    on_shmem_exit(conf_shmem_exit, (Datum)NULL);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL);
     MemoryContextSwitchTo(TopMemoryContext);

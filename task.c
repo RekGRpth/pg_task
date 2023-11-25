@@ -304,7 +304,7 @@ static void task_execute(void) {
     if (IsTransactionState()) ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION), errmsg("still active sql transaction")));
 }
 
-static void task_proc_exit(int code, Datum arg) {
+static void task_shmem_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
     MemSet(&taskshared[DatumGetInt32(arg)], 0, sizeof(*taskshared));
@@ -375,7 +375,7 @@ void task_main(Datum arg) {
     elog(DEBUG1, "arg = %i", DatumGetInt32(arg));
     task.shared = &taskshared[DatumGetInt32(arg)];
     work.shared = &workshared[task.shared->slot];
-    on_proc_exit(task_proc_exit, arg);
+    on_shmem_exit(task_shmem_exit, arg);
     BackgroundWorkerUnblockSignals();
     work.data = quote_identifier(work.shared->data);
     work.schema = quote_identifier(work.shared->schema);
