@@ -48,7 +48,6 @@ extern void SignalHandlerForConfigReload(SIGNAL_ARGS);
 extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #endif
 #include <replication/slot.h>
-#include <storage/dsm.h>
 #include <storage/ipc.h>
 #include <storage/latch.h>
 #include <storage/procarray.h>
@@ -76,10 +75,8 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #endif
 
 #if PG_VERSION_NUM >= 90500
-#define dsm_create_my(size) dsm_create(size, 0)
 #define set_config_option_my(name, value, context, source, action, changeVal, elevel) set_config_option(name, value, context, source, action, changeVal, elevel, false)
 #else
-#define dsm_create_my(size) dsm_create(size)
 #define MyLatch (&MyProc->procLatch)
 #define set_config_option_my(name, value, context, source, action, changeVal, elevel) set_config_option(name, value, context, source, action, changeVal, elevel)
 #endif
@@ -141,15 +138,10 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #define CreateWaitEventSetMy(nevents) CreateWaitEventSet(TopMemoryContext, nevents)
 #endif
 
-#define PG_WORK_MAGIC 0x776f726b
-
-#ifndef get_timeout_active
-#define get_timeout_active get_timeout_finish_time
-#endif
-
 #ifndef MemoryContextResetAndDeleteChildren
 #define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
 #endif
+
 
 typedef struct WorkShared {
     char data[NAMEDATALEN];
@@ -159,6 +151,7 @@ typedef struct WorkShared {
     int64 reset;
     int64 sleep;
     int run;
+    Latch *latch;
     Oid oid;
 } WorkShared;
 
@@ -171,20 +164,16 @@ typedef struct Work {
     const char *table;
     const char *user;
     dlist_node node;
-    dsm_segment *seg;
     int hash;
     pid_t pid;
-    TimestampTz start;
-    WorkShared *shared;
+    WorkShared shared;
 } Work;
 
-#define PG_TASK_MAGIC 0x7461736b
-
 typedef struct TaskShared {
-    dsm_handle handle;
     int64 id;
     int hash;
     int max;
+    Latch *latch;
 } TaskShared;
 
 typedef struct Task {
@@ -200,7 +189,6 @@ typedef struct Task {
     char quote;
     char *remote;
     dlist_node node;
-    dsm_segment *seg;
     int count;
     int event;
     int pid;
@@ -209,7 +197,7 @@ typedef struct Task {
     PGconn *conn;
     StringInfoData error;
     StringInfoData output;
-    TaskShared *shared;
+    TaskShared shared;
     TimestampTz start;
     uint64 row;
     void (*socket) (struct Task *t);
@@ -253,7 +241,6 @@ void _PG_init(void);
 #if PG_VERSION_NUM < 120000
 void ReleaseAuxProcessResources(bool isCommit);
 #endif
-void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes);
 void SPI_connect_my(const char *src);
 void SPI_cursor_close_my(Portal portal);
 void SPI_cursor_fetch_my(const char *src, Portal portal, bool forward, long count);

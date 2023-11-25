@@ -4,12 +4,12 @@ extern char *task_null;
 extern int task_idle;
 extern int work_close;
 extern int work_fetch;
+extern TaskShared *taskshared;
 extern Task task;
+extern WorkShared *workshared;
 long current_timeout;
-static dlist_head remote;
+static dlist_head head;
 static emit_log_hook_type emit_log_hook_prev = NULL;
-static volatile dlist_head local;
-static volatile TimeoutId timeout;
 static volatile uint64 idle_count = 0;
 Work work = {0};
 
@@ -72,7 +72,7 @@ static void work_check(void) {
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(src.data, plan, NULL, NULL, SPI_OK_SELECT);
     if (!SPI_processed) ShutdownRequestPending = true;
-    elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, SPI_processed = %li", work.shared->sleep, work.shared->reset, work.shared->schema, work.shared->table, (long)SPI_processed);
+    elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, SPI_processed = %li", work.shared.sleep, work.shared.reset, work.shared.schema, work.shared.table, (long)SPI_processed);
     SPI_finish_my();
     set_ps_display_my("idle");
 }
@@ -87,7 +87,7 @@ static void work_events(WaitEventSet *set) {
     dlist_mutable_iter iter;
     AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
     AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
-    dlist_foreach_modify(iter, &remote) {
+    dlist_foreach_modify(iter, &head) {
         Task *t = dlist_container(Task, node, iter.cur);
         AddWaitEventToSet(set, t->event, PQsocket(t->conn), NULL, t);
     }
@@ -151,15 +151,15 @@ static void work_fatal(Task *t, const PGresult *result) {
 static void work_finish(Task *t) {
     dlist_delete(&t->node);
     PQfinish(t->conn);
-    if (!proc_exit_inprogress && t->pid && !unlock_table_pid_hash(work.shared->oid, t->pid, t->shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work.shared->oid, t->pid, t->shared->hash);
+    if (!proc_exit_inprogress && t->pid && !unlock_table_pid_hash(work.shared.oid, t->pid, t->shared.hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work.shared.oid, t->pid, t->shared.hash);
     task_free(t);
-    pfree(t->shared);
+//    pfree(t->shared);
     pfree(t);
 }
 
 static void work_free(Task *t) {
     dlist_delete(&t->node);
-    dsm_detach(t->seg);
+//    dsm_detach(t->seg);
     task_free(t);
     pfree(t);
 }
@@ -167,25 +167,13 @@ static void work_free(Task *t) {
 static int work_nevents(void) {
     dlist_mutable_iter iter;
     int nevents = 2;
-    dlist_foreach_modify(iter, &remote) {
+    dlist_foreach_modify(iter, &head) {
         Task *t = dlist_container(Task, node, iter.cur);
         if (PQstatus(t->conn) == CONNECTION_BAD) { work_ereport(true, ERROR, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
         if (PQsocket(t->conn) == PGINVALID_SOCKET) { work_ereport(true, ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsocket == PGINVALID_SOCKET"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
         nevents++;
     }
     return nevents;
-}
-
-static void work_handler(void) {
-    dlist_mutable_iter iter;
-    TimestampTz finish = get_timeout_finish_time(timeout), min = 0;
-    dlist_foreach_modify(iter, (dlist_head *)&local) {
-        Task *t = dlist_container(Task, node, iter.cur);
-        TimestampTz start = TimestampTzPlusMilliseconds(t->start, work_close);
-        if (finish >= start) { work_ereport(true, ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task timeout"))); }
-        else if (min == 0 || min >= start) min = start;
-    }
-    if (!dlist_is_empty((dlist_head *)&local)) enable_timeout_at(timeout, min);
 }
 
 static void work_index(int count, const char *const *indexes) {
@@ -196,7 +184,7 @@ static void work_index(int count, const char *const *indexes) {
     StringInfoData src, name, idx;
     set_ps_display_my("index");
     initStringInfoMy(&name);
-    appendStringInfoString(&name, work.shared->table);
+    appendStringInfoString(&name, work.shared.table);
     for (int i = 0; i < count; i++) {
         const char *index = indexes[i];
         appendStringInfoString(&name, "_");
@@ -224,7 +212,7 @@ static void work_index(int count, const char *const *indexes) {
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     } else if ((relation = relation_openrv_extended_my(rangevar, AccessShareLock, true))) {
-        if (relation->rd_index && relation->rd_index->indrelid != work.shared->oid) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        if (relation->rd_index && relation->rd_index->indrelid != work.shared.oid) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         relation_close(relation, AccessShareLock);
     }
     SPI_finish_my();
@@ -249,7 +237,7 @@ static void work_reset(void) {
                 SELECT "id" FROM %1$s AS t LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$i AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.<<) 32 OPERATOR(pg_catalog.>>) 32)
                 WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND l.pid IS NULL FOR UPDATE OF t %4$s
             ) UPDATE %1$s AS t SET "state" = 'PLAN', "start" = NULL, "stop" = NULL, "pid" = NULL FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id::pg_catalog.int8
-        ), work.schema_table, work.shared->oid, work.schema_type,
+        ), work.schema_table, work.shared.oid, work.schema_type,
 #if PG_VERSION_NUM >= 90500
             "SKIP LOCKED"
 #else
@@ -283,7 +271,7 @@ static void work_timeout(void) {
            )))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000, EXTRACT(epoch FROM ((
                 SELECT "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.-) CURRENT_TIMESTAMP AS "plan" FROM %1$s WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.>=) CURRENT_TIMESTAMP ORDER BY 1 LIMIT 1
            )))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000), -1)::pg_catalog.int8 as "min"
-        ), work.schema_table, work.shared->oid, work.schema_type);
+        ), work.schema_table, work.shared.oid, work.schema_type);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
@@ -363,7 +351,7 @@ static void work_copy(Task *t) {
     switch ((len = PQgetCopyData(t->conn, &buffer, false))) {
         case 0: break;
         case -1: break;
-        case -2: work_ereport(true, ERROR, (errmsg("id = %li, PQgetCopyData == -2", t->shared->id), errdetail("%s", PQerrorMessageMy(t->conn)))); if (buffer) PQfreemem(buffer); return;
+        case -2: work_ereport(true, ERROR, (errmsg("id = %li, PQgetCopyData == -2", t->shared.id), errdetail("%s", PQerrorMessageMy(t->conn)))); if (buffer) PQfreemem(buffer); return;
         default: appendBinaryStringInfo(&t->output, buffer, len); break;
     }
     if (buffer) PQfreemem(buffer);
@@ -374,9 +362,9 @@ static void work_result(Task *t) {
     for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK && (result = PQgetResult(t->conn)); PQclear(result)) switch (PQresultStatus(result)) {
         case PGRES_COMMAND_OK: work_command(t, result); break;
         case PGRES_COPY_OUT: work_copy(t); break;
-        case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), errdetail("%s", PQresultErrorMessageMy(result)))); work_fatal(t, result); break;
+        case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared.id), errdetail("%s", PQresultErrorMessageMy(result)))); work_fatal(t, result); break;
         case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) work_success(t, result, row); break;
-        default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
+        default: elog(DEBUG1, "id = %li, %s", t->shared.id, PQresStatus(PQresultStatus(result))); break;
     }
     work_done(t);
 }
@@ -389,13 +377,13 @@ static void work_query(Task *t) {
         if (task_work(t)) { work_finish(t); return; }
         if (t->active) break;
         work_ereport(false, ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
-        if (!t->shared->id) return;
+        if (!t->shared.id) return;
     }
     initStringInfoMy(&input);
     t->skip = 0;
     appendStringInfoString(&input, SQL(BEGIN;));
     t->skip++;
-    appendStringInfo(&input, SQL(SET SESSION "pg_task.id" = %li;), t->shared->id);
+    appendStringInfo(&input, SQL(SET SESSION "pg_task.id" = %li;), t->shared.id);
     t->skip++;
     if (t->timeout) {
         appendStringInfo(&input, SQL(SET SESSION "statement_timeout" = %i;), t->timeout);
@@ -404,7 +392,7 @@ static void work_query(Task *t) {
     appendStringInfoString(&input, SQL(COMMIT;));
     t->skip++;
     appendStringInfoString(&input, t->input);
-    elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", t->shared->id, t->timeout, input.data, t->count);
+    elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", t->shared.id, t->timeout, input.data, t->count);
     if (!PQsendQuery(t->conn, input.data)) { work_ereport(true, ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); pfree(input.data); return; }
     pfree(input.data);
     t->socket = work_result;
@@ -415,19 +403,19 @@ static void work_connect(Task *t) {
     bool connected = false;
     switch (PQstatus(t->conn)) {
         case CONNECTION_BAD: work_ereport(true, ERROR, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(t->conn)))); return;
-        case CONNECTION_OK: elog(DEBUG1, "id = %li, PQstatus == CONNECTION_OK", t->shared->id); connected = true; break;
+        case CONNECTION_OK: elog(DEBUG1, "id = %li, PQstatus == CONNECTION_OK", t->shared.id); connected = true; break;
         default: break;
     }
     if (!connected) switch (PQconnectPoll(t->conn)) {
-        case PGRES_POLLING_ACTIVE: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_ACTIVE", t->shared->id); break;
+        case PGRES_POLLING_ACTIVE: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_ACTIVE", t->shared.id); break;
         case PGRES_POLLING_FAILED: work_ereport(true, ERROR, (errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectPoll failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); return;
-        case PGRES_POLLING_OK: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_OK", t->shared->id); connected = true; break;
-        case PGRES_POLLING_READING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_READING", t->shared->id); t->event = WL_SOCKET_READABLE; break;
-        case PGRES_POLLING_WRITING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_WRITING", t->shared->id); t->event = WL_SOCKET_WRITEABLE; break;
+        case PGRES_POLLING_OK: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_OK", t->shared.id); connected = true; break;
+        case PGRES_POLLING_READING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_READING", t->shared.id); t->event = WL_SOCKET_READABLE; break;
+        case PGRES_POLLING_WRITING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_WRITING", t->shared.id); t->event = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
         if (!(t->pid = PQbackendPID(t->conn))) { work_ereport(true, ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQbackendPID failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); return; }
-        if (!lock_table_pid_hash(work.shared->oid, t->pid, t->shared->hash)) { work_ereport(true, ERROR, (errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", work.shared->oid, t->pid, t->shared->hash))); return; }
+        if (!lock_table_pid_hash(work.shared.oid, t->pid, t->shared.hash)) { work_ereport(true, ERROR, (errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", work.shared.oid, t->pid, t->shared.hash))); return; }
         work_query(t);
     }
 }
@@ -435,14 +423,14 @@ static void work_connect(Task *t) {
 static void work_proc_exit(int code, Datum arg) {
     dlist_mutable_iter iter;
     elog(DEBUG1, "code = %i", code);
-    dlist_foreach_modify(iter, &remote) {
+    dlist_foreach_modify(iter, &head) {
         Task *t = dlist_container(Task, node, iter.cur);
         if (PQstatus(t->conn) == CONNECTION_OK) {
             char errbuf[256];
             PGcancel *cancel = PQgetCancel(t->conn);
             if (!cancel) { ereport(WARNING, (errmsg("PQgetCancel failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
             if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { ereport(WARNING, (errmsg("PQcancel failed"), errdetail("%s", errbuf))); PQfreeCancel(cancel); continue; }
-            elog(WARNING, "cancel id = %li", t->shared->id);
+            elog(WARNING, "cancel id = %li", t->shared.id);
             PQfreeCancel(cancel);
         }
         work_finish(t);
@@ -461,9 +449,9 @@ static void work_remote(Task *t) {
     int arg = 3;
     PQconninfoOption *opts = PQconninfoParse(t->remote, &err);
     StringInfoData name, value;
-    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : task_null, t->shared->max, work.shared->oid);
+    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared.id, t->group, t->remote ? t->remote : task_null, t->shared.max, work.shared.oid);
     dlist_delete(&t->node);
-    dlist_push_head(&remote, &t->node);
+    dlist_push_tail(&head, &t->node);
     if (!opts) { work_ereport(true, ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), errdetail("%s", work_errstr(err)))); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
@@ -478,15 +466,15 @@ static void work_remote(Task *t) {
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
     initStringInfoMy(&name);
-    appendStringInfo(&name, "pg_task %s %s %s", work.shared->schema, work.shared->table, t->group);
+    appendStringInfo(&name, "pg_task %s %s %s", work.shared.schema, work.shared.table, t->group);
     arg = 0;
     keywords[arg] = "application_name";
     values[arg] = name.data;
     initStringInfoMy(&value);
     if (options) appendStringInfoString(&value, options);
-    appendStringInfo(&value, " -c pg_task.schema=%s", work.shared->schema);
-    appendStringInfo(&value, " -c pg_task.table=%s", work.shared->table);
-    appendStringInfo(&value, " -c pg_task.oid=%i", work.shared->oid);
+    appendStringInfo(&value, " -c pg_task.schema=%s", work.shared.schema);
+    appendStringInfo(&value, " -c pg_task.table=%s", work.shared.table);
+    appendStringInfo(&value, " -c pg_task.oid=%i", work.shared.oid);
     appendStringInfo(&value, " -c pg_task.group=%s", t->group);
     arg++;
     keywords[arg] = "options";
@@ -524,34 +512,36 @@ static void work_task(Task *t) {
     BackgroundWorkerHandle *handle = NULL;
     BackgroundWorker worker = {0};
     size_t len;
-    elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", t->shared->id, t->group, t->shared->max, work.shared->oid);
-    dlist_delete(&t->node);
-    dlist_push_head((dlist_head *)&local, &t->node);
+    elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", t->shared.id, t->group, t->shared.max, work.shared.oid);
     if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) { work_ereport(true, ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name)))); return; }
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) { work_ereport(true, ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name)))); return; }
-    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work.shared->user, work.shared->data, work.shared->schema, work.shared->table, t->group)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
+    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work.shared.user, work.shared.data, work.shared.schema, work.shared.table, t->group)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
 #if PG_VERSION_NUM >= 110000
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) { work_ereport(true, ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type)))); return; }
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(t->seg));
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
+    *taskshared = t->shared;
+    taskshared->latch = MyLatch;
+    *workshared = work.shared;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) { work_ereport(true, ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\"."))); return; }
     switch (WaitForBackgroundWorkerStartup(handle, &t->pid)) {
         case BGWH_NOT_YET_STARTED: work_ereport(true, ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
         case BGWH_POSTMASTER_DIED: work_ereport(true, ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
-        case BGWH_STARTED: break;
+        case BGWH_STARTED: elog(DEBUG1, "started id = %li", t->shared.id); break;
         case BGWH_STOPPED: work_ereport(true, ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
-    t->start = GetCurrentTimestamp();
-    if (!get_timeout_active(timeout)) enable_timeout_at(timeout, TimestampTzPlusMilliseconds(t->start, work_close));
+    (void)WaitLatchMy(MyLatch, WL_LATCH_SET, 0);
+    elog(DEBUG1, "latched id = %li", t->shared.id);
+    ResetLatch(MyLatch);
     pfree(handle);
+    work_free(t);
 }
 
 static void work_sleep(void) {
-    Datum values[] = {Int32GetDatum(work.shared->run)};
+    Datum values[] = {Int32GetDatum(work.shared.run)};
     dlist_head head;
     dlist_mutable_iter iter;
     Portal portal;
@@ -573,7 +563,7 @@ static void work_sleep(void) {
             ), u AS (
                 SELECT "id", "count" OPERATOR(pg_catalog.-) pg_catalog.row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM u WHERE t.id OPERATOR(pg_catalog.=) u.id AND u.count OPERATOR(pg_catalog.>=) 0 RETURNING t.id::pg_catalog.int8, "hash"::pg_catalog.int4, "group"::pg_catalog.text, "remote"::pg_catalog.text, "max"::pg_catalog.int4
-        ), work.schema_table, work.shared->oid,
+        ), work.schema_table, work.shared.oid,
 #if PG_VERSION_NUM >= 90500
         "SKIP LOCKED"
 #else
@@ -592,13 +582,11 @@ static void work_sleep(void) {
             TupleDesc tupdesc = SPI_tuptable->tupdesc;
             t->group = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "group", false, TEXTOID));
             t->remote = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "remote", true, TEXTOID));
-            t->shared = t->remote ? MemoryContextAllocZero(TopMemoryContext, sizeof(*t->shared)) : shm_toc_allocate_my(PG_TASK_MAGIC, &t->seg, sizeof(*t->shared));
-            t->shared->handle = DatumGetUInt32(MyBgworkerEntry->bgw_main_arg);
-            t->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
-            t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false, INT8OID));
-            t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false, INT4OID));
-            elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : task_null, t->shared->max);
-            dlist_push_head(&head, &t->node);
+            t->shared.hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
+            t->shared.id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false, INT8OID));
+            t->shared.max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false, INT4OID));
+            elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared.id, t->shared.hash, t->group, t->remote ? t->remote : task_null, t->shared.max);
+            dlist_push_tail(&head, &t->node);
         }
     } while (SPI_processed);
     SPI_cursor_close_my(portal);
@@ -611,15 +599,6 @@ static void work_sleep(void) {
         }
     }
     set_ps_display_my("idle");
-}
-
-static void work_sigaction(int signum, siginfo_t *siginfo, void *code)  {
-    dlist_mutable_iter iter;
-    elog(DEBUG1, "si_pid = %i", siginfo->si_pid);
-    dlist_foreach_modify(iter, (dlist_head *)&local) {
-        Task *t = dlist_container(Task, node, iter.cur);
-        if (siginfo->si_pid == t->pid) work_free(t);
-    }
 }
 
 static void work_table(void) {
@@ -636,7 +615,7 @@ static void work_table(void) {
         const char *function_quote;
         StringInfoData function;
         initStringInfoMy(&function);
-        appendStringInfo(&function, "%1$s_hash_generate", work.shared->table);
+        appendStringInfo(&function, "%1$s_hash_generate", work.shared.table);
         function_quote = quote_identifier(function.data);
         appendStringInfo(&hash, SQL(CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$BEGIN
             IF tg_op OPERATOR(pg_catalog.=) 'INSERT' OR (NEW.group, NEW.remote) IS DISTINCT FROM (OLD.group, OLD.remote) THEN
@@ -722,7 +701,7 @@ static void work_table(void) {
 #endif
     SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    work.shared->oid = RangeVarGetRelid(rangevar, NoLock, false);
+    work.shared.oid = RangeVarGetRelid(rangevar, NoLock, false);
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
@@ -748,13 +727,13 @@ static void work_type(void) {
 }
 
 static void work_update(void) {
-    char *schema = quote_literal_cstr(work.shared->schema);
-    char *table = quote_literal_cstr(work.shared->table);
+    char *schema = quote_literal_cstr(work.shared.schema);
+    char *table = quote_literal_cstr(work.shared.table);
     const char *wake_up_quote;
     StringInfoData src;
     StringInfoData wake_up;
     initStringInfoMy(&wake_up);
-    appendStringInfo(&wake_up, "%1$s_wake_up", work.shared->table);
+    appendStringInfo(&wake_up, "%1$s_wake_up", work.shared.table);
     wake_up_quote = quote_identifier(wake_up.data);
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
@@ -830,10 +809,6 @@ static void work_writeable(Task *t) {
     t->socket(t);
 }
 
-static void work_on_dsm_detach_callback(dsm_segment *seg, Datum arg) {
-    elog(DEBUG1, "seg = %u", dsm_segment_handle(seg));
-}
-
 static void work_idle(SIGNAL_ARGS) {
     int save_errno = errno;
     idle_count = 0;
@@ -855,9 +830,9 @@ void work_main(Datum arg) {
     instr_time start_time_sleep;
     long current_reset = -1;
     long current_sleep = -1;
-    shm_toc *toc;
     StringInfoData schema_table, schema_type;
-    struct sigaction act = {0}, oldact = {0};
+    work.shared = *workshared;
+    SetLatch(workshared->latch);
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_DISPATCH;
     optimizer = false;
@@ -865,28 +840,19 @@ void work_main(Datum arg) {
     Gp_session_role = GP_ROLE_DISPATCH;
 #endif
 #endif
-    on_proc_exit(work_proc_exit, (Datum)NULL);
+    on_proc_exit(work_proc_exit, arg);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGINT, work_idle);
-    act.sa_sigaction = work_sigaction;
-    act.sa_flags = SA_SIGINFO;
-    sigaction(SIGUSR2, &act, &oldact);
-    timeout = RegisterTimeout(USER_TIMEOUT, work_handler);
     BackgroundWorkerUnblockSignals();
     CreateAuxProcessResourceOwner();
-    if (!(work.seg = dsm_attach(DatumGetUInt32(arg)))) { ereport(WARNING, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment"))); return; } // exit without error to disable restart, then start conf
-    on_dsm_detach(work.seg, work_on_dsm_detach_callback, (Datum)NULL);
-    if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(work.seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
-    work.shared = shm_toc_lookup_my(toc, 0);
-    work.data = quote_identifier(work.shared->data);
-    work.schema = quote_identifier(work.shared->schema);
-    work.table = quote_identifier(work.shared->table);
-    work.user = quote_identifier(work.shared->user);
-    if (kill(MyBgworkerEntry->bgw_notify_pid, SIGUSR2)) ereport(ERROR, (errmsg("could not send signal SIGUSR2 to process %d: %m", MyBgworkerEntry->bgw_notify_pid)));
-    BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user);
+    work.data = quote_identifier(work.shared.data);
+    work.schema = quote_identifier(work.shared.schema);
+    work.table = quote_identifier(work.shared.table);
+    work.user = quote_identifier(work.shared.user);
+    BackgroundWorkerInitializeConnectionMy(work.shared.data, work.shared.user);
     CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
-    application_name = MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1;
+    application_name = MyBgworkerEntry->bgw_name + strlen(work.shared.user) + 1 + strlen(work.shared.data) + 1;
     set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     pgstat_report_appname(application_name);
     set_ps_display_my("main");
@@ -898,12 +864,11 @@ void work_main(Datum arg) {
     work.hash = DatumGetInt32(DirectFunctionCall1Coll(hashtext, DEFAULT_COLLATION_OID, datum));
     pfree((void *)datum);
     if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.hash)) { elog(WARNING, "!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.hash); ShutdownRequestPending = true; return; } // exit without error to disable restart, then not start conf
-    dlist_init((dlist_head *)&local);
-    dlist_init(&remote);
+    dlist_init(&head);
     initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work.schema);
     work.schema_type = schema_type.data;
-    elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.hash);
+    elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared.sleep, work.shared.reset, work.schema_table, work.schema_type, work.hash);
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_UTILITY;
 #if PG_VERSION_NUM < 120000
@@ -934,11 +899,11 @@ void work_main(Datum arg) {
         work_events(set);
         if (current_reset <= 0) {
             INSTR_TIME_SET_CURRENT(start_time_reset);
-            current_reset = work.shared->reset;
+            current_reset = work.shared.reset;
         }
         if (current_sleep <= 0) {
             INSTR_TIME_SET_CURRENT(start_time_sleep);
-            current_sleep = work.shared->sleep;
+            current_sleep = work.shared.sleep;
         }
         current_timeout = Min(current_reset, current_sleep);
         if (idle_count >= (uint64)task_idle) work_timeout();
@@ -952,11 +917,11 @@ void work_main(Datum arg) {
         }
         INSTR_TIME_SET_CURRENT(current_time_reset);
         INSTR_TIME_SUBTRACT(current_time_reset, start_time_reset);
-        current_reset = work.shared->reset - (long)INSTR_TIME_GET_MILLISEC(current_time_reset);
+        current_reset = work.shared.reset - (long)INSTR_TIME_GET_MILLISEC(current_time_reset);
         if (current_reset <= 0) work_reset();
         INSTR_TIME_SET_CURRENT(current_time_sleep);
         INSTR_TIME_SUBTRACT(current_time_sleep, start_time_sleep);
-        current_sleep = work.shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_time_sleep);
+        current_sleep = work.shared.sleep - (long)INSTR_TIME_GET_MILLISEC(current_time_sleep);
         if (current_sleep <= 0) work_sleep();
         FreeWaitEventSet(set);
         pfree(events);

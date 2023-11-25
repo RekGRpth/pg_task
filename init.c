@@ -37,6 +37,12 @@ static int task_limit;
 static int task_max;
 static int task_run;
 static int task_sleep;
+#if PG_VERSION_NUM >= 150000
+static shmem_request_hook_type prev_shmem_request_hook = NULL;
+#endif
+static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
+TaskShared *taskshared = NULL;
+WorkShared *workshared = NULL;
 
 bool init_oid_is_string(Oid oid) {
     switch (oid) {
@@ -127,28 +133,6 @@ Datum CStringGetTextDatumMy(const char *s) {
     return s ? PointerGetDatum(cstring_to_text_my(s)) : (Datum)NULL;
 }
 
-static void init_on_dsm_detach_callback(dsm_segment *seg, Datum arg) {
-    elog(DEBUG1, "seg = %u", dsm_segment_handle(seg));
-}
-
-void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes) {
-    shm_toc_estimator e;
-    shm_toc *toc;
-    Size segsize;
-    void *ptr;
-    shm_toc_initialize_estimator(&e);
-    shm_toc_estimate_chunk(&e, nbytes);
-    shm_toc_estimate_keys(&e, 1);
-    segsize = shm_toc_estimate(&e);
-    *seg = dsm_create_my(segsize);
-    on_dsm_detach(*seg, init_on_dsm_detach_callback, (Datum)NULL);
-    toc = shm_toc_create(magic, dsm_segment_address(*seg), segsize);
-    ptr = shm_toc_allocate(toc, nbytes);
-    MemSet(ptr, 0, nbytes);
-    shm_toc_insert(toc, 0, ptr);
-    return ptr;
-}
-
 void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote) {
     if (!string && quote) appendStringInfoChar(buf, quote);
     if (len) {
@@ -213,6 +197,24 @@ static void init_assign_sleep(int newval, void *extra) { init_assign_int("pg_tas
 static void init_assign_table(const char *newval, void *extra) { init_assign_string("pg_task.table", newval, extra); }
 static void init_assign_user(const char *newval, void *extra) { init_assign_string("pg_task.user", newval, extra); }
 
+
+#if PG_VERSION_NUM >= 150000
+static void init_shmem_request_hook(void) {
+    if (prev_shmem_request_hook) prev_shmem_request_hook();
+    RequestAddinShmemSpace(sizeof(*taskshared));
+    RequestAddinShmemSpace(sizeof(*workshared));
+}
+#endif
+
+static void init_shmem_startup_hook(void) {
+    bool found;
+    if (prev_shmem_startup_hook) prev_shmem_startup_hook();
+    taskshared = ShmemInitStruct("pg_taskshared", sizeof(*taskshared), &found);
+    if (!found) MemSet(taskshared, 0, sizeof(*taskshared));
+    workshared = ShmemInitStruct("pg_workshared", sizeof(*workshared), &found);
+    if (!found) MemSet(workshared, 0, sizeof(*workshared));
+}
+
 void initStringInfoMy(StringInfoData *buf) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     initStringInfo(buf);
@@ -257,6 +259,15 @@ void _PG_init(void) {
     elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, sleep = %i, reset = %s, active = %s", task_json, task_user, task_data, task_schema, task_table, task_null, task_sleep, task_reset, work_active);
 #ifdef GP_VERSION_NUM
     if (!IS_QUERY_DISPATCHER()) return;
+#endif
+    prev_shmem_startup_hook = shmem_startup_hook;
+    shmem_startup_hook = init_shmem_startup_hook;
+#if PG_VERSION_NUM >= 150000
+    prev_shmem_request_hook = shmem_request_hook;
+    shmem_request_hook = init_shmem_request_hook;
+#elif PG_VERSION_NUM >= 90600
+    RequestAddinShmemSpace(sizeof(*taskshared));
+    RequestAddinShmemSpace(sizeof(*workshared));
 #endif
     init_conf(false);
 }
