@@ -109,9 +109,7 @@ void conf_main(Datum arg) {
     StringInfoData src;
     on_proc_exit(conf_proc_exit, (Datum)NULL);
     BackgroundWorkerUnblockSignals();
-    CreateAuxProcessResourceOwner();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL);
-    CurrentResourceOwner = AuxProcessResourceOwner;
     MemoryContextSwitchTo(TopMemoryContext);
     set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     pgstat_report_appname("pg_conf");
