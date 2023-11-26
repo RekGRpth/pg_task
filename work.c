@@ -4,6 +4,7 @@
 #include <access/relation.h>
 #endif
 #include <catalog/namespace.h>
+#include <catalog/pg_collation.h>
 
 extern char *task_null;
 extern int task_idle;
