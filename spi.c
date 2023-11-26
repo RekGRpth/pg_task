@@ -3,6 +3,7 @@
 #include <executor/spi_priv.h>
 #include <pgstat.h>
 #include <tcop/utility.h>
+#include <utils/lsyscache.h>
 
 typedef enum STMT_TYPE {
     STMT_BIND,
