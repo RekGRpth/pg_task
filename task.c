@@ -19,12 +19,12 @@
 #include <utils/timestamp.h>
 #endif
 
+emit_log_hook_type emit_log_hook_prev = NULL;
 extern char *task_null;
 extern int task_fetch;
 extern TaskShared *taskshared;
 extern WorkShared *workshared;
 extern Work work;
-static emit_log_hook_type emit_log_hook_prev = NULL;
 Task task = {0};
 
 static bool task_live(const Task *t) {

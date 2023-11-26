@@ -1,5 +1,8 @@
 #include "include.h"
 
+#if PG_VERSION_NUM < 100000
+#include <access/hash.h>
+#endif
 #if PG_VERSION_NUM >= 120000
 #include <access/relation.h>
 #endif

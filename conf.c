@@ -7,6 +7,9 @@
 #include <miscadmin.h>
 #endif
 #include <nodes/makefuncs.h>
+#if PG_VERSION_NUM < 100000
+#include <parser/parse_node.h>
+#endif
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
 #if PG_VERSION_NUM < 90500
