@@ -17,6 +17,9 @@
 #include <tcop/utility.h>
 #include <utils/builtins.h>
 #include <utils/memutils.h>
+#if PG_VERSION_NUM < 150000
+#include <utils/rel.h>
+#endif
 #include <utils/ps_status.h>
 #if PG_VERSION_NUM >= 100000
 #include <utils/regproc.h>

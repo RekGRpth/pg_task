@@ -11,6 +11,9 @@
 #include <storage/ipc.h>
 #include <storage/proc.h>
 #include <utils/acl.h>
+#if PG_VERSION_NUM < 150000
+#include <utils/guc.h>
+#endif
 #include <utils/builtins.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
