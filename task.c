@@ -304,11 +304,16 @@ static void task_execute(void) {
     if (IsTransactionState()) ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION), errmsg("still active sql transaction")));
 }
 
+void taskshared_free(int slot) {
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    pg_read_barrier();
+    MemSet(&taskshared[slot], 0, sizeof(*taskshared));
+    LWLockRelease(BackgroundWorkerLock);
+}
+
 static void task_shmem_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
-    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-    MemSet(&taskshared[DatumGetInt32(arg)], 0, sizeof(*taskshared));
-    LWLockRelease(BackgroundWorkerLock);
+    taskshared_free(DatumGetInt32(arg));
 }
 
 static void task_catch(void) {

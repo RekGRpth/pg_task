@@ -417,14 +417,17 @@ static void work_connect(Task *t) {
     }
 }
 
+void workshared_free(int slot) {
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    pg_read_barrier();
+    MemSet(&workshared[slot], 0, sizeof(*workshared));
+    LWLockRelease(BackgroundWorkerLock);
+}
+
 static void work_shmem_exit(int code, Datum arg) {
     dlist_mutable_iter iter;
     elog(DEBUG1, "code = %i", code);
-    if (!code) {
-        LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-        MemSet(&workshared[DatumGetInt32(arg)], 0, sizeof(*workshared));
-        LWLockRelease(BackgroundWorkerLock);
-    }
+    if (!code) workshared_free(DatumGetInt32(arg));
     dlist_foreach_modify(iter, &head) {
         Task *t = dlist_container(Task, node, iter.cur);
         if (PQstatus(t->conn) == CONNECTION_OK) {
@@ -513,6 +516,7 @@ static void work_remote(Task *t) {
 static int work_bgw_main_arg(TaskShared *ts) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
     for (int slot = 0; slot < max_worker_processes; slot++) if (!taskshared[slot].in_use) {
+        pg_write_barrier();
         taskshared[slot] = *ts;
         taskshared[slot].in_use = true;
         LWLockRelease(BackgroundWorkerLock);
@@ -521,12 +525,6 @@ static int work_bgw_main_arg(TaskShared *ts) {
     }
     LWLockRelease(BackgroundWorkerLock);
     return -1;
-}
-
-static void work_taskshared_free(int slot) {
-    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-    MemSet(&taskshared[slot], 0, sizeof(*taskshared));
-    LWLockRelease(BackgroundWorkerLock);
 }
 
 static void work_task(Task *t) {
@@ -547,13 +545,12 @@ static void work_task(Task *t) {
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     t->shared->slot = DatumGetUInt32(MyBgworkerEntry->bgw_main_arg);
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) {
-        work_taskshared_free(worker.bgw_main_arg);
-        work_ereport(true, ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
+        taskshared_free(worker.bgw_main_arg); work_ereport(true, ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
     } else switch (WaitForBackgroundWorkerStartup(handle, &t->pid)) {
-        case BGWH_NOT_YET_STARTED: work_taskshared_free(worker.bgw_main_arg); work_ereport(true, ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
-        case BGWH_POSTMASTER_DIED: work_taskshared_free(worker.bgw_main_arg); work_ereport(true, ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
+        case BGWH_NOT_YET_STARTED: taskshared_free(worker.bgw_main_arg); work_ereport(true, ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
+        case BGWH_POSTMASTER_DIED: taskshared_free(worker.bgw_main_arg); work_ereport(true, ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
         case BGWH_STARTED: elog(DEBUG1, "started id = %li", t->shared->id); work_free(t); break;
-        case BGWH_STOPPED: work_taskshared_free(worker.bgw_main_arg); work_ereport(true, ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
+        case BGWH_STOPPED: taskshared_free(worker.bgw_main_arg); work_ereport(true, ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     if (handle) pfree(handle);
 }
