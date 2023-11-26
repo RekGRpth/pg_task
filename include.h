@@ -48,7 +48,9 @@ extern void SignalHandlerForConfigReload(SIGNAL_ARGS);
 extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #endif
 #include <replication/slot.h>
+#if PG_VERSION_NUM < 90500
 #include <storage/barrier.h>
+#endif
 #include <storage/ipc.h>
 #include <storage/latch.h>
 #include <storage/procarray.h>
