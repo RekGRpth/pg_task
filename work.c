@@ -13,6 +13,9 @@
 #include <utils/builtins.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
+#if PG_VERSION_NUM >= 100000
+#include <utils/regproc.h>
+#endif
 
 extern char *task_null;
 extern int task_idle;

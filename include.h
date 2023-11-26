@@ -26,9 +26,6 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <storage/barrier.h>
 #endif
 #include <storage/proc.h>
-#if PG_VERSION_NUM >= 100000
-#include <utils/regproc.h>
-#endif
 #include <utils/rel.h>
 #include <utils/snapmgr.h>
 #include <utils/timeout.h>
