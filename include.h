@@ -71,8 +71,6 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <utils/timeout.h>
 #include <utils/timestamp.h>
 
-//#include "dest.h"
-
 #ifdef GP_VERSION_NUM
 #include "cdb/cdbvars.h"
 #endif
