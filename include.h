@@ -142,7 +142,6 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
 #endif
 
-
 typedef struct WorkShared {
     bool in_use;
     char data[NAMEDATALEN];
@@ -232,9 +231,6 @@ void append_with_tabs(StringInfo buf, const char *str);
 void initStringInfoMy(StringInfoData *buf);
 void init_conf(bool dynamic);
 void _PG_init(void);
-#if PG_VERSION_NUM < 120000
-void ReleaseAuxProcessResources(bool isCommit);
-#endif
 void SPI_connect_my(const char *src);
 void SPI_cursor_close_my(Portal portal);
 void SPI_cursor_fetch_my(const char *src, Portal portal, bool forward, long count);
