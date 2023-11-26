@@ -12,6 +12,7 @@
 #include <storage/barrier.h>
 #endif
 #include <storage/ipc.h>
+#include <storage/proc.h>
 #include <tcop/utility.h>
 #include <utils/builtins.h>
 #include <utils/memutils.h>

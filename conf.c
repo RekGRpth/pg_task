@@ -9,6 +9,7 @@
 #include <storage/barrier.h>
 #endif
 #include <storage/ipc.h>
+#include <storage/proc.h>
 #include <utils/acl.h>
 #include <utils/builtins.h>
 #include <utils/memutils.h>

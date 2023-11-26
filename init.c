@@ -3,6 +3,7 @@
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
+#include <storage/proc.h>
 #include <tcop/utility.h>
 #include <utils/builtins.h>
 #include <utils/memutils.h>
