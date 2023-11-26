@@ -11,8 +11,6 @@
 #include "latch.h"
 #endif
 #include <libpq-fe.h>
-#include <miscadmin.h>
-#include <nodes/makefuncs.h>
 #if PG_VERSION_NUM >= 160000
 #include <nodes/miscnodes.h>
 #endif
