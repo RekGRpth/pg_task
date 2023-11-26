@@ -2,6 +2,7 @@
 
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
+#include <storage/ipc.h>
 
 PG_MODULE_MAGIC;
 

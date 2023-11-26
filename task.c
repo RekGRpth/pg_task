@@ -2,6 +2,7 @@
 
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
+#include <storage/ipc.h>
 
 extern char *task_null;
 extern int task_fetch;
