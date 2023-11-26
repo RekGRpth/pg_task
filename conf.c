@@ -2,6 +2,10 @@
 
 #include <commands/dbcommands.h>
 #include <commands/user.h>
+#if PG_VERSION_NUM < 130000
+#include <catalog/pg_type.h>
+#include <miscadmin.h>
+#endif
 #include <nodes/makefuncs.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>

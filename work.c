@@ -5,7 +5,13 @@
 #endif
 #include <catalog/namespace.h>
 #include <catalog/pg_collation.h>
+#if PG_VERSION_NUM < 130000
+#include <catalog/pg_type.h>
+#endif
 #include <libpq/libpq-be.h>
+#if PG_VERSION_NUM < 130000
+#include <miscadmin.h>
+#endif
 #include <parser/parse_type.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
