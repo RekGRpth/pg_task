@@ -8,6 +8,7 @@
 #include <storage/ipc.h>
 #include <utils/acl.h>
 #include <utils/builtins.h>
+#include <utils/memutils.h>
 
 extern char *task_null;
 extern int conf_close;

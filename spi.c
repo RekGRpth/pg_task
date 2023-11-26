@@ -4,6 +4,7 @@
 #include <pgstat.h>
 #include <tcop/utility.h>
 #include <utils/lsyscache.h>
+#include <utils/memutils.h>
 
 typedef enum STMT_TYPE {
     STMT_BIND,

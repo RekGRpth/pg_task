@@ -11,6 +11,7 @@
 #include <storage/ipc.h>
 #include <tcop/utility.h>
 #include <utils/builtins.h>
+#include <utils/memutils.h>
 
 extern char *task_null;
 extern int task_idle;

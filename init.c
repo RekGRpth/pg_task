@@ -5,6 +5,7 @@
 #include <storage/ipc.h>
 #include <tcop/utility.h>
 #include <utils/builtins.h>
+#include <utils/memutils.h>
 
 PG_MODULE_MAGIC;
 
