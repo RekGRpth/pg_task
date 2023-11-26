@@ -3,6 +3,7 @@
 #if PG_VERSION_NUM >= 120000
 #include <access/relation.h>
 #endif
+#include <catalog/namespace.h>
 
 extern char *task_null;
 extern int task_idle;
