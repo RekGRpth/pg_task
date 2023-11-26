@@ -159,7 +159,7 @@ static void EndCommandMy(const char *commandTag, CommandDest dest) {
 
 #include <postgres.c>
 
-void task_execute(void) {
+static void dest_execute(void) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
     MemoryContextResetAndDeleteChildren(MessageContext);
     InvalidateCatalogSnapshotConditionally();
@@ -172,7 +172,7 @@ void task_execute(void) {
     if (IsTransactionState()) ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION), errmsg("still active sql transaction")));
 }
 
-void task_catch(void) {
+static void dest_catch(void) {
     HOLD_INTERRUPTS();
     disable_all_timeouts(false);
     QueryCancelPending = false;
@@ -194,4 +194,23 @@ void task_catch(void) {
     FlushErrorState();
     xact_started = false;
     RESUME_INTERRUPTS();
+}
+
+bool dest_timeout(void) {
+    int StatementTimeoutMy = StatementTimeout;
+    if (task_work(&task)) return true;
+    elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
+    set_ps_display_my("timeout");
+    StatementTimeout = task.timeout;
+    PG_TRY();
+        if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
+        dest_execute();
+    PG_CATCH();
+        dest_catch();
+    PG_END_TRY();
+    StatementTimeout = StatementTimeoutMy;
+    pgstat_report_stat(false);
+    pgstat_report_activity(STATE_IDLE, NULL);
+    set_ps_display_my("idle");
+    return task_done(&task);
 }

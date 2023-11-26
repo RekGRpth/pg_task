@@ -156,6 +156,7 @@ typedef struct Task {
     void (*socket) (struct Task *t);
 } Task;
 
+bool dest_timeout(void);
 bool init_oid_is_string(Oid oid);
 bool is_log_level_output(int elevel, int log_min_level);
 bool lock_data_user_hash(Oid data, Oid user, int hash);
@@ -190,9 +191,7 @@ void SPI_cursor_fetch_my(const char *src, Portal portal, bool forward, long coun
 void SPI_execute_plan_my(const char *src, SPIPlanPtr plan, Datum *values, const char *nulls, int res);
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res);
 void SPI_finish_my(void);
-void task_catch(void);
 void task_error(ErrorData *edata);
-void task_execute(void);
 void task_free(Task *t);
 void taskshared_free(int slot);
 void workshared_free(int slot);
