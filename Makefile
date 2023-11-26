@@ -24,7 +24,7 @@ else
 	REPO = postgres/postgres
 endif
 
-task.o: postgres.c
+dest.o: postgres.c
 
 postgres.c:
 	wget -O $@ "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || wget -O $@ "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
