@@ -1,5 +1,7 @@
 #include "include.h"
 
+#include <commands/dbcommands.h>
+
 extern char *task_null;
 extern int conf_close;
 extern int conf_fetch;
