@@ -3,6 +3,7 @@
 #include <commands/dbcommands.h>
 #include <commands/user.h>
 #include <nodes/makefuncs.h>
+#include <pgstat.h>
 
 extern char *task_null;
 extern int conf_close;

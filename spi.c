@@ -1,6 +1,7 @@
 #include "include.h"
 
 #include <executor/spi_priv.h>
+#include <pgstat.h>
 
 typedef enum STMT_TYPE {
     STMT_BIND,

@@ -1,5 +1,7 @@
 #include "include.h"
 
+#include <pgstat.h>
+
 PG_MODULE_MAGIC;
 
 char *task_null;

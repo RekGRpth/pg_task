@@ -6,6 +6,7 @@
 #include <catalog/namespace.h>
 #include <catalog/pg_collation.h>
 #include <libpq/libpq-be.h>
+#include <pgstat.h>
 
 extern char *task_null;
 extern int task_idle;

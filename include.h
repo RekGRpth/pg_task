@@ -14,9 +14,7 @@
 #if PG_VERSION_NUM >= 160000
 #include <nodes/miscnodes.h>
 #endif
-#include <parser/analyze.h>
 #include <parser/parse_type.h>
-#include <pgstat.h>
 #include <postmaster/bgworker.h>
 #if PG_VERSION_NUM >= 130000
 #include <postmaster/interrupt.h>

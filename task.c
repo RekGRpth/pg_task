@@ -1,5 +1,7 @@
 #include "include.h"
 
+#include <pgstat.h>
+
 extern char *task_null;
 extern int task_fetch;
 extern TaskShared *taskshared;
