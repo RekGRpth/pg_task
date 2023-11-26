@@ -1,5 +1,8 @@
 #include "include.h"
 
+#if PG_VERSION_NUM < 130000
+#include <miscadmin.h>
+#endif
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
