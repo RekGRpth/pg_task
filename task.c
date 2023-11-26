@@ -1,7 +1,6 @@
 #include "include.h"
 
-#if PG_VERSION_NUM >= 90500
-#else
+#if PG_VERSION_NUM < 90500
 #define PQArgBlock undef
 #endif
 
