@@ -48,6 +48,7 @@ extern void SignalHandlerForConfigReload(SIGNAL_ARGS);
 extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #endif
 #include <replication/slot.h>
+#include <storage/barrier.h>
 #include <storage/ipc.h>
 #include <storage/latch.h>
 #include <storage/procarray.h>
