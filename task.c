@@ -1,11 +1,5 @@
 #include "include.h"
 
-#if PG_VERSION_NUM < 90500
-#define PQArgBlock undef
-#endif
-
-#include <postgres.c>
-
 extern char *task_null;
 extern int task_fetch;
 extern TaskShared *taskshared;
@@ -290,19 +284,6 @@ void task_error(ErrorData *edata) {
     }
 }
 
-static void task_execute(void) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
-    MemoryContextResetAndDeleteChildren(MessageContext);
-    InvalidateCatalogSnapshotConditionally();
-    MemoryContextSwitchTo(oldMemoryContext);
-    whereToSendOutput = DestDebug;
-    ReadyForQueryMy(whereToSendOutput);
-    SetCurrentStatementStartTimestamp();
-    exec_simple_query(task.input);
-    if (IsTransactionState()) exec_simple_query(SQL(COMMIT));
-    if (IsTransactionState()) ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION), errmsg("still active sql transaction")));
-}
-
 void taskshared_free(int slot) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
     pg_read_barrier();
@@ -313,30 +294,6 @@ void taskshared_free(int slot) {
 static void task_shmem_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
     taskshared_free(DatumGetInt32(arg));
-}
-
-static void task_catch(void) {
-    HOLD_INTERRUPTS();
-    disable_all_timeouts(false);
-    QueryCancelPending = false;
-    emit_log_hook_prev = emit_log_hook;
-    emit_log_hook = task_error;
-    EmitErrorReport();
-    debug_query_string = NULL;
-    AbortOutOfAnyTransaction();
-#if PG_VERSION_NUM >= 110000
-    PortalErrorCleanup();
-#endif
-    if (MyReplicationSlot) ReplicationSlotRelease();
-#if PG_VERSION_NUM >= 100000
-    ReplicationSlotCleanup();
-#endif
-#if PG_VERSION_NUM >= 110000
-    jit_reset_after_error();
-#endif
-    FlushErrorState();
-    xact_started = false;
-    RESUME_INTERRUPTS();
 }
 
 static void task_latch(void) {

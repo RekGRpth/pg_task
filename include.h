@@ -71,7 +71,7 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <utils/timeout.h>
 #include <utils/timestamp.h>
 
-#include "dest.h"
+//#include "dest.h"
 
 #ifdef GP_VERSION_NUM
 #include "cdb/cdbvars.h"
@@ -240,7 +240,9 @@ void SPI_cursor_fetch_my(const char *src, Portal portal, bool forward, long coun
 void SPI_execute_plan_my(const char *src, SPIPlanPtr plan, Datum *values, const char *nulls, int res);
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res);
 void SPI_finish_my(void);
+void task_catch(void);
 void task_error(ErrorData *edata);
+void task_execute(void);
 void task_free(Task *t);
 void taskshared_free(int slot);
 void workshared_free(int slot);
