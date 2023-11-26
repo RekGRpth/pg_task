@@ -1,6 +1,7 @@
 #include "include.h"
 
 #include <pgstat.h>
+#include <postmaster/bgworker.h>
 
 PG_MODULE_MAGIC;
 

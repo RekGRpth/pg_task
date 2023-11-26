@@ -4,6 +4,7 @@
 #include <commands/user.h>
 #include <nodes/makefuncs.h>
 #include <pgstat.h>
+#include <postmaster/bgworker.h>
 
 extern char *task_null;
 extern int conf_close;

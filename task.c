@@ -1,6 +1,7 @@
 #include "include.h"
 
 #include <pgstat.h>
+#include <postmaster/bgworker.h>
 
 extern char *task_null;
 extern int task_fetch;
