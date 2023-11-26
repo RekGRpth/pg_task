@@ -25,12 +25,7 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #if PG_VERSION_NUM < 90500
 #include <storage/barrier.h>
 #endif
-#include <storage/latch.h>
-#include <storage/procarray.h>
 #include <storage/proc.h>
-#include <storage/shm_toc.h>
-#include <tcop/pquery.h>
-#include <tcop/utility.h>
 #include <utils/acl.h>
 #include <utils/builtins.h>
 #include <utils/lsyscache.h>

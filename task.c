@@ -3,6 +3,7 @@
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
+#include <tcop/utility.h>
 
 extern char *task_null;
 extern int task_fetch;
