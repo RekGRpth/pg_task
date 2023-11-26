@@ -1,5 +1,9 @@
 #include "include.h"
 
+#if PG_VERSION_NUM >= 120000
+#include <access/relation.h>
+#endif
+
 extern char *task_null;
 extern int task_idle;
 extern int work_close;
