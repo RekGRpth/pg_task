@@ -335,7 +335,6 @@ static void task_catch(void) {
 #if PG_VERSION_NUM >= 110000
     jit_reset_after_error();
 #endif
-    MemoryContextSwitchTo(TopMemoryContext);
     FlushErrorState();
     xact_started = false;
     RESUME_INTERRUPTS();
@@ -387,7 +386,6 @@ void task_main(Datum arg) {
     work.table = quote_identifier(work.shared->table);
     work.user = quote_identifier(work.shared->user);
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user);
-    MemoryContextSwitchTo(TopMemoryContext);
     application_name = MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1;
     set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     pgstat_report_appname(application_name);

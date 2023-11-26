@@ -123,7 +123,6 @@ void conf_main(Datum arg) {
     on_shmem_exit(conf_shmem_exit, (Datum)NULL);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL);
-    MemoryContextSwitchTo(TopMemoryContext);
     set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     pgstat_report_appname("pg_conf");
     set_ps_display_my("main");
