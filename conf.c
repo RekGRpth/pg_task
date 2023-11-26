@@ -7,6 +7,7 @@
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
 #include <utils/acl.h>
+#include <utils/builtins.h>
 
 extern char *task_null;
 extern int conf_close;

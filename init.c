@@ -4,6 +4,7 @@
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
 #include <tcop/utility.h>
+#include <utils/builtins.h>
 
 PG_MODULE_MAGIC;
 
