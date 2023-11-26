@@ -9,6 +9,7 @@
 #include <utils/acl.h>
 #include <utils/builtins.h>
 #include <utils/memutils.h>
+#include <utils/ps_status.h>
 
 extern char *task_null;
 extern int conf_close;
