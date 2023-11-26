@@ -20,6 +20,9 @@
 #if PG_VERSION_NUM < 150000
 #include <utils/rel.h>
 #endif
+#if PG_VERSION_NUM < 140000
+#include <utils/timestamp.h>
+#endif
 #include <utils/ps_status.h>
 #if PG_VERSION_NUM >= 100000
 #include <utils/regproc.h>
