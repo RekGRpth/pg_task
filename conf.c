@@ -1,6 +1,7 @@
 #include "include.h"
 
 #include <commands/dbcommands.h>
+#include <commands/user.h>
 
 extern char *task_null;
 extern int conf_close;

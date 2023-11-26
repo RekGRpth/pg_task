@@ -6,9 +6,6 @@
 
 #include <postgres.h>
 
-#include <commands/extension.h>
-#include <commands/prepare.h>
-#include <commands/user.h>
 #include <executor/spi.h>
 #if PG_VERSION_NUM >= 110000
 #include <jit/jit.h>
