@@ -6,6 +6,7 @@
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
+#include <utils/acl.h>
 
 extern char *task_null;
 extern int conf_close;
