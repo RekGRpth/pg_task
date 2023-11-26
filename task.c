@@ -3,6 +3,8 @@
 extern bool xact_started;
 extern char *task_null;
 extern int task_fetch;
+extern TaskShared *taskshared;
+extern WorkShared *workshared;
 extern Work work;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 Task task = {0};
@@ -333,8 +335,16 @@ static void task_execute(void) {
     }
 }
 
-static void task_proc_exit(int code, Datum arg) {
+void taskshared_free(int slot) {
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    pg_read_barrier();
+    MemSet(&taskshared[slot], 0, sizeof(*taskshared));
+    LWLockRelease(BackgroundWorkerLock);
+}
+
+static void task_shmem_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
+    taskshared_free(DatumGetInt32(arg));
 }
 
 static void task_catch(void) {
@@ -382,33 +392,19 @@ void task_free(Task *t) {
     if (t->remote) { pfree(t->remote); t->remote = NULL; }
 }
 
-static void task_on_dsm_detach_callback(dsm_segment *seg, Datum arg) {
-    elog(DEBUG1, "seg = %u", dsm_segment_handle(seg));
-}
-
 void task_main(Datum arg) {
     const char *application_name;
-    shm_toc *toc;
     StringInfoData oid, schema_table;
-    on_proc_exit(task_proc_exit, (Datum)NULL);
+    elog(DEBUG1, "arg = %i", DatumGetInt32(arg));
+    task.shared = &taskshared[DatumGetInt32(arg)];
+    work.shared = &workshared[task.shared->slot];
+    on_shmem_exit(task_shmem_exit, arg);
     BackgroundWorkerUnblockSignals();
-    CreateAuxProcessResourceOwner();
-    if (!(task.seg = dsm_attach(DatumGetUInt32(arg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
-    on_dsm_detach(task.seg, task_on_dsm_detach_callback, (Datum)NULL);
-    if (!(toc = shm_toc_attach(PG_TASK_MAGIC, dsm_segment_address(task.seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
-    task.shared = shm_toc_lookup_my(toc, 0);
-    if (!(work.seg = dsm_attach(task.shared->handle))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("unable to map dynamic shared memory segment")));
-    on_dsm_detach(work.seg, task_on_dsm_detach_callback, (Datum)NULL);
-    if (!(toc = shm_toc_attach(PG_WORK_MAGIC, dsm_segment_address(work.seg)))) ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE), errmsg("bad magic number in dynamic shared memory segment")));
-    work.shared = shm_toc_lookup_my(toc, 0);
     work.data = quote_identifier(work.shared->data);
     work.schema = quote_identifier(work.shared->schema);
     work.table = quote_identifier(work.shared->table);
     work.user = quote_identifier(work.shared->user);
-    if (kill(MyBgworkerEntry->bgw_notify_pid, SIGUSR2)) ereport(ERROR, (errmsg("could not send signal SIGUSR2 to process %d: %m", MyBgworkerEntry->bgw_notify_pid)));
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user);
-    CurrentResourceOwner = AuxProcessResourceOwner;
-    MemoryContextSwitchTo(TopMemoryContext);
     application_name = MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1;
     set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     pgstat_report_appname(application_name);

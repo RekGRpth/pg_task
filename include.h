@@ -48,7 +48,6 @@ extern void SignalHandlerForConfigReload(SIGNAL_ARGS);
 extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #endif
 #include <replication/slot.h>
-#include <storage/dsm.h>
 #include <storage/ipc.h>
 #include <storage/latch.h>
 #include <storage/procarray.h>
@@ -74,10 +73,8 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #endif
 
 #if PG_VERSION_NUM >= 90500
-#define dsm_create_my(size) dsm_create(size, 0)
 #define set_config_option_my(name, value, context, source, action, changeVal, elevel) set_config_option(name, value, context, source, action, changeVal, elevel, false)
 #else
-#define dsm_create_my(size) dsm_create(size)
 #define MyLatch (&MyProc->procLatch)
 #define set_config_option_my(name, value, context, source, action, changeVal, elevel) set_config_option(name, value, context, source, action, changeVal, elevel)
 #endif
@@ -133,13 +130,18 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #define stringToQualifiedNameListMy(string) stringToQualifiedNameList(string)
 #endif
 
-#define PG_WORK_MAGIC 0x776f726b
+#if PG_VERSION_NUM >= 170000
+#define CreateWaitEventSetMy(nevents) CreateWaitEventSet(NULL, nevents)
+#else
+#define CreateWaitEventSetMy(nevents) CreateWaitEventSet(TopMemoryContext, nevents)
+#endif
 
-#ifndef get_timeout_active
-#define get_timeout_active get_timeout_finish_time
+#ifndef MemoryContextResetAndDeleteChildren
+#define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
 #endif
 
 typedef struct WorkShared {
+    bool in_use;
     char data[NAMEDATALEN];
     char schema[NAMEDATALEN];
     char table[NAMEDATALEN];
@@ -159,20 +161,17 @@ typedef struct Work {
     const char *table;
     const char *user;
     dlist_node node;
-    dsm_segment *seg;
     int hash;
     pid_t pid;
-    TimestampTz start;
     WorkShared *shared;
 } Work;
 
-#define PG_TASK_MAGIC 0x7461736b
-
 typedef struct TaskShared {
-    dsm_handle handle;
+    bool in_use;
     int64 id;
     int hash;
     int max;
+    int slot;
 } TaskShared;
 
 typedef struct Task {
@@ -188,7 +187,6 @@ typedef struct Task {
     char quote;
     char *remote;
     dlist_node node;
-    dsm_segment *seg;
     int count;
     int event;
     int pid;
@@ -219,10 +217,6 @@ char *TextDatumGetCStringMy(Datum datum);
 const char *error_severity(int elevel);
 Datum CStringGetTextDatumMy(const char *s);
 Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid);
-#if PG_VERSION_NUM < 120000
-extern PGDLLIMPORT ResourceOwner AuxProcessResourceOwner;
-#endif
-extern PGDLLIMPORT ResourceOwner SPIResourceOwner;
 int severity_error(const char *error);
 PGDLLEXPORT void conf_main(Datum main_arg);
 PGDLLEXPORT void task_main(Datum main_arg);
@@ -232,16 +226,9 @@ Portal SPI_cursor_open_with_args_my(const char *src, int nargs, Oid *argtypes, D
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote);
 void append_with_tabs(StringInfo buf, const char *str);
-#if PG_VERSION_NUM < 120000
-void CreateAuxProcessResourceOwner(void);
-#endif
 void initStringInfoMy(StringInfoData *buf);
 void init_conf(bool dynamic);
 void _PG_init(void);
-#if PG_VERSION_NUM < 120000
-void ReleaseAuxProcessResources(bool isCommit);
-#endif
-void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes);
 void SPI_connect_my(const char *src);
 void SPI_cursor_close_my(Portal portal);
 void SPI_cursor_fetch_my(const char *src, Portal portal, bool forward, long count);
@@ -250,5 +237,7 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_finish_my(void);
 void task_error(ErrorData *edata);
 void task_free(Task *t);
+void taskshared_free(int slot);
+void workshared_free(int slot);
 
 #endif // _INCLUDE_H_

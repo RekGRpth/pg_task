@@ -4,13 +4,8 @@ extern char *task_null;
 extern int conf_close;
 extern int conf_fetch;
 extern int work_restart;
+extern WorkShared *workshared;
 static volatile dlist_head head;
-static volatile TimeoutId timeout;
-
-static void conf_latch(void) {
-    ResetLatch(MyLatch);
-    CHECK_FOR_INTERRUPTS();
-}
 
 static void conf_data(const Work *w) {
     List *names = stringToQualifiedNameListMy(w->data);
@@ -39,43 +34,12 @@ static void conf_data(const Work *w) {
 
 static void conf_free(Work *w) {
     dlist_delete(&w->node);
-    dsm_detach(w->seg);
+    pfree(w->shared);
     pfree(w);
 }
 
-static void conf_handler(void) {
-    dlist_mutable_iter iter;
-    TimestampTz finish = get_timeout_finish_time(timeout), min = 0;
-    elog(DEBUG1, "%s", timestamptz_to_str(finish));
-    dlist_foreach_modify(iter, (dlist_head *)&head) {
-        Work *w = dlist_container(Work, node, iter.cur);
-        TimestampTz start = TimestampTzPlusMilliseconds(w->start, conf_close);
-        if (finish >= start) {
-            ereport(WARNING, (errcode(ERRCODE_QUERY_CANCELED), errmsg("work timeout")));
-            conf_free(w);
-        } else if (min == 0 || min >= start) min = start;
-    }
-    if (!dlist_is_empty((dlist_head *)&head)) enable_timeout_at(timeout, min); else {
-        ShutdownRequestPending = true;
-        SetLatch(MyLatch);
-    }
-}
-
-static void conf_proc_exit(int code, Datum arg) {
+static void conf_shmem_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
-}
-
-static void conf_sigaction(int signum, siginfo_t *siginfo, void *code)  {
-    dlist_mutable_iter iter;
-    elog(DEBUG1, "si_pid = %i", siginfo->si_pid);
-    dlist_foreach_modify(iter, (dlist_head *)&head) {
-        Work *w = dlist_container(Work, node, iter.cur);
-        if (siginfo->si_pid == w->pid) conf_free(w);
-    }
-    if (dlist_is_empty((dlist_head *)&head)) {
-        ShutdownRequestPending = true;
-        SetLatch(MyLatch);
-    }
 }
 
 static void conf_user(const Work *w) {
@@ -103,6 +67,20 @@ static void conf_user(const Work *w) {
     set_ps_display_my("idle");
 }
 
+static int conf_bgw_main_arg(WorkShared *ws) {
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    for (int slot = 0; slot < max_worker_processes; slot++) if (!workshared[slot].in_use) {
+        pg_write_barrier();
+        workshared[slot] = *ws;
+        workshared[slot].in_use = true;
+        LWLockRelease(BackgroundWorkerLock);
+        elog(DEBUG1, "slot = %i", slot);
+        return slot;
+    }
+    LWLockRelease(BackgroundWorkerLock);
+    return -1;
+}
+
 static void conf_work(Work *w) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker = {0};
@@ -121,37 +99,30 @@ static void conf_work(Work *w) {
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(w->seg));
+    if ((worker.bgw_main_arg = Int32GetDatum(conf_bgw_main_arg(w->shared))) == Int32GetDatum(-1)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not find empty slot")));
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = work_restart;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
-    switch (WaitForBackgroundWorkerStartup(handle, &w->pid)) {
-        case BGWH_NOT_YET_STARTED: ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
-        case BGWH_POSTMASTER_DIED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
-        case BGWH_STARTED: break;
-        case BGWH_STOPPED: ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
+    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) {
+        workshared_free(worker.bgw_main_arg);
+        ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
     }
-    w->start = GetCurrentTimestamp();
-    if (!get_timeout_active(timeout)) enable_timeout_at(timeout, TimestampTzPlusMilliseconds(w->start, conf_close));
-    pfree(handle);
+    switch (WaitForBackgroundWorkerStartup(handle, &w->pid)) {
+        case BGWH_NOT_YET_STARTED: workshared_free(worker.bgw_main_arg); ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
+        case BGWH_POSTMASTER_DIED: workshared_free(worker.bgw_main_arg); ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
+        case BGWH_STARTED: elog(DEBUG1, "started"); conf_free(w); break;
+        case BGWH_STOPPED: workshared_free(worker.bgw_main_arg); ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
+    }
+    if (handle) pfree(handle);
 }
 
 void conf_main(Datum arg) {
     dlist_mutable_iter iter;
     Portal portal;
     StringInfoData src;
-    struct sigaction act = {0}, oldact = {0};
-    act.sa_sigaction = conf_sigaction;
-    act.sa_flags = SA_SIGINFO;
-    sigaction(SIGUSR2, &act, &oldact);
-    timeout = RegisterTimeout(USER_TIMEOUT, conf_handler);
-    on_proc_exit(conf_proc_exit, (Datum)NULL);
+    on_shmem_exit(conf_shmem_exit, (Datum)NULL);
     BackgroundWorkerUnblockSignals();
-    CreateAuxProcessResourceOwner();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL);
-    CurrentResourceOwner = AuxProcessResourceOwner;
-    MemoryContextSwitchTo(TopMemoryContext);
     set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     pgstat_report_appname("pg_conf");
     set_ps_display_my("main");
@@ -192,9 +163,9 @@ void conf_main(Datum arg) {
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
             TupleDesc tupdesc = SPI_tuptable->tupdesc;
-            Work *w = MemoryContextAllocZero(TopMemoryContext, sizeof(*w));;
+            Work *w = MemoryContextAllocZero(TopMemoryContext, sizeof(*w));
             set_ps_display_my("row");
-            w->shared = shm_toc_allocate_my(PG_WORK_MAGIC, &w->seg, sizeof(*w->shared));
+            w->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(*w->shared));
             w->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false, INT8OID));
             w->shared->run = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "run", false, INT4OID));
             w->shared->sleep = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "sleep", false, INT8OID));
@@ -203,7 +174,7 @@ void conf_main(Datum arg) {
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false, TEXTOID)), w->shared->table, sizeof(w->shared->table));
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false, TEXTOID)), w->shared->user, sizeof(w->shared->user));
             elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, sleep = %li, reset = %li, run = %i", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset, w->shared->run);
-            dlist_push_head((dlist_head *)&head, &w->node);
+            dlist_push_tail((dlist_head *)&head, &w->node);
         }
     } while (SPI_processed);
     SPI_cursor_close_my(portal);
@@ -211,10 +182,5 @@ void conf_main(Datum arg) {
     pfree(src.data);
     set_ps_display_my("idle");
     dlist_foreach_modify(iter, (dlist_head *)&head) conf_work(dlist_container(Work, node, iter.cur));
-    while (!ShutdownRequestPending) {
-        int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0);
-        if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
-        if (rc & WL_LATCH_SET) conf_latch();
-    }
     if (!unlock_data_user(MyDatabaseId, GetUserId())) elog(WARNING, "!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId());
 }

@@ -10,7 +10,6 @@ int task_idle;
 int work_close;
 int work_fetch;
 int work_restart;
-ResourceOwner SPIResourceOwner = NULL;
 static bool task_delete;
 static bool task_drift;
 static bool task_header;
@@ -37,6 +36,12 @@ static int task_limit;
 static int task_max;
 static int task_run;
 static int task_sleep;
+#if PG_VERSION_NUM >= 150000
+static shmem_request_hook_type prev_shmem_request_hook = NULL;
+#endif
+static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
+TaskShared *taskshared = NULL;
+WorkShared *workshared = NULL;
 
 bool init_oid_is_string(Oid oid) {
     switch (oid) {
@@ -127,28 +132,6 @@ Datum CStringGetTextDatumMy(const char *s) {
     return s ? PointerGetDatum(cstring_to_text_my(s)) : (Datum)NULL;
 }
 
-static void init_on_dsm_detach_callback(dsm_segment *seg, Datum arg) {
-    elog(DEBUG1, "seg = %u", dsm_segment_handle(seg));
-}
-
-void *shm_toc_allocate_my(uint64 magic, dsm_segment **seg, Size nbytes) {
-    shm_toc_estimator e;
-    shm_toc *toc;
-    Size segsize;
-    void *ptr;
-    shm_toc_initialize_estimator(&e);
-    shm_toc_estimate_chunk(&e, nbytes);
-    shm_toc_estimate_keys(&e, 1);
-    segsize = shm_toc_estimate(&e);
-    *seg = dsm_create_my(segsize);
-    on_dsm_detach(*seg, init_on_dsm_detach_callback, (Datum)NULL);
-    toc = shm_toc_create(magic, dsm_segment_address(*seg), segsize);
-    ptr = shm_toc_allocate(toc, nbytes);
-    MemSet(ptr, 0, nbytes);
-    shm_toc_insert(toc, 0, ptr);
-    return ptr;
-}
-
 void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote) {
     if (!string && quote) appendStringInfoChar(buf, quote);
     if (len) {
@@ -213,6 +196,31 @@ static void init_assign_sleep(int newval, void *extra) { init_assign_int("pg_tas
 static void init_assign_table(const char *newval, void *extra) { init_assign_string("pg_task.table", newval, extra); }
 static void init_assign_user(const char *newval, void *extra) { init_assign_string("pg_task.user", newval, extra); }
 
+static size_t init_taskshared_memsize(void) {
+    return mul_size(max_worker_processes, sizeof(*taskshared));
+}
+
+static size_t init_workshared_memsize(void) {
+    return mul_size(max_worker_processes, sizeof(*workshared));
+}
+
+#if PG_VERSION_NUM >= 150000
+static void init_shmem_request_hook(void) {
+    if (prev_shmem_request_hook) prev_shmem_request_hook();
+    RequestAddinShmemSpace(init_taskshared_memsize());
+    RequestAddinShmemSpace(init_workshared_memsize());
+}
+#endif
+
+static void init_shmem_startup_hook(void) {
+    bool found;
+    if (prev_shmem_startup_hook) prev_shmem_startup_hook();
+    taskshared = ShmemInitStruct("pg_taskshared", init_taskshared_memsize(), &found);
+    if (!found) MemSet(taskshared, 0, init_taskshared_memsize());
+    workshared = ShmemInitStruct("pg_workshared", init_workshared_memsize(), &found);
+    if (!found) MemSet(workshared, 0, init_workshared_memsize());
+}
+
 void initStringInfoMy(StringInfoData *buf) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     initStringInfo(buf);
@@ -257,6 +265,15 @@ void _PG_init(void) {
     elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, sleep = %i, reset = %s, active = %s", task_json, task_user, task_data, task_schema, task_table, task_null, task_sleep, task_reset, work_active);
 #ifdef GP_VERSION_NUM
     if (!IS_QUERY_DISPATCHER()) return;
+#endif
+    prev_shmem_startup_hook = shmem_startup_hook;
+    shmem_startup_hook = init_shmem_startup_hook;
+#if PG_VERSION_NUM >= 150000
+    prev_shmem_request_hook = shmem_request_hook;
+    shmem_request_hook = init_shmem_request_hook;
+#elif PG_VERSION_NUM >= 90600
+    RequestAddinShmemSpace(init_taskshared_memsize());
+    RequestAddinShmemSpace(init_workshared_memsize());
 #endif
     init_conf(false);
 }
@@ -347,63 +364,3 @@ bool is_log_level_output(int elevel, int log_min_level) {
     } else if (elevel >= log_min_level) return true; // Neither is LOG
     return false;
 }
-
-#if PG_VERSION_NUM < 120000
-ResourceOwner AuxProcessResourceOwner = NULL;
-
-static void ReleaseAuxProcessResourcesCallback(int code, Datum arg);
-
-/*
- * Establish an AuxProcessResourceOwner for the current process.
- */
-void
-CreateAuxProcessResourceOwner(void)
-{
-	Assert(AuxProcessResourceOwner == NULL);
-	Assert(CurrentResourceOwner == NULL);
-	AuxProcessResourceOwner = ResourceOwnerCreate(NULL, "AuxiliaryProcess");
-	CurrentResourceOwner = AuxProcessResourceOwner;
-
-	/*
-	 * Register a shmem-exit callback for cleanup of aux-process resource
-	 * owner.  (This needs to run after, e.g., ShutdownXLOG.)
-	 */
-	on_shmem_exit(ReleaseAuxProcessResourcesCallback, 0);
-
-}
-
-/*
- * Convenience routine to release all resources tracked in
- * AuxProcessResourceOwner (but that resowner is not destroyed here).
- * Warn about leaked resources if isCommit is true.
- */
-void
-ReleaseAuxProcessResources(bool isCommit)
-{
-	/*
-	 * At this writing, the only thing that could actually get released is
-	 * buffer pins; but we may as well do the full release protocol.
-	 */
-	ResourceOwnerRelease(AuxProcessResourceOwner,
-						 RESOURCE_RELEASE_BEFORE_LOCKS,
-						 isCommit, true);
-	ResourceOwnerRelease(AuxProcessResourceOwner,
-						 RESOURCE_RELEASE_LOCKS,
-						 isCommit, true);
-	ResourceOwnerRelease(AuxProcessResourceOwner,
-						 RESOURCE_RELEASE_AFTER_LOCKS,
-						 isCommit, true);
-}
-
-/*
- * Shmem-exit callback for the same.
- * Warn about leaked resources if process exit code is zero (ie normal).
- */
-static void
-ReleaseAuxProcessResourcesCallback(int code, Datum arg)
-{
-	bool		isCommit = (code == 0);
-
-	ReleaseAuxProcessResources(isCommit);
-}
-#endif
