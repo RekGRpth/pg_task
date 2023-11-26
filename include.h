@@ -22,11 +22,7 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 extern void SignalHandlerForConfigReload(SIGNAL_ARGS);
 extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #endif
-#if PG_VERSION_NUM < 90500
-#include <storage/barrier.h>
-#endif
 #include <storage/proc.h>
-#include <utils/timestamp.h>
 
 #ifdef GP_VERSION_NUM
 #include "cdb/cdbvars.h"

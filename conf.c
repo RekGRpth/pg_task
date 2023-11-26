@@ -5,6 +5,9 @@
 #include <nodes/makefuncs.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
+#if PG_VERSION_NUM < 90500
+#include <storage/barrier.h>
+#endif
 #include <storage/ipc.h>
 #include <utils/acl.h>
 #include <utils/builtins.h>
