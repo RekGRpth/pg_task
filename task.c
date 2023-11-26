@@ -11,6 +11,9 @@
 #include <utils/builtins.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
+#if PG_VERSION_NUM < 140000
+#include <utils/timestamp.h>
+#endif
 
 extern char *task_null;
 extern int task_fetch;
