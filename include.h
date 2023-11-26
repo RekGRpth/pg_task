@@ -26,8 +26,6 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <storage/barrier.h>
 #endif
 #include <storage/proc.h>
-#include <utils/rel.h>
-#include <utils/snapmgr.h>
 #include <utils/timeout.h>
 #include <utils/timestamp.h>
 
