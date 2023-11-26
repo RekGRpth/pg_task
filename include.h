@@ -26,7 +26,6 @@ extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #include <storage/barrier.h>
 #endif
 #include <storage/proc.h>
-#include <utils/timeout.h>
 #include <utils/timestamp.h>
 
 #ifdef GP_VERSION_NUM

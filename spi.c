@@ -6,6 +6,7 @@
 #include <utils/lsyscache.h>
 #include <utils/memutils.h>
 #include <utils/snapmgr.h>
+#include <utils/timeout.h>
 
 typedef enum STMT_TYPE {
     STMT_BIND,
