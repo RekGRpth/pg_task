@@ -22,8 +22,6 @@
 #else
 #include <signal.h>
 extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
-extern void SignalHandlerForConfigReload(SIGNAL_ARGS);
-extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #endif
 
 #ifdef GP_VERSION_NUM

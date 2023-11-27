@@ -869,6 +869,19 @@ static void work_idle(SIGNAL_ARGS) {
     errno = save_errno;
 }
 
+#if PG_VERSION_NUM < 130000
+static void
+SignalHandlerForConfigReload(SIGNAL_ARGS)
+{
+	int			save_errno = errno;
+
+	ConfigReloadPending = true;
+	SetLatch(MyLatch);
+
+	errno = save_errno;
+}
+#endif
+
 void work_main(Datum arg) {
     const char *application_name;
     const char *index_hash[] = {"hash"};

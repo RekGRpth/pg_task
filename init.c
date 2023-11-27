@@ -54,6 +54,9 @@ static shmem_request_hook_type prev_shmem_request_hook = NULL;
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 TaskShared *taskshared = NULL;
 WorkShared *workshared = NULL;
+#if PG_VERSION_NUM < 130000
+volatile sig_atomic_t ShutdownRequestPending;
+#endif
 
 bool init_oid_is_string(Oid oid) {
     switch (oid) {
@@ -289,32 +292,6 @@ void _PG_init(void) {
 #endif
     init_conf(false);
 }
-
-#if PG_VERSION_NUM < 130000
-volatile sig_atomic_t ShutdownRequestPending;
-
-void
-SignalHandlerForConfigReload(SIGNAL_ARGS)
-{
-	int			save_errno = errno;
-
-	ConfigReloadPending = true;
-	SetLatch(MyLatch);
-
-	errno = save_errno;
-}
-
-void
-SignalHandlerForShutdownRequest(SIGNAL_ARGS)
-{
-	int			save_errno = errno;
-
-	ShutdownRequestPending = true;
-	SetLatch(MyLatch);
-
-	errno = save_errno;
-}
-#endif
 
 void append_with_tabs(StringInfo buf, const char *str) {
     char ch;
