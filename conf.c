@@ -1,5 +1,33 @@
 #include "include.h"
 
+#include <commands/dbcommands.h>
+#include <commands/user.h>
+#if PG_VERSION_NUM < 130000
+#include <catalog/pg_type.h>
+#include <miscadmin.h>
+#endif
+#include <nodes/makefuncs.h>
+#if PG_VERSION_NUM < 100000
+#include <parser/parse_node.h>
+#endif
+#include <pgstat.h>
+#include <postmaster/bgworker.h>
+#if PG_VERSION_NUM < 90500
+#include <storage/barrier.h>
+#endif
+#include <storage/ipc.h>
+#include <storage/proc.h>
+#include <utils/acl.h>
+#if PG_VERSION_NUM < 150000
+#include <utils/guc.h>
+#endif
+#include <utils/builtins.h>
+#include <utils/memutils.h>
+#include <utils/ps_status.h>
+#if PG_VERSION_NUM >= 100000
+#include <utils/regproc.h>
+#endif
+
 extern char *task_null;
 extern int conf_close;
 extern int conf_fetch;

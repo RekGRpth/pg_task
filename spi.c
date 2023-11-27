@@ -1,6 +1,17 @@
 #include "include.h"
 
+#if PG_VERSION_NUM < 150000
+#include <access/xact.h>
+#include <commands/async.h>
+#endif
 #include <executor/spi_priv.h>
+#include <pgstat.h>
+#include <storage/proc.h>
+#include <tcop/utility.h>
+#include <utils/lsyscache.h>
+#include <utils/memutils.h>
+#include <utils/snapmgr.h>
+#include <utils/timeout.h>
 
 typedef enum STMT_TYPE {
     STMT_BIND,
@@ -72,7 +83,7 @@ static void check_log_duration_my(STMT_TYPE stmt, const char *src, int nargs, Oi
     was_logged = false;
 }
 
-Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid) {
+Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid) {
     bool isnull;
     Datum datum;
     int fnumber = SPI_fnumber(tupdesc, fname);

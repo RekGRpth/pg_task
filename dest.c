@@ -1,9 +1,13 @@
 #include "include.h"
 
+#include <pgstat.h>
+#include <storage/proc.h>
+#include <utils/ps_status.h>
+
 extern Task task;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 
-void task_execute(void) {
+static void dest_execute(void) {
     bool count = false;
     bool insert = false;
     char completionTag[COMPLETION_TAG_BUFSIZE];
@@ -53,9 +57,33 @@ void task_execute(void) {
     }
 }
 
-void task_catch(void) {
+static void dest_catch(void) {
     emit_log_hook_prev = emit_log_hook;
     emit_log_hook = task_error;
     EmitErrorReport();
     FlushErrorState();
+}
+
+bool dest_timeout(void) {
+    int StatementTimeoutMy = StatementTimeout;
+    if (task_work(&task)) return true;
+    elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
+    set_ps_display_my("timeout");
+    StatementTimeout = task.timeout;
+    SPI_connect_my(task.input);
+    BeginInternalSubTransaction(NULL);
+    PG_TRY();
+        if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
+        dest_execute();
+        ReleaseCurrentSubTransaction();
+    PG_CATCH();
+        dest_catch();
+        RollbackAndReleaseCurrentSubTransaction();
+    PG_END_TRY();
+    SPI_finish_my();
+    StatementTimeout = StatementTimeoutMy;
+    pgstat_report_stat(false);
+    pgstat_report_activity(STATE_IDLE, NULL);
+    set_ps_display_my("idle");
+    return task_done(&task);
 }

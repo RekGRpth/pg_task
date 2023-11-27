@@ -6,70 +6,20 @@
 
 #include <postgres.h>
 
-#include <access/htup_details.h>
-#include <access/printtup.h>
-#include <access/hash.h>
-#if PG_VERSION_NUM >= 120000
-#include <access/relation.h>
-#endif
-#include <access/xact.h>
-#include <catalog/heap.h>
-#include <catalog/namespace.h>
-#include <catalog/pg_collation.h>
-#include <catalog/pg_type.h>
-#include <commands/async.h>
-#include <commands/dbcommands.h>
-#include <commands/extension.h>
-#include <commands/prepare.h>
-#include <commands/user.h>
 #include <executor/spi.h>
-#if PG_VERSION_NUM >= 110000
-#include <jit/jit.h>
-#endif
-#if PG_VERSION_NUM < 90600
-#include "latch.h"
+#if PG_VERSION_NUM < 90500
+#include <lib/stringinfo.h>
 #endif
 #include <libpq-fe.h>
-#include <libpq/libpq-be.h>
-#include <miscadmin.h>
-#include <nodes/makefuncs.h>
 #if PG_VERSION_NUM >= 160000
 #include <nodes/miscnodes.h>
 #endif
-#include <parser/analyze.h>
-#include <parser/parse_type.h>
-#include <pgstat.h>
-#include <postmaster/bgworker.h>
 #if PG_VERSION_NUM >= 130000
 #include <postmaster/interrupt.h>
 #else
+#include <signal.h>
 extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
-extern void SignalHandlerForConfigReload(SIGNAL_ARGS);
-extern void SignalHandlerForShutdownRequest(SIGNAL_ARGS);
 #endif
-#include <replication/slot.h>
-#if PG_VERSION_NUM < 90500
-#include <storage/barrier.h>
-#endif
-#include <storage/ipc.h>
-#include <storage/latch.h>
-#include <storage/procarray.h>
-#include <storage/proc.h>
-#include <storage/shm_toc.h>
-#include <tcop/pquery.h>
-#include <tcop/utility.h>
-#include <utils/acl.h>
-#include <utils/builtins.h>
-#include <utils/lsyscache.h>
-#include <utils/memutils.h>
-#include <utils/ps_status.h>
-#if PG_VERSION_NUM >= 100000
-#include <utils/regproc.h>
-#endif
-#include <utils/rel.h>
-#include <utils/snapmgr.h>
-#include <utils/timeout.h>
-#include <utils/timestamp.h>
 
 #ifdef GP_VERSION_NUM
 #include "cdb/cdbvars.h"
@@ -204,6 +154,7 @@ typedef struct Task {
     void (*socket) (struct Task *t);
 } Task;
 
+bool dest_timeout(void);
 bool init_oid_is_string(Oid oid);
 bool is_log_level_output(int elevel, int log_min_level);
 bool lock_data_user_hash(Oid data, Oid user, int hash);
@@ -219,7 +170,7 @@ bool unlock_table_pid_hash(Oid table, int pid, int hash);
 char *TextDatumGetCStringMy(Datum datum);
 const char *error_severity(int elevel);
 Datum CStringGetTextDatumMy(const char *s);
-Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid);
+Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid);
 int severity_error(const char *error);
 PGDLLEXPORT void conf_main(Datum main_arg);
 PGDLLEXPORT void task_main(Datum main_arg);
@@ -227,9 +178,9 @@ PGDLLEXPORT void work_main(Datum main_arg);
 Portal SPI_cursor_open_my(const char *src, SPIPlanPtr plan, Datum *values, const char *nulls);
 Portal SPI_cursor_open_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
-void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote);
+void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len, bool string, char escape, char quote);
 void append_with_tabs(StringInfo buf, const char *str);
-void initStringInfoMy(StringInfoData *buf);
+void initStringInfoMy(StringInfo buf);
 void init_conf(bool dynamic);
 void _PG_init(void);
 void SPI_connect_my(const char *src);
@@ -238,9 +189,7 @@ void SPI_cursor_fetch_my(const char *src, Portal portal, bool forward, long coun
 void SPI_execute_plan_my(const char *src, SPIPlanPtr plan, Datum *values, const char *nulls, int res);
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res);
 void SPI_finish_my(void);
-void task_catch(void);
 void task_error(ErrorData *edata);
-void task_execute(void);
 void task_free(Task *t);
 void taskshared_free(int slot);
 void workshared_free(int slot);

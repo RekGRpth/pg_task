@@ -1,11 +1,30 @@
 #include "include.h"
 
+#if PG_VERSION_NUM < 130000
+#include <catalog/pg_type.h>
+#include <miscadmin.h>
+#endif
+#include <pgstat.h>
+#include <postmaster/bgworker.h>
+#if PG_VERSION_NUM < 90500
+#include <storage/barrier.h>
+#endif
+#include <storage/ipc.h>
+#include <storage/proc.h>
+#include <tcop/utility.h>
+#include <utils/builtins.h>
+#include <utils/memutils.h>
+#include <utils/ps_status.h>
+#if PG_VERSION_NUM < 140000
+#include <utils/timestamp.h>
+#endif
+
+emit_log_hook_type emit_log_hook_prev = NULL;
 extern char *task_null;
 extern int task_fetch;
 extern TaskShared *taskshared;
 extern WorkShared *workshared;
 extern Work work;
-static emit_log_hook_type emit_log_hook_prev = NULL;
 Task task = {0};
 
 static bool task_live(const Task *t) {
@@ -301,30 +320,6 @@ static void task_latch(void) {
     CHECK_FOR_INTERRUPTS();
 }
 
-static bool task_timeout(void) {
-    int StatementTimeoutMy = StatementTimeout;
-    if (task_work(&task)) return true;
-    elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
-    set_ps_display_my("timeout");
-    StatementTimeout = task.timeout;
-    SPI_connect_my(task.input);
-    BeginInternalSubTransaction(NULL);
-    PG_TRY();
-        if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
-        task_execute();
-        ReleaseCurrentSubTransaction();
-    PG_CATCH();
-        task_catch();
-        RollbackAndReleaseCurrentSubTransaction();
-    PG_END_TRY();
-    SPI_finish_my();
-    StatementTimeout = StatementTimeoutMy;
-    pgstat_report_stat(false);
-    pgstat_report_activity(STATE_IDLE, NULL);
-    set_ps_display_my("idle");
-    return task_done(&task);
-}
-
 void task_free(Task *t) {
     if (t->error.data) { pfree(t->error.data); t->error.data = NULL; t->error.len = 0; }
     if (t->group) { pfree(t->group); t->group = NULL; }
@@ -371,7 +366,7 @@ void task_main(Datum arg) {
         int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0);
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
         if (rc & WL_LATCH_SET) task_latch();
-        if (rc & WL_TIMEOUT) if (task_timeout()) ShutdownRequestPending = true;
+        if (rc & WL_TIMEOUT) if (dest_timeout()) ShutdownRequestPending = true;
     }
     if (!unlock_table_pid_hash(work.shared->oid, task.pid, task.shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work.shared->oid, task.pid, task.shared->hash);
 }

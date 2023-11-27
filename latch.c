@@ -1,5 +1,6 @@
 #include "include.h"
 #if PG_VERSION_NUM < 90600
+#include "latch.h"
 /*-------------------------------------------------------------------------
  *
  * latch.c

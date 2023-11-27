@@ -1,5 +1,17 @@
 #include "include.h"
 
+#if PG_VERSION_NUM < 130000
+#include <catalog/pg_type.h>
+#include <miscadmin.h>
+#endif
+#include <pgstat.h>
+#include <postmaster/bgworker.h>
+#include <storage/ipc.h>
+#include <storage/proc.h>
+#include <tcop/utility.h>
+#include <utils/builtins.h>
+#include <utils/memutils.h>
+
 PG_MODULE_MAGIC;
 
 char *task_null;
@@ -42,6 +54,9 @@ static shmem_request_hook_type prev_shmem_request_hook = NULL;
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 TaskShared *taskshared = NULL;
 WorkShared *workshared = NULL;
+#if PG_VERSION_NUM < 130000
+volatile sig_atomic_t ShutdownRequestPending;
+#endif
 
 bool init_oid_is_string(Oid oid) {
     switch (oid) {
@@ -132,7 +147,7 @@ Datum CStringGetTextDatumMy(const char *s) {
     return s ? PointerGetDatum(cstring_to_text_my(s)) : (Datum)NULL;
 }
 
-void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote) {
+void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len, bool string, char escape, char quote) {
     if (!string && quote) appendStringInfoChar(buf, quote);
     if (len) {
         if (!string && escape && quote) for (int i = 0; len-- > 0; i++) {
@@ -221,7 +236,7 @@ static void init_shmem_startup_hook(void) {
     if (!found) MemSet(workshared, 0, init_workshared_memsize());
 }
 
-void initStringInfoMy(StringInfoData *buf) {
+void initStringInfoMy(StringInfo buf) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     initStringInfo(buf);
     MemoryContextSwitchTo(oldMemoryContext);
@@ -277,32 +292,6 @@ void _PG_init(void) {
 #endif
     init_conf(false);
 }
-
-#if PG_VERSION_NUM < 130000
-volatile sig_atomic_t ShutdownRequestPending;
-
-void
-SignalHandlerForConfigReload(SIGNAL_ARGS)
-{
-	int			save_errno = errno;
-
-	ConfigReloadPending = true;
-	SetLatch(MyLatch);
-
-	errno = save_errno;
-}
-
-void
-SignalHandlerForShutdownRequest(SIGNAL_ARGS)
-{
-	int			save_errno = errno;
-
-	ShutdownRequestPending = true;
-	SetLatch(MyLatch);
-
-	errno = save_errno;
-}
-#endif
 
 void append_with_tabs(StringInfo buf, const char *str) {
     char ch;

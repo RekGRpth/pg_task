@@ -1,5 +1,45 @@
 #include "include.h"
 
+#if PG_VERSION_NUM < 100000
+#include <access/hash.h>
+#endif
+#if PG_VERSION_NUM >= 120000
+#include <access/relation.h>
+#endif
+#include <catalog/namespace.h>
+#include <catalog/pg_collation.h>
+#if PG_VERSION_NUM < 130000
+#include <catalog/pg_type.h>
+#endif
+#if PG_VERSION_NUM < 90600
+#include "latch.h"
+#endif
+#include <libpq/libpq-be.h>
+#if PG_VERSION_NUM < 130000
+#include <miscadmin.h>
+#endif
+#include <parser/parse_type.h>
+#include <pgstat.h>
+#include <postmaster/bgworker.h>
+#if PG_VERSION_NUM < 90500
+#include <storage/barrier.h>
+#endif
+#include <storage/ipc.h>
+#include <storage/proc.h>
+#include <tcop/utility.h>
+#include <utils/builtins.h>
+#include <utils/memutils.h>
+#if PG_VERSION_NUM < 150000
+#include <utils/rel.h>
+#endif
+#if PG_VERSION_NUM < 140000
+#include <utils/timestamp.h>
+#endif
+#include <utils/ps_status.h>
+#if PG_VERSION_NUM >= 100000
+#include <utils/regproc.h>
+#endif
+
 extern char *task_null;
 extern int task_idle;
 extern int work_close;
@@ -831,6 +871,19 @@ static void work_idle(SIGNAL_ARGS) {
     SetLatch(MyLatch);
     errno = save_errno;
 }
+
+#if PG_VERSION_NUM < 130000
+static void
+SignalHandlerForConfigReload(SIGNAL_ARGS)
+{
+	int			save_errno = errno;
+
+	ConfigReloadPending = true;
+	SetLatch(MyLatch);
+
+	errno = save_errno;
+}
+#endif
 
 void work_main(Datum arg) {
     const char *application_name;
