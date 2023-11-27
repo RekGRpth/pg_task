@@ -83,7 +83,7 @@ static void check_log_duration_my(STMT_TYPE stmt, const char *src, int nargs, Oi
     was_logged = false;
 }
 
-Datum SPI_getbinval_my(HeapTupleData *tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid) {
+Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid) {
     bool isnull;
     Datum datum;
     int fnumber = SPI_fnumber(tupdesc, fname);
