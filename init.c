@@ -147,7 +147,7 @@ Datum CStringGetTextDatumMy(const char *s) {
     return s ? PointerGetDatum(cstring_to_text_my(s)) : (Datum)NULL;
 }
 
-void appendBinaryStringInfoEscapeQuote(StringInfoData *buf, const char *data, int len, bool string, char escape, char quote) {
+void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len, bool string, char escape, char quote) {
     if (!string && quote) appendStringInfoChar(buf, quote);
     if (len) {
         if (!string && escape && quote) for (int i = 0; len-- > 0; i++) {
@@ -236,7 +236,7 @@ static void init_shmem_startup_hook(void) {
     if (!found) MemSet(workshared, 0, init_workshared_memsize());
 }
 
-void initStringInfoMy(StringInfoData *buf) {
+void initStringInfoMy(StringInfo buf) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     initStringInfo(buf);
     MemoryContextSwitchTo(oldMemoryContext);
