@@ -11,6 +11,9 @@
 #if PG_VERSION_NUM < 130000
 #include <catalog/pg_type.h>
 #endif
+#if PG_VERSION_NUM < 90600
+#include "latch.h"
+#endif
 #include <libpq/libpq-be.h>
 #if PG_VERSION_NUM < 130000
 #include <miscadmin.h>

@@ -7,9 +7,6 @@
 #include <postgres.h>
 
 #include <executor/spi.h>
-#if PG_VERSION_NUM < 90600
-#include "latch.h"
-#endif
 #if PG_VERSION_NUM < 90500
 #include <lib/stringinfo.h>
 #endif
