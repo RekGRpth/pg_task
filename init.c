@@ -158,7 +158,7 @@ void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len
     if (!string && quote) appendStringInfoChar(buf, quote);
 }
 
-void init_conf(bool dynamic) {
+static void init_conf(bool dynamic) {
     BackgroundWorker worker = {0};
     size_t len;
     if ((len = strlcpy(worker.bgw_function_name, "conf_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
