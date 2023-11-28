@@ -14,12 +14,6 @@
 #if PG_VERSION_NUM >= 160000
 #include <nodes/miscnodes.h>
 #endif
-#if PG_VERSION_NUM >= 130000
-#include <postmaster/interrupt.h>
-#else
-#include <signal.h>
-extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
-#endif
 
 #ifdef GP_VERSION_NUM
 #include "cdb/cdbvars.h"

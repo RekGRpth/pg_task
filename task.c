@@ -6,6 +6,12 @@
 #endif
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
+#if PG_VERSION_NUM >= 130000
+#include <postmaster/interrupt.h>
+#else
+#include <signal.h>
+extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
+#endif
 #if PG_VERSION_NUM < 90500
 #include <storage/barrier.h>
 #endif
