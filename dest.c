@@ -4,14 +4,15 @@
 #include <utils/lsyscache.h>
 
 enum PIPES {READ, WRITE};
-extern emit_log_hook_type emit_log_hook_prev;
-extern Task task;
 typedef struct {
     FILE *file;
     int fd;
     int pipes[2];
 } grub_t;
 
+extern emit_log_hook_type emit_log_hook_prev;
+extern Task task;
+static grub_t output;
 
 static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
     bool isnull;
@@ -211,19 +212,19 @@ static void dest_ungrab(grub_t *grub, StringInfo buf) {
 
 bool dest_timeout(void) {
     int StatementTimeoutMy = StatementTimeout;
-    grub_t output;
     if (task_work(&task)) return true;
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
     StatementTimeout = task.timeout;
-    dest_grab(&output, stdout);
     PG_TRY();
         if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
+        dest_grab(&output, stdout);
         dest_execute();
+        dest_ungrab(&output, &task.output);
     PG_CATCH();
+        dest_ungrab(&output, &task.output);
         dest_catch();
     PG_END_TRY();
-    dest_ungrab(&output, &task.output);
     StatementTimeout = StatementTimeoutMy;
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
