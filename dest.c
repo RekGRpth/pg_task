@@ -190,7 +190,6 @@ static void dest_execute(void) {
 
 static void dest_catch(void) {
     HOLD_INTERRUPTS();
-    dest_ungrab(&output, &task.output);
     disable_all_timeouts(false);
     QueryCancelPending = false;
     emit_log_hook_prev = emit_log_hook;
@@ -223,6 +222,7 @@ bool dest_timeout(void) {
         if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
         dest_execute();
     PG_CATCH();
+        dest_ungrab(&output, &task.output);
         dest_catch();
     PG_END_TRY();
     StatementTimeout = StatementTimeoutMy;
