@@ -3,16 +3,8 @@
 #include <unistd.h>
 #include <utils/lsyscache.h>
 
-enum PIPES {READ, WRITE};
-typedef struct {
-    FILE *file;
-    int fd;
-    int pipes[2];
-} grub_t;
-
 extern emit_log_hook_type emit_log_hook_prev;
 extern Task task;
-static grub_t output = {0};
 
 static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
     bool isnull;
@@ -30,32 +22,6 @@ static void headers(TupleDesc tupdesc) {
         if (col > 1) appendStringInfoChar(&task.output, task.delimiter);
         appendBinaryStringInfoEscapeQuote(&task.output, SPI_fname(tupdesc, col), strlen(SPI_fname(tupdesc, col)), false, task.escape, task.quote);
     }
-}
-
-static void dest_grab(grub_t *grub, FILE *file) {
-    grub->file = file;
-    if ((grub->fd = dup(fileno(grub->file))) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("dup < 0"), errdetail("%m")));
-    if (pipe(grub->pipes) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("pipe < 0"), errdetail("%m")));
-    if (fflush(grub->file)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
-    if (dup2(grub->pipes[WRITE], fileno(grub->file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
-    if (close(grub->pipes[WRITE]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
-    grub->pipes[WRITE] = 0;
-}
-
-static void dest_ungrab(grub_t *grub, StringInfo buf) {
-    char buffer[PIPE_BUF];
-    int nread;
-    if (!grub->pipes[READ]) return;
-    if (fflush(grub->file)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
-    if (dup2(grub->fd, fileno(grub->file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
-    if (close(grub->fd) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
-    while ((nread = read(grub->pipes[READ], buffer, sizeof(buffer))) > 0) {
-        if (!buf->data) initStringInfoMy(buf);
-        appendBinaryStringInfo(buf, buffer, nread);
-        task.skip = 1;
-    }
-    if (close(grub->pipes[READ]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
-    grub->pipes[READ] = 0;
 }
 
 static
@@ -104,7 +70,6 @@ static void rShutdown(DestReceiver *self) {
 
 static void rDestroy(DestReceiver *self) {
     elog(DEBUG1, "id = %li", task.shared->id);
-    dest_ungrab(&output, &task.output);
 }
 
 static
@@ -121,7 +86,6 @@ DestReceiver myDestReceiver = {
 
 static DestReceiver *CreateDestReceiverMy(CommandDest dest) {
     elog(DEBUG1, "id = %li", task.shared->id);
-    dest_grab(&output, stdout);
 #if PG_VERSION_NUM >= 120000
     return unconstify(DestReceiver *, &myDestReceiver);
 #else
@@ -223,7 +187,6 @@ bool dest_timeout(void) {
         if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
         dest_execute();
     PG_CATCH();
-        dest_ungrab(&output, &task.output);
         dest_catch();
     PG_END_TRY();
     StatementTimeout = StatementTimeoutMy;
