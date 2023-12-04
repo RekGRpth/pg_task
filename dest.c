@@ -7,6 +7,7 @@ enum PIPES {READ, WRITE};
 extern emit_log_hook_type emit_log_hook_prev;
 extern Task task;
 typedef struct {
+    FILE *file;
     int fd;
     int pipes[2];
 } grub_t;
@@ -183,19 +184,20 @@ static void dest_catch(void) {
     RESUME_INTERRUPTS();
 }
 
-static void dest_grab(FILE *file, grub_t *grub) {
-    if ((grub->fd = dup(fileno(file))) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("dup < 0"), errdetail("%m")));
+static void dest_grab(grub_t *grub, FILE *file) {
+    grub->file = file;
+    if ((grub->fd = dup(fileno(grub->file))) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("dup < 0"), errdetail("%m")));
     if (pipe(grub->pipes) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("pipe < 0"), errdetail("%m")));
-    if (fflush(file)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
-    if (dup2(grub->pipes[WRITE], fileno(file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
+    if (fflush(grub->file)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
+    if (dup2(grub->pipes[WRITE], fileno(grub->file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
     if (close(grub->pipes[WRITE]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
 }
 
-static void dest_ungrab(FILE *file, grub_t *grub, StringInfo buf) {
+static void dest_ungrab(grub_t *grub, StringInfo buf) {
     char buffer[PIPE_BUF];
     int nread;
-    if (fflush(file)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
-    if (dup2(grub->fd, fileno(file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
+    if (fflush(grub->file)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
+    if (dup2(grub->fd, fileno(grub->file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
     if (close(grub->fd) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
     while ((nread = read(grub->pipes[READ], buffer, sizeof(buffer))) > 0) {
         if (!buf->data) initStringInfoMy(buf);
@@ -211,14 +213,14 @@ bool dest_timeout(void) {
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
     StatementTimeout = task.timeout;
-    dest_grab(stdout, &out);
+    dest_grab(&out, stdout);
     PG_TRY();
         if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
         dest_execute();
     PG_CATCH();
         dest_catch();
     PG_END_TRY();
-    dest_ungrab(stdout, &out, &task.output);
+    dest_ungrab(&out, &task.output);
     StatementTimeout = StatementTimeoutMy;
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
