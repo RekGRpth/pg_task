@@ -203,20 +203,20 @@ static void dest_ungrab(FILE *file, int fd, int pipes[2], StringInfo buf) {
 
 bool dest_timeout(void) {
     int StatementTimeoutMy = StatementTimeout;
-    int stdout_fd;
-    int stdout_pipe[2];
+    int fd;
+    int pipes[2];
     if (task_work(&task)) return true;
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
     StatementTimeout = task.timeout;
-    stdout_fd = dest_grab(stdout, stdout_pipe);
+    fd = dest_grab(stdout, pipes);
     PG_TRY();
         if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
         dest_execute();
     PG_CATCH();
         dest_catch();
     PG_END_TRY();
-    dest_ungrab(stdout, stdout_fd, stdout_pipe, &task.output);
+    dest_ungrab(stdout, fd, pipes, &task.output);
     StatementTimeout = StatementTimeoutMy;
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
