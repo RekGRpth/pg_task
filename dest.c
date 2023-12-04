@@ -178,27 +178,27 @@ static void dest_catch(void) {
     RESUME_INTERRUPTS();
 }
 
-static int dest_grab(FILE *file, int filepipe[2]) {
-    int filefd;
-    if ((filefd = dup(fileno(file))) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("dup < 0"), errdetail("%m")));
-    if (pipe(filepipe) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("pipe < 0"), errdetail("%m")));
+static int dest_grab(FILE *file, int pipes[2]) {
+    int fd;
+    if ((fd = dup(fileno(file))) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("dup < 0"), errdetail("%m")));
+    if (pipe(pipes) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("pipe < 0"), errdetail("%m")));
     if (fflush(file)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
-    if (dup2(filepipe[WRITE], fileno(file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
-    if (close(filepipe[WRITE]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
-    return filefd;
+    if (dup2(pipes[WRITE], fileno(file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
+    if (close(pipes[WRITE]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
+    return fd;
 }
 
-static void dest_ungrab(FILE *file, int filefd, int filepipe[2], StringInfo buf) {
+static void dest_ungrab(FILE *file, int fd, int pipes[2], StringInfo buf) {
     char buffer[PIPE_BUF];
     int nread;
     if (fflush(file)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
-    if (dup2(filefd, fileno(file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
-    if (close(filefd) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
-    while ((nread = read(filepipe[READ], buffer, sizeof(buffer))) > 0) {
+    if (dup2(fd, fileno(file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
+    if (close(fd) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
+    while ((nread = read(pipes[READ], buffer, sizeof(buffer))) > 0) {
         if (!buf->data) initStringInfoMy(buf);
         appendBinaryStringInfo(buf, buffer, nread);
     }
-    if (close(filepipe[READ]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
+    if (close(pipes[READ]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
 }
 
 bool dest_timeout(void) {
