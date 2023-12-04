@@ -208,11 +208,13 @@ static void dest_ungrab(grub_t *grub, StringInfo buf) {
 
 bool dest_timeout(void) {
     int StatementTimeoutMy = StatementTimeout;
+    grub_t err;
     grub_t out;
     if (task_work(&task)) return true;
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
     StatementTimeout = task.timeout;
+    dest_grab(&err, stderr);
     dest_grab(&out, stdout);
     PG_TRY();
         if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
@@ -220,6 +222,7 @@ bool dest_timeout(void) {
     PG_CATCH();
         dest_catch();
     PG_END_TRY();
+    dest_ungrab(&err, &task.error);
     dest_ungrab(&out, &task.output);
     StatementTimeout = StatementTimeoutMy;
     pgstat_report_stat(false);
