@@ -6,8 +6,6 @@
 enum PIPES {READ, WRITE};
 extern emit_log_hook_type emit_log_hook_prev;
 extern Task task;
-static int stdout_fd;
-static int stdout_pipe[2];
 
 static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
     bool isnull;
@@ -72,18 +70,7 @@ static void rShutdown(DestReceiver *self) {
 }
 
 static void rDestroy(DestReceiver *self) {
-    char buffer[PIPE_BUF];
-    int nread;
     elog(DEBUG1, "id = %li", task.shared->id);
-    if (fflush(stdout)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
-    if (dup2(stdout_fd, STDOUT_FILENO) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
-    if (close(stdout_fd) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
-    while ((nread = read(stdout_pipe[READ], buffer, sizeof(buffer))) > 0) {
-        if (!task.output.data) initStringInfoMy(&task.output);
-        appendBinaryStringInfo(&task.output, buffer, nread);
-        task.skip = 1;
-    }
-    if (close(stdout_pipe[READ]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
 }
 
 static
@@ -100,11 +87,6 @@ DestReceiver myDestReceiver = {
 
 static DestReceiver *CreateDestReceiverMy(CommandDest dest) {
     elog(DEBUG1, "id = %li", task.shared->id);
-    if ((stdout_fd = dup(STDOUT_FILENO)) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("dup < 0"), errdetail("%m")));
-    if (pipe(stdout_pipe) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("pipe < 0"), errdetail("%m")));
-    if (fflush(stdout)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
-    if (dup2(stdout_pipe[WRITE], STDOUT_FILENO) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
-    if (close(stdout_pipe[WRITE]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
 #if PG_VERSION_NUM >= 120000
     return unconstify(DestReceiver *, &myDestReceiver);
 #else
@@ -196,18 +178,45 @@ static void dest_catch(void) {
     RESUME_INTERRUPTS();
 }
 
+static int dest_grab(FILE *file, int filepipe[2]) {
+    int filefd;
+    if ((filefd = dup(fileno(file))) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("dup < 0"), errdetail("%m")));
+    if (pipe(filepipe) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("pipe < 0"), errdetail("%m")));
+    if (fflush(file)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
+    if (dup2(filepipe[WRITE], fileno(file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
+    if (close(filepipe[WRITE]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
+    return filefd;
+}
+
+static void dest_ungrab(FILE *file, int filefd, int filepipe[2], StringInfo buf) {
+    char buffer[PIPE_BUF];
+    int nread;
+    if (fflush(file)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
+    if (dup2(filefd, fileno(file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
+    if (close(filefd) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
+    while ((nread = read(filepipe[READ], buffer, sizeof(buffer))) > 0) {
+        if (!buf->data) initStringInfoMy(buf);
+        appendBinaryStringInfo(buf, buffer, nread);
+    }
+    if (close(filepipe[READ]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
+}
+
 bool dest_timeout(void) {
     int StatementTimeoutMy = StatementTimeout;
+    int stdout_fd;
+    int stdout_pipe[2];
     if (task_work(&task)) return true;
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
     StatementTimeout = task.timeout;
+    stdout_fd = dest_grab(stdout, stdout_pipe);
     PG_TRY();
         if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
         dest_execute();
     PG_CATCH();
         dest_catch();
     PG_END_TRY();
+    dest_ungrab(stdout, stdout_fd, stdout_pipe, &task.output);
     StatementTimeout = StatementTimeoutMy;
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
