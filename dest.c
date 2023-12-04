@@ -148,43 +148,6 @@ static void EndCommandMy(const char *commandTag, CommandDest dest) {
 
 #include <postgres.c>
 
-static void dest_execute(void) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
-    MemoryContextResetAndDeleteChildren(MessageContext);
-    InvalidateCatalogSnapshotConditionally();
-    MemoryContextSwitchTo(oldMemoryContext);
-    whereToSendOutput = DestDebug;
-    ReadyForQueryMy(whereToSendOutput);
-    SetCurrentStatementStartTimestamp();
-    exec_simple_query(task.input);
-    if (IsTransactionState()) exec_simple_query(SQL(COMMIT));
-    if (IsTransactionState()) ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION), errmsg("still active sql transaction")));
-}
-
-static void dest_catch(void) {
-    HOLD_INTERRUPTS();
-    disable_all_timeouts(false);
-    QueryCancelPending = false;
-    emit_log_hook_prev = emit_log_hook;
-    emit_log_hook = task_error;
-    EmitErrorReport();
-    debug_query_string = NULL;
-    AbortOutOfAnyTransaction();
-#if PG_VERSION_NUM >= 110000
-    PortalErrorCleanup();
-#endif
-    if (MyReplicationSlot) ReplicationSlotRelease();
-#if PG_VERSION_NUM >= 100000
-    ReplicationSlotCleanup();
-#endif
-#if PG_VERSION_NUM >= 110000
-    jit_reset_after_error();
-#endif
-    FlushErrorState();
-    xact_started = false;
-    RESUME_INTERRUPTS();
-}
-
 static void dest_grab(grub_t *grub, FILE *file) {
     grub->file = file;
     if ((grub->fd = dup(fileno(grub->file))) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("dup < 0"), errdetail("%m")));
@@ -210,6 +173,46 @@ static void dest_ungrab(grub_t *grub, StringInfo buf) {
     grub->pipes[READ] = -1;
 }
 
+static void dest_execute(void) {
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
+    MemoryContextResetAndDeleteChildren(MessageContext);
+    InvalidateCatalogSnapshotConditionally();
+    MemoryContextSwitchTo(oldMemoryContext);
+    whereToSendOutput = DestDebug;
+    ReadyForQueryMy(whereToSendOutput);
+    SetCurrentStatementStartTimestamp();
+    dest_grab(&output, stdout);
+    exec_simple_query(task.input);
+    dest_ungrab(&output, &task.output);
+    if (IsTransactionState()) exec_simple_query(SQL(COMMIT));
+    if (IsTransactionState()) ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION), errmsg("still active sql transaction")));
+}
+
+static void dest_catch(void) {
+    HOLD_INTERRUPTS();
+    dest_ungrab(&output, &task.output);
+    disable_all_timeouts(false);
+    QueryCancelPending = false;
+    emit_log_hook_prev = emit_log_hook;
+    emit_log_hook = task_error;
+    EmitErrorReport();
+    debug_query_string = NULL;
+    AbortOutOfAnyTransaction();
+#if PG_VERSION_NUM >= 110000
+    PortalErrorCleanup();
+#endif
+    if (MyReplicationSlot) ReplicationSlotRelease();
+#if PG_VERSION_NUM >= 100000
+    ReplicationSlotCleanup();
+#endif
+#if PG_VERSION_NUM >= 110000
+    jit_reset_after_error();
+#endif
+    FlushErrorState();
+    xact_started = false;
+    RESUME_INTERRUPTS();
+}
+
 bool dest_timeout(void) {
     int StatementTimeoutMy = StatementTimeout;
     if (task_work(&task)) return true;
@@ -218,11 +221,8 @@ bool dest_timeout(void) {
     StatementTimeout = task.timeout;
     PG_TRY();
         if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
-        dest_grab(&output, stdout);
         dest_execute();
-        dest_ungrab(&output, &task.output);
     PG_CATCH();
-        dest_ungrab(&output, &task.output);
         dest_catch();
     PG_END_TRY();
     StatementTimeout = StatementTimeoutMy;
