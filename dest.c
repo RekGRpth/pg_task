@@ -6,6 +6,11 @@
 enum PIPES {READ, WRITE};
 extern emit_log_hook_type emit_log_hook_prev;
 extern Task task;
+typedef struct {
+    int fd;
+    int pipes[2];
+} grub_t;
+
 
 static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
     bool isnull;
@@ -178,45 +183,42 @@ static void dest_catch(void) {
     RESUME_INTERRUPTS();
 }
 
-static int dest_grab(FILE *file, int pipes[2]) {
-    int fd;
-    if ((fd = dup(fileno(file))) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("dup < 0"), errdetail("%m")));
-    if (pipe(pipes) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("pipe < 0"), errdetail("%m")));
+static void dest_grab(FILE *file, grub_t *grub) {
+    if ((grub->fd = dup(fileno(file))) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("dup < 0"), errdetail("%m")));
+    if (pipe(grub->pipes) < 0) ereport(ERROR, (errcode_for_socket_access(), errmsg("pipe < 0"), errdetail("%m")));
     if (fflush(file)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
-    if (dup2(pipes[WRITE], fileno(file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
-    if (close(pipes[WRITE]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
-    return fd;
+    if (dup2(grub->pipes[WRITE], fileno(file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
+    if (close(grub->pipes[WRITE]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
 }
 
-static void dest_ungrab(FILE *file, int fd, int pipes[2], StringInfo buf) {
+static void dest_ungrab(FILE *file, grub_t *grub, StringInfo buf) {
     char buffer[PIPE_BUF];
     int nread;
     if (fflush(file)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
-    if (dup2(fd, fileno(file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
-    if (close(fd) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
-    while ((nread = read(pipes[READ], buffer, sizeof(buffer))) > 0) {
+    if (dup2(grub->fd, fileno(file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
+    if (close(grub->fd) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
+    while ((nread = read(grub->pipes[READ], buffer, sizeof(buffer))) > 0) {
         if (!buf->data) initStringInfoMy(buf);
         appendBinaryStringInfo(buf, buffer, nread);
     }
-    if (close(pipes[READ]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
+    if (close(grub->pipes[READ]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
 }
 
 bool dest_timeout(void) {
     int StatementTimeoutMy = StatementTimeout;
-    int fd;
-    int pipes[2];
+    grub_t out;
     if (task_work(&task)) return true;
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
     StatementTimeout = task.timeout;
-    fd = dest_grab(stdout, pipes);
+    dest_grab(stdout, &out);
     PG_TRY();
         if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
         dest_execute();
     PG_CATCH();
         dest_catch();
     PG_END_TRY();
-    dest_ungrab(stdout, fd, pipes, &task.output);
+    dest_ungrab(stdout, &out, &task.output);
     StatementTimeout = StatementTimeoutMy;
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
