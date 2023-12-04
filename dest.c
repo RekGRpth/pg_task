@@ -12,7 +12,7 @@ typedef struct {
 
 extern emit_log_hook_type emit_log_hook_prev;
 extern Task task;
-static grub_t output;
+static grub_t output = {0};
 
 static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
     bool isnull;
@@ -39,13 +39,13 @@ static void dest_grab(grub_t *grub, FILE *file) {
     if (fflush(grub->file)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
     if (dup2(grub->pipes[WRITE], fileno(grub->file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
     if (close(grub->pipes[WRITE]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
-    grub->pipes[WRITE] = -1;
+    grub->pipes[WRITE] = 0;
 }
 
 static void dest_ungrab(grub_t *grub, StringInfo buf) {
     char buffer[PIPE_BUF];
     int nread;
-    if (grub->pipes[READ] < 0) return;
+    if (!grub->pipes[READ]) return;
     if (fflush(grub->file)) ereport(ERROR, (errcode_for_socket_access(), errmsg("fflush"), errdetail("%m")));
     if (dup2(grub->fd, fileno(grub->file)) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("dup2 < 0"), errdetail("%m")));
     if (close(grub->fd) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
@@ -54,7 +54,7 @@ static void dest_ungrab(grub_t *grub, StringInfo buf) {
         appendBinaryStringInfo(buf, buffer, nread);
     }
     if (close(grub->pipes[READ]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
-    grub->pipes[READ] = -1;
+    grub->pipes[READ] = 0;
 }
 
 static
