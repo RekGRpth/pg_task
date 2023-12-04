@@ -52,6 +52,7 @@ static void dest_ungrab(grub_t *grub, StringInfo buf) {
     while ((nread = read(grub->pipes[READ], buffer, sizeof(buffer))) > 0) {
         if (!buf->data) initStringInfoMy(buf);
         appendBinaryStringInfo(buf, buffer, nread);
+        task.skip = 1;
     }
     if (close(grub->pipes[READ]) < 0) ereport(ERROR, (errcode_for_file_access(), errmsg("close < 0"), errdetail("%m")));
     grub->pipes[READ] = 0;
