@@ -339,6 +339,7 @@ void task_main(Datum arg) {
     const char *application_name;
     StringInfoData oid, schema_table;
     elog(DEBUG1, "arg = %i", DatumGetInt32(arg));
+    if (!taskshared[DatumGetInt32(arg)].in_use) return;
     task.shared = &taskshared[DatumGetInt32(arg)];
     work.shared = &workshared[task.shared->slot];
     on_shmem_exit(task_shmem_exit, arg);

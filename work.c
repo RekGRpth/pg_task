@@ -904,6 +904,7 @@ void work_main(Datum arg) {
     long current_sleep = -1;
     StringInfoData schema_table, schema_type;
     elog(DEBUG1, "arg = %i", DatumGetInt32(arg));
+    if (!workshared[DatumGetInt32(arg)].in_use) return;
     work.shared = &workshared[DatumGetInt32(arg)];
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_DISPATCH;
