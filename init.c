@@ -231,10 +231,14 @@ static void init_shmem_request_hook(void) {
 static void init_shmem_startup_hook(void) {
     bool found;
     if (prev_shmem_startup_hook) prev_shmem_startup_hook();
+    LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
     taskshared = ShmemInitStruct("pg_taskshared", init_taskshared_memsize(), &found);
     if (!found) MemSet(taskshared, 0, init_taskshared_memsize());
+    elog(DEBUG1, "pg_taskshared %s found", found ? "" : "not");
     workshared = ShmemInitStruct("pg_workshared", init_workshared_memsize(), &found);
     if (!found) MemSet(workshared, 0, init_workshared_memsize());
+    elog(DEBUG1, "pg_workshared %s found", found ? "" : "not");
+    LWLockRelease(AddinShmemInitLock);
 }
 
 void initStringInfoMy(StringInfo buf) {
