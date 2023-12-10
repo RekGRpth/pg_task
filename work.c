@@ -486,6 +486,9 @@ static void work_shmem_exit(int code, Datum arg) {
         }
         work_finish(t);
     }
+    if (!code) {
+        if (!ShutdownRequestPending) init_conf(true);
+    }
 }
 
 static void work_remote(Task *t) {
@@ -904,7 +907,6 @@ void work_main(Datum main_arg) {
     long current_sleep = -1;
     StringInfoData schema_table, schema_type;
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
-    if (!workshared[DatumGetInt32(main_arg)].in_use) return;
     work.shared = &workshared[DatumGetInt32(main_arg)];
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_DISPATCH;
@@ -914,6 +916,7 @@ void work_main(Datum main_arg) {
 #endif
 #endif
     on_shmem_exit(work_shmem_exit, main_arg);
+    if (!work.shared->in_use) return;
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGINT, work_idle);
     BackgroundWorkerUnblockSignals();

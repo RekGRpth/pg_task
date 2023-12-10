@@ -159,9 +159,10 @@ void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len
     if (!string && quote) appendStringInfoChar(buf, quote);
 }
 
-static void init_conf(bool dynamic) {
+void init_conf(bool dynamic) {
     BackgroundWorker worker = {0};
     size_t len;
+    elog(DEBUG1, "dynamic = %s", dynamic ? "true" : "false");
     if ((len = strlcpy(worker.bgw_function_name, "conf_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
     if ((len = strlcpy(worker.bgw_name, "postgres pg_conf", sizeof(worker.bgw_name))) >= sizeof(worker.bgw_name)) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_name))));
