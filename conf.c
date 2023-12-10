@@ -144,7 +144,7 @@ static void conf_work(Work *w) {
     if (handle) pfree(handle);
 }
 
-void conf_main(Datum arg) {
+void conf_main(Datum main_arg) {
     dlist_mutable_iter iter;
     Portal portal;
     StringInfoData src;

@@ -335,14 +335,14 @@ void task_free(Task *t) {
     if (t->remote) { pfree(t->remote); t->remote = NULL; }
 }
 
-void task_main(Datum arg) {
+void task_main(Datum main_arg) {
     const char *application_name;
     StringInfoData oid, schema_table;
-    elog(DEBUG1, "arg = %i", DatumGetInt32(arg));
-    if (!taskshared[DatumGetInt32(arg)].in_use) return;
-    task.shared = &taskshared[DatumGetInt32(arg)];
+    elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
+    if (!taskshared[DatumGetInt32(main_arg)].in_use) return;
+    task.shared = &taskshared[DatumGetInt32(main_arg)];
     work.shared = &workshared[task.shared->slot];
-    on_shmem_exit(task_shmem_exit, arg);
+    on_shmem_exit(task_shmem_exit, main_arg);
     BackgroundWorkerUnblockSignals();
     work.data = quote_identifier(work.shared->data);
     work.schema = quote_identifier(work.shared->schema);

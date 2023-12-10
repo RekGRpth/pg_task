@@ -888,7 +888,7 @@ SignalHandlerForConfigReload(SIGNAL_ARGS)
 }
 #endif
 
-void work_main(Datum arg) {
+void work_main(Datum main_arg) {
     const char *application_name;
     const char *index_hash[] = {"hash"};
     const char *index_input[] = {"input"};
@@ -903,9 +903,9 @@ void work_main(Datum arg) {
     long current_reset = -1;
     long current_sleep = -1;
     StringInfoData schema_table, schema_type;
-    elog(DEBUG1, "arg = %i", DatumGetInt32(arg));
-    if (!workshared[DatumGetInt32(arg)].in_use) return;
-    work.shared = &workshared[DatumGetInt32(arg)];
+    elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
+    if (!workshared[DatumGetInt32(main_arg)].in_use) return;
+    work.shared = &workshared[DatumGetInt32(main_arg)];
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_DISPATCH;
     optimizer = false;
@@ -913,7 +913,7 @@ void work_main(Datum arg) {
     Gp_session_role = GP_ROLE_DISPATCH;
 #endif
 #endif
-    on_shmem_exit(work_shmem_exit, arg);
+    on_shmem_exit(work_shmem_exit, main_arg);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGINT, work_idle);
     BackgroundWorkerUnblockSignals();
