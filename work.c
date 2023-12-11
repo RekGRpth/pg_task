@@ -914,7 +914,7 @@ void work_main(Datum main_arg) {
     Gp_session_role = GP_ROLE_DISPATCH;
 #endif
 #endif
-    on_shmem_exit(work_shmem_exit, main_arg);
+    before_shmem_exit(work_shmem_exit, main_arg);
     if (!work.shared->in_use) return;
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGINT, work_idle);

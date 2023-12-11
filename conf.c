@@ -148,7 +148,7 @@ void conf_main(Datum main_arg) {
     dlist_mutable_iter iter;
     Portal portal;
     StringInfoData src;
-    on_shmem_exit(conf_shmem_exit, (Datum)NULL);
+    before_shmem_exit(conf_shmem_exit, main_arg);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL);
     set_config_option_my("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);

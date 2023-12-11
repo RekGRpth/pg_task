@@ -341,7 +341,7 @@ void task_main(Datum main_arg) {
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
     task.shared = &taskshared[DatumGetInt32(main_arg)];
     work.shared = &workshared[task.shared->slot];
-    on_shmem_exit(task_shmem_exit, main_arg);
+    before_shmem_exit(task_shmem_exit, main_arg);
     if (!task.shared->in_use) return;
     if (!work.shared->in_use) return;
     BackgroundWorkerUnblockSignals();
