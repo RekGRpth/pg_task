@@ -95,6 +95,7 @@ typedef struct WorkShared {
     char user[NAMEDATALEN];
     int64 reset;
     int64 sleep;
+    int hash;
     int run;
     Oid oid;
 } WorkShared;
@@ -108,7 +109,6 @@ typedef struct Work {
     const char *table;
     const char *user;
     dlist_node node;
-    int hash;
     pid_t pid;
     WorkShared *shared;
 } Work;
