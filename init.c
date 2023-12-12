@@ -42,12 +42,14 @@ static char *task_timeout;
 static char *task_user;
 static char *work_active;
 static int conf_restart;
+static int conf_work;
 static int task_count;
 static int task_id;
 static int task_limit;
 static int task_max;
 static int task_run;
 static int task_sleep;
+static int work_task;
 #if PG_VERSION_NUM >= 150000
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
 #endif
@@ -214,11 +216,11 @@ static void init_assign_table(const char *newval, void *extra) { init_assign_str
 static void init_assign_user(const char *newval, void *extra) { init_assign_string("pg_task.user", newval, extra); }
 
 static size_t init_taskshared_memsize(void) {
-    return mul_size(max_worker_processes, sizeof(*taskshared));
+    return mul_size(work_task, sizeof(*taskshared));
 }
 
 static size_t init_workshared_memsize(void) {
-    return mul_size(max_worker_processes, sizeof(*workshared));
+    return mul_size(conf_work, sizeof(*workshared));
 }
 
 #if PG_VERSION_NUM >= 150000
@@ -257,6 +259,7 @@ void _PG_init(void) {
     DefineCustomIntVariable("pg_conf.close", "pg_conf close", "Close conf, milliseconds", &conf_close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.fetch", "pg_conf fetch", "Fetch conf rows at once", &conf_fetch, 10, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.restart", "pg_conf restart", "Restart conf interval, seconds", &conf_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_conf.work", "pg_conf work", "Maximum work workers", &conf_work, max_worker_processes, 1, max_worker_processes, PGC_POSTMASTER, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.count", "pg_task count", "Non-negative maximum count of tasks, are executed by current background worker process before exit", &task_count, 0, 0, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.fetch", "pg_task fetch", "Fetch task rows at once", &task_fetch, 100, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.idle", "pg_task idle", "Idle task count", &task_idle, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
@@ -268,6 +271,7 @@ void _PG_init(void) {
     DefineCustomIntVariable("pg_work.close", "pg_work close", "Close work, milliseconds", &work_close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.fetch", "pg_work fetch", "Fetch work rows at once", &work_fetch, 100, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.restart", "pg_work restart", "Restart work interval, seconds", &work_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_work.task", "pg_work task", "Maximum task workers", &work_task, max_worker_processes, 1, max_worker_processes, PGC_POSTMASTER, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.active", "pg_task active", "Positive period after plan time, when task is active for executing", &task_active, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.data", "pg_task data", "Database name for tasks table", &task_data, "postgres", PGC_SIGHUP, 0, NULL, init_assign_data, NULL);
     DefineCustomStringVariable("pg_task.delimiter", "pg_task delimiter", "Results columns delimiter", &task_delimiter, "\t", PGC_USERSET, 0, NULL, NULL, NULL);
