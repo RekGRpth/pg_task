@@ -111,8 +111,8 @@ static void work_check(void) {
                         COALESCE("sleep", pg_catalog.current_setting('pg_task.sleep')::pg_catalog.int8) AS "sleep",
                         COALESCE(COALESCE("user", "data"), pg_catalog.current_setting('pg_task.user')) AS "user"
                 FROM    pg_catalog.jsonb_to_recordset(pg_catalog.current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" int8, "user" text)
-            ) SELECT    DISTINCT j.* FROM j WHERE "user" OPERATOR(pg_catalog.=) current_user AND "data" OPERATOR(pg_catalog.=) current_catalog AND pg_catalog.hashtext(pg_catalog.concat_ws(' ', 'pg_work', "schema", "table", "sleep")) OPERATOR(pg_catalog.=) %1$i
-        ), work.hash);
+            ) SELECT    DISTINCT j.* FROM j WHERE "user" OPERATOR(pg_catalog.=) current_user AND "data" OPERATOR(pg_catalog.=) current_catalog AND pg_catalog.hashtext(pg_catalog.concat_ws('.', "schema", "table"))::pg_catalog.int4 OPERATOR(pg_catalog.=) %1$i
+        ), work.shared->hash);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
@@ -486,6 +486,9 @@ static void work_shmem_exit(int code, Datum arg) {
         }
         work_finish(t);
     }
+    if (!code) {
+        if (!ShutdownRequestPending) init_conf(true);
+    }
 }
 
 static void work_remote(Task *t) {
@@ -853,7 +856,7 @@ static void work_update(void) {
                 CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH STATEMENT EXECUTE PROCEDURE %4$s.%5$s();
             END IF;
         END; $DO$
-    ), work.schema_table, schema, table, work.schema, wake_up_quote, work.hash);
+    ), work.schema_table, schema, table, work.schema, wake_up_quote, work.shared->hash);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
@@ -888,14 +891,13 @@ SignalHandlerForConfigReload(SIGNAL_ARGS)
 }
 #endif
 
-void work_main(Datum arg) {
+void work_main(Datum main_arg) {
     const char *application_name;
     const char *index_hash[] = {"hash"};
     const char *index_input[] = {"input"};
     const char *index_parent[] = {"parent"};
     const char *index_plan[] = {"plan"};
     const char *index_state[] = {"state"};
-    Datum datum;
     instr_time current_time_reset;
     instr_time current_time_sleep;
     instr_time start_time_reset;
@@ -903,8 +905,8 @@ void work_main(Datum arg) {
     long current_reset = -1;
     long current_sleep = -1;
     StringInfoData schema_table, schema_type;
-    elog(DEBUG1, "arg = %i", DatumGetInt32(arg));
-    work.shared = &workshared[DatumGetInt32(arg)];
+    elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
+    work.shared = &workshared[DatumGetInt32(main_arg)];
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_DISPATCH;
     optimizer = false;
@@ -912,7 +914,8 @@ void work_main(Datum arg) {
     Gp_session_role = GP_ROLE_DISPATCH;
 #endif
 #endif
-    on_shmem_exit(work_shmem_exit, arg);
+    before_shmem_exit(work_shmem_exit, main_arg);
+    if (!work.shared->in_use) return;
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGINT, work_idle);
     BackgroundWorkerUnblockSignals();
@@ -929,15 +932,12 @@ void work_main(Datum arg) {
     initStringInfoMy(&schema_table);
     appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);
     work.schema_table = schema_table.data;
-    datum = CStringGetTextDatumMy(application_name);
-    work.hash = DatumGetInt32(DirectFunctionCall1Coll(hashtext, DEFAULT_COLLATION_OID, datum));
-    pfree((void *)datum);
-    if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.hash)) { elog(WARNING, "!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.hash); ShutdownRequestPending = true; return; } // exit without error to disable restart, then not start conf
+    if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.shared->hash)) { elog(WARNING, "!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.shared->hash); ShutdownRequestPending = true; return; } // exit without error to disable restart, then not start conf
     dlist_init(&head);
     initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work.schema);
     work.schema_type = schema_type.data;
-    elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.hash);
+    elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.shared->hash);
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_UTILITY;
 #if PG_VERSION_NUM < 120000
@@ -995,5 +995,5 @@ void work_main(Datum arg) {
         FreeWaitEventSet(set);
         pfree(events);
     }
-    if (!unlock_data_user_hash(MyDatabaseId, GetUserId(), work.hash)) elog(WARNING, "!unlock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.hash);
+    if (!unlock_data_user_hash(MyDatabaseId, GetUserId(), work.shared->hash)) elog(WARNING, "!unlock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.shared->hash);
 }
