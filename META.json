@@ -2,14 +2,14 @@
     "name": "pg_task",
     "abstract": "PostgreSQL and Greenplum job scheduler pg_task allows to execute any sql command at any specific time at background asynchronously",
     "description": "PostgreSQL and Greenplum job scheduler pg_task allows to execute any sql command at any specific time at background asynchronously",
-    "version": "2.1.2",
+    "version": "2.1.3",
     "maintainer": "RekGRpth <rekgrpth@gmail.com>",
     "license": "mit",
     "provides": {
         "pg_task": {
             "file": "pg_task.so",
             "docfile": "README.md",
-            "version": "2.1.2"
+            "version": "2.1.3"
         }
     },
     "resources": {
