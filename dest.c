@@ -166,7 +166,9 @@ static void dest_catch(void) {
     PortalErrorCleanup();
 #endif
     if (MyReplicationSlot) ReplicationSlotRelease();
-#if PG_VERSION_NUM >= 100000
+#if PG_VERSION_NUM >= 170000
+    ReplicationSlotCleanup(false);
+#elif PG_VERSION_NUM >= 100000
     ReplicationSlotCleanup();
 #endif
 #if PG_VERSION_NUM >= 110000
