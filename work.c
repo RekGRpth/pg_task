@@ -204,7 +204,9 @@ static void work_free(Task *t) {
 static void work_finish(Task *t) {
     if (t->conn) {
         PQfinish(t->conn);
+#if PG_VERSION_NUM >= 130000
         ReleaseExternalFD();
+#endif
     }
     if (!proc_exit_inprogress && t->pid && !unlock_table_pid_hash(work.shared->oid, t->pid, t->shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work.shared->oid, t->pid, t->shared->hash);
     work_free(t);
