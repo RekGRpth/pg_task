@@ -16,7 +16,7 @@ INSERT INTO task (group, max, input) VALUES ('group', 2, 'SELECT now()'); -- if 
 INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host'); -- to run sql on remote database use remote
 ```
 
-`pg_task` creates folowing GUCs
+`pg_task` creates the following GUCs:
 
 | Name | Type | Default | Level | Description |
 | --- | --- | --- | --- | --- |
@@ -54,7 +54,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.timeout | interval | 0 sec | config, database, user, session | Non-negative allowed time for task run |
 | pg_task.user | text | postgres | config | User name for tasks table |
 
-`pg_task` creates table with folowing columns
+`pg_task` creates table with the following columns:
 
 | Name | Type | Nullable? | Default | Description |
 | --- | --- | --- | --- | --- |
