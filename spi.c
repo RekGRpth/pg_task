@@ -94,20 +94,20 @@ Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bo
     return datum;
 }
 
-Portal SPI_cursor_open_my(const char *src, SPIPlanPtr plan, Datum *values, const char *nulls) {
+Portal SPI_cursor_open_my(const char *src, SPIPlanPtr plan, Datum *values, const char *nulls, bool read_only) {
     Portal portal;
     SPI_freetuptable(SPI_tuptable);
     check_log_statement_my(STMT_BIND, src, plan->nargs, plan->argtypes, values, nulls, false);
-    if (!(portal = SPI_cursor_open(NULL, plan, values, nulls, false))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open failed"), errdetail("%s", SPI_result_code_string(SPI_result))));
+    if (!(portal = SPI_cursor_open(NULL, plan, values, nulls, read_only))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open failed"), errdetail("%s", SPI_result_code_string(SPI_result))));
     check_log_duration_my(STMT_BIND, src, plan->nargs, plan->argtypes, values, nulls);
     return portal;
 }
 
-Portal SPI_cursor_open_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
+Portal SPI_cursor_open_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, bool read_only) {
     Portal portal;
     SPI_freetuptable(SPI_tuptable);
     check_log_statement_my(STMT_BIND, src, nargs, argtypes, values, nulls, false);
-    if (!(portal = SPI_cursor_open_with_args(NULL, src, nargs, argtypes, values, nulls, false, 0))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open_with_args failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
+    if (!(portal = SPI_cursor_open_with_args(NULL, src, nargs, argtypes, values, nulls, read_only, 0))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open_with_args failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
     check_log_duration_my(STMT_BIND, src, nargs, argtypes, values, nulls);
     return portal;
 }
