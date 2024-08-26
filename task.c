@@ -138,7 +138,7 @@ static void task_update(const Task *t) {
         ), work.schema_table);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    portal = SPI_cursor_open_my(src.data, plan, values, NULL);
+    portal = SPI_cursor_open_my(src.data, plan, values, NULL, false);
     do {
         SPI_cursor_fetch_my(src.data, portal, true, task_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, update id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false, INT8OID)));

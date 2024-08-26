@@ -190,7 +190,7 @@ void conf_main(Datum main_arg) {
 #endif
     );
     SPI_connect_my(src.data);
-    portal = SPI_cursor_open_with_args_my(src.data, 0, NULL, NULL, NULL);
+    portal = SPI_cursor_open_with_args_my(src.data, 0, NULL, NULL, NULL, true);
     do {
         SPI_cursor_fetch_my(src.data, portal, true, conf_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) {

@@ -2,7 +2,7 @@ PG_CONFIG = pg_config
 
 MODULE_big = pg_task
 
-PG9495 = $(shell $(PG_CONFIG) --version | egrep " 9\.4| 9\.5" > /dev/null && echo yes || echo no)
+PG9495 = $(shell $(PG_CONFIG) --version | grep -E " 9\.4| 9\.5" > /dev/null && echo yes || echo no)
 ifeq ($(PG9495),yes)
 work.o: latch.h
 latch.h:
@@ -18,7 +18,7 @@ OBJS = init.o conf.o work.o task.o spi.o dest.o
 EXTRA_CLEAN = postgres.c
 endif
 
-PG94 = $(shell $(PG_CONFIG) --version | egrep " 8\.| 9\.0| 9\.1| 9\.2| 9\.3" > /dev/null && echo no || echo yes)
+PG94 = $(shell $(PG_CONFIG) --version | grep -E " 8\.| 9\.0| 9\.1| 9\.2| 9\.3" > /dev/null && echo no || echo yes)
 ifeq ($(PG94),no)
 	$(error Minimum version of PostgreSQL required is 9.4.0)
 endif
