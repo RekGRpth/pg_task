@@ -17,6 +17,7 @@ ifeq ($(PG_BUILD_FROM_SOURCE),)
 		REPO = postgres/postgres
 		PG_VERSION = $(shell $(PG_CONFIG) --version | cut -f 2 -d ' ' | tr '.' '_' | sed 's/rc/_RC/' | sed 's/beta/_BETA/')
 		REL = $(shell test "$(PG_MAJOR)" -lt 10 && echo "REL$(PG_VERSION)" || echo "REL_$(PG_VERSION)")
+		STABLE = $(shell test "$(PG_MAJOR)" -lt 10 && echo "REL9_$(PG_MAJOR)_STABLE" || echo "REL_$(PG_MAJOR)_STABLE")
 	endif
 else
 	MAIN = master
@@ -27,7 +28,7 @@ endif
 dest.o: postgres.c
 
 postgres.c:
-	wget -O $@ "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || wget -O $@ "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
+	wget -O $@ "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || wget -O $@ "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/postgres.c" || wget -O $@ "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
 	sed -i 's/TRACE_POSTGRESQL_QUERY_/\/\/TRACE_POSTGRESQL_QUERY_/' $@
 	sed -i 's/BeginCommand/BeginCommandMy/' $@
 	sed -i 's/CreateDestReceiver/CreateDestReceiverMy/' $@
