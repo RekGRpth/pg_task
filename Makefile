@@ -15,7 +15,7 @@ ifeq ($(PG_BUILD_FROM_SOURCE),)
 	else
 		MAIN = master
 		REPO = postgres/postgres
-		PG_VERSION = $(shell $(PG_CONFIG) --version | cut -f 2 -d ' ' | tr '.' '_')
+		PG_VERSION = $(shell $(PG_CONFIG) --version | cut -f 2 -d ' ' | tr '.' '_' | sed 's/rc/_RC/' | sed 's/beta/_BETA/')
 		REL = $(shell test "$(PG_MAJOR)" -lt 10 && echo "REL$(PG_VERSION)" || echo "REL_$(PG_VERSION)")
 	endif
 else
