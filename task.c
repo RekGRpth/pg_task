@@ -141,7 +141,11 @@ static void task_update(const Task *t) {
     portal = SPI_cursor_open_my(src.data, plan, values, NULL, false);
     do {
         SPI_cursor_fetch_my(src.data, portal, true, task_fetch);
-        for (uint64 row = 0; row < SPI_processed; row++) elog(DEBUG1, "row = %lu, update id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false, INT8OID)));
+        for (uint64 row = 0; row < SPI_processed; row++) {
+            HeapTuple val = SPI_tuptable->vals[row];
+            elog(DEBUG1, "row = %lu, update id = %li", row, DatumGetInt64(SPI_getbinval_my(val, SPI_tuptable->tupdesc, "id", false, INT8OID)));
+            SPI_freetuple(val);
+        }
     } while (SPI_processed);
     SPI_cursor_close_my(portal);
     set_ps_display_my("idle");

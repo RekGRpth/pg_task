@@ -209,6 +209,7 @@ void conf_main(Datum main_arg) {
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false, TEXTOID)), w->shared->user, sizeof(w->shared->user));
             elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, sleep = %li, reset = %li, run = %i, hash = %i", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset, w->shared->run, w->shared->hash);
             dlist_push_tail((dlist_head *)&head, &w->node);
+            SPI_freetuple(val);
         }
     } while (SPI_processed);
     SPI_cursor_close_my(portal);

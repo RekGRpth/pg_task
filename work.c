@@ -298,7 +298,11 @@ static void work_reset(void) {
     portal = SPI_cursor_open_my(src.data, plan, NULL, NULL, false);
     do {
         SPI_cursor_fetch_my(src.data, portal, true, work_fetch);
-        for (uint64 row = 0; row < SPI_processed; row++) elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false, INT8OID)));
+        for (uint64 row = 0; row < SPI_processed; row++) {
+            HeapTuple val = SPI_tuptable->vals[row];
+            elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(val, SPI_tuptable->tupdesc, "id", false, INT8OID)));
+            SPI_freetuple(val);
+        }
     } while (SPI_processed);
     SPI_cursor_close_my(portal);
     SPI_finish_my();
@@ -657,6 +661,7 @@ static void work_sleep(void) {
             t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false, INT4OID));
             elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : task_null, t->shared->max);
             dlist_push_tail(&head, &t->node);
+            SPI_freetuple(val);
         }
     } while (SPI_processed);
     SPI_cursor_close_my(portal);
