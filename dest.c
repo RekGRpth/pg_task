@@ -174,6 +174,7 @@ static void dest_catch(void) {
 #if PG_VERSION_NUM >= 110000
     jit_reset_after_error();
 #endif
+    MemoryContextSwitchTo(TopMemoryContext);
     FlushErrorState();
     xact_started = false;
     RESUME_INTERRUPTS();
