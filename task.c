@@ -63,18 +63,16 @@ static bool task_live(const Task *t) {
 }
 
 static void task_columns(const Task *t) {
-    Datum values[] = {CStringGetTextDatumMy(work.shared->schema), CStringGetTextDatumMy(work.shared->table)};
-    static Oid argtypes[] = {TEXTOID, TEXTOID};
+    Datum values[] = {ObjectIdGetDatum(work.shared->oid)};
+    static Oid argtypes[] = {OIDOID};
     static const char *src = SQL(
-        SELECT pg_catalog.string_agg(pg_catalog.quote_ident(column_name), ', ')::pg_catalog.text AS columns FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) $1 AND table_name OPERATOR(pg_catalog.=) $2 AND NOT column_name OPERATOR(pg_catalog.=) ANY(ARRAY['id', 'plan', 'parent', 'start', 'stop', 'hash', 'pid', 'state', 'error', 'output'])
+        SELECT pg_catalog.string_agg(pg_catalog.quote_ident(attname), ', ')::pg_catalog.text AS columns FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) $1 AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.<>) ALL(ARRAY['id', 'plan', 'parent', 'start', 'stop', 'hash', 'pid', 'state', 'error', 'output'])
     );
     SPI_execute_with_args_my(src, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
     if (SPI_processed != 1) elog(WARNING, "columns id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed); else {
         work.columns = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "columns", false, TEXTOID));
         elog(DEBUG1, "columns id = %li, %s", t->shared->id, work.columns);
     }
-    if (values[0]) pfree((void *)values[0]);
-    if (values[1]) pfree((void *)values[1]);
 }
 
 static void task_delete(const Task *t) {
