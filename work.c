@@ -804,72 +804,76 @@ static void work_type(void) {
 static void work_update(void) {
     char *schema = quote_literal_cstr(work.shared->schema);
     char *table = quote_literal_cstr(work.shared->table);
+    char *wake_up_literal;
     const char *wake_up_quote;
     StringInfoData src;
     StringInfoData wake_up;
     initStringInfoMy(&wake_up);
     appendStringInfo(&wake_up, "%1$s_wake_up", work.shared->table);
+    wake_up_literal = quote_literal_cstr(wake_up.data);
     wake_up_quote = quote_identifier(wake_up.data);
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         DO $DO$ BEGIN
-            IF NOT EXISTS (SELECT * FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'data') THEN
+            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'data') THEN
                 ALTER TABLE %1$s ADD COLUMN "data" text;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'active') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_active'::text))::interval$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'active') IS DISTINCT FROM $$(current_setting('pg_task.default_active'::text))::interval$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "active" SET DEFAULT (pg_catalog.current_setting('pg_task.active'))::pg_catalog.interval;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'live') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_live'::text))::interval$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'live') IS DISTINCT FROM $$(current_setting('pg_task.default_live'::text))::interval$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "live" SET DEFAULT (pg_catalog.current_setting('pg_task.live'))::pg_catalog.interval;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'repeat') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_repeat'::text))::interval$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'repeat') IS DISTINCT FROM $$(current_setting('pg_task.default_repeat'::text))::interval$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "repeat" SET DEFAULT (pg_catalog.current_setting('pg_task.repeat'))::pg_catalog.interval;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'timeout') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_timeout'::text))::interval$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'timeout') IS DISTINCT FROM $$(current_setting('pg_task.default_timeout'::text))::interval$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "timeout" SET DEFAULT (pg_catalog.current_setting('pg_task.timeout'))::pg_catalog.interval;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'count') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_count'::text))::integer$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'count') IS DISTINCT FROM $$(current_setting('pg_task.default_count'::text))::integer$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "count" SET DEFAULT (pg_catalog.current_setting('pg_task.count'))::pg_catalog.int4;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'max') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_max'::text))::integer$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'max') IS DISTINCT FROM $$(current_setting('pg_task.default_max'::text))::integer$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "max" SET DEFAULT (pg_catalog.current_setting('pg_task.max'))::pg_catalog.int4;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'delete') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_delete'::text))::bool$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'delete') IS DISTINCT FROM $$(current_setting('pg_task.default_delete'::text))::bool$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "delete" SET DEFAULT (pg_catalog.current_setting('pg_task.delete'))::pg_catalog.bool;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'drift') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_drift'::text))::bool$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'drift') IS DISTINCT FROM $$(current_setting('pg_task.default_drift'::text))::bool$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "drift" SET DEFAULT (pg_catalog.current_setting('pg_task.drift'))::pg_catalog.bool;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'header') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_header'::text))::bool$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'header') IS DISTINCT FROM $$(current_setting('pg_task.default_header'::text))::bool$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "header" SET DEFAULT (pg_catalog.current_setting('pg_task.header'))::pg_catalog.bool;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'string') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_string'::text))::bool$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'string') IS DISTINCT FROM $$(current_setting('pg_task.default_string'::text))::bool$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "string" SET DEFAULT (pg_catalog.current_setting('pg_task.string'))::pg_catalog.bool;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'delimiter') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_delimiter'::text))::"char"$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'delimiter') IS DISTINCT FROM $$(current_setting('pg_task.default_delimiter'::text))::"char"$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "delimiter" SET DEFAULT (pg_catalog.current_setting('pg_task.delimiter'))::pg_catalog.char;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'escape') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_escape'::text))::"char"$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'escape') IS DISTINCT FROM $$(current_setting('pg_task.default_escape'::text))::"char"$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "escape" SET DEFAULT (pg_catalog.current_setting('pg_task.escape'))::pg_catalog.char;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'quote') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_quote'::text))::"char"$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'quote') IS DISTINCT FROM $$(current_setting('pg_task.default_quote'::text))::"char"$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "quote" SET DEFAULT (pg_catalog.current_setting('pg_task.quote'))::pg_catalog.char;
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'group') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_group'::text))::text$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'group') IS DISTINCT FROM $$(current_setting('pg_task.default_group'::text))::text$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "group" SET DEFAULT (pg_catalog.current_setting('pg_task.group'));
             END IF;
-            IF (SELECT column_default FROM information_schema.columns WHERE table_schema OPERATOR(pg_catalog.=) %2$s AND table_name OPERATOR(pg_catalog.=) %3$s AND column_name OPERATOR(pg_catalog.=) 'null') IS NOT DISTINCT FROM $$(current_setting('pg_task.default_null'::text))::text$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'null') IS DISTINCT FROM $$(current_setting('pg_task.default_null'::text))::text$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (pg_catalog.current_setting('pg_task.null'));
             END IF;
-            CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$BEGIN
-                PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "classid" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) current_user) AND "objid" OPERATOR(pg_catalog.=) %6$i;
-                RETURN NULL;
-            END;$function$ LANGUAGE plpgsql;
-            IF NOT EXISTS (SELECT * FROM information_schema.triggers WHERE event_object_table OPERATOR(pg_catalog.=) %3$s AND trigger_name OPERATOR(pg_catalog.=) 'wake_up' AND trigger_schema OPERATOR(pg_catalog.=) %2$s AND event_object_schema OPERATOR(pg_catalog.=) %2$s AND action_orientation OPERATOR(pg_catalog.=) 'STATEMENT' AND action_timing OPERATOR(pg_catalog.=) 'AFTER' AND event_manipulation OPERATOR(pg_catalog.=) 'INSERT') THEN
+            IF (SELECT prosrc FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) %3$s AND nspname OPERATOR(pg_catalog.=) %7$s) IS DISTINCT FROM $$BEGIN PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "classid" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) current_user) AND "objid" OPERATOR(pg_catalog.=) %6$i; RETURN NULL; END;$$ THEN
+                CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$BEGIN
+                    PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "classid" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) current_user) AND "objid" OPERATOR(pg_catalog.=) %6$i;
+                    RETURN NULL;
+                END;$function$ LANGUAGE plpgsql;
+            END IF;
+            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) 'wake_up' AND tgrelid OPERATOR(pg_catalog.=) %2$i AND tgtype OPERATOR(pg_catalog.&) 1 OPERATOR(pg_catalog.<>) 1 AND tgtype OPERATOR(pg_catalog.&) 66 OPERATOR(pg_catalog.<>) 2 AND tgtype OPERATOR(pg_catalog.&) 66 OPERATOR(pg_catalog.<>) 64 AND tgtype OPERATOR(pg_catalog.&) 4 OPERATOR(pg_catalog.<>) 0) THEN
                 CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH STATEMENT EXECUTE PROCEDURE %4$s.%5$s();
             END IF;
         END; $DO$
-    ), work.schema_table, schema, table, work.schema, wake_up_quote, work.shared->hash);
+    ), work.schema_table, work.shared->oid, wake_up_literal, work.schema, wake_up_quote, work.shared->hash, schema);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
@@ -878,6 +882,7 @@ static void work_update(void) {
     pfree(src.data);
     pfree(table);
     pfree(wake_up.data);
+    pfree(wake_up_literal);
 }
 
 static void work_writeable(Task *t) {
