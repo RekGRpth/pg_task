@@ -216,11 +216,11 @@ static void init_assign_table(const char *newval, void *extra) { init_assign_str
 static void init_assign_user(const char *newval, void *extra) { init_assign_string("pg_task.user", newval, extra); }
 
 static size_t init_taskshared_memsize(void) {
-    return mul_size(work_task, sizeof(*taskshared));
+    return mul_size(work_task, sizeof(TaskShared));
 }
 
 static size_t init_workshared_memsize(void) {
-    return mul_size(conf_work, sizeof(*workshared));
+    return mul_size(conf_work, sizeof(WorkShared));
 }
 
 #if PG_VERSION_NUM >= 150000

@@ -473,7 +473,7 @@ static void work_connect(Task *t) {
 void workshared_free(int slot) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
     pg_read_barrier();
-    MemSet(&workshared[slot], 0, sizeof(*workshared));
+    MemSet(&workshared[slot], 0, sizeof(WorkShared));
     LWLockRelease(BackgroundWorkerLock);
 }
 
@@ -649,11 +649,11 @@ static void work_sleep(void) {
         SPI_cursor_fetch_my(src.data, portal, true, work_fetch);
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
-            Task *t = MemoryContextAllocZero(TopMemoryContext, sizeof(*t));
+            Task *t = MemoryContextAllocZero(TopMemoryContext, sizeof(Task));
             TupleDesc tupdesc = SPI_tuptable->tupdesc;
             t->group = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "group", false, TEXTOID));
             t->remote = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "remote", true, TEXTOID));
-            t->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(*t->shared));
+            t->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(TaskShared));
             t->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
             t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false, INT8OID));
             t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false, INT4OID));
@@ -979,7 +979,7 @@ void work_main(Datum main_arg) {
     work_reset();
     while (!ShutdownRequestPending) {
         int nevents = work_nevents();
-        WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(*events));
+        WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(WaitEvent));
         WaitEventSet *set = CreateWaitEventSetMy(nevents);
         work_events(set);
         if (current_reset <= 0) {

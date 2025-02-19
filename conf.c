@@ -196,9 +196,9 @@ void conf_main(Datum main_arg) {
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
             TupleDesc tupdesc = SPI_tuptable->tupdesc;
-            Work *w = MemoryContextAllocZero(TopMemoryContext, sizeof(*w));
+            Work *w = MemoryContextAllocZero(TopMemoryContext, sizeof(Work));
             set_ps_display_my("row");
-            w->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(*w->shared));
+            w->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(WorkShared));
             w->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
             w->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false, INT8OID));
             w->shared->run = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "run", false, INT4OID));

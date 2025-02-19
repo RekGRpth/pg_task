@@ -314,7 +314,7 @@ void task_error(ErrorData *edata) {
 void taskshared_free(int slot) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
     pg_read_barrier();
-    MemSet(&taskshared[slot], 0, sizeof(*taskshared));
+    MemSet(&taskshared[slot], 0, sizeof(TaskShared));
     LWLockRelease(BackgroundWorkerLock);
 }
 
