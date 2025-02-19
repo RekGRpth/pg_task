@@ -197,8 +197,6 @@ static void work_fatal(Task *t, const PGresult *result) {
 static void work_free(Task *t) {
     dlist_delete(&t->node);
     task_free(t);
-    pfree(t->shared);
-    pfree(t);
 }
 
 static void work_finish(Task *t) {
