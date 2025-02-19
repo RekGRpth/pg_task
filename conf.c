@@ -38,7 +38,7 @@ static volatile dlist_head head;
 static void conf_data(const Work *w) {
     List *names = stringToQualifiedNameListMy(w->data);
     StringInfoData src;
-    elog(DEBUG1, "user = %s, data = %s", w->shared->user, w->shared->data);
+    elog(DEBUG1, "user = %s, data = %s", w->shared.user, w->shared.data);
     set_ps_display_my("data");
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), w->data, w->user);
@@ -46,8 +46,8 @@ static void conf_data(const Work *w) {
     if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
         CreatedbStmt *stmt = makeNode(CreatedbStmt);
         ParseState *pstate = make_parsestate(NULL);
-        stmt->dbname = w->shared->data;
-        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString(w->shared->user)));
+        stmt->dbname = (char *)w->shared.data;
+        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString((char *)w->shared.user)));
         pstate->p_sourcetext = src.data;
         createdb_my(pstate, stmt);
         list_free_deep(stmt->options);
@@ -62,7 +62,6 @@ static void conf_data(const Work *w) {
 
 static void conf_free(Work *w) {
     dlist_delete(&w->node);
-    pfree(w->shared);
     pfree(w);
 }
 
@@ -73,7 +72,7 @@ static void conf_shmem_exit(int code, Datum arg) {
 static void conf_user(const Work *w) {
     List *names = stringToQualifiedNameListMy(w->user);
     StringInfoData src;
-    elog(DEBUG1, "user = %s", w->shared->user);
+    elog(DEBUG1, "user = %s", w->shared.user);
     set_ps_display_my("user");
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE ROLE %s WITH LOGIN), w->user);
@@ -81,7 +80,7 @@ static void conf_user(const Work *w) {
     if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
         CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
         ParseState *pstate = make_parsestate(NULL);
-        stmt->role = w->shared->user;
+        stmt->role = (char *)w->shared.user;
         stmt->options = list_make1(makeDefElemMy("canlogin", (Node *)makeInteger(1)));
         pstate->p_sourcetext = src.data;
         CreateRoleMy(pstate, stmt);
@@ -114,20 +113,20 @@ static void conf_work(Work *w) {
     BackgroundWorker worker = {0};
     size_t len;
     set_ps_display_my("work");
-    w->data = quote_identifier(w->shared->data);
-    w->user = quote_identifier(w->shared->user);
+    w->data = quote_identifier(w->shared.data);
+    w->user = quote_identifier(w->shared.user);
     conf_user(w);
     conf_data(w);
-    if (w->data != w->shared->data) pfree((void *)w->data);
-    if (w->user != w->shared->user) pfree((void *)w->user);
+    if (w->data != w->shared.data) pfree((void *)w->data);
+    if (w->user != w->shared.user) pfree((void *)w->user);
     if ((len = strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
-    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %li", w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
+    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %li", w->shared.user, w->shared.data, w->shared.schema, w->shared.table, w->shared.sleep)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
 #if PG_VERSION_NUM >= 110000
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    if ((worker.bgw_main_arg = Int32GetDatum(conf_bgw_main_arg(w->shared))) == Int32GetDatum(-1)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not find empty slot")));
+    if ((worker.bgw_main_arg = Int32GetDatum(conf_bgw_main_arg(&w->shared))) == Int32GetDatum(-1)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not find empty slot")));
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = work_restart;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -198,16 +197,15 @@ void conf_main(Datum main_arg) {
             TupleDesc tupdesc = SPI_tuptable->tupdesc;
             Work *w = MemoryContextAllocZero(TopMemoryContext, sizeof(Work));
             set_ps_display_my("row");
-            w->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(WorkShared));
-            w->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
-            w->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false, INT8OID));
-            w->shared->run = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "run", false, INT4OID));
-            w->shared->sleep = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "sleep", false, INT8OID));
-            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "data", false, TEXTOID)), w->shared->data, sizeof(w->shared->data));
-            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "schema", false, TEXTOID)), w->shared->schema, sizeof(w->shared->schema));
-            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false, TEXTOID)), w->shared->table, sizeof(w->shared->table));
-            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false, TEXTOID)), w->shared->user, sizeof(w->shared->user));
-            elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, sleep = %li, reset = %li, run = %i, hash = %i", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset, w->shared->run, w->shared->hash);
+            w->shared.hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
+            w->shared.reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false, INT8OID));
+            w->shared.run = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "run", false, INT4OID));
+            w->shared.sleep = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "sleep", false, INT8OID));
+            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "data", false, TEXTOID)), w->shared.data, sizeof(w->shared.data));
+            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "schema", false, TEXTOID)), w->shared.schema, sizeof(w->shared.schema));
+            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false, TEXTOID)), w->shared.table, sizeof(w->shared.table));
+            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false, TEXTOID)), w->shared.user, sizeof(w->shared.user));
+            elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, sleep = %li, reset = %li, run = %i, hash = %i", row, w->shared.user, w->shared.data, w->shared.schema, w->shared.table, w->shared.sleep, w->shared.reset, w->shared.run, w->shared.hash);
             dlist_push_tail((dlist_head *)&head, &w->node);
             SPI_freetuple(val);
         }

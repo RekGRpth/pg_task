@@ -51,25 +51,25 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
 
 static void rStartup(DestReceiver *self, int operation, TupleDesc tupdesc) {
     switch (operation) {
-        case CMD_UNKNOWN: elog(DEBUG1, "id = %li, operation = CMD_UNKNOWN", task.shared->id); break;
-        case CMD_SELECT: elog(DEBUG1, "id = %li, operation = CMD_SELECT", task.shared->id); break;
-        case CMD_UPDATE: elog(DEBUG1, "id = %li, operation = CMD_UPDATE", task.shared->id); break;
-        case CMD_INSERT: elog(DEBUG1, "id = %li, operation = CMD_INSERT", task.shared->id); break;
-        case CMD_DELETE: elog(DEBUG1, "id = %li, operation = CMD_DELETE", task.shared->id); break;
-        case CMD_UTILITY: elog(DEBUG1, "id = %li, operation = CMD_UTILITY", task.shared->id); break;
-        case CMD_NOTHING: elog(DEBUG1, "id = %li, operation = CMD_NOTHING", task.shared->id); break;
-        default: elog(DEBUG1, "id = %li, operation = %i", task.shared->id, operation); break;
+        case CMD_UNKNOWN: elog(DEBUG1, "id = %li, operation = CMD_UNKNOWN", task.shared.id); break;
+        case CMD_SELECT: elog(DEBUG1, "id = %li, operation = CMD_SELECT", task.shared.id); break;
+        case CMD_UPDATE: elog(DEBUG1, "id = %li, operation = CMD_UPDATE", task.shared.id); break;
+        case CMD_INSERT: elog(DEBUG1, "id = %li, operation = CMD_INSERT", task.shared.id); break;
+        case CMD_DELETE: elog(DEBUG1, "id = %li, operation = CMD_DELETE", task.shared.id); break;
+        case CMD_UTILITY: elog(DEBUG1, "id = %li, operation = CMD_UTILITY", task.shared.id); break;
+        case CMD_NOTHING: elog(DEBUG1, "id = %li, operation = CMD_NOTHING", task.shared.id); break;
+        default: elog(DEBUG1, "id = %li, operation = %i", task.shared.id, operation); break;
     }
     task.row = 0;
     task.skip = 1;
 }
 
 static void rShutdown(DestReceiver *self) {
-    elog(DEBUG1, "id = %li", task.shared->id);
+    elog(DEBUG1, "id = %li", task.shared.id);
 }
 
 static void rDestroy(DestReceiver *self) {
-    elog(DEBUG1, "id = %li", task.shared->id);
+    elog(DEBUG1, "id = %li", task.shared.id);
 }
 
 static
@@ -85,7 +85,7 @@ DestReceiver myDestReceiver = {
 };
 
 static DestReceiver *CreateDestReceiverMy(CommandDest dest) {
-    elog(DEBUG1, "id = %li", task.shared->id);
+    elog(DEBUG1, "id = %li", task.shared.id);
 #if PG_VERSION_NUM >= 120000
     return unconstify(DestReceiver *, &myDestReceiver);
 #else
@@ -94,16 +94,16 @@ static DestReceiver *CreateDestReceiverMy(CommandDest dest) {
 }
 
 static void ReadyForQueryMy(CommandDest dest) {
-    elog(DEBUG1, "id = %li", task.shared->id);
+    elog(DEBUG1, "id = %li", task.shared.id);
 }
 
 static void NullCommandMy(CommandDest dest) {
-    elog(DEBUG1, "id = %li", task.shared->id);
+    elog(DEBUG1, "id = %li", task.shared.id);
 }
 
 #if PG_VERSION_NUM >= 130000
 static void BeginCommandMy(CommandTag commandTag, CommandDest dest) {
-    elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, GetCommandTagName(commandTag));
+    elog(DEBUG1, "id = %li, commandTag = %s", task.shared.id, GetCommandTagName(commandTag));
 }
 
 static void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undecorated_output) {
@@ -112,7 +112,7 @@ static void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force
     const char *tagname = GetCommandTagName(tag);
     if (command_tag_display_rowcount(tag) && !force_undecorated_output) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, tag == CMDTAG_INSERT ? "%s 0 " UINT64_FORMAT : "%s " UINT64_FORMAT, tagname, qc->nprocessed);
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
-    elog(DEBUG1, "id = %li, completionTag = %s", task.shared->id, completionTag);
+    elog(DEBUG1, "id = %li, completionTag = %s", task.shared.id, completionTag);
     if (task.skip) task.skip = 0; else {
         if (!task.output.data) initStringInfoMy(&task.output);
         if (task.output.len) appendStringInfoString(&task.output, "\n");
@@ -121,11 +121,11 @@ static void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force
 }
 #else
 static void BeginCommandMy(const char *commandTag, CommandDest dest) {
-    elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, commandTag);
+    elog(DEBUG1, "id = %li, commandTag = %s", task.shared.id, commandTag);
 }
 
 static void EndCommandMy(const char *commandTag, CommandDest dest) {
-    elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, commandTag);
+    elog(DEBUG1, "id = %li, commandTag = %s", task.shared.id, commandTag);
     if (task.skip) task.skip = 0; else {
         if (!task.output.data) initStringInfoMy(&task.output);
         if (task.output.len) appendStringInfoString(&task.output, "\n");
@@ -183,7 +183,7 @@ static void dest_catch(void) {
 bool dest_timeout(void) {
     int StatementTimeoutMy = StatementTimeout;
     if (task_work(&task)) return true;
-    elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
+    elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared.id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
     StatementTimeout = task.timeout;
     PG_TRY();
