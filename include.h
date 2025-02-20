@@ -87,18 +87,20 @@
 #define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
 #endif
 
-typedef struct WorkShared {
+typedef struct Shared {
     bool in_use;
     char data[NAMEDATALEN];
     char schema[NAMEDATALEN];
     char table[NAMEDATALEN];
     char user[NAMEDATALEN];
+    int64 id;
     int64 reset;
     int64 sleep;
     int hash;
+    int max;
     int run;
     Oid oid;
-} WorkShared;
+} Shared;
 
 typedef struct Work {
     char *schema_table;
@@ -110,16 +112,8 @@ typedef struct Work {
     const char *user;
     dlist_node node;
     pid_t pid;
-    WorkShared *shared;
+    Shared *shared;
 } Work;
-
-typedef struct TaskShared {
-    bool in_use;
-    int64 id;
-    int hash;
-    int max;
-    int slot;
-} TaskShared;
 
 typedef struct Task {
     bool active;
@@ -142,7 +136,7 @@ typedef struct Task {
     PGconn *conn;
     StringInfoData error;
     StringInfoData output;
-    TaskShared *shared;
+    Shared *shared;
     TimestampTz start;
     uint64 row;
     void (*socket) (struct Task *t);

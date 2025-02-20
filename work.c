@@ -50,9 +50,9 @@ extern char *task_null;
 extern int task_idle;
 extern int work_close;
 extern int work_fetch;
-extern TaskShared *taskshared;
+extern Shared *shared;
 extern Task task;
-extern WorkShared *workshared;
+extern Shared *shared;
 long current_timeout;
 static dlist_head head;
 static emit_log_hook_type emit_log_hook_prev = NULL;
@@ -473,7 +473,7 @@ static void work_connect(Task *t) {
 void workshared_free(int slot) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
     pg_read_barrier();
-    MemSet(&workshared[slot], 0, sizeof(WorkShared));
+    MemSet(&shared[slot], 0, sizeof(Shared));
     LWLockRelease(BackgroundWorkerLock);
 }
 
@@ -569,12 +569,12 @@ static void work_remote(Task *t) {
     t->group = NULL;
 }
 
-static int work_bgw_main_arg(TaskShared *ts) {
+static int work_bgw_main_arg(Shared *ts) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-    for (int slot = 0; slot < max_worker_processes; slot++) if (!taskshared[slot].in_use) {
+    for (int slot = 0; slot < max_worker_processes; slot++) if (!shared[slot].in_use) {
         pg_write_barrier();
-        taskshared[slot] = *ts;
-        taskshared[slot].in_use = true;
+        shared[slot] = *ts;
+        shared[slot].in_use = true;
         LWLockRelease(BackgroundWorkerLock);
         elog(DEBUG1, "slot = %i", slot);
         return slot;
@@ -599,7 +599,6 @@ static void work_task(Task *t) {
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    t->shared->slot = DatumGetUInt32(MyBgworkerEntry->bgw_main_arg);
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) {
         taskshared_free(worker.bgw_main_arg); work_ereport(true, ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
     } else switch (WaitForBackgroundWorkerStartup(handle, &t->pid)) {
@@ -653,7 +652,8 @@ static void work_sleep(void) {
             TupleDesc tupdesc = SPI_tuptable->tupdesc;
             t->group = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "group", false, TEXTOID));
             t->remote = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "remote", true, TEXTOID));
-            t->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(TaskShared));
+            t->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(Shared));
+            *t->shared = *work.shared;
             t->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
             t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false, INT8OID));
             t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false, INT4OID));
@@ -922,7 +922,7 @@ void work_main(Datum main_arg) {
     long current_sleep = -1;
     StringInfoData schema_table, schema_type;
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
-    work.shared = &workshared[DatumGetInt32(main_arg)];
+    work.shared = &shared[DatumGetInt32(main_arg)];
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_DISPATCH;
     optimizer = false;

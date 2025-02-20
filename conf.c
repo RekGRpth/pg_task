@@ -32,7 +32,7 @@ extern char *task_null;
 extern int conf_close;
 extern int conf_fetch;
 extern int work_restart;
-extern WorkShared *workshared;
+extern Shared *shared;
 static volatile dlist_head head;
 
 static void conf_data(const Work *w) {
@@ -95,12 +95,12 @@ static void conf_user(const Work *w) {
     set_ps_display_my("idle");
 }
 
-static int conf_bgw_main_arg(WorkShared *ws) {
+static int conf_bgw_main_arg(Shared *ws) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-    for (int slot = 0; slot < max_worker_processes; slot++) if (!workshared[slot].in_use) {
+    for (int slot = 0; slot < max_worker_processes; slot++) if (!shared[slot].in_use) {
         pg_write_barrier();
-        workshared[slot] = *ws;
-        workshared[slot].in_use = true;
+        shared[slot] = *ws;
+        shared[slot].in_use = true;
         LWLockRelease(BackgroundWorkerLock);
         elog(DEBUG1, "slot = %i", slot);
         return slot;
@@ -198,7 +198,7 @@ void conf_main(Datum main_arg) {
             TupleDesc tupdesc = SPI_tuptable->tupdesc;
             Work *w = MemoryContextAllocZero(TopMemoryContext, sizeof(Work));
             set_ps_display_my("row");
-            w->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(WorkShared));
+            w->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(Shared));
             w->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
             w->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false, INT8OID));
             w->shared->run = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "run", false, INT4OID));

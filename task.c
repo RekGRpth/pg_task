@@ -28,8 +28,8 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 emit_log_hook_type emit_log_hook_prev = NULL;
 extern char *task_null;
 extern int task_fetch;
-extern TaskShared *taskshared;
-extern WorkShared *workshared;
+extern Shared *shared;
+extern Shared *shared;
 extern Work work;
 Task task = {0};
 
@@ -314,7 +314,7 @@ void task_error(ErrorData *edata) {
 void taskshared_free(int slot) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
     pg_read_barrier();
-    MemSet(&taskshared[slot], 0, sizeof(TaskShared));
+    MemSet(&shared[slot], 0, sizeof(Shared));
     LWLockRelease(BackgroundWorkerLock);
 }
 
@@ -341,8 +341,7 @@ void task_main(Datum main_arg) {
     const char *application_name;
     StringInfoData oid, schema_table;
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
-    task.shared = &taskshared[DatumGetInt32(main_arg)];
-    work.shared = &workshared[task.shared->slot];
+    task.shared = work.shared = &shared[DatumGetInt32(main_arg)];
     before_shmem_exit(task_shmem_exit, main_arg);
     if (!task.shared->in_use) return;
     if (!work.shared->in_use) return;

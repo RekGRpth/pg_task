@@ -41,21 +41,19 @@ static char *task_table;
 static char *task_timeout;
 static char *task_user;
 static char *work_active;
+static int conf_max;
 static int conf_restart;
-static int conf_work;
 static int task_count;
 static int task_id;
 static int task_limit;
 static int task_max;
 static int task_run;
 static int task_sleep;
-static int work_task;
 #if PG_VERSION_NUM >= 150000
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
 #endif
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
-TaskShared *taskshared = NULL;
-WorkShared *workshared = NULL;
+Shared *shared = NULL;
 #if PG_VERSION_NUM < 130000
 #include <signal.h>
 volatile sig_atomic_t ShutdownRequestPending = false;
@@ -215,19 +213,14 @@ static void init_assign_sleep(int newval, void *extra) { init_assign_int("pg_tas
 static void init_assign_table(const char *newval, void *extra) { init_assign_string("pg_task.table", newval, extra); }
 static void init_assign_user(const char *newval, void *extra) { init_assign_string("pg_task.user", newval, extra); }
 
-static size_t init_taskshared_memsize(void) {
-    return mul_size(work_task, sizeof(TaskShared));
-}
-
-static size_t init_workshared_memsize(void) {
-    return mul_size(conf_work, sizeof(WorkShared));
+static size_t init_shared_memsize(void) {
+    return mul_size(conf_max, sizeof(Shared));
 }
 
 #if PG_VERSION_NUM >= 150000
 static void init_shmem_request_hook(void) {
     if (prev_shmem_request_hook) prev_shmem_request_hook();
-    RequestAddinShmemSpace(init_taskshared_memsize());
-    RequestAddinShmemSpace(init_workshared_memsize());
+    RequestAddinShmemSpace(init_shared_memsize());
 }
 #endif
 
@@ -235,12 +228,9 @@ static void init_shmem_startup_hook(void) {
     bool found;
     if (prev_shmem_startup_hook) prev_shmem_startup_hook();
     LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
-    taskshared = ShmemInitStruct("pg_taskshared", init_taskshared_memsize(), &found);
-    if (!found) MemSet(taskshared, 0, init_taskshared_memsize());
-    elog(DEBUG1, "pg_taskshared %s found", found ? "" : "not");
-    workshared = ShmemInitStruct("pg_workshared", init_workshared_memsize(), &found);
-    if (!found) MemSet(workshared, 0, init_workshared_memsize());
-    elog(DEBUG1, "pg_workshared %s found", found ? "" : "not");
+    shared = ShmemInitStruct("pg_shared", init_shared_memsize(), &found);
+    if (!found) MemSet(shared, 0, init_shared_memsize());
+    elog(DEBUG1, "pg_shared %s found", found ? "" : "not");
     LWLockRelease(AddinShmemInitLock);
 }
 
@@ -258,8 +248,8 @@ void _PG_init(void) {
     DefineCustomBoolVariable("pg_task.string", "pg_task string", "Quote only strings", &task_string, true, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.close", "pg_conf close", "Close conf, milliseconds", &conf_close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.fetch", "pg_conf fetch", "Fetch conf rows at once", &conf_fetch, 10, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_conf.max", "pg_conf work", "Maximum task and work workers", &conf_max, max_worker_processes, 1, max_worker_processes, PGC_POSTMASTER, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.restart", "pg_conf restart", "Restart conf interval, seconds", &conf_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_conf.work", "pg_conf work", "Maximum work workers", &conf_work, max_worker_processes, 1, max_worker_processes, PGC_POSTMASTER, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.count", "pg_task count", "Non-negative maximum count of tasks, are executed by current background worker process before exit", &task_count, 0, 0, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.fetch", "pg_task fetch", "Fetch task rows at once", &task_fetch, 100, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.idle", "pg_task idle", "Idle task count", &task_idle, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
@@ -271,7 +261,6 @@ void _PG_init(void) {
     DefineCustomIntVariable("pg_work.close", "pg_work close", "Close work, milliseconds", &work_close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.fetch", "pg_work fetch", "Fetch work rows at once", &work_fetch, 100, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.restart", "pg_work restart", "Restart work interval, seconds", &work_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_work.task", "pg_work task", "Maximum task workers", &work_task, max_worker_processes, 1, max_worker_processes, PGC_POSTMASTER, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.active", "pg_task active", "Positive period after plan time, when task is active for executing", &task_active, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.data", "pg_task data", "Database name for tasks table", &task_data, "postgres", PGC_SIGHUP, 0, NULL, init_assign_data, NULL);
     DefineCustomStringVariable("pg_task.delimiter", "pg_task delimiter", "Results columns delimiter", &task_delimiter, "\t", PGC_USERSET, 0, NULL, NULL, NULL);
