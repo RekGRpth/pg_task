@@ -134,12 +134,13 @@ typedef struct Task {
     int skip;
     int timeout;
     PGconn *conn;
+    Shared *shared;
     StringInfoData error;
     StringInfoData output;
-    Shared *shared;
     TimestampTz start;
     uint64 row;
     void (*socket) (struct Task *t);
+    Work *work;
 } Task;
 
 bool dest_timeout(void);

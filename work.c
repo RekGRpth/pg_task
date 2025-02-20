@@ -55,7 +55,7 @@ long current_timeout;
 static dlist_head head;
 static emit_log_hook_type emit_log_hook_prev = NULL;
 static volatile uint64 idle_count = 0;
-Work work = {0};
+static Work work = {0};
 
 static void work_query(Task *t);
 
@@ -631,6 +631,7 @@ static void work_sleep(void) {
             t->remote = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "remote", true, TEXTOID));
             t->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(Shared));
             *t->shared = *work.shared;
+            t->work = &work;
             t->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
             t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false, INT8OID));
             t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false, INT4OID));
