@@ -311,7 +311,7 @@ void task_error(ErrorData *edata) {
     }
 }
 
-void taskshared_free(int slot) {
+void shared_free(int slot) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
     pg_read_barrier();
     MemSet(&shared[slot], 0, sizeof(Shared));
@@ -320,7 +320,7 @@ void taskshared_free(int slot) {
 
 static void task_shmem_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
-    taskshared_free(DatumGetInt32(arg));
+    shared_free(DatumGetInt32(arg));
 }
 
 static void task_latch(void) {
