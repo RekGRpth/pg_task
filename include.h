@@ -110,7 +110,7 @@ typedef struct Work {
     const char *user;
     dlist_node node;
     pid_t pid;
-    WorkShared shared;
+    WorkShared *shared;
 } Work;
 
 typedef struct TaskShared {
@@ -142,7 +142,7 @@ typedef struct Task {
     PGconn *conn;
     StringInfoData error;
     StringInfoData output;
-    TaskShared shared;
+    TaskShared *shared;
     TimestampTz start;
     uint64 row;
     void (*socket) (struct Task *t);
