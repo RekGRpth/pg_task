@@ -358,13 +358,13 @@ static void work_done(Task *t) {
     task_done(t) || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
 }
 
-static void work_schema(const char *schema_quote) {
-    List *names = stringToQualifiedNameListMy(schema_quote);
+static void work_schema(void) {
+    List *names = stringToQualifiedNameListMy(work.schema);
     StringInfoData src;
-    elog(DEBUG1, "schema = %s", schema_quote);
+    elog(DEBUG1, "schema = %s", work.schema);
     set_ps_display_my("schema");
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE SCHEMA %s), schema_quote);
+    appendStringInfo(&src, SQL(CREATE SCHEMA %s), work.schema);
     SPI_connect_my(src.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
@@ -938,7 +938,7 @@ void work_main(Datum main_arg) {
     Gp_session_role = GP_ROLE_UTILITY;
 #endif
 #endif
-    work_schema(work.schema);
+    work_schema();
     work_type();
     work_table();
     work_update();
