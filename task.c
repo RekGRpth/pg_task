@@ -60,7 +60,7 @@ static bool task_live(const Task *t) {
 }
 
 static void task_columns(const Task *t) {
-    Datum values[] = {ObjectIdGetDatum(t->work->shared->oid)};
+    Datum values[] = {ObjectIdGetDatum(t->shared->oid)};
     static Oid argtypes[] = {OIDOID};
     static const char *src = SQL(
         SELECT pg_catalog.string_agg(pg_catalog.quote_ident(attname), ', ')::pg_catalog.text AS columns FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) $1 AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.<>) ALL(ARRAY['id', 'plan', 'parent', 'start', 'stop', 'hash', 'pid', 'state', 'error', 'output'])
@@ -178,7 +178,7 @@ bool task_done(Task *t) {
     if (insert) task_insert(t);
     if (delete) task_delete(t);
     if (update) task_update(t);
-    if (t->lock && !unlock_table_id(t->work->shared->oid, t->shared->id)) { elog(WARNING, "!unlock_table_id(%i, %li)", t->work->shared->oid, t->shared->id); exit = true; }
+    if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) { elog(WARNING, "!unlock_table_id(%i, %li)", t->shared->oid, t->shared->id); exit = true; }
     t->lock = false;
     exit = exit || task_live(t);
     SPI_finish_my();
@@ -194,10 +194,10 @@ bool task_work(Task *t) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return true;
-    if (!lock_table_id(t->work->shared->oid, t->shared->id)) { elog(WARNING, "!lock_table_id(%i, %li)", t->work->shared->oid, t->shared->id); return true; }
+    if (!lock_table_id(t->shared->oid, t->shared->id)) { elog(WARNING, "!lock_table_id(%i, %li)", t->shared->oid, t->shared->id); return true; }
     t->lock = true;
     t->count++;
-    elog(DEBUG1, "id = %li, max = %i, oid = %i, count = %i, pid = %i", t->shared->id, t->shared->max, t->work->shared->oid, t->count, t->pid);
+    elog(DEBUG1, "id = %li, max = %i, oid = %i, count = %i, pid = %i", t->shared->id, t->shared->max, t->shared->oid, t->count, t->pid);
     set_ps_display_my("work");
     if (!t->conn) {
         StringInfoData id;
@@ -333,41 +333,40 @@ void task_main(Datum main_arg) {
     Work work = {0};
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
     task.work = &work;
-    task.shared = work.shared = init_shared(main_arg);
+    task.shared = init_shared(main_arg);
     before_shmem_exit(task_shmem_exit, main_arg);
     if (!task.shared->in_use) return;
-    if (!work.shared->in_use) return;
     BackgroundWorkerUnblockSignals();
-    work.data = quote_identifier(work.shared->data);
-    work.schema = quote_identifier(work.shared->schema);
-    work.table = quote_identifier(work.shared->table);
-    work.user = quote_identifier(work.shared->user);
-    BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user);
-    application_name = MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1;
+    work.data = quote_identifier(task.shared->data);
+    work.schema = quote_identifier(task.shared->schema);
+    work.table = quote_identifier(task.shared->table);
+    work.user = quote_identifier(task.shared->user);
+    BackgroundWorkerInitializeConnectionMy(task.shared->data, task.shared->user);
+    application_name = MyBgworkerEntry->bgw_name + strlen(task.shared->user) + 1 + strlen(task.shared->data) + 1;
     set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     pgstat_report_appname(application_name);
     set_ps_display_my("main");
     process_session_preload_libraries();
-    elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", work.shared->oid, task.shared->id, task.shared->hash, task.shared->max);
-    set_config_option_my("pg_task.schema", work.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
-    set_config_option_my("pg_task.table", work.shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+    elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", task.shared->oid, task.shared->id, task.shared->hash, task.shared->max);
+    set_config_option_my("pg_task.schema", task.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+    set_config_option_my("pg_task.table", task.shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     initStringInfoMy(&schema_table);
     appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);
     work.schema_table = schema_table.data;
     initStringInfoMy(&oid);
-    appendStringInfo(&oid, "%i", work.shared->oid);
+    appendStringInfo(&oid, "%i", task.shared->oid);
     set_config_option_my("pg_task.oid", oid.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     pfree(oid.data);
     task.pid = MyProcPid;
     task.start = GetCurrentTimestamp();
     set_ps_display_my("idle");
-    if (!lock_table_pid_hash(work.shared->oid, task.pid, task.shared->hash)) { elog(WARNING, "!lock_table_pid_hash(%i, %i, %i)", work.shared->oid, task.pid, task.shared->hash); return; }
+    if (!lock_table_pid_hash(task.shared->oid, task.pid, task.shared->hash)) { elog(WARNING, "!lock_table_pid_hash(%i, %i, %i)", task.shared->oid, task.pid, task.shared->hash); return; }
     while (!ShutdownRequestPending) {
         int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0);
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
         if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_TIMEOUT) if (dest_timeout()) ShutdownRequestPending = true;
     }
-    if (!unlock_table_pid_hash(work.shared->oid, task.pid, task.shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work.shared->oid, task.pid, task.shared->hash);
+    if (!unlock_table_pid_hash(task.shared->oid, task.pid, task.shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", task.shared->oid, task.pid, task.shared->hash);
 }
