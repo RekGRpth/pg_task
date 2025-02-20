@@ -195,6 +195,7 @@ static void work_fatal(Task *t, const PGresult *result) {
 static void work_free(Task *t) {
     dlist_delete(&t->node);
     task_free(t);
+    t->socket = NULL;
 }
 
 static void work_finish(Task *t) {
@@ -345,7 +346,7 @@ static void work_latch(void) {
 
 static void work_readable(Task *t) {
     if (PQstatus(t->conn) == CONNECTION_OK && !PQconsumeInput(t->conn)) { work_ereport(true, ERROR, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("!PQconsumeInput"), errdetail("%s", PQerrorMessageMy(t->conn)))); return; }
-    t->socket(t);
+    if (t->socket) t->socket(t);
 }
 
 static void work_done(Task *t) {
@@ -862,7 +863,7 @@ static void work_update(void) {
 }
 
 static void work_writeable(Task *t) {
-    t->socket(t);
+    if (t->socket) t->socket(t);
 }
 
 static void work_idle(SIGNAL_ARGS) {
