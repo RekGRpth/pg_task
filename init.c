@@ -355,7 +355,7 @@ bool is_log_level_output(int elevel, int log_min_level) {
 
 int init_bgw_main_arg(Shared *s) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-    for (int slot = 0; slot < max_worker_processes; slot++) if (!shared[slot].in_use) {
+    for (int slot = 0; slot < conf_max; slot++) if (!shared[slot].in_use) {
         pg_write_barrier();
         shared[slot] = *s;
         shared[slot].in_use = true;
