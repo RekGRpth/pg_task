@@ -32,7 +32,6 @@ extern char *task_null;
 extern int conf_close;
 extern int conf_fetch;
 extern int work_restart;
-extern Shared *shared;
 static volatile dlist_head head;
 
 static void conf_data(const Work *w) {
@@ -95,20 +94,6 @@ static void conf_user(const Work *w) {
     set_ps_display_my("idle");
 }
 
-static int conf_bgw_main_arg(Shared *ws) {
-    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-    for (int slot = 0; slot < max_worker_processes; slot++) if (!shared[slot].in_use) {
-        pg_write_barrier();
-        shared[slot] = *ws;
-        shared[slot].in_use = true;
-        LWLockRelease(BackgroundWorkerLock);
-        elog(DEBUG1, "slot = %i", slot);
-        return slot;
-    }
-    LWLockRelease(BackgroundWorkerLock);
-    return -1;
-}
-
 static void conf_work(Work *w) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker = {0};
@@ -127,7 +112,7 @@ static void conf_work(Work *w) {
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    if ((worker.bgw_main_arg = Int32GetDatum(conf_bgw_main_arg(w->shared))) == Int32GetDatum(-1)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not find empty slot")));
+    if ((worker.bgw_main_arg = Int32GetDatum(init_bgw_main_arg(w->shared))) == Int32GetDatum(-1)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not find empty slot")));
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = work_restart;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;

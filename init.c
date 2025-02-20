@@ -53,7 +53,7 @@ static int task_sleep;
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
 #endif
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
-Shared *shared = NULL;
+static Shared *shared = NULL;
 #if PG_VERSION_NUM < 130000
 #include <signal.h>
 volatile sig_atomic_t ShutdownRequestPending = false;
@@ -351,4 +351,29 @@ bool is_log_level_output(int elevel, int log_min_level) {
         if (elevel >= FATAL) return true; // elevel != LOG
     } else if (elevel >= log_min_level) return true; // Neither is LOG
     return false;
+}
+
+int init_bgw_main_arg(Shared *ws) {
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    for (int slot = 0; slot < max_worker_processes; slot++) if (!shared[slot].in_use) {
+        pg_write_barrier();
+        shared[slot] = *ws;
+        shared[slot].in_use = true;
+        LWLockRelease(BackgroundWorkerLock);
+        elog(DEBUG1, "slot = %i", slot);
+        return slot;
+    }
+    LWLockRelease(BackgroundWorkerLock);
+    return -1;
+}
+
+void shared_free(int slot) {
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    pg_read_barrier();
+    MemSet(&shared[slot], 0, sizeof(Shared));
+    LWLockRelease(BackgroundWorkerLock);
+}
+
+Shared *init_shared(Datum main_arg) {
+    return &shared[DatumGetInt32(main_arg)];
 }
