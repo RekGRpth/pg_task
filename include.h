@@ -183,5 +183,6 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_finish_my(void);
 void task_error(ErrorData *edata);
 void task_free(Task *t);
+bool task_exit(const Task *t);
 
 #endif // _INCLUDE_H_

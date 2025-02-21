@@ -27,7 +27,7 @@ extern char *task_null;
 extern int task_fetch;
 Task task = {0};
 
-static bool task_live(const Task *t) {
+bool task_exit(const Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start)};
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPIPlanPtr plan = NULL;
@@ -48,10 +48,12 @@ static bool task_live(const Task *t) {
 #endif
         );
     }
+    SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     t->shared->id = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)) : 0;
     elog(DEBUG1, "id = %li", t->shared->id);
+    SPI_finish_my();
     set_ps_display_my("idle");
     return ShutdownRequestPending || !t->shared->id;
 }
@@ -177,7 +179,6 @@ bool task_done(Task *t) {
     if (update) task_update(t);
     if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) { elog(WARNING, "!unlock_table_id(%i, %li)", t->shared->oid, t->shared->id); exit = true; }
     t->lock = false;
-    exit = exit || task_live(t);
     SPI_finish_my();
     task_free(t);
     set_ps_display_my("idle");
