@@ -8,7 +8,9 @@
 #include <port/atomics.h>
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
+#if PG_VERSION_NUM < 90500
 #include <storage/proc.h>
+#endif
 #include <tcop/utility.h>
 #include <utils/builtins.h>
 #include <utils/memutils.h>

@@ -12,9 +12,6 @@
 #endif
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
-#if PG_VERSION_NUM < 90500
-#include <storage/barrier.h>
-#endif
 #include <storage/ipc.h>
 #include <storage/proc.h>
 #include <utils/acl.h>
