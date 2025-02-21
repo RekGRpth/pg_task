@@ -5,6 +5,7 @@
 #include <miscadmin.h>
 #endif
 #include <pgstat.h>
+#include <port/atomics.h>
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
 #include <storage/proc.h>
