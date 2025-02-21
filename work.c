@@ -72,6 +72,7 @@ static void work_query(Task *t);
     PG_END_TRY(); \
     *t = task; \
     if (task_done(t) || finish_or_free) remote ? work_finish(t) : work_free(t); \
+    if (finish_or_free) { pfree(t->shared); pfree(t); } \
 } while(0)
 
 static char *work_errstr(char *err) {
@@ -425,7 +426,7 @@ static void work_query(Task *t) {
         if (task_work(t)) { work_finish(t); return; }
         if (t->active) break;
         work_ereport(false, ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
-        if (!t->shared->id) return;
+        if (!t->shared->id) { pfree(t->shared); pfree(t); return; }
     }
     initStringInfoMy(&input);
     t->skip = 0;
