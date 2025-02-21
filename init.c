@@ -5,12 +5,12 @@
 #include <miscadmin.h>
 #endif
 #include <pgstat.h>
-#include <port/atomics.h>
 #include <postmaster/bgworker.h>
-#include <storage/ipc.h>
 #if PG_VERSION_NUM < 90500
-#include <storage/proc.h>
+#include <storage/barrier.h>
 #endif
+#include <storage/ipc.h>
+#include <storage/proc.h>
 #include <tcop/utility.h>
 #include <utils/builtins.h>
 #include <utils/memutils.h>
