@@ -32,7 +32,7 @@ extern char *task_null;
 extern int conf_close;
 extern int conf_fetch;
 extern int work_restart;
-static volatile dlist_head head;
+static dlist_head head;
 
 static void conf_data(const Work *w) {
     List *names = stringToQualifiedNameListMy(w->data);
@@ -141,7 +141,7 @@ void conf_main(Datum main_arg) {
     set_ps_display_my("main");
     process_session_preload_libraries();
     if (!lock_data_user(MyDatabaseId, GetUserId())) { elog(WARNING, "!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()); return; }
-    dlist_init((dlist_head *)&head);
+    dlist_init(&head);
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         WITH j AS (
@@ -193,7 +193,7 @@ void conf_main(Datum main_arg) {
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false, TEXTOID)), w->shared->table, sizeof(w->shared->table));
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false, TEXTOID)), w->shared->user, sizeof(w->shared->user));
             elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, sleep = %li, reset = %li, run = %i, hash = %i", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset, w->shared->run, w->shared->hash);
-            dlist_push_tail((dlist_head *)&head, &w->node);
+            dlist_push_tail(&head, &w->node);
             SPI_freetuple(val);
         }
     } while (SPI_processed);
@@ -201,6 +201,6 @@ void conf_main(Datum main_arg) {
     SPI_finish_my();
     pfree(src.data);
     set_ps_display_my("idle");
-    dlist_foreach_modify(iter, (dlist_head *)&head) conf_work(dlist_container(Work, node, iter.cur));
+    dlist_foreach_modify(iter, &head) conf_work(dlist_container(Work, node, iter.cur));
     if (!unlock_data_user(MyDatabaseId, GetUserId())) elog(WARNING, "!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId());
 }
