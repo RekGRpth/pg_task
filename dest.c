@@ -4,8 +4,8 @@
 #include <storage/proc.h>
 #include <utils/ps_status.h>
 
+extern emit_log_hook_type emit_log_hook_prev;
 extern Task task;
-static emit_log_hook_type emit_log_hook_prev = NULL;
 
 static void dest_execute(void) {
     bool count = false;

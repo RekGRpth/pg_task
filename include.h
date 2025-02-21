@@ -87,18 +87,20 @@
 #define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
 #endif
 
-typedef struct WorkShared {
+typedef struct Shared {
     bool in_use;
     char data[NAMEDATALEN];
     char schema[NAMEDATALEN];
     char table[NAMEDATALEN];
     char user[NAMEDATALEN];
+    int64 id;
     int64 reset;
     int64 sleep;
     int hash;
+    int max;
     int run;
     Oid oid;
-} WorkShared;
+} Shared;
 
 typedef struct Work {
     char *schema_table;
@@ -110,16 +112,8 @@ typedef struct Work {
     const char *user;
     dlist_node node;
     pid_t pid;
-    WorkShared *shared;
+    Shared *shared;
 } Work;
-
-typedef struct TaskShared {
-    bool in_use;
-    int64 id;
-    int hash;
-    int max;
-    int slot;
-} TaskShared;
 
 typedef struct Task {
     bool active;
@@ -140,12 +134,13 @@ typedef struct Task {
     int skip;
     int timeout;
     PGconn *conn;
+    Shared *shared;
     StringInfoData error;
     StringInfoData output;
-    TaskShared *shared;
     TimestampTz start;
     uint64 row;
     void (*socket) (struct Task *t);
+    Work *work;
 } Task;
 
 bool dest_timeout(void);
@@ -165,18 +160,21 @@ char *TextDatumGetCStringMy(Datum datum);
 const char *error_severity(int elevel);
 Datum CStringGetTextDatumMy(const char *s);
 Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid);
+int init_bgw_main_arg(Shared *ws);
 int severity_error(const char *error);
 PGDLLEXPORT void conf_main(Datum main_arg);
 PGDLLEXPORT void task_main(Datum main_arg);
 PGDLLEXPORT void work_main(Datum main_arg);
 Portal SPI_cursor_open_my(const char *src, SPIPlanPtr plan, Datum *values, const char *nulls, bool read_only);
 Portal SPI_cursor_open_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, bool read_only);
+Shared *init_shared(Datum main_arg);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len, bool string, char escape, char quote);
 void append_with_tabs(StringInfo buf, const char *str);
-void initStringInfoMy(StringInfo buf);
 void init_conf(bool dynamic);
+void initStringInfoMy(StringInfo buf);
 void _PG_init(void);
+void shared_free(int slot);
 void SPI_connect_my(const char *src);
 void SPI_cursor_close_my(Portal portal);
 void SPI_cursor_fetch_my(const char *src, Portal portal, bool forward, long count);
@@ -185,7 +183,5 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_finish_my(void);
 void task_error(ErrorData *edata);
 void task_free(Task *t);
-void taskshared_free(int slot);
-void workshared_free(int slot);
 
 #endif // _INCLUDE_H_
