@@ -286,8 +286,7 @@ void _PG_init(void) {
     prev_shmem_request_hook = shmem_request_hook;
     shmem_request_hook = init_shmem_request_hook;
 #elif PG_VERSION_NUM >= 90600
-    RequestAddinShmemSpace(init_taskshared_memsize());
-    RequestAddinShmemSpace(init_workshared_memsize());
+    RequestAddinShmemSpace(init_shared_memsize());
 #endif
     init_conf(false);
 }
