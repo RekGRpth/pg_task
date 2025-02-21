@@ -44,13 +44,13 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 #endif
 
 extern char *task_null;
+extern emit_log_hook_type emit_log_hook_prev;
 extern int task_idle;
 extern int work_close;
 extern int work_fetch;
 extern Task task;
 long current_timeout;
 static dlist_head head;
-static emit_log_hook_type emit_log_hook_prev = NULL;
 static volatile uint64 idle_count = 0;
 static Work work = {0};
 
