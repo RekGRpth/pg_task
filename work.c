@@ -67,8 +67,7 @@ static void work_query(Task *t);
         FlushErrorState(); \
     PG_END_TRY(); \
     *t = *task; \
-    if (task_done(t) || finish_or_free || task_live(t)) remote ? work_finish(t) : work_free(t); \
-    if (finish_or_free) { pfree(t->shared); pfree(t); } \
+    if (task_done(t) || finish_or_free || task_live(t)) { remote ? work_finish(t) : work_free(t); t = NULL; } \
 } while(0)
 
 static char *work_errstr(char *err) {
@@ -190,7 +189,8 @@ static void work_fatal(Task *t, const PGresult *result) {
 static void work_free(Task *t) {
     dlist_delete(&t->node);
     task_free(t);
-    t->socket = NULL;
+    pfree(t->shared);
+    pfree(t);
 }
 
 static void work_finish(Task *t) {
@@ -342,7 +342,7 @@ static void work_latch(const Work *w) {
 
 static void work_readable(Task *t) {
     if (PQstatus(t->conn) == CONNECTION_OK && !PQconsumeInput(t->conn)) { work_ereport(true, t, ERROR, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("!PQconsumeInput"), errdetail("%s", PQerrorMessageMy(t->conn)))); return; }
-    if (t->socket) t->socket(t);
+    t->socket(t);
 }
 
 static void work_done(Task *t) {
@@ -422,7 +422,7 @@ static void work_query(Task *t) {
         if (task_work(t)) { work_finish(t); return; }
         if (t->active) break;
         work_ereport(false, t, ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
-        if (!t->shared->id) { pfree(t->shared); pfree(t); return; }
+        if (!t) return;
     }
     initStringInfoMy(&input);
     t->skip = 0;
@@ -859,7 +859,7 @@ static void work_update(const Work *w) {
 }
 
 static void work_writeable(Task *t) {
-    if (t->socket) t->socket(t);
+    t->socket(t);
 }
 
 static void work_idle(SIGNAL_ARGS) {
