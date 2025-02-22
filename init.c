@@ -18,6 +18,7 @@
 PG_MODULE_MAGIC;
 
 char *task_null;
+emit_log_hook_type emit_log_hook_prev = NULL;
 int conf_close;
 int conf_fetch;
 int task_fetch;
@@ -25,33 +26,41 @@ int task_idle;
 int work_close;
 int work_fetch;
 int work_restart;
-static bool task_delete;
-static bool task_drift;
-static bool task_header;
-static bool task_string;
-static char *task_active;
-static char *task_data;
-static char *task_delimiter;
-static char *task_escape;
-static char *task_group;
-static char *task_json;
-static char *task_live;
-static char *task_quote;
-static char *task_repeat;
-static char *task_reset;
-static char *task_schema;
-static char *task_table;
-static char *task_timeout;
-static char *task_user;
-static char *work_active;
-static int conf_max;
-static int conf_restart;
-static int task_count;
-static int task_id;
-static int task_limit;
-static int task_max;
-static int task_run;
-static int task_sleep;
+static struct {
+    struct {
+        int max;
+        int restart;
+    } conf;
+    struct {
+        bool delete;
+        bool drift;
+        bool header;
+        bool string;
+        char *active;
+        char *data;
+        char *delimiter;
+        char *escape;
+        char *group;
+        char *json;
+        char *live;
+        char *quote;
+        char *repeat;
+        char *reset;
+        char *schema;
+        char *table;
+        char *timeout;
+        char *user;
+        int count;
+        int id;
+        int limit;
+        int max;
+        int run;
+        int sleep;
+    } task;
+    struct {
+        char *active;
+    } work;
+} init = {0};
 #if PG_VERSION_NUM >= 150000
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
 #endif
@@ -173,7 +182,7 @@ void init_conf(bool dynamic) {
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    worker.bgw_restart_time = conf_restart;
+    worker.bgw_restart_time = init.conf.restart;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     if (dynamic) {
         worker.bgw_notify_pid = MyProcPid;
@@ -217,7 +226,7 @@ static void init_assign_table(const char *newval, void *extra) { init_assign_str
 static void init_assign_user(const char *newval, void *extra) { init_assign_string("pg_task.user", newval, extra); }
 
 static size_t init_shared_memsize(void) {
-    return mul_size(conf_max, sizeof(Shared));
+    return mul_size(init.conf.max, sizeof(Shared));
 }
 
 #if PG_VERSION_NUM >= 150000
@@ -245,41 +254,41 @@ void initStringInfoMy(StringInfo buf) {
 
 void _PG_init(void) {
     if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("This module can only be loaded via shared_preload_libraries")));
-    DefineCustomBoolVariable("pg_task.delete", "pg_task delete", "Auto delete task when both output and error are nulls", &task_delete, true, PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomBoolVariable("pg_task.drift", "pg_task drift", "Compute next repeat time by stop time instead by plan time", &task_drift, false, PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomBoolVariable("pg_task.header", "pg_task header", "Show columns headers in output", &task_header, true, PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomBoolVariable("pg_task.string", "pg_task string", "Quote only strings", &task_string, true, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomBoolVariable("pg_task.delete", "pg_task delete", "Auto delete task when both output and error are nulls", &init.task.delete, true, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomBoolVariable("pg_task.drift", "pg_task drift", "Compute next repeat time by stop time instead by plan time", &init.task.drift, false, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomBoolVariable("pg_task.header", "pg_task header", "Show columns headers in output", &init.task.header, true, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomBoolVariable("pg_task.string", "pg_task string", "Quote only strings", &init.task.string, true, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.close", "pg_conf close", "Close conf, milliseconds", &conf_close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.fetch", "pg_conf fetch", "Fetch conf rows at once", &conf_fetch, 10, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_conf.max", "pg_conf work", "Maximum task and work workers", &conf_max, max_worker_processes, 1, max_worker_processes, PGC_POSTMASTER, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_conf.restart", "pg_conf restart", "Restart conf interval, seconds", &conf_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.count", "pg_task count", "Non-negative maximum count of tasks, are executed by current background worker process before exit", &task_count, 0, 0, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_conf.max", "pg_conf work", "Maximum task and work workers", &init.conf.max, max_worker_processes, 1, max_worker_processes, PGC_POSTMASTER, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_conf.restart", "pg_conf restart", "Restart conf interval, seconds", &init.conf.restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.count", "pg_task count", "Non-negative maximum count of tasks, are executed by current background worker process before exit", &init.task.count, 0, 0, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.fetch", "pg_task fetch", "Fetch task rows at once", &task_fetch, 100, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.idle", "pg_task idle", "Idle task count", &task_idle, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.id", "pg_task id", "Current task id", &task_id, 0, INT_MIN, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.limit", "pg_task limit", "Limit task rows at once", &task_limit, 1000, 0, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.max", "pg_task max", "Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds", &task_max, 0, INT_MIN, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.run", "pg_task run", "Maximum count of concurrently executing tasks in work", &task_run, INT_MAX, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.sleep", "pg_task sleep", "Check tasks every sleep milliseconds", &task_sleep, 1000, 1, INT_MAX, PGC_USERSET, 0, NULL, init_assign_sleep, NULL);
+    DefineCustomIntVariable("pg_task.id", "pg_task id", "Current task id", &init.task.id, 0, INT_MIN, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.limit", "pg_task limit", "Limit task rows at once", &init.task.limit, 1000, 0, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.max", "pg_task max", "Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds", &init.task.max, 0, INT_MIN, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.run", "pg_task run", "Maximum count of concurrently executing tasks in work", &init.task.run, INT_MAX, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_task.sleep", "pg_task sleep", "Check tasks every sleep milliseconds", &init.task.sleep, 1000, 1, INT_MAX, PGC_USERSET, 0, NULL, init_assign_sleep, NULL);
     DefineCustomIntVariable("pg_work.close", "pg_work close", "Close work, milliseconds", &work_close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.fetch", "pg_work fetch", "Fetch work rows at once", &work_fetch, 100, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.restart", "pg_work restart", "Restart work interval, seconds", &work_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.active", "pg_task active", "Positive period after plan time, when task is active for executing", &task_active, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.data", "pg_task data", "Database name for tasks table", &task_data, "postgres", PGC_SIGHUP, 0, NULL, init_assign_data, NULL);
-    DefineCustomStringVariable("pg_task.delimiter", "pg_task delimiter", "Results columns delimiter", &task_delimiter, "\t", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.escape", "pg_task escape", "Results columns escape", &task_escape, "", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.group", "pg_task group", "Task grouping by name", &task_group, "group", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.json", "pg_task json", "Json configuration, available keys: data, reset, schema, table, sleep and user", &task_json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign_json, NULL);
-    DefineCustomStringVariable("pg_task.live", "pg_task live", "Non-negative maximum time of live of current background worker process before exit", &task_live, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.active", "pg_task active", "Positive period after plan time, when task is active for executing", &init.task.active, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.data", "pg_task data", "Database name for tasks table", &init.task.data, "postgres", PGC_SIGHUP, 0, NULL, init_assign_data, NULL);
+    DefineCustomStringVariable("pg_task.delimiter", "pg_task delimiter", "Results columns delimiter", &init.task.delimiter, "\t", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.escape", "pg_task escape", "Results columns escape", &init.task.escape, "", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.group", "pg_task group", "Task grouping by name", &init.task.group, "group", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.json", "pg_task json", "Json configuration, available keys: data, reset, schema, table, sleep and user", &init.task.json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign_json, NULL);
+    DefineCustomStringVariable("pg_task.live", "pg_task live", "Non-negative maximum time of live of current background worker process before exit", &init.task.live, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.null", "pg_task null", "Null text value representation", &task_null, "\\N", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.quote", "pg_task quote", "Results columns quote", &task_quote, "", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.repeat", "pg_task repeat", "Non-negative auto repeat tasks interval", &task_repeat, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.reset", "pg_task reset", "Interval of reset tasks", &task_reset, "1 hour", PGC_USERSET, 0, NULL, init_assign_reset, NULL);
-    DefineCustomStringVariable("pg_task.schema", "pg_task schema", "Schema name for tasks table", &task_schema, "public", PGC_USERSET, 0, NULL, init_assign_schema, NULL);
-    DefineCustomStringVariable("pg_task.table", "pg_task table", "Table name for tasks table", &task_table, "task", PGC_USERSET, 0, NULL, init_assign_table, NULL);
-    DefineCustomStringVariable("pg_task.timeout", "pg_task timeout", "Non-negative allowed time for task run", &task_timeout, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.user", "pg_task user", "User name for tasks table", &task_user, "postgres", PGC_SIGHUP, 0, NULL, init_assign_user, NULL);
-    elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, sleep = %i, reset = %s, active = %s", task_json, task_user, task_data, task_schema, task_table, task_null, task_sleep, task_reset, work_active);
+    DefineCustomStringVariable("pg_task.quote", "pg_task quote", "Results columns quote", &init.task.quote, "", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.repeat", "pg_task repeat", "Non-negative auto repeat tasks interval", &init.task.repeat, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.reset", "pg_task reset", "Interval of reset tasks", &init.task.reset, "1 hour", PGC_USERSET, 0, NULL, init_assign_reset, NULL);
+    DefineCustomStringVariable("pg_task.schema", "pg_task schema", "Schema name for tasks table", &init.task.schema, "public", PGC_USERSET, 0, NULL, init_assign_schema, NULL);
+    DefineCustomStringVariable("pg_task.table", "pg_task table", "Table name for tasks table", &init.task.table, "task", PGC_USERSET, 0, NULL, init_assign_table, NULL);
+    DefineCustomStringVariable("pg_task.timeout", "pg_task timeout", "Non-negative allowed time for task run", &init.task.timeout, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.user", "pg_task user", "User name for tasks table", &init.task.user, "postgres", PGC_SIGHUP, 0, NULL, init_assign_user, NULL);
+    elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, sleep = %i, reset = %s, active = %s", init.task.json, init.task.user, init.task.data, init.task.schema, init.task.table, task_null, init.task.sleep, init.task.reset, init.work.active);
 #ifdef GP_VERSION_NUM
     if (!IS_QUERY_DISPATCHER()) return;
 #endif
@@ -357,7 +366,7 @@ bool is_log_level_output(int elevel, int log_min_level) {
 
 int init_bgw_main_arg(Shared *s) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-    for (int slot = 0; slot < conf_max; slot++) if (!shared[slot].in_use) {
+    for (int slot = 0; slot < init.conf.max; slot++) if (!shared[slot].in_use) {
         pg_write_barrier();
         shared[slot] = *s;
         shared[slot].in_use = true;

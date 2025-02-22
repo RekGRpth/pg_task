@@ -22,12 +22,16 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 #include <utils/timestamp.h>
 #endif
 
-emit_log_hook_type emit_log_hook_prev = NULL;
 extern char *task_null;
+extern emit_log_hook_type emit_log_hook_prev;
 extern int task_fetch;
-Task task = {0};
+static Task task = {0};
 
-static bool task_live(const Task *t) {
+Task *get_task(void) {
+    return &task;
+}
+
+bool task_live(const Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start)};
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPIPlanPtr plan = NULL;
@@ -48,10 +52,12 @@ static bool task_live(const Task *t) {
 #endif
         );
     }
+    SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     t->shared->id = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)) : 0;
     elog(DEBUG1, "id = %li", t->shared->id);
+    SPI_finish_my();
     set_ps_display_my("idle");
     return ShutdownRequestPending || !t->shared->id;
 }
@@ -177,7 +183,6 @@ bool task_done(Task *t) {
     if (update) task_update(t);
     if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) { elog(WARNING, "!unlock_table_id(%i, %li)", t->shared->oid, t->shared->id); exit = true; }
     t->lock = false;
-    exit = exit || task_live(t);
     SPI_finish_my();
     task_free(t);
     set_ps_display_my("idle");
@@ -327,17 +332,16 @@ void task_free(Task *t) {
 void task_main(Datum main_arg) {
     const char *application_name;
     StringInfoData oid, schema_table;
-    Work work = {0};
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
-    task.work = &work;
+    task.work = get_work();
     task.shared = init_shared(main_arg);
     before_shmem_exit(task_shmem_exit, main_arg);
     if (!task.shared->in_use) return;
     BackgroundWorkerUnblockSignals();
-    work.data = quote_identifier(task.shared->data);
-    work.schema = quote_identifier(task.shared->schema);
-    work.table = quote_identifier(task.shared->table);
-    work.user = quote_identifier(task.shared->user);
+    task.work->data = quote_identifier(task.shared->data);
+    task.work->schema = quote_identifier(task.shared->schema);
+    task.work->table = quote_identifier(task.shared->table);
+    task.work->user = quote_identifier(task.shared->user);
     BackgroundWorkerInitializeConnectionMy(task.shared->data, task.shared->user);
     application_name = MyBgworkerEntry->bgw_name + strlen(task.shared->user) + 1 + strlen(task.shared->data) + 1;
     set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
@@ -349,8 +353,8 @@ void task_main(Datum main_arg) {
     set_config_option_my("pg_task.table", task.shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     initStringInfoMy(&schema_table);
-    appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);
-    work.schema_table = schema_table.data;
+    appendStringInfo(&schema_table, "%s.%s", task.work->schema, task.work->table);
+    task.work->schema_table = schema_table.data;
     initStringInfoMy(&oid);
     appendStringInfo(&oid, "%i", task.shared->oid);
     set_config_option_my("pg_task.oid", oid.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);

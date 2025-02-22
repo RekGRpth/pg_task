@@ -151,6 +151,7 @@ bool lock_data_user(Oid data, Oid user);
 bool lock_table_id(Oid table, int64 id);
 bool lock_table_pid_hash(Oid table, int pid, int hash);
 bool task_done(Task *t);
+bool task_live(const Task *t);
 bool task_work(Task *t);
 bool unlock_data_user_hash(Oid data, Oid user, int hash);
 bool unlock_data_user(Oid data, Oid user);
@@ -169,6 +170,7 @@ Portal SPI_cursor_open_my(const char *src, SPIPlanPtr plan, Datum *values, const
 Portal SPI_cursor_open_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, bool read_only);
 Shared *init_shared(Datum main_arg);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
+Task *get_task(void);
 void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len, bool string, char escape, char quote);
 void append_with_tabs(StringInfo buf, const char *str);
 void init_conf(bool dynamic);
@@ -183,5 +185,6 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_finish_my(void);
 void task_error(ErrorData *edata);
 void task_free(Task *t);
+Work *get_work(void);
 
 #endif // _INCLUDE_H_
