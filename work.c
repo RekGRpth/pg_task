@@ -196,7 +196,6 @@ static void work_free(Task *t) {
 static void work_finish(Task *t) {
     if (t->conn) {
         PQfinish(t->conn);
-        t->conn = NULL;
 #if PG_VERSION_NUM >= 130000
         ReleaseExternalFD();
 #endif
