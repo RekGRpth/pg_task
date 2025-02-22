@@ -52,7 +52,6 @@ extern Task task;
 long current_timeout;
 static dlist_head head;
 static volatile uint64 idle_count = 0;
-static Work work = {0};
 
 static void work_query(Task *t);
 
@@ -89,7 +88,7 @@ static char *PQresultErrorMessageMy(const PGresult *res) {
     return work_errstr(PQresultErrorMessage(res));
 }
 
-static void work_check(void) {
+static void work_check(const Work *w) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return;
@@ -106,13 +105,13 @@ static void work_check(void) {
                         COALESCE(COALESCE("user", "data"), pg_catalog.current_setting('pg_task.user')) AS "user"
                 FROM    pg_catalog.jsonb_to_recordset(pg_catalog.current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" int8, "user" text)
             ) SELECT    DISTINCT j.* FROM j WHERE "user" OPERATOR(pg_catalog.=) current_user AND "data" OPERATOR(pg_catalog.=) current_catalog AND pg_catalog.hashtext(pg_catalog.concat_ws('.', "schema", "table"))::pg_catalog.int4 OPERATOR(pg_catalog.=) %1$i
-        ), work.shared->hash);
+        ), w->shared->hash);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(src.data, plan, NULL, NULL, SPI_OK_SELECT);
     if (!SPI_processed) ShutdownRequestPending = true;
-    elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, SPI_processed = %li", work.shared->sleep, work.shared->reset, work.shared->schema, work.shared->table, (long)SPI_processed);
+    elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, SPI_processed = %li", w->shared->sleep, w->shared->reset, w->shared->schema, w->shared->table, (long)SPI_processed);
     SPI_finish_my();
     set_ps_display_my("idle");
 }
@@ -202,7 +201,7 @@ static void work_finish(Task *t) {
         ReleaseExternalFD();
 #endif
     }
-    if (!proc_exit_inprogress && t->pid && !unlock_table_pid_hash(work.shared->oid, t->pid, t->shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", work.shared->oid, t->pid, t->shared->hash);
+    if (!proc_exit_inprogress && t->pid && !unlock_table_pid_hash(t->shared->oid, t->pid, t->shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->pid, t->shared->hash);
     work_free(t);
 }
 
@@ -218,7 +217,7 @@ static int work_nevents(void) {
     return nevents;
 }
 
-static void work_index(int count, const char *const *indexes) {
+static void work_index(const Work *w, int count, const char *const *indexes) {
     const char *name_quote;
     const RangeVar *rangevar;
     List *names;
@@ -226,7 +225,7 @@ static void work_index(int count, const char *const *indexes) {
     StringInfoData src, name, idx;
     set_ps_display_my("index");
     initStringInfoMy(&name);
-    appendStringInfoString(&name, work.shared->table);
+    appendStringInfoString(&name, w->shared->table);
     for (int i = 0; i < count; i++) {
         const char *index = indexes[i];
         appendStringInfoString(&name, "_");
@@ -235,7 +234,7 @@ static void work_index(int count, const char *const *indexes) {
     appendStringInfoString(&name, "_idx");
     name_quote = quote_identifier(name.data);
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE INDEX %s ON %s USING btree), name_quote, work.schema_table);
+    appendStringInfo(&src, SQL(CREATE INDEX %s ON %s USING btree), name_quote, w->schema_table);
     appendStringInfoString(&src, " (");
     for (int i = 0; i < count; i++) {
         const char *index = indexes[i];
@@ -246,15 +245,15 @@ static void work_index(int count, const char *const *indexes) {
     }
     appendStringInfoString(&src, ")");
     initStringInfoMy(&idx);
-    appendStringInfo(&idx, "%s.%s", work.schema, name_quote);
+    appendStringInfo(&idx, "%s.%s", w->schema, name_quote);
     names = stringToQualifiedNameListMy(idx.data);
     rangevar = makeRangeVarFromNameList(names);
-    elog(DEBUG1, "index = %s, schema_table = %s", idx.data, work.schema_table);
+    elog(DEBUG1, "index = %s, schema_table = %s", idx.data, w->schema_table);
     SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     } else if ((relation = relation_openrv_extended_my(rangevar, AccessShareLock, true))) {
-        if (relation->rd_index && relation->rd_index->indrelid != work.shared->oid) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        if (relation->rd_index && relation->rd_index->indrelid != w->shared->oid) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         relation_close(relation, AccessShareLock);
     }
     SPI_finish_my();
@@ -267,7 +266,7 @@ static void work_index(int count, const char *const *indexes) {
     set_ps_display_my("idle");
 }
 
-static void work_reset(void) {
+static void work_reset(const Work *w) {
     Portal portal;
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
@@ -279,7 +278,7 @@ static void work_reset(void) {
                 SELECT "id" FROM %1$s AS t LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$i AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.<<) 32 OPERATOR(pg_catalog.>>) 32)
                 WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND l.pid IS NULL FOR UPDATE OF t %4$s
             ) UPDATE %1$s AS t SET "state" = 'PLAN', "start" = NULL, "stop" = NULL, "pid" = NULL FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id::pg_catalog.int8
-        ), work.schema_table, work.shared->oid, work.schema_type,
+        ), w->schema_table, w->shared->oid, w->schema_type,
 #if PG_VERSION_NUM >= 90500
             "SKIP LOCKED"
 #else
@@ -303,7 +302,7 @@ static void work_reset(void) {
     set_ps_display_my("idle");
 }
 
-static void work_timeout(void) {
+static void work_timeout(const Work *w) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     set_ps_display_my("timeout");
@@ -317,7 +316,7 @@ static void work_timeout(void) {
            )))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000, EXTRACT(epoch FROM ((
                 SELECT "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.-) CURRENT_TIMESTAMP AS "plan" FROM %1$s WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.>=) CURRENT_TIMESTAMP ORDER BY 1 LIMIT 1
            )))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000), -1)::pg_catalog.int8 as "min"
-        ), work.schema_table, work.shared->oid, work.schema_type);
+        ), w->schema_table, w->shared->oid, w->schema_type);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
@@ -329,16 +328,16 @@ static void work_timeout(void) {
     idle_count = 0;
 }
 
-static void work_reload(void) {
+static void work_reload(const Work *w) {
     ConfigReloadPending = false;
     ProcessConfigFile(PGC_SIGHUP);
-    work_check();
+    work_check(w);
 }
 
-static void work_latch(void) {
+static void work_latch(const Work *w) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
-    if (ConfigReloadPending) work_reload();
+    if (ConfigReloadPending) work_reload(w);
 }
 
 static void work_readable(Task *t) {
@@ -356,13 +355,13 @@ static void work_done(Task *t) {
     task_done(t) || task_live(t) || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
 }
 
-static void work_schema(void) {
-    List *names = stringToQualifiedNameListMy(work.schema);
+static void work_schema(const Work *w) {
+    List *names = stringToQualifiedNameListMy(w->schema);
     StringInfoData src;
-    elog(DEBUG1, "schema = %s", work.schema);
+    elog(DEBUG1, "schema = %s", w->schema);
     set_ps_display_my("schema");
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE SCHEMA %s), work.schema);
+    appendStringInfo(&src, SQL(CREATE SCHEMA %s), w->schema);
     SPI_connect_my(src.data);
     if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
@@ -461,7 +460,7 @@ static void work_connect(Task *t) {
     }
     if (connected) {
         if (!(t->pid = PQbackendPID(t->conn))) { work_ereport(true, t, ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQbackendPID failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); return; }
-        if (!lock_table_pid_hash(work.shared->oid, t->pid, t->shared->hash)) { work_ereport(true, t, ERROR, (errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", work.shared->oid, t->pid, t->shared->hash))); return; }
+        if (!lock_table_pid_hash(t->shared->oid, t->pid, t->shared->hash)) { work_ereport(true, t, ERROR, (errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->pid, t->shared->hash))); return; }
         work_query(t);
     }
 }
@@ -496,7 +495,7 @@ static void work_remote(Task *t) {
     int arg = 3;
     PQconninfoOption *opts = PQconninfoParse(t->remote, &err);
     StringInfoData name, value;
-    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : task_null, t->shared->max, work.shared->oid);
+    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : task_null, t->shared->max, t->shared->oid);
     dlist_delete(&t->node);
     dlist_push_tail(&head, &t->node);
     if (!opts) { work_ereport(true, t, ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), errdetail("%s", work_errstr(err)))); if (err) PQfreemem(err); return; }
@@ -513,15 +512,15 @@ static void work_remote(Task *t) {
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
     initStringInfoMy(&name);
-    appendStringInfo(&name, "pg_task %s %s %s", work.shared->schema, work.shared->table, t->group);
+    appendStringInfo(&name, "pg_task %s %s %s", t->shared->schema, t->shared->table, t->group);
     arg = 0;
     keywords[arg] = "application_name";
     values[arg] = name.data;
     initStringInfoMy(&value);
     if (options) appendStringInfoString(&value, options);
-    appendStringInfo(&value, " -c pg_task.schema=%s", work.shared->schema);
-    appendStringInfo(&value, " -c pg_task.table=%s", work.shared->table);
-    appendStringInfo(&value, " -c pg_task.oid=%i", work.shared->oid);
+    appendStringInfo(&value, " -c pg_task.schema=%s", t->shared->schema);
+    appendStringInfo(&value, " -c pg_task.table=%s", t->shared->table);
+    appendStringInfo(&value, " -c pg_task.oid=%i", t->shared->oid);
     appendStringInfo(&value, " -c pg_task.group=%s", t->group);
     arg++;
     keywords[arg] = "options";
@@ -562,10 +561,10 @@ static void work_task(Task *t) {
     BackgroundWorkerHandle *handle = NULL;
     BackgroundWorker worker = {0};
     size_t len;
-    elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", t->shared->id, t->group, t->shared->max, work.shared->oid);
+    elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", t->shared->id, t->group, t->shared->max, t->shared->oid);
     if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) { work_ereport(true, t, ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name)))); return; }
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) { work_ereport(true, t, ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name)))); return; }
-    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", work.shared->user, work.shared->data, work.shared->schema, work.shared->table, t->group)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
+    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", t->shared->user, t->shared->data, t->shared->schema, t->shared->table, t->group)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
 #if PG_VERSION_NUM >= 110000
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) { work_ereport(true, t, ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type)))); return; }
 #endif
@@ -585,8 +584,8 @@ static void work_task(Task *t) {
     if (handle) pfree(handle);
 }
 
-static void work_sleep(void) {
-    Datum values[] = {Int32GetDatum(work.shared->run)};
+static void work_sleep(Work *w) {
+    Datum values[] = {Int32GetDatum(w->shared->run)};
     dlist_head head;
     dlist_mutable_iter iter;
     Portal portal;
@@ -608,7 +607,7 @@ static void work_sleep(void) {
             ), u AS (
                 SELECT "id", "count" OPERATOR(pg_catalog.-) pg_catalog.row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM u WHERE t.id OPERATOR(pg_catalog.=) u.id AND u.count OPERATOR(pg_catalog.>=) 0 RETURNING t.id::pg_catalog.int8, "hash"::pg_catalog.int4, "group"::pg_catalog.text, "remote"::pg_catalog.text, "max"::pg_catalog.int4
-        ), work.schema_table, work.shared->oid,
+        ), w->schema_table, w->shared->oid,
 #if PG_VERSION_NUM >= 90500
         "SKIP LOCKED"
 #else
@@ -628,8 +627,8 @@ static void work_sleep(void) {
             t->group = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "group", false, TEXTOID));
             t->remote = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "remote", true, TEXTOID));
             t->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(Shared));
-            *t->shared = *work.shared;
-            t->work = &work;
+            *t->shared = *w->shared;
+            t->work = w;
             t->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
             t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false, INT8OID));
             t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false, INT4OID));
@@ -650,11 +649,11 @@ static void work_sleep(void) {
     set_ps_display_my("idle");
 }
 
-static void work_table(void) {
-    List *names = stringToQualifiedNameListMy(work.schema_table);
+static void work_table(const Work *w) {
+    List *names = stringToQualifiedNameListMy(w->schema_table);
     const RangeVar *rangevar = makeRangeVarFromNameList(names);
     StringInfoData src, hash;
-    elog(DEBUG1, "schema_table = %s, schema_type = %s", work.schema_table, work.schema_type);
+    elog(DEBUG1, "schema_table = %s, schema_type = %s", w->schema_table, w->schema_type);
     set_ps_display_my("table");
     initStringInfoMy(&hash);
 #if PG_VERSION_NUM >= 120000
@@ -664,7 +663,7 @@ static void work_table(void) {
         const char *function_quote;
         StringInfoData function;
         initStringInfoMy(&function);
-        appendStringInfo(&function, "%1$s_hash_generate", work.shared->table);
+        appendStringInfo(&function, "%1$s_hash_generate", w->shared->table);
         function_quote = quote_identifier(function.data);
         appendStringInfo(&hash, SQL(CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$BEGIN
             IF tg_op OPERATOR(pg_catalog.=) 'INSERT' OR (NEW.group, NEW.remote) IS DISTINCT FROM (OLD.group, OLD.remote) THEN
@@ -672,7 +671,7 @@ static void work_table(void) {
             END IF;
             RETURN NEW;
         END;$function$ LANGUAGE plpgsql;
-        CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s();), work.schema, function_quote, "", work.schema_table);
+        CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s();), w->schema, function_quote, "", w->schema_table);
         if (function_quote != function.data) pfree((void *)function_quote);
         pfree(function.data);
     }
@@ -738,7 +737,7 @@ static void work_table(void) {
         COMMENT ON COLUMN %1$s."null" IS 'Null text value representation';
         COMMENT ON COLUMN %1$s."output" IS 'Received result(s)';
         COMMENT ON COLUMN %1$s."remote" IS 'Connect to remote database (if need)';
-    ), work.schema_table, work.schema_type,
+    ), w->schema_table, w->schema_type,
 #if PG_VERSION_NUM >= 120000
         hash.data
 #else
@@ -750,7 +749,7 @@ static void work_table(void) {
 #endif
     SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    work.shared->oid = RangeVarGetRelid(rangevar, NoLock, false);
+    w->shared->oid = RangeVarGetRelid(rangevar, NoLock, false);
     SPI_finish_my();
     pfree((void *)rangevar);
     list_free_deep(names);
@@ -760,30 +759,30 @@ static void work_table(void) {
     set_ps_display_my("idle");
 }
 
-static void work_type(void) {
+static void work_type(const Work *w) {
     int32 typmod;
     Oid type = InvalidOid;
     StringInfoData src;
     set_ps_display_my("type");
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'STOP')), work.schema_type);
+    appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'STOP')), w->schema_type);
     SPI_connect_my(src.data);
-    parseTypeStringMy(work.schema_type, &type, &typmod);
+    parseTypeStringMy(w->schema_type, &type, &typmod);
     if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
     pfree(src.data);
     set_ps_display_my("idle");
 }
 
-static void work_update(void) {
-    char *schema = quote_literal_cstr(work.shared->schema);
-    char *table = quote_literal_cstr(work.shared->table);
+static void work_update(const Work *w) {
+    char *schema = quote_literal_cstr(w->shared->schema);
+    char *table = quote_literal_cstr(w->shared->table);
     char *wake_up_literal;
     const char *wake_up_quote;
     StringInfoData src;
     StringInfoData wake_up;
     initStringInfoMy(&wake_up);
-    appendStringInfo(&wake_up, "%1$s_wake_up", work.shared->table);
+    appendStringInfo(&wake_up, "%1$s_wake_up", w->shared->table);
     wake_up_literal = quote_literal_cstr(wake_up.data);
     wake_up_quote = quote_identifier(wake_up.data);
     initStringInfoMy(&src);
@@ -847,7 +846,7 @@ static void work_update(void) {
                 CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH STATEMENT EXECUTE PROCEDURE %4$s.%5$s();
             END IF;
         END; $DO$
-    ), work.schema_table, work.shared->oid, wake_up_literal, work.schema, wake_up_quote, work.shared->hash, schema);
+    ), w->schema_table, w->shared->oid, wake_up_literal, w->schema, wake_up_quote, w->shared->hash, schema);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
@@ -897,8 +896,9 @@ void work_main(Datum main_arg) {
     long current_reset = -1;
     long current_sleep = -1;
     StringInfoData schema_table, schema_type;
+    Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(Work));
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
-    work.shared = init_shared(main_arg);
+    work->shared = init_shared(main_arg);
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_DISPATCH;
     optimizer = false;
@@ -907,44 +907,44 @@ void work_main(Datum main_arg) {
 #endif
 #endif
     before_shmem_exit(work_shmem_exit, main_arg);
-    if (!work.shared->in_use) return;
+    if (!work->shared->in_use) return;
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGINT, work_idle);
     BackgroundWorkerUnblockSignals();
-    work.data = quote_identifier(work.shared->data);
-    work.schema = quote_identifier(work.shared->schema);
-    work.table = quote_identifier(work.shared->table);
-    work.user = quote_identifier(work.shared->user);
-    BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user);
-    application_name = MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1;
+    work->data = quote_identifier(work->shared->data);
+    work->schema = quote_identifier(work->shared->schema);
+    work->table = quote_identifier(work->shared->table);
+    work->user = quote_identifier(work->shared->user);
+    BackgroundWorkerInitializeConnectionMy(work->shared->data, work->shared->user);
+    application_name = MyBgworkerEntry->bgw_name + strlen(work->shared->user) + 1 + strlen(work->shared->data) + 1;
     set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     pgstat_report_appname(application_name);
     set_ps_display_my("main");
     process_session_preload_libraries();
     initStringInfoMy(&schema_table);
-    appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);
-    work.schema_table = schema_table.data;
-    if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.shared->hash)) { elog(WARNING, "!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.shared->hash); ShutdownRequestPending = true; return; } // exit without error to disable restart, then not start conf
+    appendStringInfo(&schema_table, "%s.%s", work->schema, work->table);
+    work->schema_table = schema_table.data;
+    if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work->shared->hash)) { elog(WARNING, "!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work->shared->hash); ShutdownRequestPending = true; return; } // exit without error to disable restart, then not start conf
     dlist_init(&head);
     initStringInfoMy(&schema_type);
-    appendStringInfo(&schema_type, "%s.state", work.schema);
-    work.schema_type = schema_type.data;
-    elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.shared->hash);
+    appendStringInfo(&schema_type, "%s.state", work->schema);
+    work->schema_type = schema_type.data;
+    elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work->shared->sleep, work->shared->reset, work->schema_table, work->schema_type, work->shared->hash);
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_UTILITY;
 #if PG_VERSION_NUM < 120000
     Gp_session_role = GP_ROLE_UTILITY;
 #endif
 #endif
-    work_schema();
-    work_type();
-    work_table();
-    work_update();
-    work_index(countof(index_hash), index_hash);
-    work_index(countof(index_input), index_input);
-    work_index(countof(index_parent), index_parent);
-    work_index(countof(index_plan), index_plan);
-    work_index(countof(index_state), index_state);
+    work_schema(work);
+    work_type(work);
+    work_table(work);
+    work_update(work);
+    work_index(work, countof(index_hash), index_hash);
+    work_index(work, countof(index_input), index_input);
+    work_index(work, countof(index_parent), index_parent);
+    work_index(work, countof(index_plan), index_plan);
+    work_index(work, countof(index_state), index_state);
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_DISPATCH;
 #if PG_VERSION_NUM < 120000
@@ -952,7 +952,7 @@ void work_main(Datum main_arg) {
 #endif
 #endif
     set_ps_display_my("idle");
-    work_reset();
+    work_reset(work);
     while (!ShutdownRequestPending) {
         int nevents = work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(WaitEvent));
@@ -960,32 +960,32 @@ void work_main(Datum main_arg) {
         work_events(set);
         if (current_reset <= 0) {
             INSTR_TIME_SET_CURRENT(start_time_reset);
-            current_reset = work.shared->reset;
+            current_reset = work->shared->reset;
         }
         if (current_sleep <= 0) {
             INSTR_TIME_SET_CURRENT(start_time_sleep);
-            current_sleep = work.shared->sleep;
+            current_sleep = work->shared->sleep;
         }
         current_timeout = Min(current_reset, current_sleep);
-        if (idle_count >= (uint64)task_idle) work_timeout();
+        if (idle_count >= (uint64)task_idle) work_timeout(work);
         nevents = WaitEventSetWaitMy(set, current_timeout, events, nevents);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
-            if (event->events & WL_LATCH_SET) work_latch();
+            if (event->events & WL_LATCH_SET) work_latch(work);
             if (event->events & WL_SOCKET_READABLE) work_readable(event->user_data);
             if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
         INSTR_TIME_SET_CURRENT(current_time_reset);
         INSTR_TIME_SUBTRACT(current_time_reset, start_time_reset);
-        current_reset = work.shared->reset - (long)INSTR_TIME_GET_MILLISEC(current_time_reset);
-        if (current_reset <= 0) work_reset();
+        current_reset = work->shared->reset - (long)INSTR_TIME_GET_MILLISEC(current_time_reset);
+        if (current_reset <= 0) work_reset(work);
         INSTR_TIME_SET_CURRENT(current_time_sleep);
         INSTR_TIME_SUBTRACT(current_time_sleep, start_time_sleep);
-        current_sleep = work.shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_time_sleep);
-        if (current_sleep <= 0) work_sleep();
+        current_sleep = work->shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_time_sleep);
+        if (current_sleep <= 0) work_sleep(work);
         FreeWaitEventSet(set);
         pfree(events);
     }
-    if (!unlock_data_user_hash(MyDatabaseId, GetUserId(), work.shared->hash)) elog(WARNING, "!unlock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.shared->hash);
+    if (!unlock_data_user_hash(MyDatabaseId, GetUserId(), work->shared->hash)) elog(WARNING, "!unlock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work->shared->hash);
 }
