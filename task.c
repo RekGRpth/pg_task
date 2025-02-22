@@ -328,17 +328,16 @@ void task_free(Task *t) {
 void task_main(Datum main_arg) {
     const char *application_name;
     StringInfoData oid, schema_table;
-    Work work = {0};
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
-    task.work = &work;
+    task.work = MemoryContextAllocZero(TopMemoryContext, sizeof(Work));
     task.shared = init_shared(main_arg);
     before_shmem_exit(task_shmem_exit, main_arg);
     if (!task.shared->in_use) return;
     BackgroundWorkerUnblockSignals();
-    work.data = quote_identifier(task.shared->data);
-    work.schema = quote_identifier(task.shared->schema);
-    work.table = quote_identifier(task.shared->table);
-    work.user = quote_identifier(task.shared->user);
+    task.work->data = quote_identifier(task.shared->data);
+    task.work->schema = quote_identifier(task.shared->schema);
+    task.work->table = quote_identifier(task.shared->table);
+    task.work->user = quote_identifier(task.shared->user);
     BackgroundWorkerInitializeConnectionMy(task.shared->data, task.shared->user);
     application_name = MyBgworkerEntry->bgw_name + strlen(task.shared->user) + 1 + strlen(task.shared->data) + 1;
     set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
@@ -350,8 +349,8 @@ void task_main(Datum main_arg) {
     set_config_option_my("pg_task.table", task.shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     initStringInfoMy(&schema_table);
-    appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);
-    work.schema_table = schema_table.data;
+    appendStringInfo(&schema_table, "%s.%s", task.work->schema, task.work->table);
+    task.work->schema_table = schema_table.data;
     initStringInfoMy(&oid);
     appendStringInfo(&oid, "%i", task.shared->oid);
     set_config_option_my("pg_task.oid", oid.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
