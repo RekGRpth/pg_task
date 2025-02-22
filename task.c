@@ -22,8 +22,8 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 #include <utils/timestamp.h>
 #endif
 
-emit_log_hook_type emit_log_hook_prev = NULL;
 extern char *task_null;
+extern emit_log_hook_type emit_log_hook_prev;
 extern int task_fetch;
 static Task task = {0};
 
