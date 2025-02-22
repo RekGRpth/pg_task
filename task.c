@@ -27,7 +27,7 @@ extern char *task_null;
 extern int task_fetch;
 Task task = {0};
 
-bool task_exit(const Task *t) {
+bool task_live(const Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start)};
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPIPlanPtr plan = NULL;

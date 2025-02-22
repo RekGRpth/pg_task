@@ -68,7 +68,7 @@ static void work_query(Task *t);
         FlushErrorState(); \
     PG_END_TRY(); \
     *t = task; \
-    if (task_done(t) || finish_or_free || task_exit(t)) remote ? work_finish(t) : work_free(t); \
+    if (task_done(t) || finish_or_free || task_live(t)) remote ? work_finish(t) : work_free(t); \
     if (finish_or_free) { pfree(t->shared); pfree(t); } \
 } while(0)
 
@@ -353,7 +353,7 @@ static void work_done(Task *t) {
         t->event = WL_SOCKET_READABLE;
         return;
     }
-    task_done(t) || task_exit(t) || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
+    task_done(t) || task_live(t) || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
 }
 
 static void work_schema(void) {
