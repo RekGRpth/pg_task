@@ -333,7 +333,7 @@ void task_main(Datum main_arg) {
     const char *application_name;
     StringInfoData oid, schema_table;
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
-    task.work = MemoryContextAllocZero(TopMemoryContext, sizeof(Work));
+    task.work = get_work();
     task.shared = init_shared(main_arg);
     before_shmem_exit(task_shmem_exit, main_arg);
     if (!task.shared->in_use) return;

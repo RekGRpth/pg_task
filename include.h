@@ -171,6 +171,7 @@ Portal SPI_cursor_open_with_args_my(const char *src, int nargs, Oid *argtypes, D
 Shared *init_shared(Datum main_arg);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 Task *get_task(void);
+Work *get_work(void);
 void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len, bool string, char escape, char quote);
 void append_with_tabs(StringInfo buf, const char *str);
 void init_conf(bool dynamic);

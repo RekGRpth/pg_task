@@ -53,6 +53,10 @@ static dlist_head head;
 static volatile uint64 idle_count = 0;
 static Work work = {0};
 
+Work *get_work(void) {
+    return &work;
+}
+
 static void work_query(Task *t);
 
 #define work_ereport(finish_or_free, t, ...) do { \
