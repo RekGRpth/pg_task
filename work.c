@@ -51,6 +51,7 @@ extern int work_fetch;
 long current_timeout;
 static dlist_head head;
 static volatile uint64 idle_count = 0;
+static Work work = {0};
 
 static void work_query(Task *t);
 
@@ -895,9 +896,8 @@ void work_main(Datum main_arg) {
     long current_reset = -1;
     long current_sleep = -1;
     StringInfoData schema_table, schema_type;
-    Work *work = MemoryContextAllocZero(TopMemoryContext, sizeof(Work));
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
-    work->shared = init_shared(main_arg);
+    work.shared = init_shared(main_arg);
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_DISPATCH;
     optimizer = false;
@@ -906,44 +906,44 @@ void work_main(Datum main_arg) {
 #endif
 #endif
     before_shmem_exit(work_shmem_exit, main_arg);
-    if (!work->shared->in_use) return;
+    if (!work.shared->in_use) return;
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGINT, work_idle);
     BackgroundWorkerUnblockSignals();
-    work->data = quote_identifier(work->shared->data);
-    work->schema = quote_identifier(work->shared->schema);
-    work->table = quote_identifier(work->shared->table);
-    work->user = quote_identifier(work->shared->user);
-    BackgroundWorkerInitializeConnectionMy(work->shared->data, work->shared->user);
-    application_name = MyBgworkerEntry->bgw_name + strlen(work->shared->user) + 1 + strlen(work->shared->data) + 1;
+    work.data = quote_identifier(work.shared->data);
+    work.schema = quote_identifier(work.shared->schema);
+    work.table = quote_identifier(work.shared->table);
+    work.user = quote_identifier(work.shared->user);
+    BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user);
+    application_name = MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1;
     set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     pgstat_report_appname(application_name);
     set_ps_display_my("main");
     process_session_preload_libraries();
     initStringInfoMy(&schema_table);
-    appendStringInfo(&schema_table, "%s.%s", work->schema, work->table);
-    work->schema_table = schema_table.data;
-    if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work->shared->hash)) { elog(WARNING, "!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work->shared->hash); ShutdownRequestPending = true; return; } // exit without error to disable restart, then not start conf
+    appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);
+    work.schema_table = schema_table.data;
+    if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.shared->hash)) { elog(WARNING, "!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.shared->hash); ShutdownRequestPending = true; return; } // exit without error to disable restart, then not start conf
     dlist_init(&head);
     initStringInfoMy(&schema_type);
-    appendStringInfo(&schema_type, "%s.state", work->schema);
-    work->schema_type = schema_type.data;
-    elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work->shared->sleep, work->shared->reset, work->schema_table, work->schema_type, work->shared->hash);
+    appendStringInfo(&schema_type, "%s.state", work.schema);
+    work.schema_type = schema_type.data;
+    elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.shared->hash);
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_UTILITY;
 #if PG_VERSION_NUM < 120000
     Gp_session_role = GP_ROLE_UTILITY;
 #endif
 #endif
-    work_schema(work);
-    work_type(work);
-    work_table(work);
-    work_update(work);
-    work_index(work, countof(index_hash), index_hash);
-    work_index(work, countof(index_input), index_input);
-    work_index(work, countof(index_parent), index_parent);
-    work_index(work, countof(index_plan), index_plan);
-    work_index(work, countof(index_state), index_state);
+    work_schema(&work);
+    work_type(&work);
+    work_table(&work);
+    work_update(&work);
+    work_index(&work, countof(index_hash), index_hash);
+    work_index(&work, countof(index_input), index_input);
+    work_index(&work, countof(index_parent), index_parent);
+    work_index(&work, countof(index_plan), index_plan);
+    work_index(&work, countof(index_state), index_state);
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_DISPATCH;
 #if PG_VERSION_NUM < 120000
@@ -951,7 +951,7 @@ void work_main(Datum main_arg) {
 #endif
 #endif
     set_ps_display_my("idle");
-    work_reset(work);
+    work_reset(&work);
     while (!ShutdownRequestPending) {
         int nevents = work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(WaitEvent));
@@ -959,32 +959,32 @@ void work_main(Datum main_arg) {
         work_events(set);
         if (current_reset <= 0) {
             INSTR_TIME_SET_CURRENT(start_time_reset);
-            current_reset = work->shared->reset;
+            current_reset = work.shared->reset;
         }
         if (current_sleep <= 0) {
             INSTR_TIME_SET_CURRENT(start_time_sleep);
-            current_sleep = work->shared->sleep;
+            current_sleep = work.shared->sleep;
         }
         current_timeout = Min(current_reset, current_sleep);
-        if (idle_count >= (uint64)task_idle) work_timeout(work);
+        if (idle_count >= (uint64)task_idle) work_timeout(&work);
         nevents = WaitEventSetWaitMy(set, current_timeout, events, nevents);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
-            if (event->events & WL_LATCH_SET) work_latch(work);
+            if (event->events & WL_LATCH_SET) work_latch(&work);
             if (event->events & WL_SOCKET_READABLE) work_readable(event->user_data);
             if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
         INSTR_TIME_SET_CURRENT(current_time_reset);
         INSTR_TIME_SUBTRACT(current_time_reset, start_time_reset);
-        current_reset = work->shared->reset - (long)INSTR_TIME_GET_MILLISEC(current_time_reset);
-        if (current_reset <= 0) work_reset(work);
+        current_reset = work.shared->reset - (long)INSTR_TIME_GET_MILLISEC(current_time_reset);
+        if (current_reset <= 0) work_reset(&work);
         INSTR_TIME_SET_CURRENT(current_time_sleep);
         INSTR_TIME_SUBTRACT(current_time_sleep, start_time_sleep);
-        current_sleep = work->shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_time_sleep);
-        if (current_sleep <= 0) work_sleep(work);
+        current_sleep = work.shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_time_sleep);
+        if (current_sleep <= 0) work_sleep(&work);
         FreeWaitEventSet(set);
         pfree(events);
     }
-    if (!unlock_data_user_hash(MyDatabaseId, GetUserId(), work->shared->hash)) elog(WARNING, "!unlock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work->shared->hash);
+    if (!unlock_data_user_hash(MyDatabaseId, GetUserId(), work.shared->hash)) elog(WARNING, "!unlock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.shared->hash);
 }
