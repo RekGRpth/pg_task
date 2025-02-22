@@ -25,7 +25,11 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 emit_log_hook_type emit_log_hook_prev = NULL;
 extern char *task_null;
 extern int task_fetch;
-Task task = {0};
+static Task task = {0};
+
+Task *get_task(void) {
+    return &task;
+}
 
 bool task_live(const Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start)};

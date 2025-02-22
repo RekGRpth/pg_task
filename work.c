@@ -48,7 +48,6 @@ extern emit_log_hook_type emit_log_hook_prev;
 extern int task_idle;
 extern int work_close;
 extern int work_fetch;
-extern Task task;
 long current_timeout;
 static dlist_head head;
 static volatile uint64 idle_count = 0;
@@ -57,16 +56,17 @@ static void work_query(Task *t);
 
 #define work_ereport(finish_or_free, t, ...) do { \
     bool remote = t->remote != NULL; \
+    Task *task = get_task(); \
     emit_log_hook_prev = emit_log_hook; \
     emit_log_hook = task_error; \
-    task = *t; \
+    *task = *t; \
     PG_TRY(); \
         ereport(__VA_ARGS__); \
     PG_CATCH(); \
         EmitErrorReport(); \
         FlushErrorState(); \
     PG_END_TRY(); \
-    *t = task; \
+    *t = *task; \
     if (task_done(t) || finish_or_free || task_live(t)) remote ? work_finish(t) : work_free(t); \
     if (finish_or_free) { pfree(t->shared); pfree(t); } \
 } while(0)
