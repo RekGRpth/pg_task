@@ -17,11 +17,11 @@
 
 PG_MODULE_MAGIC;
 
-int conf_fetch;
 int work_restart;
 static struct {
     struct {
         int close;
+        int fetch;
         int max;
         int restart;
     } conf;
@@ -258,7 +258,7 @@ void _PG_init(void) {
     DefineCustomBoolVariable("pg_task.header", "pg_task header", "Show columns headers in output", &init.task.header, true, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.string", "pg_task string", "Quote only strings", &init.task.string, true, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.close", "pg_conf close", "Close conf, milliseconds", &init.conf.close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_conf.fetch", "pg_conf fetch", "Fetch conf rows at once", &conf_fetch, 10, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_conf.fetch", "pg_conf fetch", "Fetch conf rows at once", &init.conf.fetch, 10, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.max", "pg_conf work", "Maximum task and work workers", &init.conf.max, max_worker_processes, 1, max_worker_processes, PGC_POSTMASTER, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.restart", "pg_conf restart", "Restart conf interval, seconds", &init.conf.restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.count", "pg_task count", "Non-negative maximum count of tasks, are executed by current background worker process before exit", &init.task.count, 0, 0, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
@@ -402,4 +402,8 @@ int init_work_fetch(void) {
 
 int init_task_idle(void) {
     return init.task.idle;
+}
+
+int init_conf_fetch(void) {
+    return init.conf.fetch;
 }

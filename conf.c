@@ -25,7 +25,6 @@
 #include <utils/regproc.h>
 #endif
 
-extern int conf_fetch;
 extern int work_restart;
 static dlist_head head;
 
@@ -172,7 +171,7 @@ void conf_main(Datum main_arg) {
     SPI_connect_my(src.data);
     portal = SPI_cursor_open_with_args_my(src.data, 0, NULL, NULL, NULL, true);
     do {
-        SPI_cursor_fetch_my(src.data, portal, true, conf_fetch);
+        SPI_cursor_fetch_my(src.data, portal, true, init_conf_fetch());
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
             TupleDesc tupdesc = SPI_tuptable->tupdesc;

@@ -190,5 +190,6 @@ const char *init_task_null(void);
 int init_task_fetch(void);
 int init_work_fetch(void);
 int init_task_idle(void);
+int init_conf_fetch(void);
 
 #endif // _INCLUDE_H_
