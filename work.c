@@ -45,8 +45,7 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 
 extern int task_idle;
 extern int work_close;
-extern int work_fetch;
-long current_timeout;
+static long current_timeout;
 static dlist_head head;
 static volatile uint64 idle_count = 0;
 static Work work = {0};
@@ -288,7 +287,7 @@ static void work_reset(const Work *w) {
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     portal = SPI_cursor_open_my(src.data, plan, NULL, NULL, false);
     do {
-        SPI_cursor_fetch_my(src.data, portal, true, work_fetch);
+        SPI_cursor_fetch_my(src.data, portal, true, init_work_fetch());
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
             elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(val, SPI_tuptable->tupdesc, "id", false, INT8OID)));
@@ -617,7 +616,7 @@ static void work_sleep(Work *w) {
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL, false);
     do {
-        SPI_cursor_fetch_my(src.data, portal, true, work_fetch);
+        SPI_cursor_fetch_my(src.data, portal, true, init_work_fetch());
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
             Task *t = MemoryContextAllocZero(TopMemoryContext, sizeof(Task));
