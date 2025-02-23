@@ -43,11 +43,7 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 #include <utils/regproc.h>
 #endif
 
-extern char *task_null;
-extern int task_idle;
-extern int work_close;
-extern int work_fetch;
-long current_timeout;
+static long current_timeout;
 static dlist_head head;
 static volatile uint64 idle_count = 0;
 static Work work = {0};
@@ -289,7 +285,7 @@ static void work_reset(const Work *w) {
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     portal = SPI_cursor_open_my(src.data, plan, NULL, NULL, false);
     do {
-        SPI_cursor_fetch_my(src.data, portal, true, work_fetch);
+        SPI_cursor_fetch_my(src.data, portal, true, init_work_fetch());
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
             elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(val, SPI_tuptable->tupdesc, "id", false, INT8OID)));
@@ -494,7 +490,7 @@ static void work_remote(Task *t) {
     int arg = 3;
     PQconninfoOption *opts = PQconninfoParse(t->remote, &err);
     StringInfoData name, value;
-    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : task_null, t->shared->max, t->shared->oid);
+    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : init_null(), t->shared->max, t->shared->oid);
     dlist_delete(&t->node);
     dlist_push_tail(&head, &t->node);
     if (!opts) { work_ereport(true, t, ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), errdetail("%s", work_errstr(err)))); if (err) PQfreemem(err); return; }
@@ -618,7 +614,7 @@ static void work_sleep(Work *w) {
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL, false);
     do {
-        SPI_cursor_fetch_my(src.data, portal, true, work_fetch);
+        SPI_cursor_fetch_my(src.data, portal, true, init_work_fetch());
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
             Task *t = MemoryContextAllocZero(TopMemoryContext, sizeof(Task));
@@ -631,7 +627,7 @@ static void work_sleep(Work *w) {
             t->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
             t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false, INT8OID));
             t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false, INT4OID));
-            elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : task_null, t->shared->max);
+            elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : init_null(), t->shared->max);
             dlist_push_tail(&head, &t->node);
             SPI_freetuple(val);
         }
@@ -965,7 +961,7 @@ void work_main(Datum main_arg) {
             current_sleep = work.shared->sleep;
         }
         current_timeout = Min(current_reset, current_sleep);
-        if (idle_count >= (uint64)task_idle) work_timeout(&work);
+        if (idle_count >= (uint64)init_work_idle()) work_timeout(&work);
         nevents = WaitEventSetWaitMy(set, current_timeout, events, nevents);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];

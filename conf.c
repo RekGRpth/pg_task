@@ -25,10 +25,6 @@
 #include <utils/regproc.h>
 #endif
 
-extern char *task_null;
-extern int conf_close;
-extern int conf_fetch;
-extern int work_restart;
 static dlist_head head;
 
 static void conf_data(const Work *w) {
@@ -111,7 +107,7 @@ static void conf_work(Work *w) {
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     if ((worker.bgw_main_arg = Int32GetDatum(init_bgw_main_arg(w->shared))) == Int32GetDatum(-1)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not find empty slot")));
     worker.bgw_notify_pid = MyProcPid;
-    worker.bgw_restart_time = work_restart;
+    worker.bgw_restart_time = init_work_restart();
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) {
         shared_free(worker.bgw_main_arg);
@@ -174,7 +170,7 @@ void conf_main(Datum main_arg) {
     SPI_connect_my(src.data);
     portal = SPI_cursor_open_with_args_my(src.data, 0, NULL, NULL, NULL, true);
     do {
-        SPI_cursor_fetch_my(src.data, portal, true, conf_fetch);
+        SPI_cursor_fetch_my(src.data, portal, true, init_conf_fetch());
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
             TupleDesc tupdesc = SPI_tuptable->tupdesc;
