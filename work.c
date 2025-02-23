@@ -43,7 +43,6 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 #include <utils/regproc.h>
 #endif
 
-extern int task_idle;
 static long current_timeout;
 static dlist_head head;
 static volatile uint64 idle_count = 0;
@@ -962,7 +961,7 @@ void work_main(Datum main_arg) {
             current_sleep = work.shared->sleep;
         }
         current_timeout = Min(current_reset, current_sleep);
-        if (idle_count >= (uint64)task_idle) work_timeout(&work);
+        if (idle_count >= (uint64)init_task_idle()) work_timeout(&work);
         nevents = WaitEventSetWaitMy(set, current_timeout, events, nevents);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
