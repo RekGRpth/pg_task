@@ -20,7 +20,6 @@ PG_MODULE_MAGIC;
 int conf_close;
 int conf_fetch;
 int task_idle;
-int work_close;
 int work_restart;
 static struct {
     struct {
@@ -57,6 +56,7 @@ static struct {
     } task;
     struct {
         char *active;
+        int close;
         int fetch;
     } work;
 } init = {0};
@@ -269,7 +269,7 @@ void _PG_init(void) {
     DefineCustomIntVariable("pg_task.max", "pg_task max", "Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds", &init.task.max, 0, INT_MIN, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.run", "pg_task run", "Maximum count of concurrently executing tasks in work", &init.task.run, INT_MAX, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.sleep", "pg_task sleep", "Check tasks every sleep milliseconds", &init.task.sleep, 1000, 1, INT_MAX, PGC_USERSET, 0, NULL, init_assign_sleep, NULL);
-    DefineCustomIntVariable("pg_work.close", "pg_work close", "Close work, milliseconds", &work_close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_work.close", "pg_work close", "Close work, milliseconds", &init.work.close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.fetch", "pg_work fetch", "Fetch work rows at once", &init.work.fetch, 100, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.restart", "pg_work restart", "Restart work interval, seconds", &work_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.active", "pg_task active", "Positive period after plan time, when task is active for executing", &init.task.active, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);

@@ -44,7 +44,6 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 #endif
 
 extern int task_idle;
-extern int work_close;
 static long current_timeout;
 static dlist_head head;
 static volatile uint64 idle_count = 0;
