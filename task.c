@@ -239,8 +239,9 @@ bool task_work(Task *t) {
 }
 
 void task_error(Task *t) {
-    MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
+    MemoryContextSwitchTo(oldMemoryContext);
     if (!t->error.data) initStringInfoMy(&t->error);
     if (!t->output.data) initStringInfoMy(&t->output);
     appendStringInfo(&t->output, SQL(%sROLLBACK), t->output.len ? "\n" : "");
@@ -303,7 +304,6 @@ void task_error(Task *t) {
         appendStringInfoString(&t->error, _("STATEMENT:  "));
         append_with_tabs(&t->error, t->input);
     }
-    MemoryContextSwitchTo(oldcontext);
     FreeErrorData(edata);
 }
 
