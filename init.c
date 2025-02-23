@@ -47,7 +47,6 @@ static struct {
         int count;
         int fetch;
         int id;
-        int idle;
         int limit;
         int max;
         int run;
@@ -57,6 +56,7 @@ static struct {
         char *active;
         int close;
         int fetch;
+        int idle;
         int restart;
     } work;
 } init = {0};
@@ -73,8 +73,8 @@ volatile sig_atomic_t ShutdownRequestPending = false;
 const char *init_null(void) { return init.null; }
 int init_conf_fetch(void) { return init.conf.fetch; }
 int init_task_fetch(void) { return init.task.fetch; }
-int init_task_idle(void) { return init.task.idle; }
 int init_work_fetch(void) { return init.work.fetch; }
+int init_work_idle(void) { return init.work.idle; }
 int init_work_restart(void) { return init.work.restart; }
 
 bool init_oid_is_string(Oid oid) {
@@ -270,7 +270,6 @@ void _PG_init(void) {
     DefineCustomIntVariable("pg_conf.restart", "pg_conf restart", "Restart conf interval, seconds", &init.conf.restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.count", "pg_task count", "Non-negative maximum count of tasks, are executed by current background worker process before exit", &init.task.count, 0, 0, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.fetch", "pg_task fetch", "Fetch task rows at once", &init.task.fetch, 100, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_task.idle", "pg_task idle", "Idle task count", &init.task.idle, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.id", "pg_task id", "Current task id", &init.task.id, 0, INT_MIN, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.limit", "pg_task limit", "Limit task rows at once", &init.task.limit, 1000, 0, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_task.max", "pg_task max", "Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds", &init.task.max, 0, INT_MIN, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
@@ -278,6 +277,7 @@ void _PG_init(void) {
     DefineCustomIntVariable("pg_task.sleep", "pg_task sleep", "Check tasks every sleep milliseconds", &init.task.sleep, 1000, 1, INT_MAX, PGC_USERSET, 0, NULL, init_assign_sleep, NULL);
     DefineCustomIntVariable("pg_work.close", "pg_work close", "Close work, milliseconds", &init.work.close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.fetch", "pg_work fetch", "Fetch work rows at once", &init.work.fetch, 100, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_work.idle", "pg_work idle", "Idle work count", &init.work.idle, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.restart", "pg_work restart", "Restart work interval, seconds", &init.work.restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.active", "pg_task active", "Positive period after plan time, when task is active for executing", &init.task.active, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.data", "pg_task data", "Database name for tasks table", &init.task.data, "postgres", PGC_SIGHUP, 0, NULL, init_assign_data, NULL);

@@ -961,7 +961,7 @@ void work_main(Datum main_arg) {
             current_sleep = work.shared->sleep;
         }
         current_timeout = Min(current_reset, current_sleep);
-        if (idle_count >= (uint64)init_task_idle()) work_timeout(&work);
+        if (idle_count >= (uint64)init_work_idle()) work_timeout(&work);
         nevents = WaitEventSetWaitMy(set, current_timeout, events, nevents);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];

@@ -165,7 +165,7 @@ Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bo
 int init_bgw_main_arg(Shared *ws);
 int init_conf_fetch(void);
 int init_task_fetch(void);
-int init_task_idle(void);
+int init_work_idle(void);
 int init_work_fetch(void);
 int init_work_restart(void);
 int severity_error(const char *error);
