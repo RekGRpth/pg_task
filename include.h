@@ -191,5 +191,6 @@ int init_task_fetch(void);
 int init_work_fetch(void);
 int init_task_idle(void);
 int init_conf_fetch(void);
+int init_work_restart(void);
 
 #endif // _INCLUDE_H_

@@ -17,7 +17,6 @@
 
 PG_MODULE_MAGIC;
 
-int work_restart;
 static struct {
     struct {
         int close;
@@ -58,6 +57,7 @@ static struct {
         char *active;
         int close;
         int fetch;
+        int restart;
     } work;
 } init = {0};
 #if PG_VERSION_NUM >= 150000
@@ -271,7 +271,7 @@ void _PG_init(void) {
     DefineCustomIntVariable("pg_task.sleep", "pg_task sleep", "Check tasks every sleep milliseconds", &init.task.sleep, 1000, 1, INT_MAX, PGC_USERSET, 0, NULL, init_assign_sleep, NULL);
     DefineCustomIntVariable("pg_work.close", "pg_work close", "Close work, milliseconds", &init.work.close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_work.fetch", "pg_work fetch", "Fetch work rows at once", &init.work.fetch, 100, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomIntVariable("pg_work.restart", "pg_work restart", "Restart work interval, seconds", &work_restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomIntVariable("pg_work.restart", "pg_work restart", "Restart work interval, seconds", &init.work.restart, BGW_DEFAULT_RESTART_INTERVAL, 1, INT_MAX, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.active", "pg_task active", "Positive period after plan time, when task is active for executing", &init.task.active, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.data", "pg_task data", "Database name for tasks table", &init.task.data, "postgres", PGC_SIGHUP, 0, NULL, init_assign_data, NULL);
     DefineCustomStringVariable("pg_task.delimiter", "pg_task delimiter", "Results columns delimiter", &init.task.delimiter, "\t", PGC_USERSET, 0, NULL, NULL, NULL);
@@ -406,4 +406,8 @@ int init_task_idle(void) {
 
 int init_conf_fetch(void) {
     return init.conf.fetch;
+}
+
+int init_work_restart(void) {
+    return init.work.restart;
 }
