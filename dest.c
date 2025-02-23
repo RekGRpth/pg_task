@@ -4,7 +4,6 @@
 #include <storage/proc.h>
 #include <utils/ps_status.h>
 
-extern emit_log_hook_type emit_log_hook_prev;
 static Task task = {0};
 
 Task *get_task(void) {
@@ -62,8 +61,6 @@ static void dest_execute(void) {
 }
 
 static void dest_catch(void) {
-    emit_log_hook_prev = emit_log_hook;
-    emit_log_hook = task_error;
     EmitErrorReport();
     FlushErrorState();
 }
@@ -81,6 +78,7 @@ bool dest_timeout(void) {
         dest_execute();
         ReleaseCurrentSubTransaction();
     PG_CATCH();
+        task_error(&task);
         dest_catch();
         RollbackAndReleaseCurrentSubTransaction();
     PG_END_TRY();

@@ -23,7 +23,6 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 #endif
 
 extern char *task_null;
-extern emit_log_hook_type emit_log_hook_prev;
 extern int task_fetch;
 
 bool task_live(const Task *t) {
@@ -239,71 +238,73 @@ bool task_work(Task *t) {
     return exit;
 }
 
-void task_error(ErrorData *edata) {
-    Task *task = get_task();
-    if ((emit_log_hook = emit_log_hook_prev)) (*emit_log_hook)(edata);
-    if (!task->error.data) initStringInfoMy(&task->error);
-    if (!task->output.data) initStringInfoMy(&task->output);
-    appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
-    task->skip++;
-    if (task->error.len) appendStringInfoChar(&task->error, '\n');
-    appendStringInfo(&task->error, "%s:  ", _(error_severity(edata->elevel)));
-    if (Log_error_verbosity >= PGERROR_VERBOSE) appendStringInfo(&task->error, "%s: ", unpack_sql_state(edata->sqlerrcode));
-    if (edata->message) append_with_tabs(&task->error, edata->message);
-    else append_with_tabs(&task->error, _("missing error text"));
-    if (edata->cursorpos > 0) appendStringInfo(&task->error, _(" at character %d"), edata->cursorpos);
-    else if (edata->internalpos > 0) appendStringInfo(&task->error, _(" at character %d"), edata->internalpos);
+void task_error(Task *t) {
+    MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+    ErrorData *edata = CopyErrorData();
+    if (!t->error.data) initStringInfoMy(&t->error);
+    if (!t->output.data) initStringInfoMy(&t->output);
+    appendStringInfo(&t->output, SQL(%sROLLBACK), t->output.len ? "\n" : "");
+    t->skip++;
+    if (t->error.len) appendStringInfoChar(&t->error, '\n');
+    appendStringInfo(&t->error, "%s:  ", _(error_severity(edata->elevel)));
+    if (Log_error_verbosity >= PGERROR_VERBOSE) appendStringInfo(&t->error, "%s: ", unpack_sql_state(edata->sqlerrcode));
+    if (edata->message) append_with_tabs(&t->error, edata->message);
+    else append_with_tabs(&t->error, _("missing error text"));
+    if (edata->cursorpos > 0) appendStringInfo(&t->error, _(" at character %d"), edata->cursorpos);
+    else if (edata->internalpos > 0) appendStringInfo(&t->error, _(" at character %d"), edata->internalpos);
     if (Log_error_verbosity >= PGERROR_DEFAULT) {
         if (edata->detail_log) {
-            if (task->error.len) appendStringInfoChar(&task->error, '\n');
-            appendStringInfoString(&task->error, _("DETAIL:  "));
-            append_with_tabs(&task->error, edata->detail_log);
+            if (t->error.len) appendStringInfoChar(&t->error, '\n');
+            appendStringInfoString(&t->error, _("DETAIL:  "));
+            append_with_tabs(&t->error, edata->detail_log);
         } else if (edata->detail) {
-            if (task->error.len) appendStringInfoChar(&task->error, '\n');
-            appendStringInfoString(&task->error, _("DETAIL:  "));
-            append_with_tabs(&task->error, edata->detail);
+            if (t->error.len) appendStringInfoChar(&t->error, '\n');
+            appendStringInfoString(&t->error, _("DETAIL:  "));
+            append_with_tabs(&t->error, edata->detail);
         }
         if (edata->hint) {
-            if (task->error.len) appendStringInfoChar(&task->error, '\n');
-            appendStringInfoString(&task->error, _("HINT:  "));
-            append_with_tabs(&task->error, edata->hint);
+            if (t->error.len) appendStringInfoChar(&t->error, '\n');
+            appendStringInfoString(&t->error, _("HINT:  "));
+            append_with_tabs(&t->error, edata->hint);
         }
         if (edata->internalquery) {
-            if (task->error.len) appendStringInfoChar(&task->error, '\n');
-            appendStringInfoString(&task->error, _("QUERY:  "));
-            append_with_tabs(&task->error, edata->internalquery);
+            if (t->error.len) appendStringInfoChar(&t->error, '\n');
+            appendStringInfoString(&t->error, _("QUERY:  "));
+            append_with_tabs(&t->error, edata->internalquery);
         }
         if (edata->context
 #if PG_VERSION_NUM >= 90500
             && !edata->hide_ctx
 #endif
         ) {
-            if (task->error.len) appendStringInfoChar(&task->error, '\n');
-            appendStringInfoString(&task->error, _("CONTEXT:  "));
-            append_with_tabs(&task->error, edata->context);
+            if (t->error.len) appendStringInfoChar(&t->error, '\n');
+            appendStringInfoString(&t->error, _("CONTEXT:  "));
+            append_with_tabs(&t->error, edata->context);
         }
         if (Log_error_verbosity >= PGERROR_VERBOSE) {
             if (edata->funcname && edata->filename) { // assume no newlines in funcname or filename...
-                if (task->error.len) appendStringInfoChar(&task->error, '\n');
-                appendStringInfo(&task->error, _("LOCATION:  %s, %s:%d"), edata->funcname, edata->filename, edata->lineno);
+                if (t->error.len) appendStringInfoChar(&t->error, '\n');
+                appendStringInfo(&t->error, _("LOCATION:  %s, %s:%d"), edata->funcname, edata->filename, edata->lineno);
             } else if (edata->filename) {
-                if (task->error.len) appendStringInfoChar(&task->error, '\n');
-                appendStringInfo(&task->error, _("LOCATION:  %s:%d"), edata->filename, edata->lineno);
+                if (t->error.len) appendStringInfoChar(&t->error, '\n');
+                appendStringInfo(&t->error, _("LOCATION:  %s:%d"), edata->filename, edata->lineno);
             }
         }
 #if PG_VERSION_NUM >= 130000
         if (edata->backtrace) {
-            if (task->error.len) appendStringInfoChar(&task->error, '\n');
-            appendStringInfoString(&task->error, _("BACKTRACE:  "));
-            append_with_tabs(&task->error, edata->backtrace);
+            if (t->error.len) appendStringInfoChar(&t->error, '\n');
+            appendStringInfoString(&t->error, _("BACKTRACE:  "));
+            append_with_tabs(&t->error, edata->backtrace);
         }
 #endif
     }
-    if (task->input && is_log_level_output(edata->elevel, log_min_error_statement) && !edata->hide_stmt) { // If the user wants the query that generated this error logged, do it.
-        if (task->error.len) appendStringInfoChar(&task->error, '\n');
-        appendStringInfoString(&task->error, _("STATEMENT:  "));
-        append_with_tabs(&task->error, task->input);
+    if (t->input && is_log_level_output(edata->elevel, log_min_error_statement) && !edata->hide_stmt) { // If the user wants the query that generated this error logged, do it.
+        if (t->error.len) appendStringInfoChar(&t->error, '\n');
+        appendStringInfoString(&t->error, _("STATEMENT:  "));
+        append_with_tabs(&t->error, t->input);
     }
+    MemoryContextSwitchTo(oldcontext);
+    FreeErrorData(edata);
 }
 
 static void task_shmem_exit(int code, Datum arg) {

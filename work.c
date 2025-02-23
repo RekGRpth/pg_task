@@ -44,7 +44,6 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 #endif
 
 extern char *task_null;
-extern emit_log_hook_type emit_log_hook_prev;
 extern int task_idle;
 extern int work_close;
 extern int work_fetch;
@@ -61,17 +60,13 @@ static void work_query(Task *t);
 
 #define work_ereport(finish_or_free, t, ...) do { \
     bool remote = t->remote != NULL; \
-    Task *task = get_task(); \
-    emit_log_hook_prev = emit_log_hook; \
-    emit_log_hook = task_error; \
-    *task = *t; \
     PG_TRY(); \
         ereport(__VA_ARGS__); \
     PG_CATCH(); \
+        task_error(t); \
         EmitErrorReport(); \
         FlushErrorState(); \
     PG_END_TRY(); \
-    *t = *task; \
     if (task_done(t) || finish_or_free || task_live(t)) { remote ? work_finish(t) : work_free(t); t = NULL; } \
 } while(0)
 
