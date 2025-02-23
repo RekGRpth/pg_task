@@ -17,7 +17,6 @@
 
 PG_MODULE_MAGIC;
 
-char *task_null;
 int conf_close;
 int conf_fetch;
 int task_fetch;
@@ -42,6 +41,7 @@ static struct {
         char *group;
         char *json;
         char *live;
+        char *null;
         char *quote;
         char *repeat;
         char *reset;
@@ -212,7 +212,7 @@ static void init_assign_string(const char *var, const char *newval, void *extra)
     new_isnull = !newval || newval[0] == '\0';
     if (old_isnull && new_isnull) return;
     if (!old_isnull && !new_isnull && !strcmp(oldval, newval)) return;
-    elog(DEBUG1, "oldval = %s, newval = %s", !old_isnull ? oldval : task_null, !new_isnull ? newval : task_null);
+    elog(DEBUG1, "oldval = %s, newval = %s", !old_isnull ? oldval : init.task.null, !new_isnull ? newval : init.task.null);
     init_conf(true);
 }
 
@@ -279,7 +279,7 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_task.group", "pg_task group", "Task grouping by name", &init.task.group, "group", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.json", "pg_task json", "Json configuration, available keys: data, reset, schema, table, sleep and user", &init.task.json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, init_assign_json, NULL);
     DefineCustomStringVariable("pg_task.live", "pg_task live", "Non-negative maximum time of live of current background worker process before exit", &init.task.live, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.null", "pg_task null", "Null text value representation", &task_null, "\\N", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.null", "pg_task null", "Null text value representation", &init.task.null, "\\N", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.quote", "pg_task quote", "Results columns quote", &init.task.quote, "", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.repeat", "pg_task repeat", "Non-negative auto repeat tasks interval", &init.task.repeat, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.reset", "pg_task reset", "Interval of reset tasks", &init.task.reset, "1 hour", PGC_USERSET, 0, NULL, init_assign_reset, NULL);
@@ -287,7 +287,7 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_task.table", "pg_task table", "Table name for tasks table", &init.task.table, "task", PGC_USERSET, 0, NULL, init_assign_table, NULL);
     DefineCustomStringVariable("pg_task.timeout", "pg_task timeout", "Non-negative allowed time for task run", &init.task.timeout, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.user", "pg_task user", "User name for tasks table", &init.task.user, "postgres", PGC_SIGHUP, 0, NULL, init_assign_user, NULL);
-    elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, sleep = %i, reset = %s, active = %s", init.task.json, init.task.user, init.task.data, init.task.schema, init.task.table, task_null, init.task.sleep, init.task.reset, init.work.active);
+    elog(DEBUG1, "json = %s, user = %s, data = %s, schema = %s, table = %s, null = %s, sleep = %i, reset = %s, active = %s", init.task.json, init.task.user, init.task.data, init.task.schema, init.task.table, init.task.null, init.task.sleep, init.task.reset, init.work.active);
 #ifdef GP_VERSION_NUM
     if (!IS_QUERY_DISPATCHER()) return;
 #endif
@@ -386,4 +386,8 @@ void shared_free(int slot) {
 
 Shared *init_shared(Datum main_arg) {
     return &shared[DatumGetInt32(main_arg)];
+}
+
+const char *init_task_null(void) {
+    return init.task.null;
 }
