@@ -70,6 +70,13 @@ static Shared *shared = NULL;
 volatile sig_atomic_t ShutdownRequestPending = false;
 #endif
 
+const char *init_task_null(void) { return init.task.null; }
+int init_conf_fetch(void) { return init.conf.fetch; }
+int init_task_fetch(void) { return init.task.fetch; }
+int init_task_idle(void) { return init.task.idle; }
+int init_work_fetch(void) { return init.work.fetch; }
+int init_work_restart(void) { return init.work.restart; }
+
 bool init_oid_is_string(Oid oid) {
     switch (oid) {
         case BITOID:
@@ -386,28 +393,4 @@ void shared_free(int slot) {
 
 Shared *init_shared(Datum main_arg) {
     return &shared[DatumGetInt32(main_arg)];
-}
-
-const char *init_task_null(void) {
-    return init.task.null;
-}
-
-int init_task_fetch(void) {
-    return init.task.fetch;
-}
-
-int init_work_fetch(void) {
-    return init.work.fetch;
-}
-
-int init_task_idle(void) {
-    return init.task.idle;
-}
-
-int init_conf_fetch(void) {
-    return init.conf.fetch;
-}
-
-int init_work_restart(void) {
-    return init.work.restart;
 }

@@ -159,9 +159,15 @@ bool unlock_table_id(Oid table, int64 id);
 bool unlock_table_pid_hash(Oid table, int pid, int hash);
 char *TextDatumGetCStringMy(Datum datum);
 const char *error_severity(int elevel);
+const char *init_task_null(void);
 Datum CStringGetTextDatumMy(const char *s);
 Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid);
 int init_bgw_main_arg(Shared *ws);
+int init_conf_fetch(void);
+int init_task_fetch(void);
+int init_task_idle(void);
+int init_work_fetch(void);
+int init_work_restart(void);
 int severity_error(const char *error);
 PGDLLEXPORT void conf_main(Datum main_arg);
 PGDLLEXPORT void task_main(Datum main_arg);
@@ -186,11 +192,5 @@ void SPI_finish_my(void);
 void task_error(Task *t);
 void task_free(Task *t);
 Work *get_work(void);
-const char *init_task_null(void);
-int init_task_fetch(void);
-int init_work_fetch(void);
-int init_task_idle(void);
-int init_conf_fetch(void);
-int init_work_restart(void);
 
 #endif // _INCLUDE_H_
