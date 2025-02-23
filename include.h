@@ -183,7 +183,7 @@ void SPI_cursor_fetch_my(const char *src, Portal portal, bool forward, long coun
 void SPI_execute_plan_my(const char *src, SPIPlanPtr plan, Datum *values, const char *nulls, int res);
 void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, int res);
 void SPI_finish_my(void);
-void task_error(ErrorData *edata);
+void task_error(Task *t);
 void task_free(Task *t);
 Work *get_work(void);
 

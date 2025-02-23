@@ -3,7 +3,6 @@
 #include <unistd.h>
 #include <utils/lsyscache.h>
 
-extern emit_log_hook_type emit_log_hook_prev;
 static Task task = {0};
 
 Task *get_task(void) {
@@ -161,8 +160,6 @@ static void dest_catch(void) {
     HOLD_INTERRUPTS();
     disable_all_timeouts(false);
     QueryCancelPending = false;
-    emit_log_hook_prev = emit_log_hook;
-    emit_log_hook = task_error;
     EmitErrorReport();
     debug_query_string = NULL;
     AbortOutOfAnyTransaction();
@@ -194,6 +191,7 @@ bool dest_timeout(void) {
         if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
         dest_execute();
     PG_CATCH();
+        task_error(&task);
         dest_catch();
     PG_END_TRY();
     StatementTimeout = StatementTimeoutMy;

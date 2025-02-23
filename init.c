@@ -18,7 +18,6 @@
 PG_MODULE_MAGIC;
 
 char *task_null;
-emit_log_hook_type emit_log_hook_prev = NULL;
 int conf_close;
 int conf_fetch;
 int task_fetch;
