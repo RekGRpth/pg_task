@@ -25,11 +25,6 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 extern char *task_null;
 extern emit_log_hook_type emit_log_hook_prev;
 extern int task_fetch;
-static Task task = {0};
-
-Task *get_task(void) {
-    return &task;
-}
 
 bool task_live(const Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start)};
@@ -245,68 +240,69 @@ bool task_work(Task *t) {
 }
 
 void task_error(ErrorData *edata) {
+    Task *task = get_task();
     if ((emit_log_hook = emit_log_hook_prev)) (*emit_log_hook)(edata);
-    if (!task.error.data) initStringInfoMy(&task.error);
-    if (!task.output.data) initStringInfoMy(&task.output);
-    appendStringInfo(&task.output, SQL(%sROLLBACK), task.output.len ? "\n" : "");
-    task.skip++;
-    if (task.error.len) appendStringInfoChar(&task.error, '\n');
-    appendStringInfo(&task.error, "%s:  ", _(error_severity(edata->elevel)));
-    if (Log_error_verbosity >= PGERROR_VERBOSE) appendStringInfo(&task.error, "%s: ", unpack_sql_state(edata->sqlerrcode));
-    if (edata->message) append_with_tabs(&task.error, edata->message);
-    else append_with_tabs(&task.error, _("missing error text"));
-    if (edata->cursorpos > 0) appendStringInfo(&task.error, _(" at character %d"), edata->cursorpos);
-    else if (edata->internalpos > 0) appendStringInfo(&task.error, _(" at character %d"), edata->internalpos);
+    if (!task->error.data) initStringInfoMy(&task->error);
+    if (!task->output.data) initStringInfoMy(&task->output);
+    appendStringInfo(&task->output, SQL(%sROLLBACK), task->output.len ? "\n" : "");
+    task->skip++;
+    if (task->error.len) appendStringInfoChar(&task->error, '\n');
+    appendStringInfo(&task->error, "%s:  ", _(error_severity(edata->elevel)));
+    if (Log_error_verbosity >= PGERROR_VERBOSE) appendStringInfo(&task->error, "%s: ", unpack_sql_state(edata->sqlerrcode));
+    if (edata->message) append_with_tabs(&task->error, edata->message);
+    else append_with_tabs(&task->error, _("missing error text"));
+    if (edata->cursorpos > 0) appendStringInfo(&task->error, _(" at character %d"), edata->cursorpos);
+    else if (edata->internalpos > 0) appendStringInfo(&task->error, _(" at character %d"), edata->internalpos);
     if (Log_error_verbosity >= PGERROR_DEFAULT) {
         if (edata->detail_log) {
-            if (task.error.len) appendStringInfoChar(&task.error, '\n');
-            appendStringInfoString(&task.error, _("DETAIL:  "));
-            append_with_tabs(&task.error, edata->detail_log);
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("DETAIL:  "));
+            append_with_tabs(&task->error, edata->detail_log);
         } else if (edata->detail) {
-            if (task.error.len) appendStringInfoChar(&task.error, '\n');
-            appendStringInfoString(&task.error, _("DETAIL:  "));
-            append_with_tabs(&task.error, edata->detail);
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("DETAIL:  "));
+            append_with_tabs(&task->error, edata->detail);
         }
         if (edata->hint) {
-            if (task.error.len) appendStringInfoChar(&task.error, '\n');
-            appendStringInfoString(&task.error, _("HINT:  "));
-            append_with_tabs(&task.error, edata->hint);
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("HINT:  "));
+            append_with_tabs(&task->error, edata->hint);
         }
         if (edata->internalquery) {
-            if (task.error.len) appendStringInfoChar(&task.error, '\n');
-            appendStringInfoString(&task.error, _("QUERY:  "));
-            append_with_tabs(&task.error, edata->internalquery);
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("QUERY:  "));
+            append_with_tabs(&task->error, edata->internalquery);
         }
         if (edata->context
 #if PG_VERSION_NUM >= 90500
             && !edata->hide_ctx
 #endif
         ) {
-            if (task.error.len) appendStringInfoChar(&task.error, '\n');
-            appendStringInfoString(&task.error, _("CONTEXT:  "));
-            append_with_tabs(&task.error, edata->context);
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("CONTEXT:  "));
+            append_with_tabs(&task->error, edata->context);
         }
         if (Log_error_verbosity >= PGERROR_VERBOSE) {
             if (edata->funcname && edata->filename) { // assume no newlines in funcname or filename...
-                if (task.error.len) appendStringInfoChar(&task.error, '\n');
-                appendStringInfo(&task.error, _("LOCATION:  %s, %s:%d"), edata->funcname, edata->filename, edata->lineno);
+                if (task->error.len) appendStringInfoChar(&task->error, '\n');
+                appendStringInfo(&task->error, _("LOCATION:  %s, %s:%d"), edata->funcname, edata->filename, edata->lineno);
             } else if (edata->filename) {
-                if (task.error.len) appendStringInfoChar(&task.error, '\n');
-                appendStringInfo(&task.error, _("LOCATION:  %s:%d"), edata->filename, edata->lineno);
+                if (task->error.len) appendStringInfoChar(&task->error, '\n');
+                appendStringInfo(&task->error, _("LOCATION:  %s:%d"), edata->filename, edata->lineno);
             }
         }
 #if PG_VERSION_NUM >= 130000
         if (edata->backtrace) {
-            if (task.error.len) appendStringInfoChar(&task.error, '\n');
-            appendStringInfoString(&task.error, _("BACKTRACE:  "));
-            append_with_tabs(&task.error, edata->backtrace);
+            if (task->error.len) appendStringInfoChar(&task->error, '\n');
+            appendStringInfoString(&task->error, _("BACKTRACE:  "));
+            append_with_tabs(&task->error, edata->backtrace);
         }
 #endif
     }
-    if (task.input && is_log_level_output(edata->elevel, log_min_error_statement) && !edata->hide_stmt) { // If the user wants the query that generated this error logged, do it.
-        if (task.error.len) appendStringInfoChar(&task.error, '\n');
-        appendStringInfoString(&task.error, _("STATEMENT:  "));
-        append_with_tabs(&task.error, task.input);
+    if (task->input && is_log_level_output(edata->elevel, log_min_error_statement) && !edata->hide_stmt) { // If the user wants the query that generated this error logged, do it.
+        if (task->error.len) appendStringInfoChar(&task->error, '\n');
+        appendStringInfoString(&task->error, _("STATEMENT:  "));
+        append_with_tabs(&task->error, task->input);
     }
 }
 
@@ -332,42 +328,43 @@ void task_free(Task *t) {
 void task_main(Datum main_arg) {
     const char *application_name;
     StringInfoData oid, schema_table;
+    Task *task = get_task();
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
-    task.work = get_work();
-    task.shared = init_shared(main_arg);
+    task->work = get_work();
+    task->shared = init_shared(main_arg);
     before_shmem_exit(task_shmem_exit, main_arg);
-    if (!task.shared->in_use) return;
+    if (!task->shared->in_use) return;
     BackgroundWorkerUnblockSignals();
-    task.work->data = quote_identifier(task.shared->data);
-    task.work->schema = quote_identifier(task.shared->schema);
-    task.work->table = quote_identifier(task.shared->table);
-    task.work->user = quote_identifier(task.shared->user);
-    BackgroundWorkerInitializeConnectionMy(task.shared->data, task.shared->user);
-    application_name = MyBgworkerEntry->bgw_name + strlen(task.shared->user) + 1 + strlen(task.shared->data) + 1;
+    task->work->data = quote_identifier(task->shared->data);
+    task->work->schema = quote_identifier(task->shared->schema);
+    task->work->table = quote_identifier(task->shared->table);
+    task->work->user = quote_identifier(task->shared->user);
+    BackgroundWorkerInitializeConnectionMy(task->shared->data, task->shared->user);
+    application_name = MyBgworkerEntry->bgw_name + strlen(task->shared->user) + 1 + strlen(task->shared->data) + 1;
     set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     pgstat_report_appname(application_name);
     set_ps_display_my("main");
     process_session_preload_libraries();
-    elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", task.shared->oid, task.shared->id, task.shared->hash, task.shared->max);
-    set_config_option_my("pg_task.schema", task.shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
-    set_config_option_my("pg_task.table", task.shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+    elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", task->shared->oid, task->shared->id, task->shared->hash, task->shared->max);
+    set_config_option_my("pg_task.schema", task->shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+    set_config_option_my("pg_task.table", task->shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     initStringInfoMy(&schema_table);
-    appendStringInfo(&schema_table, "%s.%s", task.work->schema, task.work->table);
-    task.work->schema_table = schema_table.data;
+    appendStringInfo(&schema_table, "%s.%s", task->work->schema, task->work->table);
+    task->work->schema_table = schema_table.data;
     initStringInfoMy(&oid);
-    appendStringInfo(&oid, "%i", task.shared->oid);
+    appendStringInfo(&oid, "%i", task->shared->oid);
     set_config_option_my("pg_task.oid", oid.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     pfree(oid.data);
-    task.pid = MyProcPid;
-    task.start = GetCurrentTimestamp();
+    task->pid = MyProcPid;
+    task->start = GetCurrentTimestamp();
     set_ps_display_my("idle");
-    if (!lock_table_pid_hash(task.shared->oid, task.pid, task.shared->hash)) { elog(WARNING, "!lock_table_pid_hash(%i, %i, %i)", task.shared->oid, task.pid, task.shared->hash); return; }
+    if (!lock_table_pid_hash(task->shared->oid, task->pid, task->shared->hash)) { elog(WARNING, "!lock_table_pid_hash(%i, %i, %i)", task->shared->oid, task->pid, task->shared->hash); return; }
     while (!ShutdownRequestPending) {
         int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0);
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
         if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_TIMEOUT) if (dest_timeout()) ShutdownRequestPending = true;
     }
-    if (!unlock_table_pid_hash(task.shared->oid, task.pid, task.shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", task.shared->oid, task.pid, task.shared->hash);
+    if (!unlock_table_pid_hash(task->shared->oid, task->pid, task->shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", task->shared->oid, task->pid, task->shared->hash);
 }
