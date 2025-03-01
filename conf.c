@@ -133,7 +133,7 @@ void conf_main(Datum main_arg) {
     pgstat_report_appname("pg_conf");
     set_ps_display_my("main");
     process_session_preload_libraries();
-    if (!lock_data_user(MyDatabaseId, GetUserId())) { elog(WARNING, "!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()); return; }
+    if (!lock_data_user(MyDatabaseId, GetUserId())) { ereport(WARNING, (errmsg("!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()))); return; }
     dlist_init(&head);
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
@@ -195,5 +195,5 @@ void conf_main(Datum main_arg) {
     pfree(src.data);
     set_ps_display_my("idle");
     dlist_foreach_modify(iter, &head) conf_work(dlist_container(Work, node, iter.cur));
-    if (!unlock_data_user(MyDatabaseId, GetUserId())) elog(WARNING, "!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId());
+    if (!unlock_data_user(MyDatabaseId, GetUserId())) ereport(WARNING, (errmsg("!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId())));
 }
