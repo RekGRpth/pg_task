@@ -188,7 +188,6 @@ bool dest_timeout(void) {
     set_ps_display_my("timeout");
     StatementTimeout = task.timeout;
     PG_TRY();
-        if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
         dest_execute();
     PG_CATCH();
         task_error(&task);

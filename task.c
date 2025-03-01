@@ -32,7 +32,7 @@ bool task_live(const Task *t) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND "hash" OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.>=) $2 AND CASE
+            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND "hash" OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.>=) $2 AND ("plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.>) CURRENT_TIMESTAMP OR "repeat" OPERATOR(pg_catalog.>) '0 sec' OR "max" OPERATOR(pg_catalog.<) 0) AND CASE
                 WHEN "count" OPERATOR(pg_catalog.>) 0 AND "live" OPERATOR(pg_catalog.>) '0 sec' THEN "count" OPERATOR(pg_catalog.>) $3 AND $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) CURRENT_TIMESTAMP ELSE "count" OPERATOR(pg_catalog.>) $3 OR $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) CURRENT_TIMESTAMP
             END ORDER BY "max" DESC, "id" LIMIT 1 FOR UPDATE OF t %2$s) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id::pg_catalog.int8
         ), t->work->schema_table,
@@ -204,7 +204,7 @@ bool task_work(Task *t) {
         appendStringInfo(&src, SQL(
             WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 FOR UPDATE OF t)
             UPDATE %1$s AS t SET "state" = 'WORK', "start" = CURRENT_TIMESTAMP, "pid" = $2 FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id
-            RETURNING "group"::pg_catalog.text, "hash"::pg_catalog.int4, "input"::pg_catalog.text, (EXTRACT(epoch FROM "timeout")::pg_catalog.int4 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int4 AS "timeout", "header"::pg_catalog.bool, "string"::pg_catalog.bool, "null"::pg_catalog.text, "delimiter"::pg_catalog.char, "quote"::pg_catalog.char, "escape"::pg_catalog.char, ("plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.>) CURRENT_TIMESTAMP)::pg_catalog.bool AS "active", "remote"::pg_catalog.text
+            RETURNING "group"::pg_catalog.text, "hash"::pg_catalog.int4, "input"::pg_catalog.text, (EXTRACT(epoch FROM "timeout")::pg_catalog.int4 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int4 AS "timeout", "header"::pg_catalog.bool, "string"::pg_catalog.bool, "null"::pg_catalog.text, "delimiter"::pg_catalog.char, "quote"::pg_catalog.char, "escape"::pg_catalog.char, "remote"::pg_catalog.text
         ), t->work->schema_table);
     }
     SPI_connect_my(src.data);
@@ -214,7 +214,6 @@ bool task_work(Task *t) {
         elog(WARNING, "id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed);
         exit = true;
     } else {
-        t->active = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "active", false, BOOLOID));
         t->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false, CHAROID));
         t->escape = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "escape", false, CHAROID));
         t->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "group", false, TEXTOID));
@@ -227,7 +226,7 @@ bool task_work(Task *t) {
         t->string = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "string", false, BOOLOID));
         t->timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "timeout", false, INT4OID));
         if (0 < StatementTimeout && StatementTimeout < t->timeout) t->timeout = StatementTimeout;
-        elog(DEBUG1, "group = %s, remote = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, active = %s", t->group, t->remote ? t->remote : init_null(), t->shared->hash, t->input, t->timeout, t->header ? "true" : "false", t->string ? "true" : "false", t->null, t->delimiter, t->quote ? t->quote : 30, t->escape ? t->escape : 30, t->active ? "true" : "false");
+        elog(DEBUG1, "group = %s, remote = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c", t->group, t->remote ? t->remote : init_null(), t->shared->hash, t->input, t->timeout, t->header ? "true" : "false", t->string ? "true" : "false", t->null, t->delimiter, t->quote ? t->quote : 30, t->escape ? t->escape : 30);
         if (!t->remote) set_config_option_my("pg_task.group", t->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     }
     SPI_finish_my();

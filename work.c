@@ -411,14 +411,9 @@ static void work_result(Task *t) {
 
 static void work_query(Task *t) {
     StringInfoData input;
-    for (;;) {
-        if (ShutdownRequestPending) return;
-        t->socket = work_query;
-        if (task_work(t)) { work_finish(t); return; }
-        if (t->active) break;
-        work_ereport(false, t, ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
-        if (!t) return;
-    }
+    if (ShutdownRequestPending) return;
+    t->socket = work_query;
+    if (task_work(t)) { work_finish(t); return; }
     initStringInfoMy(&input);
     t->skip = 0;
     appendStringInfoString(&input, SQL(BEGIN;));
@@ -593,11 +588,14 @@ static void work_sleep(Work *w) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            WITH l AS (
+            WITH n AS (
+                UPDATE %1$s SET "state" = 'DONE', "output" = 'ROLLBACK', "start" = CURRENT_TIMESTAMP, "stop" = CURRENT_TIMESTAMP, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0 RETURNING "id"
+            ), l AS (
                 SELECT pg_catalog.count("classid") AS "classid", "objid" FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessShareLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 5 AND "database" OPERATOR(pg_catalog.=) %2$i GROUP BY "objid"
             ), s AS (
-                SELECT "id", t.hash, CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" OPERATOR(pg_catalog.=) "hash"
+                SELECT "id", "hash", CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" OPERATOR(pg_catalog.=) "hash"
                 WHERE "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) OPERATOR(pg_catalog.>=) 0
+                AND "id" NOT IN (SELECT "id" FROM n)
                 ORDER BY 3 DESC, 1 LIMIT LEAST($1 OPERATOR(pg_catalog.-) (SELECT COALESCE(pg_catalog.sum("classid"), 0) FROM l), pg_catalog.current_setting('pg_task.limit')::pg_catalog.int4) FOR UPDATE OF t %3$s
             ), u AS (
                 SELECT "id", "count" OPERATOR(pg_catalog.-) pg_catalog.row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM s ORDER BY s.count DESC, id

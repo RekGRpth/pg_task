@@ -116,7 +116,6 @@ typedef struct Work {
 } Work;
 
 typedef struct Task {
-    bool active;
     bool header;
     bool lock;
     bool string;
