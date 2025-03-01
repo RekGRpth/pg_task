@@ -150,7 +150,6 @@ bool lock_data_user(Oid data, Oid user);
 bool lock_table_id(Oid table, int64 id);
 bool lock_table_pid_hash(Oid table, int pid, int hash);
 bool task_done(Task *t);
-bool task_live(const Task *t);
 bool task_work(Task *t);
 bool unlock_data_user_hash(Oid data, Oid user, int hash);
 bool unlock_data_user(Oid data, Oid user);

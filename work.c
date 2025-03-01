@@ -62,7 +62,7 @@ static void work_query(Task *t);
         EmitErrorReport(); \
         FlushErrorState(); \
     PG_END_TRY(); \
-    if (task_done(t) || task_live(t)) t->remote != NULL ? work_finish(t) : work_free(t); \
+    if (task_done(t)) t->remote != NULL ? work_finish(t) : work_free(t); \
 } while(0)
 
 static char *work_errstr(char *err) {
@@ -346,7 +346,7 @@ static void work_done(Task *t) {
         t->event = WL_SOCKET_READABLE;
         return;
     }
-    task_done(t) || task_live(t) || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
+    task_done(t) || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
 }
 
 static void work_schema(const Work *w) {

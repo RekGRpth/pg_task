@@ -197,5 +197,5 @@ bool dest_timeout(void) {
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
     set_ps_display_my("idle");
-    return task_done(&task) || task_live(&task);
+    return task_done(&task);
 }

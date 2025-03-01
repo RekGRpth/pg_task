@@ -22,7 +22,7 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 #include <utils/timestamp.h>
 #endif
 
-bool task_live(const Task *t) {
+static bool task_live(const Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start)};
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPIPlanPtr plan = NULL;
@@ -177,7 +177,7 @@ bool task_done(Task *t) {
     SPI_finish_my();
     task_free(t);
     set_ps_display_my("idle");
-    return ShutdownRequestPending || exit;
+    return ShutdownRequestPending || exit || task_live(t);
 }
 
 bool task_work(Task *t) {
