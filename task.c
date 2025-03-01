@@ -22,7 +22,7 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 #include <utils/timestamp.h>
 #endif
 
-bool task_live(const Task *t) {
+static bool task_live(const Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start)};
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID};
     static SPIPlanPtr plan = NULL;
@@ -32,7 +32,7 @@ bool task_live(const Task *t) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND "hash" OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.>=) $2 AND CASE
+            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND "hash" OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.>=) $2 AND ("plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.>) CURRENT_TIMESTAMP OR "repeat" OPERATOR(pg_catalog.>) '0 sec' OR "max" OPERATOR(pg_catalog.<) 0) AND CASE
                 WHEN "count" OPERATOR(pg_catalog.>) 0 AND "live" OPERATOR(pg_catalog.>) '0 sec' THEN "count" OPERATOR(pg_catalog.>) $3 AND $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) CURRENT_TIMESTAMP ELSE "count" OPERATOR(pg_catalog.>) $3 OR $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) CURRENT_TIMESTAMP
             END ORDER BY "max" DESC, "id" LIMIT 1 FOR UPDATE OF t %2$s) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id::pg_catalog.int8
         ), t->work->schema_table,
@@ -60,7 +60,7 @@ static void task_columns(const Task *t) {
         SELECT pg_catalog.string_agg(pg_catalog.quote_ident(attname), ', ')::pg_catalog.text AS columns FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) $1 AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.<>) ALL(ARRAY['id', 'plan', 'parent', 'start', 'stop', 'hash', 'pid', 'state', 'error', 'output'])
     );
     SPI_execute_with_args_my(src, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
-    if (SPI_processed != 1) elog(WARNING, "columns id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed); else {
+    if (SPI_processed != 1) ereport(WARNING, (errmsg("columns id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed))); else {
         t->work->columns = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "columns", false, TEXTOID));
         elog(DEBUG1, "columns id = %li, %s", t->shared->id, t->work->columns);
     }
@@ -79,7 +79,7 @@ static void task_delete(const Task *t) {
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_DELETE_RETURNING);
-    if (SPI_processed != 1) elog(WARNING, "delete id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed);
+    if (SPI_processed != 1) ereport(WARNING, (errmsg("delete id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed)));
     else elog(DEBUG1, "delete id = %li", DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)));
     set_ps_display_my("idle");
 }
@@ -103,7 +103,7 @@ static void task_insert(const Task *t) {
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_INSERT_RETURNING);
-    if (SPI_processed != 1) elog(WARNING, "insert id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed);
+    if (SPI_processed != 1) ereport(WARNING, (errmsg("insert id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed)));
     else elog(DEBUG1, "insert id = %li", DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)));
     set_ps_display_my("idle");
 }
@@ -160,7 +160,7 @@ bool task_done(Task *t) {
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
-    if (SPI_processed != 1) elog(WARNING, "id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed); else {
+    if (SPI_processed != 1) ereport(WARNING, (errmsg("id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed))); else {
         delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false, BOOLOID));
         exit = !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false, BOOLOID));
         insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false, BOOLOID));
@@ -172,12 +172,12 @@ bool task_done(Task *t) {
     if (insert) task_insert(t);
     if (delete) task_delete(t);
     if (update) task_update(t);
-    if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) { elog(WARNING, "!unlock_table_id(%i, %li)", t->shared->oid, t->shared->id); exit = true; }
+    if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) { ereport(WARNING, (errmsg("!unlock_table_id(%i, %li)", t->shared->oid, t->shared->id))); exit = true; }
     t->lock = false;
     SPI_finish_my();
     task_free(t);
     set_ps_display_my("idle");
-    return ShutdownRequestPending || exit;
+    return ShutdownRequestPending || exit || task_live(t);
 }
 
 bool task_work(Task *t) {
@@ -187,7 +187,7 @@ bool task_work(Task *t) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return true;
-    if (!lock_table_id(t->shared->oid, t->shared->id)) { elog(WARNING, "!lock_table_id(%i, %li)", t->shared->oid, t->shared->id); return true; }
+    if (!lock_table_id(t->shared->oid, t->shared->id)) { ereport(WARNING, (errmsg("!lock_table_id(%i, %li)", t->shared->oid, t->shared->id))); return true; }
     t->lock = true;
     t->count++;
     elog(DEBUG1, "id = %li, max = %i, oid = %i, count = %i, pid = %i", t->shared->id, t->shared->max, t->shared->oid, t->count, t->pid);
@@ -204,17 +204,16 @@ bool task_work(Task *t) {
         appendStringInfo(&src, SQL(
             WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 FOR UPDATE OF t)
             UPDATE %1$s AS t SET "state" = 'WORK', "start" = CURRENT_TIMESTAMP, "pid" = $2 FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id
-            RETURNING "group"::pg_catalog.text, "hash"::pg_catalog.int4, "input"::pg_catalog.text, (EXTRACT(epoch FROM "timeout")::pg_catalog.int4 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int4 AS "timeout", "header"::pg_catalog.bool, "string"::pg_catalog.bool, "null"::pg_catalog.text, "delimiter"::pg_catalog.char, "quote"::pg_catalog.char, "escape"::pg_catalog.char, ("plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.>) CURRENT_TIMESTAMP)::pg_catalog.bool AS "active", "remote"::pg_catalog.text
+            RETURNING "group"::pg_catalog.text, "hash"::pg_catalog.int4, "input"::pg_catalog.text, (EXTRACT(epoch FROM "timeout")::pg_catalog.int4 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int4 AS "timeout", "header"::pg_catalog.bool, "string"::pg_catalog.bool, "null"::pg_catalog.text, "delimiter"::pg_catalog.char, "quote"::pg_catalog.char, "escape"::pg_catalog.char, "remote"::pg_catalog.text
         ), t->work->schema_table);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) {
-        elog(WARNING, "id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed);
+        ereport(WARNING, (errmsg("id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed)));
         exit = true;
     } else {
-        t->active = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "active", false, BOOLOID));
         t->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false, CHAROID));
         t->escape = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "escape", false, CHAROID));
         t->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "group", false, TEXTOID));
@@ -227,7 +226,7 @@ bool task_work(Task *t) {
         t->string = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "string", false, BOOLOID));
         t->timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "timeout", false, INT4OID));
         if (0 < StatementTimeout && StatementTimeout < t->timeout) t->timeout = StatementTimeout;
-        elog(DEBUG1, "group = %s, remote = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, active = %s", t->group, t->remote ? t->remote : init_null(), t->shared->hash, t->input, t->timeout, t->header ? "true" : "false", t->string ? "true" : "false", t->null, t->delimiter, t->quote ? t->quote : 30, t->escape ? t->escape : 30, t->active ? "true" : "false");
+        elog(DEBUG1, "group = %s, remote = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c", t->group, t->remote ? t->remote : init_null(), t->shared->hash, t->input, t->timeout, t->header ? "true" : "false", t->string ? "true" : "false", t->null, t->delimiter, t->quote ? t->quote : 30, t->escape ? t->escape : 30);
         if (!t->remote) set_config_option_my("pg_task.group", t->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
     }
     SPI_finish_my();
@@ -357,12 +356,12 @@ void task_main(Datum main_arg) {
     task->pid = MyProcPid;
     task->start = GetCurrentTimestamp();
     set_ps_display_my("idle");
-    if (!lock_table_pid_hash(task->shared->oid, task->pid, task->shared->hash)) { elog(WARNING, "!lock_table_pid_hash(%i, %i, %i)", task->shared->oid, task->pid, task->shared->hash); return; }
+    if (!lock_table_pid_hash(task->shared->oid, task->pid, task->shared->hash)) { ereport(WARNING, (errmsg("!lock_table_pid_hash(%i, %i, %i)", task->shared->oid, task->pid, task->shared->hash))); return; }
     while (!ShutdownRequestPending) {
         int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0);
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
         if (rc & WL_LATCH_SET) task_latch();
         if (rc & WL_TIMEOUT) if (dest_timeout()) ShutdownRequestPending = true;
     }
-    if (!unlock_table_pid_hash(task->shared->oid, task->pid, task->shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", task->shared->oid, task->pid, task->shared->hash);
+    if (!unlock_table_pid_hash(task->shared->oid, task->pid, task->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", task->shared->oid, task->pid, task->shared->hash)));
 }

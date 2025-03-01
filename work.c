@@ -54,8 +54,7 @@ Work *get_work(void) {
 
 static void work_query(Task *t);
 
-#define work_ereport(finish_or_free, t, ...) do { \
-    bool remote = t->remote != NULL; \
+#define work_ereport(...) do { \
     PG_TRY(); \
         ereport(__VA_ARGS__); \
     PG_CATCH(); \
@@ -63,7 +62,7 @@ static void work_query(Task *t);
         EmitErrorReport(); \
         FlushErrorState(); \
     PG_END_TRY(); \
-    if (task_done(t) || finish_or_free || task_live(t)) { remote ? work_finish(t) : work_free(t); t = NULL; } \
+    if (task_done(t)) t->remote != NULL ? work_finish(t) : work_free(t); \
 } while(0)
 
 static char *work_errstr(char *err) {
@@ -196,7 +195,7 @@ static void work_finish(Task *t) {
         ReleaseExternalFD();
 #endif
     }
-    if (!proc_exit_inprogress && t->pid && !unlock_table_pid_hash(t->shared->oid, t->pid, t->shared->hash)) elog(WARNING, "!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->pid, t->shared->hash);
+    if (!proc_exit_inprogress && t->pid && !unlock_table_pid_hash(t->shared->oid, t->pid, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->pid, t->shared->hash)));
     work_free(t);
 }
 
@@ -205,8 +204,8 @@ static int work_nevents(void) {
     int nevents = 2;
     dlist_foreach_modify(iter, &head) {
         Task *t = dlist_container(Task, node, iter.cur);
-        if (PQstatus(t->conn) == CONNECTION_BAD) { work_ereport(true, t, ERROR, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
-        if (PQsocket(t->conn) == PGINVALID_SOCKET) { work_ereport(true, t, ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsocket == PGINVALID_SOCKET"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
+        if (PQstatus(t->conn) == CONNECTION_BAD) { work_ereport(ERROR, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
+        if (PQsocket(t->conn) == PGINVALID_SOCKET) { work_ereport(ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsocket == PGINVALID_SOCKET"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
         nevents++;
     }
     return nevents;
@@ -288,7 +287,7 @@ static void work_reset(const Work *w) {
         SPI_cursor_fetch_my(src.data, portal, true, init_work_fetch());
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
-            elog(WARNING, "row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(val, SPI_tuptable->tupdesc, "id", false, INT8OID)));
+            ereport(WARNING, (errmsg("row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(val, SPI_tuptable->tupdesc, "id", false, INT8OID)))));
             SPI_freetuple(val);
         }
     } while (SPI_processed);
@@ -336,18 +335,18 @@ static void work_latch(const Work *w) {
 }
 
 static void work_readable(Task *t) {
-    if (PQstatus(t->conn) == CONNECTION_OK && !PQconsumeInput(t->conn)) { work_ereport(true, t, ERROR, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("!PQconsumeInput"), errdetail("%s", PQerrorMessageMy(t->conn)))); return; }
+    if (PQstatus(t->conn) == CONNECTION_OK && !PQconsumeInput(t->conn)) { work_ereport(ERROR, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("!PQconsumeInput"), errdetail("%s", PQerrorMessageMy(t->conn)))); return; }
     t->socket(t);
 }
 
 static void work_done(Task *t) {
     if (PQstatus(t->conn) == CONNECTION_OK && PQtransactionStatus(t->conn) != PQTRANS_IDLE) {
         t->socket = work_done;
-        if (!PQsendQuery(t->conn, SQL(COMMIT))) { work_ereport(true, t, ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); return; }
+        if (!PQsendQuery(t->conn, SQL(COMMIT))) { work_ereport(ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); return; }
         t->event = WL_SOCKET_READABLE;
         return;
     }
-    task_done(t) || task_live(t) || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
+    task_done(t) || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
 }
 
 static void work_schema(const Work *w) {
@@ -391,7 +390,7 @@ static void work_copy(Task *t) {
     switch ((len = PQgetCopyData(t->conn, &buffer, false))) {
         case 0: break;
         case -1: break;
-        case -2: work_ereport(true, t, ERROR, (errmsg("id = %li, PQgetCopyData == -2", t->shared->id), errdetail("%s", PQerrorMessageMy(t->conn)))); if (buffer) PQfreemem(buffer); return;
+        case -2: work_ereport(ERROR, (errmsg("id = %li, PQgetCopyData == -2", t->shared->id), errdetail("%s", PQerrorMessageMy(t->conn)))); if (buffer) PQfreemem(buffer); return;
         default: appendBinaryStringInfo(&t->output, buffer, len); break;
     }
     if (buffer) PQfreemem(buffer);
@@ -411,14 +410,9 @@ static void work_result(Task *t) {
 
 static void work_query(Task *t) {
     StringInfoData input;
-    for (;;) {
-        if (ShutdownRequestPending) return;
-        t->socket = work_query;
-        if (task_work(t)) { work_finish(t); return; }
-        if (t->active) break;
-        work_ereport(false, t, ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
-        if (!t) return;
-    }
+    if (ShutdownRequestPending) return;
+    t->socket = work_query;
+    if (task_work(t)) { work_finish(t); return; }
     initStringInfoMy(&input);
     t->skip = 0;
     appendStringInfoString(&input, SQL(BEGIN;));
@@ -433,7 +427,7 @@ static void work_query(Task *t) {
     t->skip++;
     appendStringInfoString(&input, t->input);
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", t->shared->id, t->timeout, input.data, t->count);
-    if (!PQsendQuery(t->conn, input.data)) { work_ereport(true, t, ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); pfree(input.data); return; }
+    if (!PQsendQuery(t->conn, input.data)) { work_ereport(ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); pfree(input.data); return; }
     pfree(input.data);
     t->socket = work_result;
     t->event = WL_SOCKET_READABLE;
@@ -442,20 +436,20 @@ static void work_query(Task *t) {
 static void work_connect(Task *t) {
     bool connected = false;
     switch (PQstatus(t->conn)) {
-        case CONNECTION_BAD: work_ereport(true, t, ERROR, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(t->conn)))); return;
+        case CONNECTION_BAD: work_ereport(ERROR, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(t->conn)))); return;
         case CONNECTION_OK: elog(DEBUG1, "id = %li, PQstatus == CONNECTION_OK", t->shared->id); connected = true; break;
         default: break;
     }
     if (!connected) switch (PQconnectPoll(t->conn)) {
         case PGRES_POLLING_ACTIVE: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_ACTIVE", t->shared->id); break;
-        case PGRES_POLLING_FAILED: work_ereport(true, t, ERROR, (errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectPoll failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); return;
+        case PGRES_POLLING_FAILED: work_ereport(ERROR, (errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectPoll failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); return;
         case PGRES_POLLING_OK: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_OK", t->shared->id); connected = true; break;
         case PGRES_POLLING_READING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_READING", t->shared->id); t->event = WL_SOCKET_READABLE; break;
         case PGRES_POLLING_WRITING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_WRITING", t->shared->id); t->event = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
-        if (!(t->pid = PQbackendPID(t->conn))) { work_ereport(true, t, ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQbackendPID failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); return; }
-        if (!lock_table_pid_hash(t->shared->oid, t->pid, t->shared->hash)) { work_ereport(true, t, ERROR, (errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->pid, t->shared->hash))); return; }
+        if (!(t->pid = PQbackendPID(t->conn))) { work_ereport(ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQbackendPID failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); return; }
+        if (!lock_table_pid_hash(t->shared->oid, t->pid, t->shared->hash)) { work_ereport(ERROR, (errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->pid, t->shared->hash))); return; }
         work_query(t);
     }
 }
@@ -471,7 +465,7 @@ static void work_shmem_exit(int code, Datum arg) {
             PGcancel *cancel = PQgetCancel(t->conn);
             if (!cancel) { ereport(WARNING, (errmsg("PQgetCancel failed"), errdetail("%s", PQerrorMessageMy(t->conn)))); continue; }
             if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { ereport(WARNING, (errmsg("PQcancel failed"), errdetail("%s", errbuf))); PQfreeCancel(cancel); continue; }
-            elog(WARNING, "cancel id = %li", t->shared->id);
+            ereport(WARNING, (errmsg("cancel id = %li", t->shared->id)));
             PQfreeCancel(cancel);
         }
         work_finish(t);
@@ -493,7 +487,7 @@ static void work_remote(Task *t) {
     elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : init_null(), t->shared->max, t->shared->oid);
     dlist_delete(&t->node);
     dlist_push_tail(&head, &t->node);
-    if (!opts) { work_ereport(true, t, ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), errdetail("%s", work_errstr(err)))); if (err) PQfreemem(err); return; }
+    if (!opts) { work_ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), errdetail("%s", work_errstr(err)))); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
         elog(DEBUG1, "%s = %s", opt->keyword, opt->val);
@@ -503,7 +497,7 @@ static void work_remote(Task *t) {
         if (!strcmp(opt->keyword, "options")) { options = opt->val; continue; }
         arg++;
     }
-    if (!superuser() && !password) { work_ereport(true, t, ERROR, (errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superusers must provide a password in the connection string."))); PQconninfoFree(opts); return; }
+    if (!superuser() && !password) { work_ereport(ERROR, (errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superusers must provide a password in the connection string."))); PQconninfoFree(opts); return; }
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
     initStringInfoMy(&name);
@@ -536,13 +530,13 @@ static void work_remote(Task *t) {
     t->socket = work_connect;
     t->start = GetCurrentTimestamp();
 #if PG_VERSION_NUM >= 130000
-    if (!AcquireExternalFD()) work_ereport(true, t, ERROR, (errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("could not establish connection"), errdetail("There are too many open files on the local server."), errhint("Raise the server's max_files_per_process and/or \"ulimit -n\" limits."))); else
+    if (!AcquireExternalFD()) work_ereport(ERROR, (errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("could not establish connection"), errdetail("There are too many open files on the local server."), errhint("Raise the server's max_files_per_process and/or \"ulimit -n\" limits."))); else
 #endif
-    if (!(t->conn = PQconnectStartParams(keywords, values, false))) work_ereport(true, t, ERROR, (errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectStartParams failed"), errdetail("%s", PQerrorMessageMy(t->conn))));
-    else if (PQstatus(t->conn) == CONNECTION_BAD) work_ereport(true, t, ERROR, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(t->conn))));
-    else if (!PQisnonblocking(t->conn) && PQsetnonblocking(t->conn, true) == -1) work_ereport(true, t, ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetnonblocking failed"), errdetail("%s", PQerrorMessageMy(t->conn))));
-    else if (!superuser() && !PQconnectionUsedPassword(t->conn)) work_ereport(true, t, ERROR, (errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superuser cannot connect if the server does not request a password."), errhint("Target server's authentication method must be changed.")));
-    else if (PQclientEncoding(t->conn) != GetDatabaseEncoding() && !PQsetClientEncoding(t->conn, GetDatabaseEncodingName())) work_ereport(true, t, ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetClientEncoding failed"), errdetail("%s", PQerrorMessageMy(t->conn))));
+    if (!(t->conn = PQconnectStartParams(keywords, values, false))) work_ereport(ERROR, (errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectStartParams failed"), errdetail("%s", PQerrorMessageMy(t->conn))));
+    else if (PQstatus(t->conn) == CONNECTION_BAD) work_ereport(ERROR, (errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), errdetail("%s", PQerrorMessageMy(t->conn))));
+    else if (!PQisnonblocking(t->conn) && PQsetnonblocking(t->conn, true) == -1) work_ereport(ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetnonblocking failed"), errdetail("%s", PQerrorMessageMy(t->conn))));
+    else if (!superuser() && !PQconnectionUsedPassword(t->conn)) work_ereport(ERROR, (errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superuser cannot connect if the server does not request a password."), errhint("Target server's authentication method must be changed.")));
+    else if (PQclientEncoding(t->conn) != GetDatabaseEncoding() && !PQsetClientEncoding(t->conn, GetDatabaseEncodingName())) work_ereport(ERROR, (errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetClientEncoding failed"), errdetail("%s", PQerrorMessageMy(t->conn))));
     pfree(name.data);
     pfree(value.data);
     pfree(keywords);
@@ -557,24 +551,24 @@ static void work_task(Task *t) {
     BackgroundWorker worker = {0};
     size_t len;
     elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", t->shared->id, t->group, t->shared->max, t->shared->oid);
-    if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) { work_ereport(true, t, ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name)))); return; }
-    if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) { work_ereport(true, t, ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name)))); return; }
-    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", t->shared->user, t->shared->data, t->shared->schema, t->shared->table, t->group)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
+    if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) { work_ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name)))); return; }
+    if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) { work_ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name)))); return; }
+    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", t->shared->user, t->shared->data, t->shared->schema, t->shared->table, t->group)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1))); // do not error when group is to long
 #if PG_VERSION_NUM >= 110000
-    if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) { work_ereport(true, t, ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type)))); return; }
+    if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) { work_ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type)))); return; }
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    if ((worker.bgw_main_arg = Int32GetDatum(init_bgw_main_arg(t->shared))) == Int32GetDatum(-1)) { work_ereport(true, t, ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not find empty slot"))); return; }
+    if ((worker.bgw_main_arg = Int32GetDatum(init_bgw_main_arg(t->shared))) == Int32GetDatum(-1)) { work_ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not find empty slot"))); return; }
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) {
-        shared_free(worker.bgw_main_arg); work_ereport(true, t, ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
+        shared_free(worker.bgw_main_arg); work_ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
     } else switch (WaitForBackgroundWorkerStartup(handle, &t->pid)) {
-        case BGWH_NOT_YET_STARTED: shared_free(worker.bgw_main_arg); work_ereport(true, t, ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
-        case BGWH_POSTMASTER_DIED: shared_free(worker.bgw_main_arg); work_ereport(true, t, ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
+        case BGWH_NOT_YET_STARTED: shared_free(worker.bgw_main_arg); work_ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
+        case BGWH_POSTMASTER_DIED: shared_free(worker.bgw_main_arg); work_ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
         case BGWH_STARTED: elog(DEBUG1, "started id = %li", t->shared->id); work_free(t); break;
-        case BGWH_STOPPED: shared_free(worker.bgw_main_arg); work_ereport(true, t, ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
+        case BGWH_STOPPED: shared_free(worker.bgw_main_arg); work_ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     if (handle) pfree(handle);
 }
@@ -593,11 +587,14 @@ static void work_sleep(Work *w) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            WITH l AS (
+            WITH n AS (
+                UPDATE %1$s SET "state" = 'DONE', "output" = 'ROLLBACK', "start" = CURRENT_TIMESTAMP, "stop" = CURRENT_TIMESTAMP, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0 RETURNING "id"
+            ), l AS (
                 SELECT pg_catalog.count("classid") AS "classid", "objid" FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessShareLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 5 AND "database" OPERATOR(pg_catalog.=) %2$i GROUP BY "objid"
             ), s AS (
-                SELECT "id", t.hash, CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" OPERATOR(pg_catalog.=) "hash"
+                SELECT "id", "hash", CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" OPERATOR(pg_catalog.=) "hash"
                 WHERE "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) OPERATOR(pg_catalog.>=) 0
+                AND "id" NOT IN (SELECT "id" FROM n)
                 ORDER BY 3 DESC, 1 LIMIT LEAST($1 OPERATOR(pg_catalog.-) (SELECT COALESCE(pg_catalog.sum("classid"), 0) FROM l), pg_catalog.current_setting('pg_task.limit')::pg_catalog.int4) FOR UPDATE OF t %3$s
             ), u AS (
                 SELECT "id", "count" OPERATOR(pg_catalog.-) pg_catalog.row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM s ORDER BY s.count DESC, id
@@ -918,7 +915,7 @@ void work_main(Datum main_arg) {
     initStringInfoMy(&schema_table);
     appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);
     work.schema_table = schema_table.data;
-    if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.shared->hash)) { elog(WARNING, "!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.shared->hash); ShutdownRequestPending = true; return; } // exit without error to disable restart, then not start conf
+    if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.shared->hash)) { ereport(WARNING, (errmsg("!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.shared->hash))); ShutdownRequestPending = true; return; } // exit without error to disable restart, then not start conf
     dlist_init(&head);
     initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work.schema);
@@ -981,5 +978,5 @@ void work_main(Datum main_arg) {
         FreeWaitEventSet(set);
         pfree(events);
     }
-    if (!unlock_data_user_hash(MyDatabaseId, GetUserId(), work.shared->hash)) elog(WARNING, "!unlock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.shared->hash);
+    if (!unlock_data_user_hash(MyDatabaseId, GetUserId(), work.shared->hash)) ereport(WARNING, (errmsg("!unlock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.shared->hash)));
 }

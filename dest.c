@@ -74,7 +74,6 @@ bool dest_timeout(void) {
     SPI_connect_my(task.input);
     BeginInternalSubTransaction(NULL);
     PG_TRY();
-        if (!task.active) ereport(ERROR, (errcode(ERRCODE_QUERY_CANCELED), errmsg("task not active")));
         dest_execute();
         ReleaseCurrentSubTransaction();
     PG_CATCH();
@@ -87,5 +86,5 @@ bool dest_timeout(void) {
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
     set_ps_display_my("idle");
-    return task_done(&task) || task_live(&task);
+    return task_done(&task);
 }
