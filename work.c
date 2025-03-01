@@ -55,7 +55,6 @@ Work *get_work(void) {
 static void work_query(Task *t);
 
 #define work_ereport(...) do { \
-    bool remote = t->remote != NULL; \
     PG_TRY(); \
         ereport(__VA_ARGS__); \
     PG_CATCH(); \
@@ -63,7 +62,7 @@ static void work_query(Task *t);
         EmitErrorReport(); \
         FlushErrorState(); \
     PG_END_TRY(); \
-    if (task_done(t) || task_live(t)) remote ? work_finish(t) : work_free(t); \
+    if (task_done(t) || task_live(t)) t->remote != NULL ? work_finish(t) : work_free(t); \
 } while(0)
 
 static char *work_errstr(char *err) {
