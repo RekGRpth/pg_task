@@ -89,6 +89,7 @@
 
 typedef struct Shared {
     bool in_use;
+    bool spi;
     char data[NAMEDATALEN];
     char schema[NAMEDATALEN];
     char table[NAMEDATALEN];

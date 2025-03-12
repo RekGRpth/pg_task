@@ -29,6 +29,7 @@ static struct {
         bool delete;
         bool drift;
         bool header;
+        bool spi;
         bool string;
         char *active;
         char *data;
@@ -198,6 +199,16 @@ void init_conf(bool dynamic) {
     } else RegisterBackgroundWorker(&worker);
 }
 
+static void init_assign_bool(const char *var, bool newval, void *extra) {
+    bool oldval;
+    if (PostmasterPid != MyProcPid) return;
+    if (process_shared_preload_libraries_in_progress) return;
+    oldval = GetConfigOption(var, true, true)[0] == 't';
+    if (oldval == newval) return;
+    elog(DEBUG1, "oldval = %s, newval = %s", oldval ? "true" : "false", newval ? "true" : "false");
+    init_conf(true);
+}
+
 static void init_assign_int(const char *var, int newval, void *extra) {
     int oldval;
     if (PostmasterPid != MyProcPid) return;
@@ -228,6 +239,7 @@ static void init_assign_json(const char *newval, void *extra) { init_assign_stri
 static void init_assign_reset(const char *newval, void *extra) { init_assign_string("pg_task.reset", newval, extra); }
 static void init_assign_schema(const char *newval, void *extra) { init_assign_string("pg_task.schema", newval, extra); }
 static void init_assign_sleep(int newval, void *extra) { init_assign_int("pg_task.sleep", newval, extra); }
+static void init_assign_spi(bool newval, void *extra) { init_assign_bool("pg_task.spi", newval, extra); }
 static void init_assign_table(const char *newval, void *extra) { init_assign_string("pg_task.table", newval, extra); }
 static void init_assign_user(const char *newval, void *extra) { init_assign_string("pg_task.user", newval, extra); }
 
@@ -263,6 +275,7 @@ void _PG_init(void) {
     DefineCustomBoolVariable("pg_task.delete", "pg_task delete", "Auto delete task when both output and error are nulls", &init.task.delete, true, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.drift", "pg_task drift", "Compute next repeat time by stop time instead by plan time", &init.task.drift, false, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.header", "pg_task header", "Show columns headers in output", &init.task.header, true, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomBoolVariable("pg_task.spi", "pg_task spi", "SPI (or local) execution?", &init.task.spi, false, PGC_USERSET, 0, NULL, init_assign_spi, NULL);
     DefineCustomBoolVariable("pg_task.string", "pg_task string", "Quote only strings", &init.task.string, true, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.close", "pg_conf close", "Close conf, milliseconds", &init.conf.close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.fetch", "pg_conf fetch", "Fetch conf rows at once", &init.conf.fetch, 10, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
