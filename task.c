@@ -153,9 +153,9 @@ bool task_done(Task *t) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 FOR UPDATE OF t)
-            UPDATE %1$s AS t SET "state" = 'DONE', "stop" = CURRENT_TIMESTAMP, "output" = $2, "error" = $3 FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id
-            RETURNING ("delete" AND "output" IS NULL)::pg_catalog.bool AS "delete", ("repeat" OPERATOR(pg_catalog.>) '0 sec')::pg_catalog.bool AS "insert", ("max" OPERATOR(pg_catalog.>=) 0 AND ("count" OPERATOR(pg_catalog.>) 0 OR "live" OPERATOR(pg_catalog.>) '0 sec'))::pg_catalog.bool AS "live", ("max" OPERATOR(pg_catalog.<) 0)::pg_catalog.bool AS "update"
-        ), t->work->schema_table);
+            UPDATE %1$s AS t SET "state" = CASE WHEN $3 IS NULL THEN 'DONE' ELSE 'FAIL' END::%2$s, "stop" = CURRENT_TIMESTAMP, "output" = $2, "error" = $3 FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id
+            RETURNING ("delete" AND "output" IS NULL AND "error" IS NULL)::pg_catalog.bool AS "delete", ("repeat" OPERATOR(pg_catalog.>) '0 sec')::pg_catalog.bool AS "insert", ("max" OPERATOR(pg_catalog.>=) 0 AND ("count" OPERATOR(pg_catalog.>) 0 OR "live" OPERATOR(pg_catalog.>) '0 sec'))::pg_catalog.bool AS "live", ("max" OPERATOR(pg_catalog.<) 0)::pg_catalog.bool AS "update"
+        ), t->work->schema_table, t->work->schema_type);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -240,7 +240,6 @@ void task_error(Task *t) {
     MemoryContextSwitchTo(oldMemoryContext);
     if (!t->error.data) initStringInfoMy(&t->error);
     if (!t->output.data) initStringInfoMy(&t->output);
-    appendStringInfo(&t->output, SQL(%sROLLBACK), t->output.len ? "\n" : "");
     t->skip++;
     if (t->error.len) appendStringInfoChar(&t->error, '\n');
     appendStringInfo(&t->error, "%s:  ", _(error_severity(edata->elevel)));
@@ -324,7 +323,7 @@ void task_free(Task *t) {
 
 void task_main(Datum main_arg) {
     const char *application_name;
-    StringInfoData oid, schema_table;
+    StringInfoData oid, schema_table, schema_type;
     Task *task = get_task();
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
     task->work = get_work();
@@ -349,6 +348,9 @@ void task_main(Datum main_arg) {
     initStringInfoMy(&schema_table);
     appendStringInfo(&schema_table, "%s.%s", task->work->schema, task->work->table);
     task->work->schema_table = schema_table.data;
+    initStringInfoMy(&schema_type);
+    appendStringInfo(&schema_type, "%s.state",task->work->schema);
+    task->work->schema_type = schema_type.data;
     initStringInfoMy(&oid);
     appendStringInfo(&oid, "%i", task->shared->oid);
     set_config_option_my("pg_task.oid", oid.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);

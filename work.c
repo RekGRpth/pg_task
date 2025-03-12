@@ -132,7 +132,6 @@ static void work_fatal(Task *t, const PGresult *result) {
     char *value3 = NULL;
     if (!t->output.data) initStringInfoMy(&t->output);
     if (!t->error.data) initStringInfoMy(&t->error);
-    appendStringInfo(&t->output, SQL(%sROLLBACK), t->output.len ? "\n" : "");
     t->skip++;
     if (t->error.len) appendStringInfoChar(&t->error, '\n');
     if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&t->error, "%s:  ", _(value));
@@ -588,7 +587,7 @@ static void work_sleep(Work *w) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH n AS (
-                UPDATE %1$s SET "state" = 'DONE', "output" = 'ROLLBACK', "start" = CURRENT_TIMESTAMP, "stop" = CURRENT_TIMESTAMP, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0 RETURNING "id"
+                UPDATE %1$s SET "state" = 'GONE', "start" = CURRENT_TIMESTAMP, "stop" = CURRENT_TIMESTAMP, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0 RETURNING "id"
             ), l AS (
                 SELECT pg_catalog.count("classid") AS "classid", "objid" FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessShareLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 5 AND "database" OPERATOR(pg_catalog.=) %2$i GROUP BY "objid"
             ), s AS (
@@ -757,7 +756,7 @@ static void work_type(const Work *w) {
     StringInfoData src;
     set_ps_display_my("type");
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'TAKE', 'WORK', 'DONE', 'STOP')), w->schema_type);
+    appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')), w->schema_type);
     SPI_connect_my(src.data);
     parseTypeStringMy(w->schema_type, &type, &typmod);
     if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
@@ -837,8 +836,14 @@ static void work_update(const Work *w) {
             IF NOT EXISTS (SELECT * FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) 'wake_up' AND tgrelid OPERATOR(pg_catalog.=) %2$i AND tgtype OPERATOR(pg_catalog.&) 1 OPERATOR(pg_catalog.<>) 1 AND tgtype OPERATOR(pg_catalog.&) 66 OPERATOR(pg_catalog.<>) 2 AND tgtype OPERATOR(pg_catalog.&) 66 OPERATOR(pg_catalog.<>) 64 AND tgtype OPERATOR(pg_catalog.&) 4 OPERATOR(pg_catalog.<>) 0) THEN
                 CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH STATEMENT EXECUTE PROCEDURE %4$s.%5$s();
             END IF;
+            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_enum WHERE enumtypid OPERATOR(pg_catalog.=) '%8$s'::pg_catalog.regtype AND enumlabel OPERATOR(pg_catalog.=) 'GONE') THEN
+                ALTER TYPE %8$s ADD VALUE 'GONE' AFTER 'PLAN';
+            END IF;
+            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_enum WHERE enumtypid OPERATOR(pg_catalog.=) '%8$s'::pg_catalog.regtype AND enumlabel OPERATOR(pg_catalog.=) 'FAIL') THEN
+                ALTER TYPE %8$s ADD VALUE 'FAIL' AFTER 'DONE';
+            END IF;
         END; $DO$
-    ), w->schema_table, w->shared->oid, wake_up_literal, w->schema, wake_up_quote, w->shared->hash, schema);
+    ), w->schema_table, w->shared->oid, wake_up_literal, w->schema, wake_up_quote, w->shared->hash, schema, w->schema_type);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
