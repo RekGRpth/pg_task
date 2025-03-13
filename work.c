@@ -470,9 +470,6 @@ static void work_shmem_exit(int code, Datum arg) {
         }
         work_finish(t);
     }
-    if (!code) {
-        if (!ShutdownRequestPending) init_conf(true);
-    }
 }
 
 static void work_remote(Task *t) {
