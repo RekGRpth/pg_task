@@ -307,9 +307,15 @@ static void task_shmem_exit(int code, Datum arg) {
     shared_free(DatumGetInt32(arg));
 }
 
+static void task_reload(void) {
+    ConfigReloadPending = false;
+    ProcessConfigFile(PGC_SIGHUP);
+}
+
 static void task_latch(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
+    if (ConfigReloadPending) task_reload();
 }
 
 void task_free(Task *t) {
@@ -321,6 +327,19 @@ void task_free(Task *t) {
     if (t->remote) { pfree(t->remote); t->remote = NULL; }
 }
 
+#if PG_VERSION_NUM < 130000
+static void
+SignalHandlerForConfigReload(SIGNAL_ARGS)
+{
+	int			save_errno = errno;
+
+	ConfigReloadPending = true;
+	SetLatch(MyLatch);
+
+	errno = save_errno;
+}
+#endif
+
 void task_main(Datum main_arg) {
     const char *application_name;
     StringInfoData oid, schema_table, schema_type;
@@ -330,6 +349,7 @@ void task_main(Datum main_arg) {
     task->shared = init_shared(main_arg);
     before_shmem_exit(task_shmem_exit, main_arg);
     if (!task->shared->in_use) return;
+    pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
     task->work->data = quote_identifier(task->shared->data);
     task->work->schema = quote_identifier(task->shared->schema);
