@@ -43,7 +43,6 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 #include <utils/regproc.h>
 #endif
 
-static long current_timeout;
 static dlist_head head;
 static volatile uint64 idle_count = 0;
 static Work work = {0};
@@ -296,7 +295,8 @@ static void work_reset(const Work *w) {
     set_ps_display_my("idle");
 }
 
-static void work_timeout(const Work *w) {
+static long work_timeout(const Work *w) {
+    long timeout;
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     set_ps_display_my("timeout");
@@ -315,11 +315,12 @@ static void work_timeout(const Work *w) {
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(src.data, plan, NULL, NULL, SPI_OK_SELECT);
-    current_timeout = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "min", false, INT8OID)) : -1;
-    elog(DEBUG1, "current_timeout = %li", current_timeout);
+    timeout = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "min", false, INT8OID)) : -1;
+    elog(DEBUG1, "timeout = %li", timeout);
     SPI_finish_my();
     set_ps_display_my("idle");
-    idle_count = 0;
+    // idle_count = 0;
+    return timeout;
 }
 
 static void work_reload(const Work *w) {
@@ -960,9 +961,7 @@ void work_main(Datum main_arg) {
             INSTR_TIME_SET_CURRENT(start_time_sleep);
             current_sleep = work.shared->sleep;
         }
-        current_timeout = Min(current_reset, current_sleep);
-        if (idle_count >= (uint64)init_work_idle()) work_timeout(&work);
-        nevents = WaitEventSetWaitMy(set, current_timeout, events, nevents);
+        nevents = WaitEventSetWaitMy(set, idle_count >= (uint64)init_work_idle() ? work_timeout(&work) : Min(current_reset, current_sleep), events, nevents);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
@@ -970,14 +969,16 @@ void work_main(Datum main_arg) {
             if (event->events & WL_SOCKET_READABLE) work_readable(event->user_data);
             if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
-        INSTR_TIME_SET_CURRENT(current_time_reset);
-        INSTR_TIME_SUBTRACT(current_time_reset, start_time_reset);
-        current_reset = work.shared->reset - (long)INSTR_TIME_GET_MILLISEC(current_time_reset);
-        if (current_reset <= 0) work_reset(&work);
-        INSTR_TIME_SET_CURRENT(current_time_sleep);
-        INSTR_TIME_SUBTRACT(current_time_sleep, start_time_sleep);
-        current_sleep = work.shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_time_sleep);
-        if (current_sleep <= 0) work_sleep(&work);
+        if (idle_count < (uint64)init_work_idle()) {
+            INSTR_TIME_SET_CURRENT(current_time_reset);
+            INSTR_TIME_SUBTRACT(current_time_reset, start_time_reset);
+            current_reset = work.shared->reset - (long)INSTR_TIME_GET_MILLISEC(current_time_reset);
+            if (current_reset <= 0) work_reset(&work);
+            INSTR_TIME_SET_CURRENT(current_time_sleep);
+            INSTR_TIME_SUBTRACT(current_time_sleep, start_time_sleep);
+            current_sleep = work.shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_time_sleep);
+            if (current_sleep <= 0) work_sleep(&work);
+        }
         FreeWaitEventSet(set);
         pfree(events);
     }
