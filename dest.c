@@ -3,6 +3,10 @@
 #include <unistd.h>
 #include <utils/lsyscache.h>
 
+#ifndef MemoryContextResetAndDeleteChildren
+#define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
+#endif
+
 static Task task = {0};
 
 Task *get_task(void) {

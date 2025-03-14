@@ -57,10 +57,6 @@ void SignalHandlerForConfigReload(SIGNAL_ARGS);
 #define stringToQualifiedNameListMy(string) stringToQualifiedNameList(string)
 #endif
 
-#ifndef MemoryContextResetAndDeleteChildren
-#define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
-#endif
-
 typedef struct Shared {
     bool in_use;
     bool spi;
