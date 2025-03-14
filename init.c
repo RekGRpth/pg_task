@@ -343,7 +343,7 @@ int init_bgw_main_arg(Shared *s) {
     return -1;
 }
 
-void shared_free(int slot) {
+void init_free(int slot) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
     pg_read_barrier();
     MemSet(&shared[slot], 0, sizeof(Shared));

@@ -182,7 +182,7 @@ void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len
 void append_with_tabs(StringInfo buf, const char *str);
 void initStringInfoMy(StringInfo buf);
 void _PG_init(void);
-void shared_free(int slot);
+void init_free(int slot);
 void SPI_connect_my(const char *src);
 void SPI_cursor_close_my(Portal portal);
 void SPI_cursor_fetch_my(const char *src, Portal portal, bool forward, long count);

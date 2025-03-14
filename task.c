@@ -301,7 +301,7 @@ void task_error(Task *t) {
 
 static void task_shmem_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
-    shared_free(DatumGetInt32(arg));
+    init_free(DatumGetInt32(arg));
 }
 
 static void task_reload(void) {
