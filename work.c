@@ -1,43 +1,45 @@
 #include "include.h"
 
-#if PG_VERSION_NUM < 100000
-#include <access/hash.h>
-#endif
-#if PG_VERSION_NUM >= 120000
-#include <access/relation.h>
-#endif
 #include <catalog/namespace.h>
 #include <catalog/pg_collation.h>
-#if PG_VERSION_NUM < 130000
-#include <catalog/pg_type.h>
-#endif
-#if PG_VERSION_NUM < 90600
-#include "latch.h"
-#endif
 #include <libpq/libpq-be.h>
-#if PG_VERSION_NUM < 130000
-#include <miscadmin.h>
-#endif
 #include <parser/parse_type.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
-#if PG_VERSION_NUM >= 130000
-#include <postmaster/interrupt.h>
-#endif
 #include <storage/ipc.h>
 #include <storage/proc.h>
 #include <tcop/utility.h>
 #include <utils/builtins.h>
 #include <utils/memutils.h>
-#if PG_VERSION_NUM < 150000
-#include <utils/rel.h>
+#include <utils/ps_status.h>
+
+#if PG_VERSION_NUM < 90600
+#include "latch.h"
 #endif
+
+#if PG_VERSION_NUM >= 100000
+#include <utils/regproc.h>
+#else
+#include <access/hash.h>
+#endif
+
+#if PG_VERSION_NUM >= 120000
+#include <access/relation.h>
+#endif
+
+#if PG_VERSION_NUM >= 130000
+#include <postmaster/interrupt.h>
+#else
+#include <catalog/pg_type.h>
+#include <miscadmin.h>
+#endif
+
 #if PG_VERSION_NUM < 140000
 #include <utils/timestamp.h>
 #endif
-#include <utils/ps_status.h>
-#if PG_VERSION_NUM >= 100000
-#include <utils/regproc.h>
+
+#if PG_VERSION_NUM < 150000
+#include <utils/rel.h>
 #endif
 
 static dlist_head head;
