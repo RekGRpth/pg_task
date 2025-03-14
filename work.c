@@ -1,5 +1,9 @@
 #include "include.h"
 
+#if PG_VERSION_NUM < 90600
+#include "latch.h"
+#endif
+
 #include <catalog/namespace.h>
 #include <catalog/pg_collation.h>
 #include <libpq/libpq-be.h>
@@ -12,10 +16,6 @@
 #include <utils/builtins.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
-
-#if PG_VERSION_NUM < 90600
-#include "latch.h"
-#endif
 
 #if PG_VERSION_NUM >= 100000
 #include <utils/regproc.h>
