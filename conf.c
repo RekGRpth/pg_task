@@ -53,14 +53,14 @@ static void conf_data(const Work *w) {
     set_ps_display_my("idle");
 }
 
+static void conf_exit(int code, Datum arg) {
+    elog(DEBUG1, "code = %i", code);
+}
+
 static void conf_free(Work *w) {
     dlist_delete(&w->node);
     pfree(w->shared);
     pfree(w);
-}
-
-static void conf_exit(int code, Datum arg) {
-    elog(DEBUG1, "code = %i", code);
 }
 
 static void conf_user(const Work *w) {
