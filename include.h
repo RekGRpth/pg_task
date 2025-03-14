@@ -32,15 +32,9 @@
 #endif
 
 #if PG_VERSION_NUM >= 100000
-#define shm_toc_lookup_my(toc, key) shm_toc_lookup(toc, key, false)
 #define WaitEventSetWaitMy(set, timeout, occurred_events, nevents) WaitEventSetWait(set, timeout, occurred_events, nevents, PG_WAIT_EXTENSION)
 #define WaitLatchMy(latch, wakeEvents, timeout) WaitLatch(latch, wakeEvents, timeout, PG_WAIT_EXTENSION)
 #else
-#ifdef GP_VERSION_NUM
-#define shm_toc_lookup_my(toc, key) shm_toc_lookup(toc, key, false)
-#else
-#define shm_toc_lookup_my(toc, key) shm_toc_lookup(toc, key)
-#endif
 #define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
 #define WaitEventSetWaitMy(set, timeout, occurred_events, nevents) WaitEventSetWait(set, timeout, occurred_events, nevents)
 #define WaitLatchMy(latch, wakeEvents, timeout) WaitLatch(latch, wakeEvents, timeout)
