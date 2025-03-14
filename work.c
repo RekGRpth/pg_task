@@ -92,20 +92,29 @@ static void work_check(const Work *w) {
             WITH j AS (
                 SELECT  COALESCE(COALESCE("data", "user"), pg_catalog.current_setting('pg_task.data')) AS "data",
                         EXTRACT(epoch FROM COALESCE("reset", pg_catalog.current_setting('pg_task.reset')::pg_catalog.interval))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000 AS "reset",
+                        COALESCE("run", pg_catalog.current_setting('pg_task.run')::pg_catalog.int4) AS "run",
                         COALESCE("schema", pg_catalog.current_setting('pg_task.schema')) AS "schema",
                         COALESCE("table", pg_catalog.current_setting('pg_task.table')) AS "table",
                         COALESCE("sleep", pg_catalog.current_setting('pg_task.sleep')::pg_catalog.int8) AS "sleep",
                         COALESCE("spi", pg_catalog.current_setting('pg_task.spi')::pg_catalog.bool) AS "spi",
                         COALESCE(COALESCE("user", "data"), pg_catalog.current_setting('pg_task.user')) AS "user"
-                FROM    pg_catalog.jsonb_to_recordset(pg_catalog.current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "schema" text, "table" text, "sleep" int8, "spi" bool, "user" text)
+                FROM    pg_catalog.jsonb_to_recordset(pg_catalog.current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "run" int4, "schema" text, "table" text, "sleep" int8, "spi" bool, "user" text)
             ) SELECT    DISTINCT j.* FROM j WHERE "user" OPERATOR(pg_catalog.=) current_user AND "data" OPERATOR(pg_catalog.=) current_catalog AND pg_catalog.hashtext(pg_catalog.concat_ws('.', "schema", "table"))::pg_catalog.int4 OPERATOR(pg_catalog.=) %1$i
         ), w->shared->hash);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(src.data, plan, NULL, NULL, SPI_OK_SELECT);
-    if (!SPI_processed) ShutdownRequestPending = true;
-    elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, spi = %s, SPI_processed = %li", w->shared->sleep, w->shared->reset, w->shared->schema, w->shared->table, w->shared->spi ? "true" : "false", (long)SPI_processed);
+    if (!SPI_processed) ShutdownRequestPending = true; else {
+        HeapTuple val = SPI_tuptable->vals[0];
+        TupleDesc tupdesc = SPI_tuptable->tupdesc;
+        w->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false, INT8OID));
+        w->shared->run = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "run", false, INT4OID));
+        w->shared->sleep = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "sleep", false, INT8OID));
+        w->shared->spi = DatumGetBool(SPI_getbinval_my(val, tupdesc, "spi", false, BOOLOID));
+        elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, run = %i, spi = %s, SPI_processed = %li", w->shared->sleep, w->shared->reset, w->shared->schema, w->shared->table, w->shared->run, w->shared->spi ? "true" : "false", (long)SPI_processed);
+        SPI_freetuple(val);
+    }
     SPI_finish_my();
     set_ps_display_my("idle");
 }
