@@ -31,8 +31,10 @@
 
 #if PG_VERSION_NUM >= 100000
 #define createdb_my(pstate, stmt) createdb(pstate, stmt)
+#define CreateRoleMy(pstate, stmt) CreateRole(pstate, stmt)
 #else
 #define createdb_my(pstate, stmt) createdb(stmt)
+#define CreateRoleMy(pstate, stmt) CreateRole(stmt)
 #endif
 
 static dlist_head head;
