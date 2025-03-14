@@ -59,7 +59,7 @@ static void conf_free(Work *w) {
     pfree(w);
 }
 
-static void conf_shmem_exit(int code, Datum arg) {
+static void conf_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
 }
 
@@ -210,7 +210,7 @@ static void conf_latch(void) {
 }
 
 void conf_main(Datum main_arg) {
-    before_shmem_exit(conf_shmem_exit, main_arg);
+    before_shmem_exit(conf_exit, main_arg);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL);
