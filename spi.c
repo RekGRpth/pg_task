@@ -1,9 +1,5 @@
 #include "include.h"
 
-#if PG_VERSION_NUM < 150000
-#include <access/xact.h>
-#include <commands/async.h>
-#endif
 #include <executor/spi_priv.h>
 #include <pgstat.h>
 #include <storage/proc.h>
@@ -12,6 +8,11 @@
 #include <utils/memutils.h>
 #include <utils/snapmgr.h>
 #include <utils/timeout.h>
+
+#if PG_VERSION_NUM < 150000
+#include <access/xact.h>
+#include <commands/async.h>
+#endif
 
 typedef enum STMT_TYPE {
     STMT_BIND,
