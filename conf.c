@@ -2,30 +2,31 @@
 
 #include <commands/dbcommands.h>
 #include <commands/user.h>
-#if PG_VERSION_NUM < 130000
-#include <catalog/pg_type.h>
-#include <miscadmin.h>
-#endif
 #include <nodes/makefuncs.h>
-#if PG_VERSION_NUM < 100000
-#include <parser/parse_node.h>
-#endif
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
-#if PG_VERSION_NUM >= 130000
-#include <postmaster/interrupt.h>
-#endif
 #include <storage/ipc.h>
 #include <storage/proc.h>
 #include <utils/acl.h>
-#if PG_VERSION_NUM < 150000
-#include <utils/guc.h>
-#endif
 #include <utils/builtins.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
+
 #if PG_VERSION_NUM >= 100000
 #include <utils/regproc.h>
+#else
+#include <parser/parse_node.h>
+#endif
+
+#if PG_VERSION_NUM >= 130000
+#include <postmaster/interrupt.h>
+#else
+#include <catalog/pg_type.h>
+#include <miscadmin.h>
+#endif
+
+#if PG_VERSION_NUM < 150000
+#include <utils/guc.h>
 #endif
 
 static dlist_head head;
