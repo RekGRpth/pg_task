@@ -49,6 +49,16 @@
 #define WaitEventSetWaitMy(set, timeout, occurred_events, nevents) WaitEventSetWait(set, timeout, occurred_events, nevents)
 #endif
 
+#if PG_VERSION_NUM >= 120000
+#define relation_openrv_extended_my(relation, lockmode, missing_ok) relation_openrv_extended(relation, lockmode, false)
+#else
+#ifdef GP_VERSION_NUM
+#define relation_openrv_extended_my(relation, lockmode, missing_ok) relation_openrv_extended(relation, lockmode, missing_ok, false)
+#else
+#define relation_openrv_extended_my(relation, lockmode, missing_ok) relation_openrv_extended(relation, lockmode, missing_ok)
+#endif
+#endif
+
 static dlist_head head;
 static volatile uint64 idle_count = 0;
 static Work work = {0};

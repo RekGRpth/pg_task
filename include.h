@@ -43,16 +43,6 @@
 #define BackgroundWorkerInitializeConnectionMy(dbname, username) BackgroundWorkerInitializeConnection(dbname, username)
 #endif
 
-#if PG_VERSION_NUM >= 120000
-#define relation_openrv_extended_my(relation, lockmode, missing_ok) relation_openrv_extended(relation, lockmode, false)
-#else
-#ifdef GP_VERSION_NUM
-#define relation_openrv_extended_my(relation, lockmode, missing_ok) relation_openrv_extended(relation, lockmode, missing_ok, false)
-#else
-#define relation_openrv_extended_my(relation, lockmode, missing_ok) relation_openrv_extended(relation, lockmode, missing_ok)
-#endif
-#endif
-
 #if PG_VERSION_NUM >= 130000
 #define set_ps_display_my(activity) set_ps_display(activity)
 #else
