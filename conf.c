@@ -29,6 +29,12 @@
 #include <utils/guc.h>
 #endif
 
+#if PG_VERSION_NUM >= 100000
+#define createdb_my(pstate, stmt) createdb(pstate, stmt)
+#else
+#define createdb_my(pstate, stmt) createdb(stmt)
+#endif
+
 static dlist_head head;
 
 static void conf_data(const Work *w) {

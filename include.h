@@ -32,14 +32,12 @@
 #endif
 
 #if PG_VERSION_NUM >= 100000
-#define createdb_my(pstate, stmt) createdb(pstate, stmt)
 #define CreateRoleMy(pstate, stmt) CreateRole(pstate, stmt)
 #define makeDefElemMy(name, arg) makeDefElem(name, arg, -1)
 #define shm_toc_lookup_my(toc, key) shm_toc_lookup(toc, key, false)
 #define WaitEventSetWaitMy(set, timeout, occurred_events, nevents) WaitEventSetWait(set, timeout, occurred_events, nevents, PG_WAIT_EXTENSION)
 #define WaitLatchMy(latch, wakeEvents, timeout) WaitLatch(latch, wakeEvents, timeout, PG_WAIT_EXTENSION)
 #else
-#define createdb_my(pstate, stmt) createdb(stmt)
 #define CreateRoleMy(pstate, stmt) CreateRole(stmt)
 #define makeDefElemMy(name, arg) makeDefElem(name, arg)
 #ifdef GP_VERSION_NUM
