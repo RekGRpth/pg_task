@@ -209,19 +209,6 @@ static void conf_latch(void) {
     if (ConfigReloadPending) conf_reload();
 }
 
-#if PG_VERSION_NUM < 130000
-static void
-SignalHandlerForConfigReload(SIGNAL_ARGS)
-{
-	int			save_errno = errno;
-
-	ConfigReloadPending = true;
-	SetLatch(MyLatch);
-
-	errno = save_errno;
-}
-#endif
-
 void conf_main(Datum main_arg) {
     before_shmem_exit(conf_shmem_exit, main_arg);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);

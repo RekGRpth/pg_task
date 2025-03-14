@@ -353,3 +353,16 @@ void shared_free(int slot) {
 Shared *init_shared(Datum main_arg) {
     return &shared[DatumGetInt32(main_arg)];
 }
+
+#if PG_VERSION_NUM < 130000
+void
+SignalHandlerForConfigReload(SIGNAL_ARGS)
+{
+	int			save_errno = errno;
+
+	ConfigReloadPending = true;
+	SetLatch(MyLatch);
+
+	errno = save_errno;
+}
+#endif

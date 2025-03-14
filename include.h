@@ -67,6 +67,8 @@
 #define set_ps_display_my(activity) set_ps_display(activity)
 #else
 #define set_ps_display_my(activity) set_ps_display(activity, false)
+extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
+void SignalHandlerForConfigReload(SIGNAL_ARGS);
 #endif
 
 #if PG_VERSION_NUM >= 160000

@@ -8,9 +8,6 @@
 #include <postmaster/bgworker.h>
 #if PG_VERSION_NUM >= 130000
 #include <postmaster/interrupt.h>
-#else
-#include <signal.h>
-extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 #endif
 #include <storage/ipc.h>
 #include <storage/proc.h>
@@ -326,19 +323,6 @@ void task_free(Task *t) {
     if (t->output.data) { pfree(t->output.data); t->output.data = NULL; t->output.len = 0; }
     if (t->remote) { pfree(t->remote); t->remote = NULL; }
 }
-
-#if PG_VERSION_NUM < 130000
-static void
-SignalHandlerForConfigReload(SIGNAL_ARGS)
-{
-	int			save_errno = errno;
-
-	ConfigReloadPending = true;
-	SetLatch(MyLatch);
-
-	errno = save_errno;
-}
-#endif
 
 void task_main(Datum main_arg) {
     const char *application_name;
