@@ -163,7 +163,7 @@ const char *error_severity(int elevel);
 const char *init_null(void);
 Datum CStringGetTextDatumMy(const char *s);
 Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid);
-int init_bgw_main_arg(Shared *ws);
+int init_arg(Shared *ws);
 int init_conf_fetch(void);
 int init_task_fetch(void);
 int init_work_idle(void);
