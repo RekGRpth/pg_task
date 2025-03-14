@@ -1,20 +1,21 @@
 #include "include.h"
 
-#if PG_VERSION_NUM < 130000
-#include <catalog/pg_type.h>
-#include <miscadmin.h>
-#endif
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
-#if PG_VERSION_NUM >= 130000
-#include <postmaster/interrupt.h>
-#endif
 #include <storage/ipc.h>
 #include <storage/proc.h>
 #include <tcop/utility.h>
 #include <utils/builtins.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
+
+#if PG_VERSION_NUM >= 130000
+#include <postmaster/interrupt.h>
+#else
+#include <catalog/pg_type.h>
+#include <miscadmin.h>
+#endif
+
 #if PG_VERSION_NUM < 140000
 #include <utils/timestamp.h>
 #endif
