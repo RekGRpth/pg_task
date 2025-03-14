@@ -69,7 +69,6 @@ static shmem_request_hook_type prev_shmem_request_hook = NULL;
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 static Shared *shared = NULL;
 #if PG_VERSION_NUM < 130000
-#include <signal.h>
 volatile sig_atomic_t ShutdownRequestPending = false;
 #endif
 

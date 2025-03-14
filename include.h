@@ -12,6 +12,10 @@
 #include <lib/stringinfo.h>
 #endif
 
+#if PG_VERSION_NUM < 130000
+#include <signal.h>
+#endif
+
 #if PG_VERSION_NUM >= 160000
 #include <nodes/miscnodes.h>
 #endif
