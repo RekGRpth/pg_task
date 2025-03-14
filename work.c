@@ -59,6 +59,12 @@
 #endif
 #endif
 
+#if PG_VERSION_NUM >= 160000
+#define parseTypeStringMy(str, typeid_p, typmod_p) parseTypeString(str, typeid_p, typmod_p, (Node *)&(ErrorSaveContext){T_ErrorSaveContext})
+#else
+#define parseTypeStringMy(str, typeid_p, typmod_p) parseTypeString(str, typeid_p, typmod_p, true)
+#endif
+
 static dlist_head head;
 static volatile uint64 idle_count = 0;
 static Work work = {0};
