@@ -28,7 +28,7 @@ endif
 dest.o: postgres.c
 
 postgres.c:
-	curl -so $@ "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || curl -so $@ "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/postgres.c" || curl -so $@ "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
+	curl -fLso $@ "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || curl -fLso $@ "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/postgres.c" || curl -fLso $@ "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
 	sed -i 's/TRACE_POSTGRESQL_QUERY_/\/\/TRACE_POSTGRESQL_QUERY_/' $@
 	sed -i 's/BeginCommand/BeginCommandMy/' $@
 	sed -i 's/CreateDestReceiver/CreateDestReceiverMy/' $@
@@ -41,9 +41,9 @@ PG9495 = $(shell $(PG_CONFIG) --version | grep -E " 9\.4| 9\.5" > /dev/null && e
 ifeq ($(PG9495),yes)
 work.o: latch.h
 latch.h:
-	curl -so $@ "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/include/storage/latch.h"
+	curl -fLso $@ "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/include/storage/latch.h"
 latch.c: latch.h
-	curl -so $@ "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/backend/storage/ipc/latch.c"
+	curl -fLso $@ "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/backend/storage/ipc/latch.c"
 	sed -i 's/storage\/latch/latch/' $@
 OBJS = init.o conf.o work.o task.o spi.o dest.o latch.o
 EXTRA_CLEAN = postgres.c latch.c latch.h
