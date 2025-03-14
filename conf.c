@@ -205,7 +205,6 @@ static void conf_check(void) {
     } while (SPI_processed);
     SPI_cursor_close_my(portal);
     SPI_finish_my();
-    pfree(src.data);
     set_ps_display_my("idle");
     dlist_foreach_modify(iter, &head) conf_work(dlist_container(Work, node, iter.cur));
 }
