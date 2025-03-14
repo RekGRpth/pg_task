@@ -65,6 +65,12 @@
 #define parseTypeStringMy(str, typeid_p, typmod_p) parseTypeString(str, typeid_p, typmod_p, true)
 #endif
 
+#if PG_VERSION_NUM >= 170000
+#define CreateWaitEventSetMy(nevents) CreateWaitEventSet(NULL, nevents)
+#else
+#define CreateWaitEventSetMy(nevents) CreateWaitEventSet(TopMemoryContext, nevents)
+#endif
+
 static dlist_head head;
 static volatile uint64 idle_count = 0;
 static Work work = {0};

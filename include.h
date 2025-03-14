@@ -57,12 +57,6 @@ void SignalHandlerForConfigReload(SIGNAL_ARGS);
 #define stringToQualifiedNameListMy(string) stringToQualifiedNameList(string)
 #endif
 
-#if PG_VERSION_NUM >= 170000
-#define CreateWaitEventSetMy(nevents) CreateWaitEventSet(NULL, nevents)
-#else
-#define CreateWaitEventSetMy(nevents) CreateWaitEventSet(TopMemoryContext, nevents)
-#endif
-
 #ifndef MemoryContextResetAndDeleteChildren
 #define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
 #endif
