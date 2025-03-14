@@ -5,12 +5,13 @@
 #define SQL(...) #__VA_ARGS__
 
 #include <postgres.h>
-
 #include <executor/spi.h>
+#include <libpq-fe.h>
+
 #if PG_VERSION_NUM < 90500
 #include <lib/stringinfo.h>
 #endif
-#include <libpq-fe.h>
+
 #if PG_VERSION_NUM >= 160000
 #include <nodes/miscnodes.h>
 #endif
