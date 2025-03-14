@@ -1,19 +1,21 @@
 #include "include.h"
 
-#if PG_VERSION_NUM < 130000
-#include <catalog/pg_type.h>
-#include <miscadmin.h>
-#endif
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
-#if PG_VERSION_NUM < 90500
-#include <storage/barrier.h>
-#endif
 #include <storage/ipc.h>
 #include <storage/proc.h>
 #include <tcop/utility.h>
 #include <utils/builtins.h>
 #include <utils/memutils.h>
+
+#if PG_VERSION_NUM < 90500
+#include <storage/barrier.h>
+#endif
+
+#if PG_VERSION_NUM < 130000
+#include <catalog/pg_type.h>
+#include <miscadmin.h>
+#endif
 
 PG_MODULE_MAGIC;
 
