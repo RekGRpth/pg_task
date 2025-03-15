@@ -3,6 +3,7 @@
 #include <access/printtup.h>
 #include <access/xact.h>
 #include <commands/prepare.h>
+#include <miscadmin.h>
 #include <parser/analyze.h>
 #include <pgstat.h>
 #include <replication/slot.h>
@@ -22,7 +23,7 @@
 #include <jit/jit.h>
 #endif
 
-#if PG_VERSION_NUM >= 120000
+#if PG_VERSION_NUM >= 140000
 #include <utils/backend_status.h>
 #endif
 
@@ -33,6 +34,10 @@
 static bool xact_started = false;
 static CachedPlanSource *unnamed_stmt_psrc = NULL;
 static Task task = {0};
+
+#if PG_VERSION_NUM < 120000
+static bool stmt_timeout_active = false;
+#endif
 
 Task *get_task(void) {
     return &task;
