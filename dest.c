@@ -128,7 +128,7 @@ static void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force
 }
 #else
 static void BeginCommandMy(const char *commandTag, CommandDest dest) {
-    Task *task = get_task();
+    elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, commandTag);
 }
 
 static void EndCommandMy(const char *commandTag, CommandDest dest) {
