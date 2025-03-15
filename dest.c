@@ -235,7 +235,7 @@ static void dest_catch(void) {
         MemoryContextSwitchTo(TopMemoryContext);
     }
     FlushErrorState();
-    if (!task.shared->spi) {
+    if (task.shared->spi) SPI_restore_connection(); else {
         xact_started = false;
         RESUME_INTERRUPTS();
     }
