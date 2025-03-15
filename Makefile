@@ -27,8 +27,10 @@ endif
 
 dest.o: exec_simple_query.c
 
-exec_simple_query.c:
+postgres.c:
 	curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
+
+exec_simple_query.c: postgres.c
 	pcregrep -M '(?s)^static void\n^enable_statement_timeout\(.*?^}' postgres.c >>$@
 	pcregrep -M '(?s)^static void\n^start_xact_command\(.*?^}' postgres.c >>$@
 	pcregrep -M '(?s)^static void\n^drop_unnamed_stmt\(.*?^}' postgres.c >>$@
