@@ -2,7 +2,6 @@
 
 #include <access/printtup.h>
 #include <commands/prepare.h>
-#include <jit/jit.h>
 #include <parser/analyze.h>
 #include <pgstat.h>
 #include <replication/slot.h>
@@ -11,12 +10,20 @@
 #include <tcop/tcopprot.h>
 #include <tcop/utility.h>
 #include <unistd.h>
-#include <utils/backend_status.h>
 #include <utils/lsyscache.h>
 #include <utils/guc.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
+#include <utils/snapmgr.h>
 #include <utils/timeout.h>
+
+#if PG_VERSION_NUM >= 110000
+#include <jit/jit.h>
+#endif
+
+#if PG_VERSION_NUM >= 120000
+#include <utils/backend_status.h>
+#endif
 
 #ifndef MemoryContextResetAndDeleteChildren
 #define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
