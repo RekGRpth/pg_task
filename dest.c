@@ -35,7 +35,7 @@ static bool xact_started = false;
 static CachedPlanSource *unnamed_stmt_psrc = NULL;
 static Task task = {0};
 
-#if PG_VERSION_NUM < 120000
+#if PG_VERSION_NUM >= 110000 && PG_VERSION_NUM < 130000
 static bool stmt_timeout_active = false;
 #endif
 
