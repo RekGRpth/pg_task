@@ -30,25 +30,25 @@ dest.o: exec_simple_query.c
 exec_simple_query.c:
 	curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
 	echo "static void" >$@
-	sed -e '/^enable_statement_timeout(/,/^}/!d' postgres.c >>$@
+	sed '/^enable_statement_timeout(/,/^}/!d' postgres.c >>$@
 	echo "static void" >>$@
-	sed -e '/^start_xact_command(/,/^}/!d' postgres.c >>$@
+	sed '/^start_xact_command(/,/^}/!d' postgres.c >>$@
 	echo "static void" >>$@
-	sed -e '/^drop_unnamed_stmt(/,/^}/!d' postgres.c >>$@
+	sed '/^drop_unnamed_stmt(/,/^}/!d' postgres.c >>$@
 	echo "static bool" >>$@
-	sed -e '/^check_log_statement(/,/^}/!d' postgres.c >>$@
+	sed '/^check_log_statement(/,/^}/!d' postgres.c >>$@
 	echo "static int" >>$@
-	sed -e '/^errdetail_execute(/,/^}/!d' postgres.c >>$@
+	sed '/^errdetail_execute(/,/^}/!d' postgres.c >>$@
 	echo "static bool" >>$@
-	sed -e '/^IsTransactionExitStmt(/,/^}/!d' postgres.c >>$@
+	sed '/^IsTransactionExitStmt(/,/^}/!d' postgres.c >>$@
 	echo "static int" >>$@
-	sed -e '/^errdetail_abort(/,/^}/!d' postgres.c >>$@
+	sed '/^errdetail_abort(/,/^}/!d' postgres.c >>$@
 	echo "static void" >>$@
-	sed -e '/^disable_statement_timeout(/,/^}/!d' postgres.c >>$@
+	sed '/^disable_statement_timeout(/,/^}/!d' postgres.c >>$@
 	echo "static void" >>$@
-	sed -e '/^finish_xact_command(/,/^}/!d' postgres.c >>$@
+	sed '/^finish_xact_command(/,/^}/!d' postgres.c >>$@
 	echo "static void" >>$@
-	sed -e '/^exec_simple_query(/,/^}/!d' postgres.c >>$@
+	sed '/^exec_simple_query(/,/^}/!d' postgres.c >>$@
 	sed -i 's/TRACE_POSTGRESQL_QUERY_/\/\/TRACE_POSTGRESQL_QUERY_/' $@
 	sed -i 's/BeginCommand/BeginCommandMy/' $@
 	sed -i 's/CreateDestReceiver/CreateDestReceiverMy/' $@
