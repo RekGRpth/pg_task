@@ -2,8 +2,19 @@
 
 #include <access/xact.h>
 #include <miscadmin.h>
+#include <pgstat.h>
+#include <replication/slot.h>
+#include <storage/proc.h>
+#include <tcop/tcopprot.h>
 #include <unistd.h>
 #include <utils/lsyscache.h>
+#include <utils/memutils.h>
+#include <utils/ps_status.h>
+#include <utils/timeout.h>
+
+#if PG_VERSION_NUM >= 110000
+#include <jit/jit.h>
+#endif
 
 #ifndef MemoryContextResetAndDeleteChildren
 #define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
@@ -93,7 +104,7 @@ DestReceiver myDestReceiver = {
     .mydest = DestDebug,
 };
 
-static DestReceiver *CreateDestReceiverMy(CommandDest dest) {
+DestReceiver *CreateDestReceiverMy(CommandDest dest) {
     elog(DEBUG1, "id = %li", task.shared->id);
 #if PG_VERSION_NUM >= 120000
     return unconstify(DestReceiver *, &myDestReceiver);
@@ -106,16 +117,16 @@ static void ReadyForQueryMy(CommandDest dest) {
     elog(DEBUG1, "id = %li", task.shared->id);
 }
 
-static void NullCommandMy(CommandDest dest) {
+void NullCommandMy(CommandDest dest) {
     elog(DEBUG1, "id = %li", task.shared->id);
 }
 
 #if PG_VERSION_NUM >= 130000
-static void BeginCommandMy(CommandTag commandTag, CommandDest dest) {
+void BeginCommandMy(CommandTag commandTag, CommandDest dest) {
     elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, GetCommandTagName(commandTag));
 }
 
-static void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undecorated_output) {
+void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undecorated_output) {
     char completionTag[COMPLETION_TAG_BUFSIZE];
     CommandTag tag = qc->commandTag;
     const char *tagname = GetCommandTagName(tag);
@@ -129,11 +140,11 @@ static void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force
     }
 }
 #else
-static void BeginCommandMy(const char *commandTag, CommandDest dest) {
+void BeginCommandMy(const char *commandTag, CommandDest dest) {
     elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, commandTag);
 }
 
-static void EndCommandMy(const char *commandTag, CommandDest dest) {
+void EndCommandMy(const char *commandTag, CommandDest dest) {
     elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, commandTag);
     if (task.skip) task.skip = 0; else {
         if (!task.output.data) initStringInfoMy(&task.output);
@@ -142,12 +153,6 @@ static void EndCommandMy(const char *commandTag, CommandDest dest) {
     }
 }
 #endif
-
-#if PG_VERSION_NUM < 90500
-#define PQArgBlock undef
-#endif
-
-#include "exec_simple_query.c"
 
 static void dest_execute(void) {
     if (!task.shared->spi) {
@@ -238,7 +243,7 @@ static void dest_catch(void) {
     }
     FlushErrorState();
     if (!task.shared->spi) {
-        xact_started = false;
+        // xact_started = false;
         RESUME_INTERRUPTS();
     }
 }

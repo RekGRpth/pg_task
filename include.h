@@ -148,6 +148,7 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 Task *get_task(void);
 void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len, bool string, char escape, char quote);
 void append_with_tabs(StringInfo buf, const char *str);
+void exec_simple_query(const char *query_string);
 void initStringInfoMy(StringInfo buf);
 void _PG_init(void);
 void init_free(int slot);
@@ -160,5 +161,15 @@ void SPI_finish_my(void);
 void task_error(Task *t);
 void task_free(Task *t);
 Work *get_work(void);
+
+DestReceiver *CreateDestReceiverMy(CommandDest dest);
+void NullCommandMy(CommandDest dest);
+#if PG_VERSION_NUM >= 130000
+void BeginCommandMy(CommandTag commandTag, CommandDest dest);
+void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undecorated_output);
+#else
+void BeginCommandMy(const char *commandTag, CommandDest dest);
+void EndCommandMy(const char *commandTag, CommandDest dest);
+#endif
 
 #endif // _INCLUDE_H_

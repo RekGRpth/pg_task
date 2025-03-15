@@ -25,14 +25,13 @@ else
 	REPO = postgres/postgres
 endif
 
-dest.o: exec_simple_query.c
-
 postgres.c:
 	curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
 
 .ONESHELL:
-exec_simple_query.c: postgres.c
-	cat >$@.i <<EOF
+exec.c: postgres.c
+	cat >$@ <<EOF
+	#include "include.h"
 	#include <access/printtup.h>
 	#include <commands/prepare.h>
 	#include <parser/analyze.h>
@@ -47,6 +46,9 @@ exec_simple_query.c: postgres.c
 	#include <utils/ps_status.h>
 	#include <utils/snapmgr.h>
 	#include <utils/timeout.h>
+	#if PG_VERSION_NUM < 90500
+	#define PQArgBlock undef
+	#endif
 	#if PG_VERSION_NUM >= 110000
 	#include <jit/jit.h>
 	#endif
@@ -59,22 +61,22 @@ exec_simple_query.c: postgres.c
 	static bool xact_started = false;
 	static CachedPlanSource *unnamed_stmt_psrc = NULL;
 	EOF
-	pcregrep -M '(?s)^static void\n^enable_statement_timeout\(.*?^}' postgres.c >>$@.i
-	pcregrep -M '(?s)^static void\n^start_xact_command\(.*?^}' postgres.c >>$@.i
-	pcregrep -M '(?s)^static void\n^drop_unnamed_stmt\(.*?^}' postgres.c >>$@.i
-	pcregrep -M '(?s)^static bool\n^check_log_statement\(.*?^}' postgres.c >>$@.i
-	pcregrep -M '(?s)^static int\n^errdetail_execute\(.*?^}' postgres.c >>$@.i
-	pcregrep -M '(?s)^static bool\n^IsTransactionExitStmt\(.*?^}' postgres.c >>$@.i
-	pcregrep -M '(?s)^static int\n^errdetail_abort\(.*?^}' postgres.c >>$@.i
-	pcregrep -M '(?s)^static void\n^disable_statement_timeout\(.*?^}' postgres.c >>$@.i
-	pcregrep -M '(?s)^static void\n^finish_xact_command\(.*?^}' postgres.c >>$@.i
-	pcregrep -M '(?s)^static void\n^exec_simple_query\(.*?^}' postgres.c >>$@.i
-	sed -i 's/TRACE_POSTGRESQL_QUERY_/\/\/TRACE_POSTGRESQL_QUERY_/' $@.i
-	sed -i 's/BeginCommand/BeginCommandMy/' $@.i
-	sed -i 's/CreateDestReceiver/CreateDestReceiverMy/' $@.i
-	sed -i 's/EndCommand/EndCommandMy/' $@.i
-	sed -i 's/NullCommand/NullCommandMy/' $@.i
-	mv -f $@.i $@
+	pcregrep -M '(?s)^static void\n^enable_statement_timeout\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static void\n^start_xact_command\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static void\n^drop_unnamed_stmt\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static bool\n^check_log_statement\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static int\n^errdetail_execute\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static bool\n^IsTransactionExitStmt\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static int\n^errdetail_abort\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static void\n^disable_statement_timeout\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static void\n^finish_xact_command\(.*?^}' postgres.c >>$@
+	echo "void" >>$@
+	pcregrep -M '(?s)^exec_simple_query\(.*?^}' postgres.c >>$@
+	sed -i 's/TRACE_POSTGRESQL_QUERY_/\/\/TRACE_POSTGRESQL_QUERY_/' $@
+	sed -i 's/BeginCommand/BeginCommandMy/' $@
+	sed -i 's/CreateDestReceiver/CreateDestReceiverMy/' $@
+	sed -i 's/EndCommand/EndCommandMy/' $@
+	sed -i 's/NullCommand/NullCommandMy/' $@
 
 MODULE_big = pg_task
 
@@ -86,12 +88,12 @@ latch.h:
 latch.c: latch.h
 	curl --no-progress-meter -fOL "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/backend/storage/ipc/latch.c"
 	sed -i 's/storage\/latch/latch/' $@
-OBJS = init.o conf.o work.o task.o spi.o dest.o latch.o
-EXTRA_CLEAN = exec_simple_query.c exec_simple_query.i postgres.c latch.c latch.h
+OBJS = init.o conf.o work.o task.o spi.o dest.o latch.o exec.o
+EXTRA_CLEAN = exec.c postgres.c latch.c latch.h
 PG_CFLAGS += -Wno-cpp
 else
-OBJS = init.o conf.o work.o task.o spi.o dest.o
-EXTRA_CLEAN = exec_simple_query.c exec_simple_query.i postgres.c
+OBJS = init.o conf.o work.o task.o spi.o dest.o exec.o
+EXTRA_CLEAN = exec.c postgres.c
 endif
 
 PG94 = $(shell $(PG_CONFIG) --version | grep -E " 8\.| 9\.0| 9\.1| 9\.2| 9\.3" > /dev/null && echo no || echo yes)
