@@ -28,9 +28,14 @@ endif
 exec.o: postgres.c
 
 postgres.c:
-	curl --no-progress-meter -OL "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || \
-	curl --no-progress-meter -OL "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/postgres.c" || \
-	curl --no-progress-meter -OL "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
+	curl --no-progress-meter -OL "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/$@" || \
+	curl --no-progress-meter -OL "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/$@" || \
+	curl --no-progress-meter -OL "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/$@"
+	sed -i 's/TRACE_POSTGRESQL_QUERY_/\/\/TRACE_POSTGRESQL_QUERY_/' $@
+	sed -i 's/BeginCommand/BeginCommandMy/' $@
+	sed -i 's/CreateDestReceiver/CreateDestReceiverMy/' $@
+	sed -i 's/EndCommand/EndCommandMy/' $@
+	sed -i 's/NullCommand/NullCommandMy/' $@
 
 .ONESHELL:
 exec.c: postgres.c
@@ -78,11 +83,6 @@ exec.c: postgres.c
 	pcregrep -M '(?s)^static void\n^finish_xact_command\(.*?^}' postgres.c >>$@
 	echo "void" >>$@
 	pcregrep -M '(?s)^exec_simple_query\(.*?^}' postgres.c >>$@
-	sed -i 's/TRACE_POSTGRESQL_QUERY_/\/\/TRACE_POSTGRESQL_QUERY_/' $@
-	sed -i 's/BeginCommand/BeginCommandMy/' $@
-	sed -i 's/CreateDestReceiver/CreateDestReceiverMy/' $@
-	sed -i 's/EndCommand/EndCommandMy/' $@
-	sed -i 's/NullCommand/NullCommandMy/' $@
 
 MODULE_big = pg_task
 
