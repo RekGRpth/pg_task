@@ -35,7 +35,9 @@ exec.c: postgres.c
 	cat >$@ <<EOF
 	#include "include.h"
 	#include <access/printtup.h>
+	#include <access/xact.h>
 	#include <commands/prepare.h>
+	#include <miscadmin.h>
 	#include <parser/analyze.h>
 	#include <pgstat.h>
 	#include <replication/slot.h>
