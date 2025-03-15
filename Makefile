@@ -29,26 +29,16 @@ dest.o: exec_simple_query.c
 
 exec_simple_query.c:
 	curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
-	echo "static void" >>$@
-	sed '/^enable_statement_timeout(/,/^}/!d' postgres.c >>$@
-	echo "static void" >>$@
-	sed '/^start_xact_command(/,/^}/!d' postgres.c >>$@
-	echo "static void" >>$@
-	sed '/^drop_unnamed_stmt(/,/^}/!d' postgres.c >>$@
-	echo "static bool" >>$@
-	sed '/^check_log_statement(/,/^}/!d' postgres.c >>$@
-	echo "static int" >>$@
-	sed '/^errdetail_execute(/,/^}/!d' postgres.c >>$@
-	echo "static bool" >>$@
-	sed '/^IsTransactionExitStmt(/,/^}/!d' postgres.c >>$@
-	echo "static int" >>$@
-	sed '/^errdetail_abort(/,/^}/!d' postgres.c >>$@
-	echo "static void" >>$@
-	sed '/^disable_statement_timeout(/,/^}/!d' postgres.c >>$@
-	echo "static void" >>$@
-	sed '/^finish_xact_command(/,/^}/!d' postgres.c >>$@
-	echo "static void" >>$@
-	sed '/^exec_simple_query(/,/^}/!d' postgres.c >>$@
+	pcregrep -M '(?s)^static void\n^enable_statement_timeout\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static void\n^start_xact_command\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static void\n^drop_unnamed_stmt\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static bool\n^check_log_statement\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static int\n^errdetail_execute\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static bool\n^IsTransactionExitStmt\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static int\n^errdetail_abort\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static void\n^disable_statement_timeout\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static void\n^finish_xact_command\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static void\n^exec_simple_query\(.*?^}' postgres.c >>$@
 	sed -i 's/TRACE_POSTGRESQL_QUERY_/\/\/TRACE_POSTGRESQL_QUERY_/' $@
 	sed -i 's/BeginCommand/BeginCommandMy/' $@
 	sed -i 's/CreateDestReceiver/CreateDestReceiverMy/' $@
