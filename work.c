@@ -140,7 +140,7 @@ static void work_check(const Work *w) {
         w->shared->run = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "run", false, INT4OID));
         w->shared->sleep = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "sleep", false, INT8OID));
         w->shared->spi = DatumGetBool(SPI_getbinval_my(val, tupdesc, "spi", false, BOOLOID));
-        elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, run = %i, spi = %s, SPI_processed = %li", w->shared->sleep, w->shared->reset, w->shared->schema, w->shared->table, w->shared->run, w->shared->spi ? "true" : "false", (long)SPI_processed);
+        elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, run = %i, spi = %s, SPI_processed = %lu", w->shared->sleep, w->shared->reset, w->shared->schema, w->shared->table, w->shared->run, w->shared->spi ? "true" : "false", (long)SPI_processed);
         SPI_freetuple(val);
     }
     SPI_finish_my();
