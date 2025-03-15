@@ -70,7 +70,7 @@ exec.c: postgres.c
 	#if PG_VERSION_NUM >= 110000 && PG_VERSION_NUM < 130000
 	static bool stmt_timeout_active = false;
 	#endif
-	static bool xact_started = false;
+	bool xact_started = false;
 	static CachedPlanSource *unnamed_stmt_psrc = NULL;
 	EOF
 	pcregrep -M '(?s)^static void\n^enable_statement_timeout\(.*?^}' postgres.c

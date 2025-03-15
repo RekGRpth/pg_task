@@ -21,6 +21,7 @@
 #define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
 #endif
 
+extern bool xact_started;
 static Task task = {0};
 
 Task *get_task(void) {
@@ -244,7 +245,7 @@ static void dest_catch(void) {
     }
     FlushErrorState();
     if (!task.shared->spi) {
-        // xact_started = false;
+        xact_started = false;
         RESUME_INTERRUPTS();
     }
 }
