@@ -29,7 +29,7 @@ dest.o: exec_simple_query.c
 
 exec_simple_query.c:
 	curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
-	echo "static void" >$@
+	echo "static void" >>$@
 	sed '/^enable_statement_timeout(/,/^}/!d' postgres.c >>$@
 	echo "static void" >>$@
 	sed '/^start_xact_command(/,/^}/!d' postgres.c >>$@
