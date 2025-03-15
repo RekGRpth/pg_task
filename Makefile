@@ -26,7 +26,9 @@ else
 endif
 
 postgres.c:
-	curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
+	curl --no-progress-meter -OL "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || \
+	curl --no-progress-meter -OL "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/postgres.c" || \
+	curl --no-progress-meter -OL "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
 
 .ONESHELL:
 exec.c: postgres.c
@@ -84,9 +86,9 @@ PG9495 = $(shell $(PG_CONFIG) --version | grep -E " 9\.4| 9\.5" > /dev/null && e
 ifeq ($(PG9495),yes)
 work.o: latch.h
 latch.h:
-	curl --no-progress-meter -fOL "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/include/storage/latch.h"
+	curl --no-progress-meter -OL "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/include/storage/latch.h"
 latch.c: latch.h
-	curl --no-progress-meter -fOL "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/backend/storage/ipc/latch.c"
+	curl --no-progress-meter -OL "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/backend/storage/ipc/latch.c"
 	sed -i 's/storage\/latch/latch/' $@
 OBJS = init.o conf.o work.o task.o spi.o dest.o latch.o exec.o
 EXTRA_CLEAN = exec.c postgres.c latch.c latch.h
