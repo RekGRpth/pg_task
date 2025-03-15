@@ -39,7 +39,8 @@ postgres.c:
 
 .ONESHELL:
 exec.c: postgres.c
-	cat >$@ <<EOF
+	(
+	cat <<EOF
 	#include "include.h"
 	#include <access/printtup.h>
 	#include <access/xact.h>
@@ -72,17 +73,18 @@ exec.c: postgres.c
 	static bool xact_started = false;
 	static CachedPlanSource *unnamed_stmt_psrc = NULL;
 	EOF
-	pcregrep -M '(?s)^static void\n^enable_statement_timeout\(.*?^}' postgres.c >>$@
-	pcregrep -M '(?s)^static void\n^start_xact_command\(.*?^}' postgres.c >>$@
-	pcregrep -M '(?s)^static void\n^drop_unnamed_stmt\(.*?^}' postgres.c >>$@
-	pcregrep -M '(?s)^static bool\n^check_log_statement\(.*?^}' postgres.c >>$@
-	pcregrep -M '(?s)^static int\n^errdetail_execute\(.*?^}' postgres.c >>$@
-	pcregrep -M '(?s)^static bool\n^IsTransactionExitStmt\(.*?^}' postgres.c >>$@
-	pcregrep -M '(?s)^static int\n^errdetail_abort\(.*?^}' postgres.c >>$@
-	pcregrep -M '(?s)^static void\n^disable_statement_timeout\(.*?^}' postgres.c >>$@
-	pcregrep -M '(?s)^static void\n^finish_xact_command\(.*?^}' postgres.c >>$@
-	echo "void" >>$@
-	pcregrep -M '(?s)^exec_simple_query\(.*?^}' postgres.c >>$@
+	pcregrep -M '(?s)^static void\n^enable_statement_timeout\(.*?^}' postgres.c
+	pcregrep -M '(?s)^static void\n^start_xact_command\(.*?^}' postgres.c
+	pcregrep -M '(?s)^static void\n^drop_unnamed_stmt\(.*?^}' postgres.c
+	pcregrep -M '(?s)^static bool\n^check_log_statement\(.*?^}' postgres.c
+	pcregrep -M '(?s)^static int\n^errdetail_execute\(.*?^}' postgres.c
+	pcregrep -M '(?s)^static bool\n^IsTransactionExitStmt\(.*?^}' postgres.c
+	pcregrep -M '(?s)^static int\n^errdetail_abort\(.*?^}' postgres.c
+	pcregrep -M '(?s)^static void\n^disable_statement_timeout\(.*?^}' postgres.c
+	pcregrep -M '(?s)^static void\n^finish_xact_command\(.*?^}' postgres.c
+	echo "void"
+	pcregrep -M '(?s)^exec_simple_query\(.*?^}' postgres.c
+	) >$@
 
 MODULE_big = pg_task
 
