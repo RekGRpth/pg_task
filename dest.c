@@ -1,6 +1,7 @@
 #include "include.h"
 
 #include <access/printtup.h>
+#include <access/xact.h>
 #include <commands/prepare.h>
 #include <parser/analyze.h>
 #include <pgstat.h>
