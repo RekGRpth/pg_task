@@ -235,7 +235,7 @@ static void dest_catch(void) {
         MemoryContextSwitchTo(TopMemoryContext);
     }
     FlushErrorState();
-    if (task.shared->spi) SPI_restore_connection(); else {
+    if (!task.shared->spi) {
         xact_started = false;
         RESUME_INTERRUPTS();
     }
@@ -247,14 +247,22 @@ bool dest_timeout(void) {
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
     StatementTimeout = task.timeout;
-    if (task.shared->spi) { SPI_connect_my(task.input); BeginInternalSubTransaction(NULL); }
+    if (task.shared->spi) {
+        SPI_connect_my(task.input);
+        BeginInternalSubTransaction(NULL);
+    }
     PG_TRY();
         dest_execute();
         if (task.shared->spi) ReleaseCurrentSubTransaction();
     PG_CATCH();
         task_error(&task);
         dest_catch();
-        if (task.shared->spi) RollbackAndReleaseCurrentSubTransaction();
+        if (task.shared->spi) {
+            RollbackAndReleaseCurrentSubTransaction();
+#if PG_VERSION_NUM < 100000
+            SPI_restore_connection();
+#endif
+        }
     PG_END_TRY();
     if (task.shared->spi) SPI_finish_my();
     StatementTimeout = StatementTimeoutMy;
