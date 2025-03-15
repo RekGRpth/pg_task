@@ -166,7 +166,11 @@ void SPI_finish_my(void) {
     int rc;
     disable_timeout(STATEMENT_TIMEOUT, false);
     PopActiveSnapshot();
+#if PG_VERSION_NUM >= 100000
     if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_finish failed"), errdetail("%s", SPI_result_code_string(rc))));
+#else
+    if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(WARNING, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_finish failed"), errdetail("%s", SPI_result_code_string(rc))));
+#endif
 #if PG_VERSION_NUM < 150000
     ProcessCompletedNotifies();
 #endif
