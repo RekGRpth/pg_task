@@ -1,12 +1,29 @@
 #include "include.h"
 
+#include <access/printtup.h>
+#include <commands/prepare.h>
+#include <jit/jit.h>
+#include <parser/analyze.h>
+#include <pgstat.h>
+#include <replication/slot.h>
+#include <storage/proc.h>
+#include <tcop/pquery.h>
+#include <tcop/tcopprot.h>
+#include <tcop/utility.h>
 #include <unistd.h>
+#include <utils/backend_status.h>
 #include <utils/lsyscache.h>
+#include <utils/guc.h>
+#include <utils/memutils.h>
+#include <utils/ps_status.h>
+#include <utils/timeout.h>
 
 #ifndef MemoryContextResetAndDeleteChildren
 #define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
 #endif
 
+static bool xact_started = false;
+static CachedPlanSource *unnamed_stmt_psrc = NULL;
 static Task task = {0};
 
 Task *get_task(void) {
@@ -145,7 +162,7 @@ static void EndCommandMy(const char *commandTag, CommandDest dest) {
 #define PQArgBlock undef
 #endif
 
-#include "postgres.c"
+#include "exec_simple_query.c"
 
 static void dest_execute(void) {
     if (!task.shared->spi) {

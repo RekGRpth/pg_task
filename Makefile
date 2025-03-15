@@ -25,10 +25,30 @@ else
 	REPO = postgres/postgres
 endif
 
-dest.o: postgres.c
+dest.o: exec_simple_query.c
 
-postgres.c:
-	curl --no-progress-meter -fLo $@ "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fLo $@ "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fLo $@ "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
+exec_simple_query.c:
+	curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
+	echo "static void" >$@
+	sed -e "/^enable_statement_timeout/,/^}/!d" postgres.c >>$@
+	echo "static void" >>$@
+	sed -e "/^start_xact_command/,/^}/!d" postgres.c >>$@
+	echo "static void" >>$@
+	sed -e "/^drop_unnamed_stmt/,/^}/!d" postgres.c >>$@
+	echo "static bool" >>$@
+	sed -e "/^check_log_statement/,/^}/!d" postgres.c >>$@
+	echo "static int" >>$@
+	sed -e "/^errdetail_execute/,/^}/!d" postgres.c >>$@
+	echo "static bool" >>$@
+	sed -e "/^IsTransactionExitStmt(/,/^}/!d" postgres.c >>$@
+	echo "static int" >>$@
+	sed -e "/^errdetail_abort/,/^}/!d" postgres.c >>$@
+	echo "static void" >>$@
+	sed -e "/^disable_statement_timeout/,/^}/!d" postgres.c >>$@
+	echo "static void" >>$@
+	sed -e "/^finish_xact_command/,/^}/!d" postgres.c >>$@
+	echo "static void" >>$@
+	sed -e "/^exec_simple_query/,/^}/!d" postgres.c >>$@
 	sed -i 's/TRACE_POSTGRESQL_QUERY_/\/\/TRACE_POSTGRESQL_QUERY_/' $@
 	sed -i 's/BeginCommand/BeginCommandMy/' $@
 	sed -i 's/CreateDestReceiver/CreateDestReceiverMy/' $@
@@ -41,16 +61,16 @@ PG9495 = $(shell $(PG_CONFIG) --version | grep -E " 9\.4| 9\.5" > /dev/null && e
 ifeq ($(PG9495),yes)
 work.o: latch.h
 latch.h:
-	curl --no-progress-meter -fLo $@ "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/include/storage/latch.h"
+	curl --no-progress-meter -fOL "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/include/storage/latch.h"
 latch.c: latch.h
-	curl --no-progress-meter -fLo $@ "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/backend/storage/ipc/latch.c"
+	curl --no-progress-meter -fOL "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/backend/storage/ipc/latch.c"
 	sed -i 's/storage\/latch/latch/' $@
 OBJS = init.o conf.o work.o task.o spi.o dest.o latch.o
-EXTRA_CLEAN = postgres.c latch.c latch.h
+EXTRA_CLEAN = exec_simple_query.c postgres.c latch.c latch.h
 PG_CFLAGS += -Wno-cpp
 else
 OBJS = init.o conf.o work.o task.o spi.o dest.o
-EXTRA_CLEAN = postgres.c
+EXTRA_CLEAN = exec_simple_query.c postgres.c
 endif
 
 PG94 = $(shell $(PG_CONFIG) --version | grep -E " 8\.| 9\.0| 9\.1| 9\.2| 9\.3" > /dev/null && echo no || echo yes)
