@@ -25,6 +25,8 @@ else
 	REPO = postgres/postgres
 endif
 
+exec.o: postgres.c
+
 postgres.c:
 	curl --no-progress-meter -OL "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || \
 	curl --no-progress-meter -OL "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/postgres.c" || \
