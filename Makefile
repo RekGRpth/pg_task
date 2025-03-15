@@ -30,7 +30,35 @@ dest.o: exec_simple_query.c
 postgres.c:
 	curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(REL)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(STABLE)/src/backend/tcop/postgres.c" || curl --no-progress-meter -fOL "https://raw.githubusercontent.com/$(REPO)/$(MAIN)/src/backend/tcop/postgres.c"
 
+.ONESHELL:
 exec_simple_query.c: postgres.c
+	cat >$@ <<EOF
+	#include <access/printtup.h>
+	#include <commands/prepare.h>
+	#include <parser/analyze.h>
+	#include <pgstat.h>
+	#include <replication/slot.h>
+	#include <storage/proc.h>
+	#include <tcop/pquery.h>
+	#include <tcop/tcopprot.h>
+	#include <tcop/utility.h>
+	#include <utils/guc.h>
+	#include <utils/memutils.h>
+	#include <utils/ps_status.h>
+	#include <utils/snapmgr.h>
+	#include <utils/timeout.h>
+	#if PG_VERSION_NUM >= 110000
+	#include <jit/jit.h>
+	#endif
+	#if PG_VERSION_NUM >= 140000
+	#include <utils/backend_status.h>
+	#endif
+	#if PG_VERSION_NUM >= 110000 && PG_VERSION_NUM < 130000
+	static bool stmt_timeout_active = false;
+	#endif
+	static bool xact_started = false;
+	static CachedPlanSource *unnamed_stmt_psrc = NULL;
+	EOF
 	pcregrep -M '(?s)^static void\n^enable_statement_timeout\(.*?^}' postgres.c >>$@
 	pcregrep -M '(?s)^static void\n^start_xact_command\(.*?^}' postgres.c >>$@
 	pcregrep -M '(?s)^static void\n^drop_unnamed_stmt\(.*?^}' postgres.c >>$@

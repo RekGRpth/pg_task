@@ -1,43 +1,15 @@
 #include "include.h"
 
-#include <access/printtup.h>
 #include <access/xact.h>
-#include <commands/prepare.h>
 #include <miscadmin.h>
-#include <parser/analyze.h>
-#include <pgstat.h>
-#include <replication/slot.h>
-#include <storage/proc.h>
-#include <tcop/pquery.h>
-#include <tcop/tcopprot.h>
-#include <tcop/utility.h>
 #include <unistd.h>
 #include <utils/lsyscache.h>
-#include <utils/guc.h>
-#include <utils/memutils.h>
-#include <utils/ps_status.h>
-#include <utils/snapmgr.h>
-#include <utils/timeout.h>
-
-#if PG_VERSION_NUM >= 110000
-#include <jit/jit.h>
-#endif
-
-#if PG_VERSION_NUM >= 140000
-#include <utils/backend_status.h>
-#endif
 
 #ifndef MemoryContextResetAndDeleteChildren
 #define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
 #endif
 
-static bool xact_started = false;
-static CachedPlanSource *unnamed_stmt_psrc = NULL;
 static Task task = {0};
-
-#if PG_VERSION_NUM >= 110000 && PG_VERSION_NUM < 130000
-static bool stmt_timeout_active = false;
-#endif
 
 Task *get_task(void) {
     return &task;
