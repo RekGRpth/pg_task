@@ -117,7 +117,7 @@ static void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force
     char completionTag[COMPLETION_TAG_BUFSIZE];
     CommandTag tag = qc->commandTag;
     const char *tagname = GetCommandTagName(tag);
-    if (command_tag_display_rowcount(tag) && !force_undecorated_output) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, tag == CMDTAG_INSERT ? "%s 0 " UINT64_FORMAT : "%s " UINT64_FORMAT, tagname, qc->nprocessed);
+    if (command_tag_display_rowcount(tag) && !force_undecorated_output) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, tag == CMDTAG_INSERT ? "%s 0 %lu" : "%s %lu", tagname, qc->nprocessed);
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
     elog(DEBUG1, "id = %li, completionTag = %s", task.shared->id, completionTag);
     if (task.skip) task.skip = 0; else {
