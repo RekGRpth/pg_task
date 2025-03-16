@@ -90,8 +90,10 @@ static void task_insert(const Task *t) {
     elog(DEBUG1, "id = %li", t->shared->id);
     set_ps_display_my("insert");
     if (!src.data) {
-        if (!t->work->columns) task_columns(t);
-        if (!t->work->columns) return;
+        if (!t->work->columns) {
+            task_columns(t);
+            if (!t->work->columns) return;
+        }
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH s AS (SELECT * FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 FOR UPDATE OF t) INSERT INTO %1$s AS t ("parent", "plan", %2$s) SELECT "id", CASE
