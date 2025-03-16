@@ -51,7 +51,8 @@ static bool task_live(const Task *t) {
     return ShutdownRequestPending || !t->shared->id;
 }
 
-static void task_columns(const Task *t) {
+static const char *task_columns(const Task *t) {
+    const char *columns = NULL;
     Datum values[] = {ObjectIdGetDatum(t->shared->oid)};
     static Oid argtypes[] = {OIDOID};
     static const char *src = SQL(
@@ -59,9 +60,10 @@ static void task_columns(const Task *t) {
     );
     SPI_execute_with_args_my(src, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
     if (SPI_processed != 1) ereport(WARNING, (errmsg("columns id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed))); else {
-        t->work->columns = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "columns", false, TEXTOID));
-        elog(DEBUG1, "columns id = %li, %s", t->shared->id, t->work->columns);
+        columns = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "columns", false, TEXTOID));
+        elog(DEBUG1, "columns id = %li, %s", t->shared->id, columns);
     }
+    return columns;
 }
 
 static void task_delete(const Task *t) {
@@ -90,16 +92,14 @@ static void task_insert(const Task *t) {
     elog(DEBUG1, "id = %li", t->shared->id);
     set_ps_display_my("insert");
     if (!src.data) {
-        if (!t->work->columns) {
-            task_columns(t);
-            if (!t->work->columns) return;
-        }
+        const char *columns = task_columns(t);
+        if (!columns) return;
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH s AS (SELECT * FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 FOR UPDATE OF t) INSERT INTO %1$s AS t ("parent", "plan", %2$s) SELECT "id", CASE
                 WHEN "drift" THEN CURRENT_TIMESTAMP OPERATOR(pg_catalog.+) "repeat" ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p OPERATOR(pg_catalog.+) "repeat" FROM r WHERE p OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
             END AS "plan", %2$s FROM s WHERE "repeat" OPERATOR(pg_catalog.>) '0 sec' LIMIT 1 RETURNING t.id::pg_catalog.int8
-        ), t->work->schema_table, t->work->columns);
+        ), t->work->schema_table, columns);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_INSERT_RETURNING);

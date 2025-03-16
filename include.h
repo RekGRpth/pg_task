@@ -76,7 +76,6 @@ typedef struct Shared {
 typedef struct Work {
     char *schema_table;
     char *schema_type;
-    const char *columns;
     const char *data;
     const char *schema;
     const char *table;
