@@ -148,7 +148,7 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 Task *get_task(void);
 void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len, bool string, char escape, char quote);
 void append_with_tabs(StringInfo buf, const char *str);
-void exec_simple_query(const char *query_string);
+void exec_simple_query_my(const char *query_string);
 void initStringInfoMy(StringInfo buf);
 void _PG_init(void);
 void init_free(int slot);
