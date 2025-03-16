@@ -54,12 +54,12 @@ cat <<EOF
 #if PG_VERSION_NUM >= 110000 && PG_VERSION_NUM < 130000
 static bool stmt_timeout_active = false;
 #endif
-bool xact_started = false;
+static bool xact_started = false;
 static CachedPlanSource *unnamed_stmt_psrc = NULL;
 EOF
-(curl --no-progress-meter -L "https://raw.githubusercontent.com/$REPO/$REL/src/backend/tcop/postgres.c" || \
-curl --no-progress-meter -L "https://raw.githubusercontent.com/$REPO/$STABLE/src/backend/tcop/postgres.c" || \
-curl --no-progress-meter -L "https://raw.githubusercontent.com/$REPO/$MAIN/src/backend/tcop/postgres.c") | pcregrep -M \
+(curl --no-progress-meter -fL "https://raw.githubusercontent.com/$REPO/$REL/src/backend/tcop/postgres.c" || \
+curl --no-progress-meter -fL "https://raw.githubusercontent.com/$REPO/$STABLE/src/backend/tcop/postgres.c" || \
+curl --no-progress-meter -fL "https://raw.githubusercontent.com/$REPO/$MAIN/src/backend/tcop/postgres.c") | pcregrep -M \
 -e '(?s)^static void enable_statement_timeout\(.*?\);' \
 -e '(?s)^static void start_xact_command\(.*?\);' \
 -e '(?s)^static void drop_unnamed_stmt\(.*?\);' \
@@ -89,5 +89,8 @@ curl --no-progress-meter -L "https://raw.githubusercontent.com/$REPO/$MAIN/src/b
 cat <<EOF
 void exec_simple_query_my(const char *query_string) {
     exec_simple_query(query_string);
+}
+void xact_started_my(bool value) {
+    xact_started = value;
 }
 EOF

@@ -160,6 +160,7 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_finish_my(void);
 void task_error(Task *t);
 void task_free(Task *t);
+void xact_started_my(bool value);
 Work *get_work(void);
 
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
