@@ -165,8 +165,10 @@ static void dest_execute(void) {
         ReadyForQueryMy(whereToSendOutput);
         SetCurrentStatementStartTimestamp();
         exec_simple_query_my(task.input);
-        if (IsTransactionState()) exec_simple_query_my(SQL(COMMIT));
-        if (IsTransactionState()) ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION), errmsg("still active sql transaction")));
+        if (IsTransactionState()) {
+            exec_simple_query_my(SQL(END));
+            if (IsTransactionState()) ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION), errmsg("still active sql transaction")));
+        }
     } else {
         bool count = false;
         bool insert = false;
