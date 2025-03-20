@@ -4,14 +4,15 @@ if [ -z $PG_BUILD_FROM_SOURCE ]; then
 	GREENPLUM="$(postgres --version | grep -i Greenplum >/dev/null && echo yes || echo no)"
 	PG_MAJOR="$(pg_config --version | cut -f 2 -d ' ' | grep -E -o "[[:digit:]]+" | head -1)"
 	if [ "$GREENPLUM" = "yes" ]; then
-		ARENADATA="$(gppkg --version | grep -i arenadata >/dev/null && echo yes || echo no)"
+		ARENADATA="$(pg_config --gp_version | grep -i arenadata >/dev/null && echo yes || echo no)"
 		MAIN=main
 		if [ "$ARENADATA" = "yes" ]; then
 			REPO=arenadata/gpdb
+			MAIN=adb-7.2.0
 		else
-			REPO=greenplum-db/gpdb
+			REPO=greenplum-db/gpdb-archive
 		fi
-		REL="$(test "$PG_MAJOR" -lt 10 && gppkg --version | cut -f 3 -d ' ' | cut -f 1 -d '+' || echo "main")"
+		REL="$(test "$PG_MAJOR" -lt 10 && pg_config --gp_version | cut -f 2 -d ' ' | cut -f 1 -d '+' || echo "main")"
 	else
 		MAIN=master
 		REPO=postgres/postgres
@@ -60,6 +61,7 @@ EOF
 (curl --no-progress-meter -fL "https://raw.githubusercontent.com/$REPO/$REL/src/backend/tcop/postgres.c" || \
 curl --no-progress-meter -fL "https://raw.githubusercontent.com/$REPO/$STABLE/src/backend/tcop/postgres.c" || \
 curl --no-progress-meter -fL "https://raw.githubusercontent.com/$REPO/$MAIN/src/backend/tcop/postgres.c") | pcregrep -M \
+-e '(?s)^static bool CheckDebugDtmActionSqlCommandTag\(.*?\);' \
 -e '(?s)^static void enable_statement_timeout\(.*?\);' \
 -e '(?s)^static void start_xact_command\(.*?\);' \
 -e '(?s)^static void drop_unnamed_stmt\(.*?\);' \
@@ -70,6 +72,7 @@ curl --no-progress-meter -fL "https://raw.githubusercontent.com/$REPO/$MAIN/src/
 -e '(?s)^static void disable_statement_timeout\(.*?\);' \
 -e '(?s)^static void finish_xact_command\(.*?\);' \
 -e '(?s)^static void exec_simple_query\(.*?\);' \
+-e '(?s)^static bool\n^CheckDebugDtmActionSqlCommandTag\(.*?^}' \
 -e '(?s)^static void\n^enable_statement_timeout\(.*?^}' \
 -e '(?s)^static void\n^start_xact_command\(.*?^}' \
 -e '(?s)^static void\n^drop_unnamed_stmt\(.*?^}' \
@@ -82,6 +85,7 @@ curl --no-progress-meter -fL "https://raw.githubusercontent.com/$REPO/$MAIN/src/
 -e '(?s)^static void\nexec_simple_query\(.*?^}' \
 - | sed \
 -e 's/TRACE_POSTGRESQL_QUERY_/\/\/TRACE_POSTGRESQL_QUERY_/' \
+-e 's/SIMPLE_FAULT_INJECTOR/\/\/SIMPLE_FAULT_INJECTOR/' \
 -e 's/BeginCommand/BeginCommandMy/' \
 -e 's/CreateDestReceiver/CreateDestReceiverMy/' \
 -e 's/EndCommand/EndCommandMy/' \

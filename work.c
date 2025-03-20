@@ -1,8 +1,12 @@
-#include "include.h"
+#include <pg_config.h>
 
 #if PG_VERSION_NUM < 90600
+#include <c.h>
+#include <utils/palloc.h>
 #include "latch.h"
 #endif
+
+#include "include.h"
 
 #include <catalog/namespace.h>
 #include <catalog/pg_collation.h>
