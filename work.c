@@ -705,6 +705,9 @@ static void work_table(const Work *w) {
         CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s();), w->schema, function_quote, "", w->schema_table);
         if (function_quote != function.data) pfree((void *)function_quote);
         pfree(function.data);
+#ifdef GP_VERSION_NUM
+        set_config_option_my("gp_enable_statement_trigger", "on", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+#endif
     }
 #endif
     initStringInfoMy(&src);
@@ -884,6 +887,9 @@ static void work_update(const Work *w) {
             END IF;
         END; $DO$
     ), w->schema_table, w->shared->oid, wake_up_literal, w->schema, wake_up_quote, w->shared->hash, schema, w->schema_type);
+#ifdef GP_VERSION_NUM
+    set_config_option_my("gp_enable_statement_trigger", "on", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+#endif
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
