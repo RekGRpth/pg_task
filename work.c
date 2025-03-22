@@ -100,7 +100,7 @@ static void work_query(Task *t);
 } while(0)
 
 static
-#if PG_VERSION_NUM >= 120000
+#if PG_VERSION_NUM >= 120000 && defined(GP_VERSION_NUM)
 void
 #else
 int
@@ -108,14 +108,14 @@ int
 work_errstr(const char *err) {
     int len;
     if (!err)
-#if PG_VERSION_NUM >= 120000
+#if PG_VERSION_NUM >= 120000 && defined(GP_VERSION_NUM)
         return;
 #else
         return 0;
 #endif
     len = strlen(err);
     if (!len)
-#if PG_VERSION_NUM >= 120000
+#if PG_VERSION_NUM >= 120000 && defined(GP_VERSION_NUM)
         return;
 #else
         return 0;
@@ -125,7 +125,7 @@ work_errstr(const char *err) {
 }
 
 static
-#if PG_VERSION_NUM >= 120000
+#if PG_VERSION_NUM >= 120000 && defined(GP_VERSION_NUM)
 void
 #else
 int
@@ -135,7 +135,7 @@ PQerrorMessageMy(const PGconn *conn) {
 }
 
 static
-#if PG_VERSION_NUM >= 120000
+#if PG_VERSION_NUM >= 120000 && defined(GP_VERSION_NUM)
 void
 #else
 int
