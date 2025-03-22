@@ -1,14 +1,3 @@
-#include <pg_config.h>
-
-#if PG_VERSION_NUM < 90600
-#include <c.h>
-#include <utils/palloc.h>
-#include "latch.h"
-#else
-#define ResetLatchMy ResetLatch
-#define SetLatchMy SetLatch
-#endif
-
 #include "include.h"
 
 #include <catalog/namespace.h>
@@ -23,6 +12,25 @@
 #include <utils/builtins.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
+
+#if PG_VERSION_NUM < 90600
+typedef struct WaitEvent
+{
+	int			pos;			/* position in the event data structure */
+	uint32		events;			/* triggered events */
+	pgsocket	fd;				/* socket fd associated with event */
+	void	   *user_data;		/* pointer provided in AddWaitEventToSet */
+#ifdef WIN32
+	bool		reset;			/* Is reset of the event required? */
+#endif
+} WaitEvent;
+typedef struct WaitEventSet WaitEventSet;
+extern int AddWaitEventToSet(WaitEventSet *set, uint32 events, pgsocket fd, Latch *latch, void *user_data);
+extern int WaitEventSetWait(WaitEventSet *set, long timeout, WaitEvent *occurred_events, int nevents);
+extern void FreeWaitEventSet(WaitEventSet *set);
+extern void InitializeLatchSupportMy(void);
+extern WaitEventSet *CreateWaitEventSet(MemoryContext context, int nevents);
+#endif
 
 #if PG_VERSION_NUM >= 100000
 #include <utils/regproc.h>
@@ -382,7 +390,7 @@ static void work_reload(const Work *w) {
 }
 
 static void work_latch(const Work *w) {
-    ResetLatchMy(MyLatch);
+    ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
     if (ConfigReloadPending) work_reload(w);
 }
@@ -953,7 +961,7 @@ static void work_writeable(Task *t) {
 static void work_idle(SIGNAL_ARGS) {
     int save_errno = errno;
     idle_count = 0;
-    SetLatchMy(MyLatch);
+    SetLatch(MyLatch);
     errno = save_errno;
 }
 
@@ -987,7 +995,6 @@ void work_main(Datum main_arg) {
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM < 90600
     InitializeLatchSupportMy();
-    InitLatchMy(MyLatch);
 #endif
     work.data = quote_identifier(work.shared->data);
     work.schema = quote_identifier(work.shared->schema);
