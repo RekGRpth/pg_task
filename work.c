@@ -893,23 +893,31 @@ static void work_update(const Work *w) {
             IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'null') IS DISTINCT FROM $$(current_setting('pg_task.default_null'::text))::text$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "null" SET DEFAULT (pg_catalog.current_setting('pg_task.null'));
             END IF;
-            IF (SELECT prosrc FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) %3$s AND nspname OPERATOR(pg_catalog.=) %7$s) IS DISTINCT FROM $$BEGIN PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %6$i; RETURN %9$s; END;$$ THEN
+            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_enum WHERE enumtypid OPERATOR(pg_catalog.=) '%3$s'::pg_catalog.regtype AND enumlabel OPERATOR(pg_catalog.=) 'GONE') THEN
+                ALTER TYPE %3$s ADD VALUE 'GONE' AFTER 'PLAN';
+            END IF;
+            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_enum WHERE enumtypid OPERATOR(pg_catalog.=) '%3$s'::pg_catalog.regtype AND enumlabel OPERATOR(pg_catalog.=) 'FAIL') THEN
+                ALTER TYPE %3$s ADD VALUE 'FAIL' AFTER 'DONE';
+            END IF;
+        END; $DO$
+    ), w->schema_table, w->shared->oid, w->schema_type);
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_finish_my();
+    resetStringInfo(&src);
+    appendStringInfo(&src, SQL(
+        DO $DO$ BEGIN
+            IF (SELECT prosrc FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) %3$s AND nspname OPERATOR(pg_catalog.=) %7$s) IS DISTINCT FROM $$BEGIN PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %6$i; RETURN %8$s; END;$$ THEN
                 CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$BEGIN
                     PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %6$i;
-                    RETURN %9$s;
+                    RETURN %8$s;
                 END;$function$ LANGUAGE plpgsql;
             END IF;
             IF NOT EXISTS (SELECT * FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) 'wake_up' AND tgrelid OPERATOR(pg_catalog.=) %2$i AND tgtype OPERATOR(pg_catalog.&) 1 OPERATOR(pg_catalog.<>) 1 AND tgtype OPERATOR(pg_catalog.&) 66 OPERATOR(pg_catalog.<>) 2 AND tgtype OPERATOR(pg_catalog.&) 66 OPERATOR(pg_catalog.<>) 64 AND tgtype OPERATOR(pg_catalog.&) 4 OPERATOR(pg_catalog.<>) 0) THEN
-                CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH %10$s EXECUTE PROCEDURE %4$s.%5$s();
-            END IF;
-            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_enum WHERE enumtypid OPERATOR(pg_catalog.=) '%8$s'::pg_catalog.regtype AND enumlabel OPERATOR(pg_catalog.=) 'GONE') THEN
-                ALTER TYPE %8$s ADD VALUE 'GONE' AFTER 'PLAN';
-            END IF;
-            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_enum WHERE enumtypid OPERATOR(pg_catalog.=) '%8$s'::pg_catalog.regtype AND enumlabel OPERATOR(pg_catalog.=) 'FAIL') THEN
-                ALTER TYPE %8$s ADD VALUE 'FAIL' AFTER 'DONE';
+                CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH %9$s EXECUTE PROCEDURE %4$s.%5$s();
             END IF;
         END; $DO$
-    ), w->schema_table, w->shared->oid, wake_up_literal, w->schema, wake_up_quote, w->shared->hash, schema, w->schema_type,
+    ), w->schema_table, w->shared->oid, wake_up_literal, w->schema, wake_up_quote, w->shared->hash, schema,
 #ifdef GP_VERSION_NUM
     "NEW", "ROW"
 #else
