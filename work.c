@@ -99,21 +99,49 @@ static void work_query(Task *t);
     if (task_done(t)) t->remote != NULL ? work_finish(t) : work_free(t); \
 } while(0)
 
-static void work_errstr(const char *err) {
+static
+#if PG_VERSION_NUM >= 120000
+void
+#else
+int
+#endif
+work_errstr(const char *err) {
     int len;
-    if (!err) return;
+    if (!err)
+#if PG_VERSION_NUM >= 120000
+        return;
+#else
+        return 0;
+#endif
     len = strlen(err);
-    if (!len) return;
+    if (!len)
+#if PG_VERSION_NUM >= 120000
+        return;
+#else
+        return 0;
+#endif
     len--;
-    errdetail("%.*s", len, err);
+    return errdetail("%.*s", len, err);
 }
 
-static void PQerrorMessageMy(const PGconn *conn) {
-    work_errstr(PQerrorMessage(conn));
+static
+#if PG_VERSION_NUM >= 120000
+void
+#else
+int
+#endif
+PQerrorMessageMy(const PGconn *conn) {
+    return work_errstr(PQerrorMessage(conn));
 }
 
-static void PQresultErrorMessageMy(const PGresult *res) {
-    work_errstr(PQresultErrorMessage(res));
+static
+#if PG_VERSION_NUM >= 120000
+void
+#else
+int
+#endif
+PQresultErrorMessageMy(const PGresult *res) {
+    return work_errstr(PQresultErrorMessage(res));
 }
 
 static void work_check(const Work *w) {
