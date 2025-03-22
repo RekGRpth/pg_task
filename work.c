@@ -916,7 +916,7 @@ static void work_update(const Work *w) {
                     RETURN %8$s;
                 END;$function$ LANGUAGE plpgsql;
             END IF;
-            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) 'wake_up' AND tgrelid OPERATOR(pg_catalog.=) %2$i AND tgtype OPERATOR(pg_catalog.&) 1 OPERATOR(pg_catalog.<>) 1 AND tgtype OPERATOR(pg_catalog.&) 66 OPERATOR(pg_catalog.<>) 2 AND tgtype OPERATOR(pg_catalog.&) 66 OPERATOR(pg_catalog.<>) 64 AND tgtype OPERATOR(pg_catalog.&) 4 OPERATOR(pg_catalog.<>) 0) THEN
+            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) 'wake_up' AND tgrelid OPERATOR(pg_catalog.=) %2$i) THEN
                 CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH %9$s EXECUTE PROCEDURE %4$s.%5$s();
             END IF;
         END; $DO$
