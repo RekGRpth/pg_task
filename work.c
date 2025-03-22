@@ -316,7 +316,7 @@ static void work_reset(const Work *w) {
                 WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND l.pid IS NULL FOR UPDATE OF t %4$s
             ) UPDATE %1$s AS t SET "state" = 'PLAN', "start" = NULL, "stop" = NULL, "pid" = NULL FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id::pg_catalog.int8
         ), w->schema_table, w->shared->oid, w->schema_type,
-#if PG_VERSION_NUM >= 90500
+#if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
             "SKIP LOCKED"
 #else
             ""
@@ -662,7 +662,7 @@ static void work_sleep(Work *w) {
                 SELECT "id", "count" OPERATOR(pg_catalog.-) pg_catalog.row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM s ORDER BY s.count DESC, id
             ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM u WHERE t.id OPERATOR(pg_catalog.=) u.id AND u.count OPERATOR(pg_catalog.>=) 0 RETURNING t.id::pg_catalog.int8, "hash"::pg_catalog.int4, "group"::pg_catalog.text, "remote"::pg_catalog.text, "max"::pg_catalog.int4
         ), w->schema_table, w->shared->oid,
-#if PG_VERSION_NUM >= 90500
+#if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
         "SKIP LOCKED"
 #else
         ""
