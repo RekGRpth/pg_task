@@ -4,6 +4,9 @@
 #include <c.h>
 #include <utils/palloc.h>
 #include "latch.h"
+#else
+#define ResetLatchMy ResetLatch
+#define SetLatchMy SetLatch
 #endif
 
 #include "include.h"
@@ -371,7 +374,7 @@ static void work_reload(const Work *w) {
 }
 
 static void work_latch(const Work *w) {
-    ResetLatch(MyLatch);
+    ResetLatchMy(MyLatch);
     CHECK_FOR_INTERRUPTS();
     if (ConfigReloadPending) work_reload(w);
 }
@@ -942,7 +945,7 @@ static void work_writeable(Task *t) {
 static void work_idle(SIGNAL_ARGS) {
     int save_errno = errno;
     idle_count = 0;
-    SetLatch(MyLatch);
+    SetLatchMy(MyLatch);
     errno = save_errno;
 }
 
