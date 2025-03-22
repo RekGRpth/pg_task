@@ -14,22 +14,7 @@
 #include <utils/ps_status.h>
 
 #if PG_VERSION_NUM < 90600
-typedef struct WaitEvent
-{
-	int			pos;			/* position in the event data structure */
-	uint32		events;			/* triggered events */
-	pgsocket	fd;				/* socket fd associated with event */
-	void	   *user_data;		/* pointer provided in AddWaitEventToSet */
-#ifdef WIN32
-	bool		reset;			/* Is reset of the event required? */
-#endif
-} WaitEvent;
-typedef struct WaitEventSet WaitEventSet;
-extern int AddWaitEventToSet(WaitEventSet *set, uint32 events, pgsocket fd, Latch *latch, void *user_data);
-extern int WaitEventSetWait(WaitEventSet *set, long timeout, WaitEvent *occurred_events, int nevents);
-extern void FreeWaitEventSet(WaitEventSet *set);
-extern void InitializeLatchSupportMy(void);
-extern WaitEventSet *CreateWaitEventSet(MemoryContext context, int nevents);
+#include "latch_my.h"
 #endif
 
 #if PG_VERSION_NUM >= 100000
