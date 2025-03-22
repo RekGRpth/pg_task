@@ -974,6 +974,10 @@ void work_main(Datum main_arg) {
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGINT, work_idle);
     BackgroundWorkerUnblockSignals();
+#if PG_VERSION_NUM < 90600
+    InitializeLatchSupportMy();
+    InitLatchMy(MyLatch);
+#endif
     work.data = quote_identifier(work.shared->data);
     work.schema = quote_identifier(work.shared->schema);
     work.table = quote_identifier(work.shared->table);

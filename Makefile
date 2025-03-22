@@ -7,9 +7,9 @@ PG9495 = $(shell $(PG_CONFIG) --version | grep -E " 9\.4| 9\.5" > /dev/null && e
 ifeq ($(PG9495),yes)
 work.o: latch.h
 latch.h:
-	curl --no-progress-meter -fL "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/include/storage/latch.h" >$@
+	curl --no-progress-meter -fL "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/include/storage/latch.h" | sed -e 's/InitializeLatchSupport/InitializeLatchSupportMy/' -e 's/InitLatch/InitLatchMy/' >$@
 latch.c: latch.h
-	curl --no-progress-meter -fL "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/backend/storage/ipc/latch.c" | sed 's/storage\/latch/latch/' >$@
+	curl --no-progress-meter -fL "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/backend/storage/ipc/latch.c" | sed -e 's/storage\/latch/latch/' -e 's/InitializeLatchSupport/InitializeLatchSupportMy/' -e 's/InitLatch/InitLatchMy/' >$@
 OBJS = init.o conf.o work.o task.o spi.o dest.o latch.o postgres.o
 PG_CFLAGS += -Wno-cpp
 else
