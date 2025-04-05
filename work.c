@@ -1012,21 +1012,24 @@ static void work_enum(const Work *w, const char *name) {
 }
 
 static void work_type(const Work *w) {
+    Datum values[] = {CStringGetTextDatum(w->shared->schema)};
+    static Oid argtypes[] = {TEXTOID};
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT  EXISTS (SELECT * FROM pg_catalog.pg_type JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) '%1$s' AND typname OPERATOR(pg_catalog.=) 'state') AS "test"
-    ), w->schema);
-    if (!work_test(src.data, 0, NULL, NULL, NULL)) {
+        SELECT  EXISTS (SELECT * FROM pg_catalog.pg_type JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND typname OPERATOR(pg_catalog.=) 'state') AS "test"
+    ));
+    if (!work_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
-            CREATE TYPE "%1$s"."state" AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');
-        ), w->schema);
+            CREATE TYPE %1$s AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');
+        ), w->schema_type);
         SPI_connect_my(src.data);
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         SPI_finish_my();
     }
     pfree(src.data);
+    pfree((void *)values[0]);
     work_enum(w, "PLAN");
     work_enum(w, "GONE");
     work_enum(w, "TAKE");
