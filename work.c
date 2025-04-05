@@ -706,7 +706,72 @@ static void work_constraint(const Work *w, const char *name, const char *value, 
 }
 
 static void work_trigger(const Work *w) {
-    char *schema = quote_literal_cstr(w->shared->schema);
+    Datum values[] = {CStringGetTextDatum(w->shared->schema)};
+    static Oid argtypes[] = {TEXTOID};
+    // char *schema = quote_literal_cstr(w->shared->schema);
+    // char *table = quote_literal_cstr(w->shared->table);
+    char *wake_up_literal;
+    const char *wake_up_quote;
+    StringInfoData src;
+    StringInfoData wake_up;
+    initStringInfoMy(&wake_up);
+    appendStringInfo(&wake_up, "%1$s_wake_up", w->shared->table);
+    wake_up_literal = quote_literal_cstr(wake_up.data);
+    wake_up_quote = quote_identifier(wake_up.data);
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        SELECT (SELECT prosrc FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) %1$s AND nspname OPERATOR(pg_catalog.=) $1) IS NOT DISTINCT FROM $$BEGIN PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %2$i; RETURN %3$s; END;$$ "test"
+    ), wake_up_literal, w->shared->hash,
+#ifdef GP_VERSION_NUM
+    "NEW"
+#else
+    "NULL"
+#endif
+    );
+    if (!work_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$BEGIN
+                PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %3$i;
+                RETURN %4$s;
+            END;$function$ LANGUAGE plpgsql;
+        ), w->schema, wake_up_quote, w->shared->hash,
+#ifdef GP_VERSION_NUM
+    "NEW"
+#else
+    "NULL"
+#endif
+        );
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+    }
+    resetStringInfo(&src);
+    appendStringInfo(&src, SQL(
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) 'wake_up' AND tgrelid OPERATOR(pg_catalog.=) %1$i) AS "test"
+    ), w->shared->oid);
+    if (!work_test(src.data, 0, NULL, NULL, NULL)) {
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH %4$s EXECUTE PROCEDURE %2$s.%3$s();
+        ), w->schema_table, w->schema, wake_up_quote,
+#ifdef GP_VERSION_NUM
+        "ROW"
+#else
+        "STATEMENT"
+#endif
+        );
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+    }
+    pfree(src.data);
+    pfree(wake_up.data);
+    pfree(wake_up_literal);
+    pfree((void *)values[0]);
+
+
+    /*char *schema = quote_literal_cstr(w->shared->schema);
     char *table = quote_literal_cstr(w->shared->table);
     char *wake_up_literal;
     const char *wake_up_quote;
@@ -744,7 +809,7 @@ static void work_trigger(const Work *w) {
     pfree(src.data);
     pfree(table);
     pfree(wake_up.data);
-    pfree(wake_up_literal);
+    pfree(wake_up_literal);*/
 }
 
 static void work_column(const Work *w, const char *name, const char *type) {
