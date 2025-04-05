@@ -782,15 +782,17 @@ static void work_index(const Work *w, const char *name) {
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        DO $DO$ BEGIN
-            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_index JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) indrelid WHERE attnum OPERATOR(pg_catalog.=) indkey[0] AND attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') THEN
-                CREATE INDEX ON %1$s USING btree ("%3$s");
-            END IF;
-        END; $DO$
-    ), w->schema_table, w->shared->oid, name);
-    SPI_connect_my(src.data);
-    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_finish_my();
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_index JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) indrelid WHERE attnum OPERATOR(pg_catalog.=) indkey[0] AND attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') AS "test"
+    ), w->shared->oid, name);
+    if (!work_test(src.data)) {
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            CREATE INDEX ON %1$s USING btree ("%2$s");
+        ), w->schema_table, name);
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+    }
     pfree(src.data);
 }
 
