@@ -337,18 +337,19 @@ static void work_done(Task *t) {
 }
 
 static void work_schema(const Work *w) {
-    List *names = stringToQualifiedNameListMy(w->schema);
     StringInfoData src;
-    elog(DEBUG1, "schema = %s", w->schema);
-    set_ps_display_my("schema");
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE SCHEMA %s), w->schema);
+    appendStringInfo(&src, SQL(
+        DO $DO$ BEGIN
+            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_namespace WHERE nspname OPERATOR(pg_catalog.=) '%1$s') THEN
+                CREATE SCHEMA "%1$s";
+            END IF;
+        END; $DO$
+    ), w->schema);
     SPI_connect_my(src.data);
-    if (!OidIsValid(get_namespace_oid(strVal(linitial(names)), true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
-    list_free_deep(names);
     pfree(src.data);
-    set_ps_display_my("idle");
 }
 
 static void work_headers(Task *t, const PGresult *result) {
