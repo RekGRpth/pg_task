@@ -773,7 +773,7 @@ static void work_trigger(const Work *w) {
     pfree(wake_up_literal);
 }
 
-static void work_column(const Work *w, const char *name, const char *type, bool not_null) {
+static void work_column(const Work *w, const char *name, const char *type, const char *not_null) {
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
@@ -782,7 +782,7 @@ static void work_column(const Work *w, const char *name, const char *type, bool 
                 ALTER TABLE %1$s ADD COLUMN "%3$s" pg_catalog.%4$s %5$s;
             END IF;
         END; $DO$
-    ), w->schema_table, w->shared->oid, name, type, not_null ? "NOT NULL" : "");
+    ), w->schema_table, w->shared->oid, name, type, not_null);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
@@ -896,7 +896,33 @@ static void work_table(const Work *w) {
     resetStringInfo(&src);
     pfree(hash.data);
     pfree(src.data);
-    work_column(w, "data", "text", false);
+    work_column(w, "parent", "int8", "");
+    work_column(w, "plan", "timestamptz", "NOT NULL");
+    work_column(w, "start", "timestamptz", "");
+    work_column(w, "stop", "timestamptz", "");
+    work_column(w, "active", "interval", "NOT NULL");
+    work_column(w, "live", "interval", "NOT NULL");
+    work_column(w, "repeat", "interval", "NOT NULL");
+    work_column(w, "timeout", "interval", "NOT NULL");
+    work_column(w, "count", "int4", "NOT NULL");
+    work_column(w, "hash", "int4", "NOT NULL");
+    work_column(w, "max", "int4", "NOT NULL");
+    work_column(w, "pid", "int4", "");
+    work_column(w, "state", w->schema_type, "NOT NULL");
+    work_column(w, "delete", "bool", "NOT NULL");
+    work_column(w, "drift", "bool", "NOT NULL");
+    work_column(w, "header", "bool", "NOT NULL");
+    work_column(w, "string", "bool", "NOT NULL");
+    work_column(w, "delimiter", "char", "NOT NULL");
+    work_column(w, "escape", "char", "NOT NULL");
+    work_column(w, "quote", "char", "NOT NULL");
+    work_column(w, "data", "text", "");
+    work_column(w, "error", "text", "");
+    work_column(w, "group", "text", "NOT NULL");
+    work_column(w, "input", "text", "NOT NULL");
+    work_column(w, "null", "text", "NOT NULL");
+    work_column(w, "output", "text", "");
+    work_column(w, "remote", "text", "");
     work_default(w, "active", "interval", "interval");
     work_default(w, "live", "interval", "interval");
     work_default(w, "repeat", "interval", "interval");
