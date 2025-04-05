@@ -772,24 +772,6 @@ static void work_trigger(const Work *w) {
 
 #if PG_VERSION_NUM < 120000
 static void work_hash(const Work *w) {
-    /*const char *function_quote;
-    StringInfoData function;
-    initStringInfoMy(&function);
-    appendStringInfo(&function, "%1$s_hash_generate", w->shared->table);
-    function_quote = quote_identifier(function.data);
-    appendStringInfo(&hash, SQL(CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$BEGIN
-        IF tg_op OPERATOR(pg_catalog.=) 'INSERT' OR (NEW.group, NEW.remote) IS DISTINCT FROM (OLD.group, OLD.remote) THEN
-            NEW.hash = pg_catalog.hashtext(NEW.group OPERATOR(pg_catalog.||) COALESCE(NEW.remote, '%3$s'));
-        END IF;
-        RETURN NEW;
-    END;$function$ LANGUAGE plpgsql;
-    CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s();), w->schema, function_quote, "", w->schema_table);
-    if (function_quote != function.data) pfree((void *)function_quote);
-    pfree(function.data);*/
-
-
-
-
     Datum values[] = {CStringGetTextDatum(w->shared->schema)};
     static Oid argtypes[] = {TEXTOID};
     char *function_literal;
@@ -825,14 +807,8 @@ static void work_hash(const Work *w) {
     if (!work_test(src.data, 0, NULL, NULL, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
-            CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %1$s FOR EACH %4$s EXECUTE PROCEDURE %2$s.%3$s();
-        ), w->schema_table, w->schema, function_quote,
-#ifdef GP_VERSION_NUM
-        "ROW"
-#else
-        "STATEMENT"
-#endif
-        );
+            CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %1$s FOR EACH ROW EXECUTE PROCEDURE %2$s.%3$s();
+        ), w->schema_table, w->schema, function_quote);
         SPI_connect_my(src.data);
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         SPI_finish_my();
