@@ -835,32 +835,32 @@ static void work_table(const Work *w) {
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         CREATE TABLE %1$s (
-            "id" serial8 NOT NULL PRIMARY KEY,
+            "id" serial8 PRIMARY KEY,
             "parent" pg_catalog.int8 DEFAULT NULLIF(pg_catalog.current_setting('pg_task.id')::pg_catalog.int8, 0),
-            "plan" pg_catalog.timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "plan" pg_catalog.timestamptz DEFAULT CURRENT_TIMESTAMP,
             "start" pg_catalog.timestamptz,
             "stop" pg_catalog.timestamptz,
-            "active" pg_catalog.interval NOT NULL CHECK ("active" > '0 sec'::pg_catalog.interval),
-            "live" pg_catalog.interval NOT NULL CHECK ("live" >= '0 sec'::pg_catalog.interval),
-            "repeat" pg_catalog.interval NOT NULL CHECK ("repeat" >= '0 sec'::pg_catalog.interval),
-            "timeout" pg_catalog.interval NOT NULL CHECK ("timeout" >= '0 sec'::pg_catalog.interval),
-            "count" pg_catalog.int4 NOT NULL CHECK ("count" >= 0),
-            "hash" pg_catalog.int4 NOT NULL %3$s,
-            "max" pg_catalog.int4 NOT NULL,
+            "active" pg_catalog.interval CHECK ("active" > '0 sec'::pg_catalog.interval),
+            "live" pg_catalog.interval CHECK ("live" >= '0 sec'::pg_catalog.interval),
+            "repeat" pg_catalog.interval CHECK ("repeat" >= '0 sec'::pg_catalog.interval),
+            "timeout" pg_catalog.interval CHECK ("timeout" >= '0 sec'::pg_catalog.interval),
+            "count" pg_catalog.int4 CHECK ("count" >= 0),
+            "hash" pg_catalog.int4 %3$s,
+            "max" pg_catalog.int4,
             "pid" pg_catalog.int4,
-            "state" %2$s NOT NULL DEFAULT 'PLAN',
-            "delete" pg_catalog.bool NOT NULL,
-            "drift" pg_catalog.bool NOT NULL,
-            "header" pg_catalog.bool NOT NULL,
-            "string" pg_catalog.bool NOT NULL,
-            "delimiter" pg_catalog.char NOT NULL,
-            "escape" pg_catalog.char NOT NULL,
-            "quote" pg_catalog.char NOT NULL,
+            "state" %2$s DEFAULT 'PLAN',
+            "delete" pg_catalog.bool,
+            "drift" pg_catalog.bool,
+            "header" pg_catalog.bool,
+            "string" pg_catalog.bool,
+            "delimiter" pg_catalog.char,
+            "escape" pg_catalog.char,
+            "quote" pg_catalog.char,
             "data" pg_catalog.text,
             "error" pg_catalog.text,
-            "group" pg_catalog.text NOT NULL,
-            "input" pg_catalog.text NOT NULL,
-            "null" pg_catalog.text NOT NULL,
+            "group" pg_catalog.text,
+            "input" pg_catalog.text,
+            "null" pg_catalog.text,
             "output" pg_catalog.text,
             "remote" pg_catalog.text
         );
@@ -939,6 +939,7 @@ static void work_table(const Work *w) {
     work_column(w, "null", "text");
     work_column(w, "output", "text");
     work_column(w, "remote", "text");
+    work_not_null(w, "id", true);
     work_not_null(w, "parent", false);
     work_not_null(w, "plan", true);
     work_not_null(w, "start", false);
