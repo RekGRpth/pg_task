@@ -708,18 +708,18 @@ static void work_constraint(const Work *w, const char *name, const char *value, 
 static void work_trigger(const Work *w) {
     Datum values[] = {CStringGetTextDatum(w->shared->schema)};
     static Oid argtypes[] = {TEXTOID};
-    char *wake_up_literal;
-    const char *wake_up_quote;
+    char *function_literal;
+    const char *function_quote;
     StringInfoData src;
-    StringInfoData wake_up;
-    initStringInfoMy(&wake_up);
-    appendStringInfo(&wake_up, "%1$s_wake_up", w->shared->table);
-    wake_up_literal = quote_literal_cstr(wake_up.data);
-    wake_up_quote = quote_identifier(wake_up.data);
+    StringInfoData function;
+    initStringInfoMy(&function);
+    appendStringInfo(&function, "%1$s_wake_up", w->shared->table);
+    function_literal = quote_literal_cstr(function.data);
+    function_quote = quote_identifier(function.data);
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT (SELECT prosrc FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) %1$s AND nspname OPERATOR(pg_catalog.=) $1) IS NOT DISTINCT FROM $$BEGIN PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %2$i; RETURN %3$s; END;$$ "test"
-    ), wake_up_literal, w->shared->hash,
+        SELECT (SELECT prosrc FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) %1$s AND nspname OPERATOR(pg_catalog.=) $1) IS NOT DISTINCT FROM $$BEGIN PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %2$i; RETURN %3$s; END;$$ AS "test"
+    ), function_literal, w->shared->hash,
 #ifdef GP_VERSION_NUM
     "NEW"
 #else
@@ -733,7 +733,7 @@ static void work_trigger(const Work *w) {
                 PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %3$i;
                 RETURN %4$s;
             END;$function$ LANGUAGE plpgsql;
-        ), w->schema, wake_up_quote, w->shared->hash,
+        ), w->schema, function_quote, w->shared->hash,
 #ifdef GP_VERSION_NUM
     "NEW"
 #else
@@ -752,7 +752,7 @@ static void work_trigger(const Work *w) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH %4$s EXECUTE PROCEDURE %2$s.%3$s();
-        ), w->schema_table, w->schema, wake_up_quote,
+        ), w->schema_table, w->schema, function_quote,
 #ifdef GP_VERSION_NUM
         "ROW"
 #else
@@ -763,12 +763,87 @@ static void work_trigger(const Work *w) {
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         SPI_finish_my();
     }
-    if (wake_up_quote != wake_up.data) pfree((void *)wake_up_quote);
+    if (function_quote != function.data) pfree((void *)function_quote);
     pfree(src.data);
-    pfree(wake_up.data);
-    pfree(wake_up_literal);
+    pfree(function.data);
+    pfree(function_literal);
     pfree((void *)values[0]);
 }
+
+#if PG_VERSION_NUM < 120000
+static void work_hash(const Work *w) {
+    /*const char *function_quote;
+    StringInfoData function;
+    initStringInfoMy(&function);
+    appendStringInfo(&function, "%1$s_hash_generate", w->shared->table);
+    function_quote = quote_identifier(function.data);
+    appendStringInfo(&hash, SQL(CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$BEGIN
+        IF tg_op OPERATOR(pg_catalog.=) 'INSERT' OR (NEW.group, NEW.remote) IS DISTINCT FROM (OLD.group, OLD.remote) THEN
+            NEW.hash = pg_catalog.hashtext(NEW.group OPERATOR(pg_catalog.||) COALESCE(NEW.remote, '%3$s'));
+        END IF;
+        RETURN NEW;
+    END;$function$ LANGUAGE plpgsql;
+    CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s();), w->schema, function_quote, "", w->schema_table);
+    if (function_quote != function.data) pfree((void *)function_quote);
+    pfree(function.data);*/
+
+
+
+
+    Datum values[] = {CStringGetTextDatum(w->shared->schema)};
+    static Oid argtypes[] = {TEXTOID};
+    char *function_literal;
+    const char *function_quote;
+    StringInfoData src;
+    StringInfoData function;
+    initStringInfoMy(&function);
+    appendStringInfo(&function, "%1$s_hash_generate", w->shared->table);
+    function_literal = quote_literal_cstr(function.data);
+    function_quote = quote_identifier(function.data);
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        SELECT (SELECT prosrc FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) %1$s AND nspname OPERATOR(pg_catalog.=) $1) IS NOT DISTINCT FROM $$BEGIN IF tg_op OPERATOR(pg_catalog.=) 'INSERT' OR (NEW.group, NEW.remote) IS DISTINCT FROM (OLD.group, OLD.remote) THEN NEW.hash = pg_catalog.hashtext(NEW.group OPERATOR(pg_catalog.||) COALESCE(NEW.remote, '')); END IF; RETURN NEW; END;$$ AS "test"
+    ), function_literal);
+    if (!work_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$BEGIN
+                IF tg_op OPERATOR(pg_catalog.=) 'INSERT' OR (NEW.group, NEW.remote) IS DISTINCT FROM (OLD.group, OLD.remote) THEN
+                    NEW.hash = pg_catalog.hashtext(NEW.group OPERATOR(pg_catalog.||) COALESCE(NEW.remote, '%3$s'));
+                END IF;
+                RETURN NEW;
+            END;$function$ LANGUAGE plpgsql;
+        ), w->schema, function_quote, "");
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+    }
+    resetStringInfo(&src);
+    appendStringInfo(&src, SQL(
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) 'hash_generate' AND tgrelid OPERATOR(pg_catalog.=) %1$i) AS "test"
+    ), w->shared->oid);
+    if (!work_test(src.data, 0, NULL, NULL, NULL)) {
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %1$s FOR EACH %4$s EXECUTE PROCEDURE %2$s.%3$s();
+        ), w->schema_table, w->schema, function_quote,
+#ifdef GP_VERSION_NUM
+        "ROW"
+#else
+        "STATEMENT"
+#endif
+        );
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+    }
+    if (function_quote != function.data) pfree((void *)function_quote);
+    pfree(src.data);
+    pfree(function.data);
+    pfree(function_literal);
+    pfree((void *)values[0]);
+}
+#endif
 
 static void work_column(const Work *w, const char *name, const char *type) {
     StringInfoData src;
@@ -833,23 +908,6 @@ static void work_table(const Work *w) {
     initStringInfoMy(&hash);
 #if PG_VERSION_NUM >= 120000
     appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%1$s'))) STORED), "");
-#else
-    if (true) {
-        const char *function_quote;
-        StringInfoData function;
-        initStringInfoMy(&function);
-        appendStringInfo(&function, "%1$s_hash_generate", w->shared->table);
-        function_quote = quote_identifier(function.data);
-        appendStringInfo(&hash, SQL(CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$BEGIN
-            IF tg_op OPERATOR(pg_catalog.=) 'INSERT' OR (NEW.group, NEW.remote) IS DISTINCT FROM (OLD.group, OLD.remote) THEN
-                NEW.hash = pg_catalog.hashtext(NEW.group OPERATOR(pg_catalog.||) COALESCE(NEW.remote, '%3$s'));
-            END IF;
-            RETURN NEW;
-        END;$function$ LANGUAGE plpgsql;
-        CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %4$s FOR EACH ROW EXECUTE PROCEDURE %1$s.%2$s();), w->schema, function_quote, "", w->schema_table);
-        if (function_quote != function.data) pfree((void *)function_quote);
-        pfree(function.data);
-    }
 #endif
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
@@ -919,9 +977,6 @@ static void work_table(const Work *w) {
         ""
 #endif
     );
-#if PG_VERSION_NUM < 120000
-    appendStringInfoString(&src, hash.data);
-#endif
     SPI_connect_my(src.data);
     if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     w->shared->oid = RangeVarGetRelid(rangevar, NoLock, false);
@@ -1012,6 +1067,9 @@ static void work_table(const Work *w) {
     work_index(w, "plan");
     work_index(w, "state");
     work_trigger(w);
+#if PG_VERSION_NUM < 120000
+    work_hash(w);
+#endif
     set_ps_display_my("idle");
 }
 
