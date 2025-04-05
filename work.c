@@ -336,19 +336,31 @@ static void work_done(Task *t) {
     task_done(t) || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
 }
 
+static bool work_test(const char *src) {
+    bool test;
+    SPI_connect_my(src);
+    SPI_execute_with_args_my(src, 0, NULL, NULL, NULL, SPI_OK_SELECT);
+    if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed %lu != 1", (long)SPI_processed)));
+    test = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "test", false, BOOLOID));
+    SPI_finish_my();
+    return test;
+}
+
 static void work_schema(const Work *w) {
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        DO $DO$ BEGIN
-            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_namespace WHERE nspname OPERATOR(pg_catalog.=) '%1$s') THEN
-                CREATE SCHEMA "%1$s";
-            END IF;
-        END; $DO$
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_namespace WHERE nspname OPERATOR(pg_catalog.=) '%1$s') AS "test"
     ), w->schema);
-    SPI_connect_my(src.data);
-    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_finish_my();
+    if (!work_test(src.data)) {
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            CREATE SCHEMA "%1$s";
+        ), w->schema);
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+    }
     pfree(src.data);
 }
 
