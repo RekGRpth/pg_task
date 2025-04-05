@@ -347,21 +347,24 @@ static bool work_test(const char *src, int nargs, Oid *argtypes, Datum *values, 
 }
 
 static void work_schema(const Work *w) {
+    Datum values[] = {CStringGetTextDatum(w->shared->schema)};
+    static Oid argtypes[] = {TEXTOID};
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_namespace WHERE nspname OPERATOR(pg_catalog.=) '%1$s') AS "test"
-    ), w->schema);
-    if (!work_test(src.data, 0, NULL, NULL, NULL)) {
+    ), w->shared->schema);
+    if (!work_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
-            CREATE SCHEMA "%1$s";
+            CREATE SCHEMA %1$s;
         ), w->schema);
         SPI_connect_my(src.data);
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         SPI_finish_my();
     }
     pfree(src.data);
+    pfree((void *)values[0]);
 }
 
 static void work_headers(Task *t, const PGresult *result) {
