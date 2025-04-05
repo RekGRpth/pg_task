@@ -352,8 +352,8 @@ static void work_schema(const Work *w) {
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT EXISTS (SELECT * FROM pg_catalog.pg_namespace WHERE nspname OPERATOR(pg_catalog.=) '%1$s') AS "test"
-    ), w->shared->schema);
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_namespace WHERE nspname OPERATOR(pg_catalog.=) $1) AS "test"
+    ));
     if (!work_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
