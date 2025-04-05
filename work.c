@@ -773,16 +773,16 @@ static void work_trigger(const Work *w) {
     pfree(wake_up_literal);
 }
 
-static void work_column(const Work *w, const char *name, const char *type) {
+static void work_column(const Work *w, const char *name, const char *type, bool not_null) {
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         DO $DO$ BEGIN
             IF NOT EXISTS (SELECT * FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') THEN
-                ALTER TABLE %1$s ADD COLUMN "%3$s" pg_catalog.%4$s;
+                ALTER TABLE %1$s ADD COLUMN "%3$s" pg_catalog.%4$s %5$s;
             END IF;
         END; $DO$
-    ), w->schema_table, w->shared->oid, name, type);
+    ), w->schema_table, w->shared->oid, name, type, not_null ? "NOT NULL" : "");
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
@@ -896,7 +896,7 @@ static void work_table(const Work *w) {
     resetStringInfo(&src);
     pfree(hash.data);
     pfree(src.data);
-    work_column(w, "data", "text");
+    work_column(w, "data", "text", false);
     work_default(w, "active", "interval", "interval");
     work_default(w, "live", "interval", "interval");
     work_default(w, "repeat", "interval", "interval");
