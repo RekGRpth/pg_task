@@ -731,7 +731,7 @@ static void work_default(const Work *w, const char *name, const char *type, cons
     pfree(src.data);
 }
 
-static void work_update(const Work *w) {
+static void work_trigger(const Work *w) {
     char *schema = quote_literal_cstr(w->shared->schema);
     char *table = quote_literal_cstr(w->shared->table);
     char *wake_up_literal;
@@ -743,17 +743,6 @@ static void work_update(const Work *w) {
     wake_up_literal = quote_literal_cstr(wake_up.data);
     wake_up_quote = quote_identifier(wake_up.data);
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(
-        DO $DO$ BEGIN
-            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'data') THEN
-                ALTER TABLE %1$s ADD COLUMN "data" text;
-            END IF;
-        END; $DO$
-    ), w->schema_table, w->shared->oid);
-    SPI_connect_my(src.data);
-    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_finish_my();
-    resetStringInfo(&src);
     appendStringInfo(&src, SQL(
         DO $DO$ BEGIN
             IF (SELECT prosrc FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) %3$s AND nspname OPERATOR(pg_catalog.=) %7$s) IS DISTINCT FROM $$BEGIN PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %6$i; RETURN %8$s; END;$$ THEN
@@ -782,6 +771,22 @@ static void work_update(const Work *w) {
     pfree(table);
     pfree(wake_up.data);
     pfree(wake_up_literal);
+}
+
+static void work_column(const Work *w, const char *name, const char *type) {
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        DO $DO$ BEGIN
+            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') THEN
+                ALTER TABLE %1$s ADD COLUMN "%3$s" pg_catalog.%4$s;
+            END IF;
+        END; $DO$
+    ), w->schema_table, w->shared->oid, name, type);
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_finish_my();
+    pfree(src.data);
 }
 
 static void work_table(const Work *w) {
@@ -891,7 +896,7 @@ static void work_table(const Work *w) {
     resetStringInfo(&src);
     pfree(hash.data);
     pfree(src.data);
-    work_update(w);
+    work_column(w, "data", "text");
     work_default(w, "active", "interval", "interval");
     work_default(w, "live", "interval", "interval");
     work_default(w, "repeat", "interval", "interval");
@@ -912,6 +917,7 @@ static void work_table(const Work *w) {
     work_index(w, 1, "parent");
     work_index(w, 1, "plan");
     work_index(w, 1, "state");
+    work_trigger(w);
     set_ps_display_my("idle");
 }
 
