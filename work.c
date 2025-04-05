@@ -255,32 +255,37 @@ static int work_nevents(void) {
     return nevents;
 }
 
-static void work_index(const Work *w, int count, const char *const *indexes) {
+static void work_index(const Work *w, int count, ...) {
     const char *name_quote;
     const RangeVar *rangevar;
     List *names;
     RelationData *relation;
     StringInfoData src, name, idx;
+    va_list args;
     set_ps_display_my("index");
     initStringInfoMy(&name);
     appendStringInfoString(&name, w->shared->table);
+	va_start(args, count);
     for (int i = 0; i < count; i++) {
-        const char *index = indexes[i];
+        const char *index = va_arg(args, const char *);
         appendStringInfoString(&name, "_");
         appendStringInfoString(&name, index);
     }
+    va_end(args);
     appendStringInfoString(&name, "_idx");
     name_quote = quote_identifier(name.data);
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(CREATE INDEX %s ON %s USING btree), name_quote, w->schema_table);
     appendStringInfoString(&src, " (");
+	va_start(args, count);
     for (int i = 0; i < count; i++) {
-        const char *index = indexes[i];
+        const char *index = va_arg(args, const char *);
         const char *index_quote = quote_identifier(index);
         if (i) appendStringInfoString(&src, ", ");
         appendStringInfoString(&src, index_quote);
         if (index_quote != index) pfree((void *)index_quote);
     }
+    va_end(args);
     appendStringInfoString(&src, ")");
     initStringInfoMy(&idx);
     appendStringInfo(&idx, "%s.%s", w->schema, name_quote);
@@ -848,6 +853,11 @@ static void work_table(const Work *w) {
     work_default(&work, "quote", "\"char\"", "char");
     work_default(&work, "group", "text", "text");
     work_default(&work, "null", "text", "text");
+    work_index(&work, 1, "hash");
+    work_index(&work, 1, "input");
+    work_index(&work, 1, "parent");
+    work_index(&work, 1, "plan");
+    work_index(&work, 1, "state");
     set_ps_display_my("idle");
 }
 
@@ -955,11 +965,6 @@ static void work_idle(SIGNAL_ARGS) {
 
 void work_main(Datum main_arg) {
     const char *application_name;
-    const char *index_hash[] = {"hash"};
-    const char *index_input[] = {"input"};
-    const char *index_parent[] = {"parent"};
-    const char *index_plan[] = {"plan"};
-    const char *index_state[] = {"state"};
     instr_time current_time_reset;
     instr_time current_time_sleep;
     instr_time start_time_reset;
@@ -1013,11 +1018,6 @@ void work_main(Datum main_arg) {
     work_type(&work);
     work_table(&work);
     work_update(&work);
-    work_index(&work, countof(index_hash), index_hash);
-    work_index(&work, countof(index_input), index_input);
-    work_index(&work, countof(index_parent), index_parent);
-    work_index(&work, countof(index_plan), index_plan);
-    work_index(&work, countof(index_state), index_state);
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_DISPATCH;
 #if PG_VERSION_NUM < 120000
