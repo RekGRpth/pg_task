@@ -255,60 +255,6 @@ static int work_nevents(void) {
     return nevents;
 }
 
-static void work_index(const Work *w, int count, ...) {
-    const char *name_quote;
-    const RangeVar *rangevar;
-    List *names;
-    RelationData *relation;
-    StringInfoData src, name, idx;
-    va_list args;
-    set_ps_display_my("index");
-    initStringInfoMy(&name);
-    appendStringInfoString(&name, w->shared->table);
-	va_start(args, count);
-    for (int i = 0; i < count; i++) {
-        const char *index = va_arg(args, const char *);
-        appendStringInfoString(&name, "_");
-        appendStringInfoString(&name, index);
-    }
-    va_end(args);
-    appendStringInfoString(&name, "_idx");
-    name_quote = quote_identifier(name.data);
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE INDEX %s ON %s USING btree), name_quote, w->schema_table);
-    appendStringInfoString(&src, " (");
-	va_start(args, count);
-    for (int i = 0; i < count; i++) {
-        const char *index = va_arg(args, const char *);
-        const char *index_quote = quote_identifier(index);
-        if (i) appendStringInfoString(&src, ", ");
-        appendStringInfoString(&src, index_quote);
-        if (index_quote != index) pfree((void *)index_quote);
-    }
-    va_end(args);
-    appendStringInfoString(&src, ")");
-    initStringInfoMy(&idx);
-    appendStringInfo(&idx, "%s.%s", w->schema, name_quote);
-    names = stringToQualifiedNameListMy(idx.data);
-    rangevar = makeRangeVarFromNameList(names);
-    elog(DEBUG1, "index = %s, schema_table = %s", idx.data, w->schema_table);
-    SPI_connect_my(src.data);
-    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) {
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    } else if ((relation = relation_openrv_extended_my(rangevar, AccessShareLock, true))) {
-        if (relation->rd_index && relation->rd_index->indrelid != w->shared->oid) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        relation_close(relation, AccessShareLock);
-    }
-    SPI_finish_my();
-    pfree((void *)rangevar);
-    list_free_deep(names);
-    if (name_quote != name.data) pfree((void *)name_quote);
-    pfree(idx.data);
-    pfree(name.data);
-    pfree(src.data);
-    set_ps_display_my("idle");
-}
-
 static void work_reset(const Work *w) {
     Portal portal;
     static SPIPlanPtr plan = NULL;
@@ -821,6 +767,22 @@ static void work_not_null(const Work *w, const char *name, bool not_null) {
     pfree(src.data);
 }
 
+static void work_index(const Work *w, const char *name) {
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        DO $DO$ BEGIN
+            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_index LEFT JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) indrelid AND attnum OPERATOR(pg_catalog.=) indkey[0] WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') THEN
+                CREATE INDEX ON %1$s USING btree ("%3$s");
+            END IF;
+        END; $DO$
+    ), w->schema_table, w->shared->oid, name);
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_finish_my();
+    pfree(src.data);
+}
+
 static void work_table(const Work *w) {
     List *names = stringToQualifiedNameListMy(w->schema_table);
     const RangeVar *rangevar = makeRangeVarFromNameList(names);
@@ -1003,11 +965,11 @@ static void work_table(const Work *w) {
     work_default(w, "quote", "\"char\"", "char");
     work_default(w, "group", "text", "text");
     work_default(w, "null", "text", "text");
-    work_index(w, 1, "hash");
-    work_index(w, 1, "input");
-    work_index(w, 1, "parent");
-    work_index(w, 1, "plan");
-    work_index(w, 1, "state");
+    work_index(w, "hash");
+    work_index(w, "input");
+    work_index(w, "parent");
+    work_index(w, "plan");
+    work_index(w, "state");
     work_trigger(w);
     set_ps_display_my("idle");
 }
