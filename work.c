@@ -336,10 +336,10 @@ static void work_done(Task *t) {
     task_done(t) || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
 }
 
-static bool work_test(const char *src) {
+static bool work_test(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
     bool test;
     SPI_connect_my(src);
-    SPI_execute_with_args_my(src, 0, NULL, NULL, NULL, SPI_OK_SELECT);
+    SPI_execute_with_args_my(src, nargs, argtypes, values, nulls, SPI_OK_SELECT);
     if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed %lu != 1", (long)SPI_processed)));
     test = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "test", false, BOOLOID));
     SPI_finish_my();
@@ -352,7 +352,7 @@ static void work_schema(const Work *w) {
     appendStringInfo(&src, SQL(
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_namespace WHERE nspname OPERATOR(pg_catalog.=) '%1$s') AS "test"
     ), w->schema);
-    if (!work_test(src.data)) {
+    if (!work_test(src.data, 0, NULL, NULL, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             CREATE SCHEMA "%1$s";
@@ -670,7 +670,7 @@ static void work_default(const Work *w, const char *name, const char *type, cons
     appendStringInfo(&src, SQL(
         SELECT (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid WHERE attnum OPERATOR(pg_catalog.=) adnum AND attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') IS NOT DISTINCT FROM $$(current_setting('pg_task.%2$s'::text))::%3$s$$ AS "test"
     ), w->shared->oid, name, type);
-    if (!work_test(src.data)) {
+    if (!work_test(src.data, 0, NULL, NULL, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             ALTER TABLE %1$s ALTER COLUMN "%2$s" SET DEFAULT (pg_catalog.current_setting('pg_task.%2$s'))::pg_catalog.%3$s;
@@ -688,7 +688,7 @@ static void work_constraint(const Work *w, const char *name, const char *value, 
     appendStringInfo(&src, SQL(
         SELECT (SELECT pg_catalog.pg_get_expr(conbin, conrelid) FROM pg_catalog.pg_constraint JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) conrelid WHERE attnum OPERATOR(pg_catalog.=) conkey[1] AND attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') IS NOT DISTINCT FROM $$(%2$s %3$s)$$ AS "test"
     ), w->shared->oid, name, value);
-    if (!work_test(src.data)) {
+    if (!work_test(src.data, 0, NULL, NULL, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             ALTER TABLE %1$s ADD CHECK ("%2$s" %3$s%4$s);
@@ -748,7 +748,7 @@ static void work_column(const Work *w, const char *name, const char *type) {
     appendStringInfo(&src, SQL(
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') AS "test"
     ), w->shared->oid, name);
-    if (!work_test(src.data)) {
+    if (!work_test(src.data, 0, NULL, NULL, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             ALTER TABLE %1$s ADD COLUMN "%2$s" pg_catalog.%3$s;
@@ -766,7 +766,7 @@ static void work_not_null(const Work *w, const char *name, bool not_null) {
     appendStringInfo(&src, SQL(
         SELECT (SELECT attnotnull FROM pg_catalog.pg_attribute JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid WHERE attnum OPERATOR(pg_catalog.=) adnum AND attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') IS NOT DISTINCT FROM %3$s AS "test"
     ), w->shared->oid, name, not_null ? "true" : "false");
-    if (!work_test(src.data)) {
+    if (!work_test(src.data, 0, NULL, NULL, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             ALTER TABLE %1$s ALTER COLUMN "%2$s" %3$s NOT NULL;
@@ -784,7 +784,7 @@ static void work_index(const Work *w, const char *name) {
     appendStringInfo(&src, SQL(
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_index JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) indrelid WHERE attnum OPERATOR(pg_catalog.=) indkey[0] AND attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') AS "test"
     ), w->shared->oid, name);
-    if (!work_test(src.data)) {
+    if (!work_test(src.data, 0, NULL, NULL, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             CREATE INDEX ON %1$s USING btree ("%2$s");
@@ -993,7 +993,7 @@ static void work_enum(const Work *w, const char *name) {
     appendStringInfo(&src, SQL(
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_enum JOIN pg_catalog.pg_type ON pg_catalog.pg_type.oid OPERATOR(pg_catalog.=) enumtypid JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) '%1$s' AND enumlabel OPERATOR(pg_catalog.=) '%2$s') AS "test"
     ), w->schema, name);
-    if (!work_test(src.data)) {
+    if (!work_test(src.data, 0, NULL, NULL, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             ALTER TYPE "%1$s"."state" ADD VALUE '%2$s';
@@ -1011,7 +1011,7 @@ static void work_type(const Work *w) {
     appendStringInfo(&src, SQL(
         SELECT  EXISTS (SELECT * FROM pg_catalog.pg_type JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) '%1$s' AND typname OPERATOR(pg_catalog.=) 'state') AS "test"
     ), w->schema);
-    if (!work_test(src.data)) {
+    if (!work_test(src.data, 0, NULL, NULL, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             CREATE TYPE "%1$s"."state" AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');
