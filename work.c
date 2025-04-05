@@ -991,12 +991,14 @@ static void work_table(const Work *w) {
 }
 
 static void work_enum(const Work *w, const char *name) {
+    Datum values[] = {CStringGetTextDatum(w->shared->schema)};
+    static Oid argtypes[] = {TEXTOID};
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT EXISTS (SELECT * FROM pg_catalog.pg_enum JOIN pg_catalog.pg_type ON pg_catalog.pg_type.oid OPERATOR(pg_catalog.=) enumtypid JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) '%1$s' AND enumlabel OPERATOR(pg_catalog.=) '%2$s') AS "test"
-    ), w->schema, name);
-    if (!work_test(src.data, 0, NULL, NULL, NULL)) {
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_enum JOIN pg_catalog.pg_type ON pg_catalog.pg_type.oid OPERATOR(pg_catalog.=) enumtypid JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND enumlabel OPERATOR(pg_catalog.=) '%1$s') AS "test"
+    ), name);
+    if (!work_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             ALTER TYPE %1$s ADD VALUE '%2$s';
@@ -1006,6 +1008,7 @@ static void work_enum(const Work *w, const char *name) {
         SPI_finish_my();
     }
     pfree(src.data);
+    pfree((void *)values[0]);
 }
 
 static void work_type(const Work *w) {
