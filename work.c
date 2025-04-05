@@ -710,6 +710,22 @@ static void work_sleep(Work *w) {
     set_ps_display_my("idle");
 }
 
+static void work_default(const Work *w, const char *name, const char *type, const char *catalog) {
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        DO $DO$ BEGIN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') IS DISTINCT FROM $$(current_setting('pg_task.%3$s'::text))::%4$s$$ THEN
+                ALTER TABLE %1$s ALTER COLUMN "%3$s" SET DEFAULT (pg_catalog.current_setting('pg_task.%3$s'))::pg_catalog.%5$s;
+            END IF;
+        END; $DO$
+    ), w->schema_table, w->shared->oid, name, type, catalog);
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_finish_my();
+    pfree(src.data);
+}
+
 static void work_table(const Work *w) {
     List *names = stringToQualifiedNameListMy(w->schema_table);
     const RangeVar *rangevar = makeRangeVarFromNameList(names);
@@ -749,9 +765,9 @@ static void work_table(const Work *w) {
             "live" pg_catalog.interval NOT NULL DEFAULT pg_catalog.current_setting('pg_task.live')::pg_catalog.interval CHECK ("live" >= '0 sec'::pg_catalog.interval),
             "repeat" pg_catalog.interval NOT NULL DEFAULT pg_catalog.current_setting('pg_task.repeat')::pg_catalog.interval CHECK ("repeat" >= '0 sec'::pg_catalog.interval),
             "timeout" pg_catalog.interval NOT NULL DEFAULT pg_catalog.current_setting('pg_task.timeout')::pg_catalog.interval CHECK ("timeout" >= '0 sec'::pg_catalog.interval),
-            "count" pg_catalog.int4 NOT NULL DEFAULT pg_catalog.current_setting('pg_task.count')::pg_catalog.integer CHECK ("count" >= 0),
+            "count" pg_catalog.int4 NOT NULL DEFAULT pg_catalog.current_setting('pg_task.count')::pg_catalog.int4 CHECK ("count" >= 0),
             "hash" pg_catalog.int4 NOT NULL %3$s,
-            "max" pg_catalog.int4 NOT NULL DEFAULT pg_catalog.current_setting('pg_task.max')::pg_catalog.integer,
+            "max" pg_catalog.int4 NOT NULL DEFAULT pg_catalog.current_setting('pg_task.max')::pg_catalog.int4,
             "pid" pg_catalog.int4,
             "state" %2$s NOT NULL DEFAULT 'PLAN',
             "delete" pg_catalog.bool NOT NULL DEFAULT pg_catalog.current_setting('pg_task.delete')::pg_catalog.bool,
@@ -817,7 +833,38 @@ static void work_table(const Work *w) {
     resetStringInfo(&src);
     pfree(hash.data);
     pfree(src.data);
+    work_default(&work, "active", "interval", "interval");
+    work_default(&work, "live", "interval", "interval");
+    work_default(&work, "repeat", "interval", "interval");
+    work_default(&work, "timeout", "interval", "interval");
+    work_default(&work, "count", "integer", "int4");
+    work_default(&work, "max", "integer", "int4");
+    work_default(&work, "delete", "bool", "bool");
+    work_default(&work, "drift", "bool", "bool");
+    work_default(&work, "header", "bool", "bool");
+    work_default(&work, "string", "bool", "bool");
+    work_default(&work, "delimiter", "\"char\"", "char");
+    work_default(&work, "escape", "\"char\"", "char");
+    work_default(&work, "quote", "\"char\"", "char");
+    work_default(&work, "group", "text", "text");
+    work_default(&work, "null", "text", "text");
     set_ps_display_my("idle");
+}
+
+static void work_enum(const Work *w, const char *name) {
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        DO $DO$ BEGIN
+            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_enum WHERE enumtypid OPERATOR(pg_catalog.=) '%1$s'::pg_catalog.regtype AND enumlabel OPERATOR(pg_catalog.=) '%2$s') THEN
+                ALTER TYPE %1$s ADD VALUE '%2$s';
+            END IF;
+        END; $DO$
+    ), w->schema_type, name);
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_finish_my();
+    pfree(src.data);
 }
 
 static void work_type(const Work *w) {
@@ -832,22 +879,14 @@ static void work_type(const Work *w) {
     if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
     pfree(src.data);
+    work_enum(w, "PLAN");
+    work_enum(w, "GONE");
+    work_enum(w, "TAKE");
+    work_enum(w, "WORK");
+    work_enum(w, "DONE");
+    work_enum(w, "FAIL");
+    work_enum(w, "STOP");
     set_ps_display_my("idle");
-}
-
-static void work_default(const Work *w, const char *name, const char *type) {
-    StringInfoData src;
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(
-        DO $DO$ BEGIN
-            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') IS DISTINCT FROM $$(current_setting('pg_task.%3$s'::text))::%4$s$$ THEN
-                ALTER TABLE %1$s ALTER COLUMN "%3$s" SET DEFAULT (pg_catalog.current_setting('pg_task.%3$s'))::pg_catalog.%4$s;
-            END IF;
-        END; $DO$
-    ), w->schema_table, w->shared->oid, name, type);
-    SPI_connect_my(src.data);
-    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_finish_my();
 }
 
 static void work_update(const Work *w) {
@@ -867,14 +906,8 @@ static void work_update(const Work *w) {
             IF NOT EXISTS (SELECT * FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'data') THEN
                 ALTER TABLE %1$s ADD COLUMN "data" text;
             END IF;
-            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_enum WHERE enumtypid OPERATOR(pg_catalog.=) '%3$s'::pg_catalog.regtype AND enumlabel OPERATOR(pg_catalog.=) 'GONE') THEN
-                ALTER TYPE %3$s ADD VALUE 'GONE' AFTER 'PLAN';
-            END IF;
-            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_enum WHERE enumtypid OPERATOR(pg_catalog.=) '%3$s'::pg_catalog.regtype AND enumlabel OPERATOR(pg_catalog.=) 'FAIL') THEN
-                ALTER TYPE %3$s ADD VALUE 'FAIL' AFTER 'DONE';
-            END IF;
         END; $DO$
-    ), w->schema_table, w->shared->oid, w->schema_type);
+    ), w->schema_table, w->shared->oid);
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
@@ -979,21 +1012,6 @@ void work_main(Datum main_arg) {
     work_schema(&work);
     work_type(&work);
     work_table(&work);
-    work_default(&work, "active", "interval");
-    work_default(&work, "live", "interval");
-    work_default(&work, "repeat", "interval");
-    work_default(&work, "timeout", "interval");
-    work_default(&work, "count", "integer");
-    work_default(&work, "max", "integer");
-    work_default(&work, "delete", "bool");
-    work_default(&work, "drift", "bool");
-    work_default(&work, "header", "bool");
-    work_default(&work, "string", "bool");
-    work_default(&work, "delimiter", "\"char\"");
-    work_default(&work, "escape", "\"char\"");
-    work_default(&work, "quote", "\"char\"");
-    work_default(&work, "group", "text");
-    work_default(&work, "null", "text");
     work_update(&work);
     work_index(&work, countof(index_hash), index_hash);
     work_index(&work, countof(index_input), index_input);
