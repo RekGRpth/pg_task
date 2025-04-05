@@ -731,6 +731,22 @@ static void work_default(const Work *w, const char *name, const char *type, cons
     pfree(src.data);
 }
 
+static void work_constraint(const Work *w, const char *name, const char *value, const char *type) {
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        DO $DO$ BEGIN
+            IF (SELECT pg_catalog.pg_get_expr(conbin, conrelid) FROM pg_catalog.pg_constraint LEFT JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) conrelid AND attnum OPERATOR(pg_catalog.=) conkey[1] WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') IS DISTINCT FROM $$(%3$s %4$s)$$ THEN
+                ALTER TABLE %1$s ADD CHECK ("%3$s" %4$s%5$s);
+            END IF;
+        END; $DO$
+    ), w->schema_table, w->shared->oid, name, value, type ? type : "");
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_finish_my();
+    pfree(src.data);
+}
+
 static void work_trigger(const Work *w) {
     char *schema = quote_literal_cstr(w->shared->schema);
     char *table = quote_literal_cstr(w->shared->table);
@@ -840,11 +856,11 @@ static void work_table(const Work *w) {
             "plan" pg_catalog.timestamptz DEFAULT CURRENT_TIMESTAMP,
             "start" pg_catalog.timestamptz,
             "stop" pg_catalog.timestamptz,
-            "active" pg_catalog.interval CHECK ("active" > '0 sec'::pg_catalog.interval),
-            "live" pg_catalog.interval CHECK ("live" >= '0 sec'::pg_catalog.interval),
-            "repeat" pg_catalog.interval CHECK ("repeat" >= '0 sec'::pg_catalog.interval),
-            "timeout" pg_catalog.interval CHECK ("timeout" >= '0 sec'::pg_catalog.interval),
-            "count" pg_catalog.int4 CHECK ("count" >= 0),
+            "active" pg_catalog.interval,
+            "live" pg_catalog.interval,
+            "repeat" pg_catalog.interval,
+            "timeout" pg_catalog.interval,
+            "count" pg_catalog.int4,
             "hash" pg_catalog.int4 %3$s,
             "max" pg_catalog.int4,
             "pid" pg_catalog.int4,
@@ -967,6 +983,11 @@ static void work_table(const Work *w) {
     work_not_null(w, "null", true);
     work_not_null(w, "output", false);
     work_not_null(w, "remote", false);
+    work_constraint(w, "active", "> '00:00:00'::interval", "::pg_catalog.interval");
+    work_constraint(w, "live", ">= '00:00:00'::interval", "::pg_catalog.interval");
+    work_constraint(w, "repeat", ">= '00:00:00'::interval", "::pg_catalog.interval");
+    work_constraint(w, "timeout", ">= '00:00:00'::interval", "::pg_catalog.interval");
+    work_constraint(w, "count", ">= 0", NULL);
     work_default(w, "active", "interval", "interval");
     work_default(w, "live", "interval", "interval");
     work_default(w, "repeat", "interval", "interval");
