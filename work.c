@@ -1009,15 +1009,17 @@ static void work_type(const Work *w) {
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        DO $DO$ BEGIN
-            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_type JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) '%1$s' AND typname OPERATOR(pg_catalog.=) 'state') THEN
-                CREATE TYPE "%1$s"."state" AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');
-            END IF;
-        END; $DO$
+        SELECT  EXISTS (SELECT * FROM pg_catalog.pg_type JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) '%1$s' AND typname OPERATOR(pg_catalog.=) 'state') AS "test"
     ), w->schema);
-    SPI_connect_my(src.data);
-    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_finish_my();
+    if (!work_test(src.data)) {
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            CREATE TYPE "%1$s"."state" AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');
+        ), w->schema);
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+    }
     pfree(src.data);
     work_enum(w, "PLAN");
     work_enum(w, "GONE");
