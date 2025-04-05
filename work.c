@@ -773,16 +773,32 @@ static void work_trigger(const Work *w) {
     pfree(wake_up_literal);
 }
 
-static void work_column(const Work *w, const char *name, const char *type, const char *not_null) {
+static void work_column(const Work *w, const char *name, const char *type) {
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         DO $DO$ BEGIN
             IF NOT EXISTS (SELECT * FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') THEN
-                ALTER TABLE %1$s ADD COLUMN "%3$s" pg_catalog.%4$s %5$s;
+                ALTER TABLE %1$s ADD COLUMN "%3$s" pg_catalog.%4$s;
             END IF;
         END; $DO$
-    ), w->schema_table, w->shared->oid, name, type, not_null);
+    ), w->schema_table, w->shared->oid, name, type);
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_finish_my();
+    pfree(src.data);
+}
+
+static void work_not_null(const Work *w, const char *name, bool not_null) {
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        DO $DO$ BEGIN
+            IF (SELECT attnotnull FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') IS DISTINCT FROM %4$s THEN
+                ALTER TABLE %1$s ALTER COLUMN "%3$s" %5$s NOT NULL;
+            END IF;
+        END; $DO$
+    ), w->schema_table, w->shared->oid, name, not_null ? "true" : "false", not_null ? "SET" : "DROP");
     SPI_connect_my(src.data);
     SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
@@ -896,33 +912,60 @@ static void work_table(const Work *w) {
     resetStringInfo(&src);
     pfree(hash.data);
     pfree(src.data);
-    work_column(w, "parent", "int8", "");
-    work_column(w, "plan", "timestamptz", "NOT NULL");
-    work_column(w, "start", "timestamptz", "");
-    work_column(w, "stop", "timestamptz", "");
-    work_column(w, "active", "interval", "NOT NULL");
-    work_column(w, "live", "interval", "NOT NULL");
-    work_column(w, "repeat", "interval", "NOT NULL");
-    work_column(w, "timeout", "interval", "NOT NULL");
-    work_column(w, "count", "int4", "NOT NULL");
-    work_column(w, "hash", "int4", "NOT NULL");
-    work_column(w, "max", "int4", "NOT NULL");
-    work_column(w, "pid", "int4", "");
-    work_column(w, "state", w->schema_type, "NOT NULL");
-    work_column(w, "delete", "bool", "NOT NULL");
-    work_column(w, "drift", "bool", "NOT NULL");
-    work_column(w, "header", "bool", "NOT NULL");
-    work_column(w, "string", "bool", "NOT NULL");
-    work_column(w, "delimiter", "char", "NOT NULL");
-    work_column(w, "escape", "char", "NOT NULL");
-    work_column(w, "quote", "char", "NOT NULL");
-    work_column(w, "data", "text", "");
-    work_column(w, "error", "text", "");
-    work_column(w, "group", "text", "NOT NULL");
-    work_column(w, "input", "text", "NOT NULL");
-    work_column(w, "null", "text", "NOT NULL");
-    work_column(w, "output", "text", "");
-    work_column(w, "remote", "text", "");
+    work_column(w, "parent", "int8");
+    work_column(w, "plan", "timestamptz");
+    work_column(w, "start", "timestamptz");
+    work_column(w, "stop", "timestamptz");
+    work_column(w, "active", "interval");
+    work_column(w, "live", "interval");
+    work_column(w, "repeat", "interval");
+    work_column(w, "timeout", "interval");
+    work_column(w, "count", "int4");
+    work_column(w, "hash", "int4");
+    work_column(w, "max", "int4");
+    work_column(w, "pid", "int4");
+    work_column(w, "state", w->schema_type);
+    work_column(w, "delete", "bool");
+    work_column(w, "drift", "bool");
+    work_column(w, "header", "bool");
+    work_column(w, "string", "bool");
+    work_column(w, "delimiter", "char");
+    work_column(w, "escape", "char");
+    work_column(w, "quote", "char");
+    work_column(w, "data", "text");
+    work_column(w, "error", "text");
+    work_column(w, "group", "text");
+    work_column(w, "input", "text");
+    work_column(w, "null", "text");
+    work_column(w, "output", "text");
+    work_column(w, "remote", "text");
+    work_not_null(w, "parent", false);
+    work_not_null(w, "plan", true);
+    work_not_null(w, "start", false);
+    work_not_null(w, "stop", false);
+    work_not_null(w, "active", true);
+    work_not_null(w, "live", true);
+    work_not_null(w, "repeat", true);
+    work_not_null(w, "timeout", true);
+    work_not_null(w, "count", true);
+    work_not_null(w, "hash", true);
+    work_not_null(w, "max", true);
+    work_not_null(w, "pid", false);
+    work_not_null(w, "state", true);
+    work_not_null(w, "delete", true);
+    work_not_null(w, "drift", true);
+    work_not_null(w, "header", true);
+    work_not_null(w, "string", true);
+    work_not_null(w, "delimiter", true);
+    work_not_null(w, "escape", true);
+    work_not_null(w, "quote", true);
+    work_not_null(w, "data", false);
+    work_not_null(w, "error", false);
+    work_not_null(w, "group", true);
+    work_not_null(w, "input", true);
+    work_not_null(w, "null", true);
+    work_not_null(w, "output", false);
+    work_not_null(w, "remote", false);
     work_default(w, "active", "interval", "interval");
     work_default(w, "live", "interval", "interval");
     work_default(w, "repeat", "interval", "interval");
