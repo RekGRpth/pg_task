@@ -708,8 +708,6 @@ static void work_constraint(const Work *w, const char *name, const char *value, 
 static void work_trigger(const Work *w) {
     Datum values[] = {CStringGetTextDatum(w->shared->schema)};
     static Oid argtypes[] = {TEXTOID};
-    // char *schema = quote_literal_cstr(w->shared->schema);
-    // char *table = quote_literal_cstr(w->shared->table);
     char *wake_up_literal;
     const char *wake_up_quote;
     StringInfoData src;
@@ -765,51 +763,11 @@ static void work_trigger(const Work *w) {
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         SPI_finish_my();
     }
+    if (wake_up_quote != wake_up.data) pfree((void *)wake_up_quote);
     pfree(src.data);
     pfree(wake_up.data);
     pfree(wake_up_literal);
     pfree((void *)values[0]);
-
-
-    /*char *schema = quote_literal_cstr(w->shared->schema);
-    char *table = quote_literal_cstr(w->shared->table);
-    char *wake_up_literal;
-    const char *wake_up_quote;
-    StringInfoData src;
-    StringInfoData wake_up;
-    initStringInfoMy(&wake_up);
-    appendStringInfo(&wake_up, "%1$s_wake_up", w->shared->table);
-    wake_up_literal = quote_literal_cstr(wake_up.data);
-    wake_up_quote = quote_identifier(wake_up.data);
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(
-        DO $DO$ BEGIN
-            IF (SELECT prosrc FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) %3$s AND nspname OPERATOR(pg_catalog.=) %7$s) IS DISTINCT FROM $$BEGIN PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %6$i; RETURN %8$s; END;$$ THEN
-                CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$BEGIN
-                    PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %6$i;
-                    RETURN %8$s;
-                END;$function$ LANGUAGE plpgsql;
-            END IF;
-            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) 'wake_up' AND tgrelid OPERATOR(pg_catalog.=) %2$i) THEN
-                CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH %9$s EXECUTE PROCEDURE %4$s.%5$s();
-            END IF;
-        END; $DO$
-    ), w->schema_table, w->shared->oid, wake_up_literal, w->schema, wake_up_quote, w->shared->hash, schema,
-#ifdef GP_VERSION_NUM
-    "NEW", "ROW"
-#else
-    "NULL", "STATEMENT"
-#endif
-    );
-    SPI_connect_my(src.data);
-    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_finish_my();
-    if (wake_up_quote != wake_up.data) pfree((void *)wake_up_quote);
-    pfree(schema);
-    pfree(src.data);
-    pfree(table);
-    pfree(wake_up.data);
-    pfree(wake_up_literal);*/
 }
 
 static void work_column(const Work *w, const char *name, const char *type) {
