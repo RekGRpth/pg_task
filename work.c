@@ -666,7 +666,7 @@ static void work_default(const Work *w, const char *name, const char *type, cons
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         DO $DO$ BEGIN
-            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') IS DISTINCT FROM $$(current_setting('pg_task.%3$s'::text))::%4$s$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid WHERE attnum OPERATOR(pg_catalog.=) adnum AND attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') IS DISTINCT FROM $$(current_setting('pg_task.%3$s'::text))::%4$s$$ THEN
                 ALTER TABLE %1$s ALTER COLUMN "%3$s" SET DEFAULT (pg_catalog.current_setting('pg_task.%3$s'))::pg_catalog.%5$s;
             END IF;
         END; $DO$
@@ -682,7 +682,7 @@ static void work_constraint(const Work *w, const char *name, const char *value, 
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         DO $DO$ BEGIN
-            IF (SELECT pg_catalog.pg_get_expr(conbin, conrelid) FROM pg_catalog.pg_constraint LEFT JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) conrelid AND attnum OPERATOR(pg_catalog.=) conkey[1] WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') IS DISTINCT FROM $$(%3$s %4$s)$$ THEN
+            IF (SELECT pg_catalog.pg_get_expr(conbin, conrelid) FROM pg_catalog.pg_constraint JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) conrelid WHERE attnum OPERATOR(pg_catalog.=) conkey[1] AND attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') IS DISTINCT FROM $$(%3$s %4$s)$$ THEN
                 ALTER TABLE %1$s ADD CHECK ("%3$s" %4$s%5$s);
             END IF;
         END; $DO$
@@ -756,7 +756,7 @@ static void work_not_null(const Work *w, const char *name, bool not_null) {
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         DO $DO$ BEGIN
-            IF (SELECT attnotnull FROM pg_catalog.pg_attribute LEFT JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') IS DISTINCT FROM %4$s THEN
+            IF (SELECT attnotnull FROM pg_catalog.pg_attribute JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid WHERE attnum OPERATOR(pg_catalog.=) adnum AND attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') IS DISTINCT FROM %4$s THEN
                 ALTER TABLE %1$s ALTER COLUMN "%3$s" %5$s NOT NULL;
             END IF;
         END; $DO$
@@ -772,7 +772,7 @@ static void work_index(const Work *w, const char *name) {
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         DO $DO$ BEGIN
-            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_index LEFT JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) indrelid AND attnum OPERATOR(pg_catalog.=) indkey[0] WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') THEN
+            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_index JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) indrelid WHERE attnum OPERATOR(pg_catalog.=) indkey[0] AND attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') THEN
                 CREATE INDEX ON %1$s USING btree ("%3$s");
             END IF;
         END; $DO$
