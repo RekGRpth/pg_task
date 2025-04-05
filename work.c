@@ -982,15 +982,17 @@ static void work_enum(const Work *w, const char *name) {
 }
 
 static void work_type(const Work *w) {
-    int32 typmod;
-    Oid type = InvalidOid;
     StringInfoData src;
-    set_ps_display_my("type");
     initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE TYPE %s AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP')), w->schema_type);
+    appendStringInfo(&src, SQL(
+        DO $DO$ BEGIN
+            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_type JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) '%1$s' AND typname OPERATOR(pg_catalog.=) 'state') THEN
+                CREATE TYPE "%1$s"."state" AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');
+            END IF;
+        END; $DO$
+    ), w->schema);
     SPI_connect_my(src.data);
-    parseTypeStringMy(w->schema_type, &type, &typmod);
-    if (!OidIsValid(type)) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
     SPI_finish_my();
     pfree(src.data);
     work_enum(w, "PLAN");
