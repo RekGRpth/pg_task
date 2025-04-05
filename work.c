@@ -731,6 +731,59 @@ static void work_default(const Work *w, const char *name, const char *type, cons
     pfree(src.data);
 }
 
+static void work_update(const Work *w) {
+    char *schema = quote_literal_cstr(w->shared->schema);
+    char *table = quote_literal_cstr(w->shared->table);
+    char *wake_up_literal;
+    const char *wake_up_quote;
+    StringInfoData src;
+    StringInfoData wake_up;
+    initStringInfoMy(&wake_up);
+    appendStringInfo(&wake_up, "%1$s_wake_up", w->shared->table);
+    wake_up_literal = quote_literal_cstr(wake_up.data);
+    wake_up_quote = quote_identifier(wake_up.data);
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        DO $DO$ BEGIN
+            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'data') THEN
+                ALTER TABLE %1$s ADD COLUMN "data" text;
+            END IF;
+        END; $DO$
+    ), w->schema_table, w->shared->oid);
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_finish_my();
+    resetStringInfo(&src);
+    appendStringInfo(&src, SQL(
+        DO $DO$ BEGIN
+            IF (SELECT prosrc FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) %3$s AND nspname OPERATOR(pg_catalog.=) %7$s) IS DISTINCT FROM $$BEGIN PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %6$i; RETURN %8$s; END;$$ THEN
+                CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$BEGIN
+                    PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %6$i;
+                    RETURN %8$s;
+                END;$function$ LANGUAGE plpgsql;
+            END IF;
+            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) 'wake_up' AND tgrelid OPERATOR(pg_catalog.=) %2$i) THEN
+                CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH %9$s EXECUTE PROCEDURE %4$s.%5$s();
+            END IF;
+        END; $DO$
+    ), w->schema_table, w->shared->oid, wake_up_literal, w->schema, wake_up_quote, w->shared->hash, schema,
+#ifdef GP_VERSION_NUM
+    "NEW", "ROW"
+#else
+    "NULL", "STATEMENT"
+#endif
+    );
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    SPI_finish_my();
+    if (wake_up_quote != wake_up.data) pfree((void *)wake_up_quote);
+    pfree(schema);
+    pfree(src.data);
+    pfree(table);
+    pfree(wake_up.data);
+    pfree(wake_up_literal);
+}
+
 static void work_table(const Work *w) {
     List *names = stringToQualifiedNameListMy(w->schema_table);
     const RangeVar *rangevar = makeRangeVarFromNameList(names);
@@ -838,26 +891,27 @@ static void work_table(const Work *w) {
     resetStringInfo(&src);
     pfree(hash.data);
     pfree(src.data);
-    work_default(&work, "active", "interval", "interval");
-    work_default(&work, "live", "interval", "interval");
-    work_default(&work, "repeat", "interval", "interval");
-    work_default(&work, "timeout", "interval", "interval");
-    work_default(&work, "count", "integer", "int4");
-    work_default(&work, "max", "integer", "int4");
-    work_default(&work, "delete", "bool", "bool");
-    work_default(&work, "drift", "bool", "bool");
-    work_default(&work, "header", "bool", "bool");
-    work_default(&work, "string", "bool", "bool");
-    work_default(&work, "delimiter", "\"char\"", "char");
-    work_default(&work, "escape", "\"char\"", "char");
-    work_default(&work, "quote", "\"char\"", "char");
-    work_default(&work, "group", "text", "text");
-    work_default(&work, "null", "text", "text");
-    work_index(&work, 1, "hash");
-    work_index(&work, 1, "input");
-    work_index(&work, 1, "parent");
-    work_index(&work, 1, "plan");
-    work_index(&work, 1, "state");
+    work_update(w);
+    work_default(w, "active", "interval", "interval");
+    work_default(w, "live", "interval", "interval");
+    work_default(w, "repeat", "interval", "interval");
+    work_default(w, "timeout", "interval", "interval");
+    work_default(w, "count", "integer", "int4");
+    work_default(w, "max", "integer", "int4");
+    work_default(w, "delete", "bool", "bool");
+    work_default(w, "drift", "bool", "bool");
+    work_default(w, "header", "bool", "bool");
+    work_default(w, "string", "bool", "bool");
+    work_default(w, "delimiter", "\"char\"", "char");
+    work_default(w, "escape", "\"char\"", "char");
+    work_default(w, "quote", "\"char\"", "char");
+    work_default(w, "group", "text", "text");
+    work_default(w, "null", "text", "text");
+    work_index(w, 1, "hash");
+    work_index(w, 1, "input");
+    work_index(w, 1, "parent");
+    work_index(w, 1, "plan");
+    work_index(w, 1, "state");
     set_ps_display_my("idle");
 }
 
@@ -897,59 +951,6 @@ static void work_type(const Work *w) {
     work_enum(w, "FAIL");
     work_enum(w, "STOP");
     set_ps_display_my("idle");
-}
-
-static void work_update(const Work *w) {
-    char *schema = quote_literal_cstr(w->shared->schema);
-    char *table = quote_literal_cstr(w->shared->table);
-    char *wake_up_literal;
-    const char *wake_up_quote;
-    StringInfoData src;
-    StringInfoData wake_up;
-    initStringInfoMy(&wake_up);
-    appendStringInfo(&wake_up, "%1$s_wake_up", w->shared->table);
-    wake_up_literal = quote_literal_cstr(wake_up.data);
-    wake_up_quote = quote_identifier(wake_up.data);
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(
-        DO $DO$ BEGIN
-            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'data') THEN
-                ALTER TABLE %1$s ADD COLUMN "data" text;
-            END IF;
-        END; $DO$
-    ), w->schema_table, w->shared->oid);
-    SPI_connect_my(src.data);
-    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_finish_my();
-    resetStringInfo(&src);
-    appendStringInfo(&src, SQL(
-        DO $DO$ BEGIN
-            IF (SELECT prosrc FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) %3$s AND nspname OPERATOR(pg_catalog.=) %7$s) IS DISTINCT FROM $$BEGIN PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %6$i; RETURN %8$s; END;$$ THEN
-                CREATE OR REPLACE FUNCTION %4$s.%5$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$BEGIN
-                    PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %6$i;
-                    RETURN %8$s;
-                END;$function$ LANGUAGE plpgsql;
-            END IF;
-            IF NOT EXISTS (SELECT * FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) 'wake_up' AND tgrelid OPERATOR(pg_catalog.=) %2$i) THEN
-                CREATE TRIGGER wake_up AFTER INSERT ON %1$s FOR EACH %9$s EXECUTE PROCEDURE %4$s.%5$s();
-            END IF;
-        END; $DO$
-    ), w->schema_table, w->shared->oid, wake_up_literal, w->schema, wake_up_quote, w->shared->hash, schema,
-#ifdef GP_VERSION_NUM
-    "NEW", "ROW"
-#else
-    "NULL", "STATEMENT"
-#endif
-    );
-    SPI_connect_my(src.data);
-    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_finish_my();
-    if (wake_up_quote != wake_up.data) pfree((void *)wake_up_quote);
-    pfree(schema);
-    pfree(src.data);
-    pfree(table);
-    pfree(wake_up.data);
-    pfree(wake_up_literal);
 }
 
 static void work_writeable(Task *t) {
@@ -1017,7 +1018,6 @@ void work_main(Datum main_arg) {
     work_schema(&work);
     work_type(&work);
     work_table(&work);
-    work_update(&work);
 #ifdef GP_VERSION_NUM
     Gp_role = GP_ROLE_DISPATCH;
 #if PG_VERSION_NUM < 120000
