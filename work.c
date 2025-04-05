@@ -764,15 +764,17 @@ static void work_not_null(const Work *w, const char *name, bool not_null) {
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        DO $DO$ BEGIN
-            IF (SELECT attnotnull FROM pg_catalog.pg_attribute JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid WHERE attnum OPERATOR(pg_catalog.=) adnum AND attrelid OPERATOR(pg_catalog.=) %2$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%3$s') IS DISTINCT FROM %4$s THEN
-                ALTER TABLE %1$s ALTER COLUMN "%3$s" %5$s NOT NULL;
-            END IF;
-        END; $DO$
-    ), w->schema_table, w->shared->oid, name, not_null ? "true" : "false", not_null ? "SET" : "DROP");
-    SPI_connect_my(src.data);
-    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    SPI_finish_my();
+        SELECT (SELECT attnotnull FROM pg_catalog.pg_attribute JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid WHERE attnum OPERATOR(pg_catalog.=) adnum AND attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') IS NOT DISTINCT FROM %3$s AS "test"
+    ), w->shared->oid, name, not_null ? "true" : "false");
+    if (!work_test(src.data)) {
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            ALTER TABLE %1$s ALTER COLUMN "%2$s" %3$s NOT NULL;
+        ), w->schema_table, name, not_null ? "SET" : "DROP");
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+    }
     pfree(src.data);
 }
 
