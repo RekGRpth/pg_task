@@ -350,6 +350,7 @@ static void work_schema(const Work *w) {
     Datum values[] = {CStringGetTextDatum(w->shared->schema)};
     static Oid argtypes[] = {TEXTOID};
     StringInfoData src;
+    set_ps_display_my("schema");
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_namespace WHERE nspname OPERATOR(pg_catalog.=) $1) AS "test"
@@ -365,6 +366,7 @@ static void work_schema(const Work *w) {
     }
     pfree(src.data);
     pfree((void *)values[0]);
+    set_ps_display_my("idle");
 }
 
 static void work_headers(Task *t, const PGresult *result) {
@@ -1015,6 +1017,7 @@ static void work_type(const Work *w) {
     Datum values[] = {CStringGetTextDatum(w->shared->schema)};
     static Oid argtypes[] = {TEXTOID};
     StringInfoData src;
+    set_ps_display_my("type");
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         SELECT  EXISTS (SELECT * FROM pg_catalog.pg_type JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND typname OPERATOR(pg_catalog.=) 'state') AS "test"
