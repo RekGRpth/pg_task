@@ -45,12 +45,6 @@
 #define WaitEventSetWaitMy(set, timeout, occurred_events, nevents) WaitEventSetWait(set, timeout, occurred_events, nevents)
 #endif
 
-#if PG_VERSION_NUM >= 160000
-#define parseTypeStringMy(str, typeid_p, typmod_p) parseTypeString(str, typeid_p, typmod_p, (Node *)&(ErrorSaveContext){T_ErrorSaveContext})
-#else
-#define parseTypeStringMy(str, typeid_p, typmod_p) parseTypeString(str, typeid_p, typmod_p, true)
-#endif
-
 #if PG_VERSION_NUM >= 170000
 #define CreateWaitEventSetMy(nevents) CreateWaitEventSet(NULL, nevents)
 #else
