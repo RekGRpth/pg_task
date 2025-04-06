@@ -793,11 +793,11 @@ static void work_hash(const Work *w) {
     appendStringInfo(&source, SQL(
         BEGIN
             IF tg_op OPERATOR(pg_catalog.=) 'INSERT' OR (NEW.group, NEW.remote) IS DISTINCT FROM (OLD.group, OLD.remote) THEN
-                NEW.hash = pg_catalog.hashtext(NEW.group OPERATOR(pg_catalog.||) COALESCE(NEW.remote, ''));
+                NEW.hash = pg_catalog.hashtext(NEW.group OPERATOR(pg_catalog.||) COALESCE(NEW.remote, '%s'));
             END IF;
             RETURN NEW;
         END;
-    ));
+    ), "");
     work_function(w, name.data, source.data);
     work_trigger(w, name.data, "BEFORE INSERT OR UPDATE", "ROW");
     pfree(name.data);
@@ -867,7 +867,7 @@ static void work_table(const Work *w) {
     set_ps_display_my("table");
     initStringInfoMy(&hash);
 #if PG_VERSION_NUM >= 120000
-    appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%1$s'))) STORED), "");
+    appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%s'))) STORED), "");
 #endif
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
