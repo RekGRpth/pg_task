@@ -30,14 +30,6 @@
 #include <miscadmin.h>
 #endif
 
-#if PG_VERSION_NUM < 140000
-#include <utils/timestamp.h>
-#endif
-
-#if PG_VERSION_NUM < 150000
-#include <utils/rel.h>
-#endif
-
 static bool make_test(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
     bool test;
     SPI_connect_my(src);
