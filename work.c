@@ -19,10 +19,6 @@
 #include <access/hash.h>
 #endif
 
-#if PG_VERSION_NUM >= 120000
-#include <access/relation.h>
-#endif
-
 #if PG_VERSION_NUM >= 100000
 #define WaitEventSetWaitMy(set, timeout, occurred_events, nevents) WaitEventSetWait(set, timeout, occurred_events, nevents, PG_WAIT_EXTENSION)
 #else
