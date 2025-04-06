@@ -7,13 +7,19 @@
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
 #include <storage/proc.h>
+#include <utils/acl.h>
 #include <utils/builtins.h>
+#include <utils/memutils.h>
 #include <utils/ps_status.h>
 
 #if PG_VERSION_NUM >= 100000
 #include <utils/regproc.h>
 #else
 #include <parser/parse_node.h>
+#endif
+
+#if PG_VERSION_NUM >= 130000
+#include <postmaster/interrupt.h>
 #endif
 
 #if PG_VERSION_NUM < 150000

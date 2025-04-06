@@ -4,6 +4,10 @@
 #include <utils/builtins.h>
 #include <utils/ps_status.h>
 
+#if PG_VERSION_NUM >= 100000
+#include <utils/regproc.h>
+#endif
+
 static bool make_test(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
     bool test;
     SPI_connect_my(src);

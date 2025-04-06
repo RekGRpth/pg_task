@@ -7,10 +7,15 @@
 #include <storage/proc.h>
 #include <tcop/utility.h>
 #include <utils/builtins.h>
+#include <utils/memutils.h>
 #include <utils/ps_status.h>
 
 #if PG_VERSION_NUM < 90600
 #include "latch_my.h"
+#endif
+
+#if PG_VERSION_NUM >= 130000
+#include <postmaster/interrupt.h>
 #endif
 
 #if PG_VERSION_NUM >= 100000
