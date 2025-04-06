@@ -14,12 +14,6 @@
 #endif
 
 #if PG_VERSION_NUM >= 100000
-#include <utils/regproc.h>
-#else
-#include <access/hash.h>
-#endif
-
-#if PG_VERSION_NUM >= 100000
 #define WaitEventSetWaitMy(set, timeout, occurred_events, nevents) WaitEventSetWait(set, timeout, occurred_events, nevents, PG_WAIT_EXTENSION)
 #else
 #define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
