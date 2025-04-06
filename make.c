@@ -1,5 +1,6 @@
 #include "include.h"
 
+#include <access/xact.h>
 #include <catalog/namespace.h>
 #include <catalog/pg_collation.h>
 #include <libpq/libpq-be.h>
