@@ -1028,10 +1028,10 @@ static void work_table(const Work *w) {
     work_default(w, "timeout", "interval", "interval");
     work_default(w, "count", "integer", "int4");
     work_default(w, "max", "integer", "int4");
-    work_default(w, "delete", "bool", "bool");
-    work_default(w, "drift", "bool", "bool");
-    work_default(w, "header", "bool", "bool");
-    work_default(w, "string", "bool", "bool");
+    work_default(w, "delete", "boolean", "bool");
+    work_default(w, "drift", "boolean", "bool");
+    work_default(w, "header", "boolean", "bool");
+    work_default(w, "string", "boolean", "bool");
     work_default(w, "delimiter", "\"char\"", "char");
     work_default(w, "escape", "\"char\"", "char");
     work_default(w, "quote", "\"char\"", "char");
