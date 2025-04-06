@@ -76,31 +76,6 @@ static void conf_free(Work *w) {
     pfree(w);
 }
 
-static void conf_user(const Work *w) {
-    List *names = stringToQualifiedNameListMy(w->user);
-    StringInfoData src;
-    elog(DEBUG1, "user = %s", w->shared->user);
-    set_ps_display_my("user");
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE ROLE %s WITH LOGIN), w->user);
-    SPI_connect_my(src.data);
-    if (!OidIsValid(get_role_oid(strVal(linitial(names)), true))) {
-        CreateRoleStmt *stmt = makeNode(CreateRoleStmt);
-        ParseState *pstate = make_parsestate(NULL);
-        stmt->role = w->shared->user;
-        stmt->options = list_make1(makeDefElemMy("canlogin", (Node *)makeInteger(1)));
-        pstate->p_sourcetext = src.data;
-        CreateRoleMy(pstate, stmt);
-        list_free_deep(stmt->options);
-        free_parsestate(pstate);
-        pfree(stmt);
-    }
-    SPI_finish_my();
-    list_free_deep(names);
-    pfree(src.data);
-    set_ps_display_my("idle");
-}
-
 static void conf_work(Work *w) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker = {0};
@@ -108,7 +83,7 @@ static void conf_work(Work *w) {
     set_ps_display_my("work");
     w->data = quote_identifier(w->shared->data);
     w->user = quote_identifier(w->shared->user);
-    conf_user(w);
+    make_user(w);
     conf_data(w);
     if (w->data != w->shared->data) pfree((void *)w->data);
     if (w->user != w->shared->user) pfree((void *)w->user);

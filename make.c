@@ -485,3 +485,26 @@ void make_type(const Work *w) {
     make_enum(w, "STOP");
     set_ps_display_my("idle");
 }
+
+void make_user(const Work *w) {
+    Datum values[] = {CStringGetTextDatum(w->shared->user)};
+    static Oid argtypes[] = {TEXTOID};
+    StringInfoData src;
+    set_ps_display_my("user");
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_roles WHERE rolname OPERATOR(pg_catalog.=) $1) AS "test"
+    ));
+    if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            CREATE ROLE %1$s WITH LOGIN;
+        ), w->user);
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+    }
+    pfree(src.data);
+    pfree((void *)values[0]);
+    set_ps_display_my("idle");
+}

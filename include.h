@@ -164,6 +164,7 @@ Work *get_work(void);
 void make_schema(const Work *w);
 void make_type(const Work *w);
 void make_table(const Work *w);
+void make_user(const Work *w);
 
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
 void NullCommandMy(CommandDest dest);
