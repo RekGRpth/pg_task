@@ -785,7 +785,25 @@ static void work_wake_up(const Work *w) {
 
 #if PG_VERSION_NUM < 120000
 static void work_hash(const Work *w) {
-    Datum values[] = {CStringGetTextDatum(w->shared->schema)};
+    StringInfoData name;
+    StringInfoData source;
+    initStringInfoMy(&name);
+    appendStringInfo(&name, "%s_hash_generate", w->shared->table);
+    initStringInfoMy(&source);
+    appendStringInfo(&source, SQL(
+        BEGIN
+            IF tg_op OPERATOR(pg_catalog.=) 'INSERT' OR (NEW.group, NEW.remote) IS DISTINCT FROM (OLD.group, OLD.remote) THEN
+                NEW.hash = pg_catalog.hashtext(NEW.group OPERATOR(pg_catalog.||) COALESCE(NEW.remote, ''));
+            END IF;
+            RETURN NEW;
+        END;
+    ));
+    work_function(w, name.data, source.data);
+    work_trigger(w, name.data, "ROW");
+    pfree(name.data);
+    pfree(source.data);
+
+    /*Datum values[] = {CStringGetTextDatum(w->shared->schema)};
     static Oid argtypes[] = {TEXTOID};
     char *function_literal;
     const char *function_quote;
@@ -830,7 +848,7 @@ static void work_hash(const Work *w) {
     pfree(src.data);
     pfree(function.data);
     pfree(function_literal);
-    pfree((void *)values[0]);
+    pfree((void *)values[0]);*/
 }
 #endif
 
