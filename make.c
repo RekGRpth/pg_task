@@ -508,3 +508,27 @@ void make_user(const Work *w) {
     pfree((void *)values[0]);
     set_ps_display_my("idle");
 }
+
+void make_data(const Work *w) {
+    Datum values[] = {CStringGetTextDatum(w->shared->data)};
+    static Oid argtypes[] = {TEXTOID};
+    StringInfoData src;
+    set_ps_display_my("data");
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_database WHERE datname OPERATOR(pg_catalog.=) $1) AS "test"
+    ));
+    if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            CREATE DATABASE %1$s WITH OWNER = %2$s;
+        ), w->user, w->user);
+        if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
+        SetCurrentStatementStartTimestamp();
+        exec_simple_query_my(src.data);
+        MemoryContextResetAndDeleteChildren(MessageContext);
+    }
+    pfree(src.data);
+    pfree((void *)values[0]);
+    set_ps_display_my("idle");
+}

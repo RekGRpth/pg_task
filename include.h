@@ -57,6 +57,10 @@ void SignalHandlerForConfigReload(SIGNAL_ARGS);
 #define stringToQualifiedNameListMy(string) stringToQualifiedNameList(string)
 #endif
 
+#ifndef MemoryContextResetAndDeleteChildren
+#define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
+#endif
+
 typedef struct Shared {
     bool in_use;
     bool spi;
@@ -165,6 +169,7 @@ void make_schema(const Work *w);
 void make_type(const Work *w);
 void make_table(const Work *w);
 void make_user(const Work *w);
+void make_data(const Work *w);
 
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
 void NullCommandMy(CommandDest dest);

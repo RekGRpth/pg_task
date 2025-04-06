@@ -17,10 +17,6 @@
 #include <jit/jit.h>
 #endif
 
-#ifndef MemoryContextResetAndDeleteChildren
-#define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
-#endif
-
 static Task task = {0};
 
 Task *get_task(void) {
@@ -53,6 +49,12 @@ void
 #endif
 receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     TupleDesc tupdesc = slot->tts_tupleDescriptor;
+    if (!task.shared)
+        return
+#if PG_VERSION_NUM >= 90600
+    true
+#endif
+    ;
     if (!task.output.data) initStringInfoMy(&task.output);
     if (task.header && !task.row && tupdesc->natts > 1) headers(tupdesc);
     if (task.output.len) appendStringInfoString(&task.output, "\n");
@@ -71,6 +73,7 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
 }
 
 static void rStartup(DestReceiver *self, int operation, TupleDesc tupdesc) {
+    if (!task.shared) return;
     switch (operation) {
         case CMD_UNKNOWN: elog(DEBUG1, "id = %li, operation = CMD_UNKNOWN", task.shared->id); break;
         case CMD_SELECT: elog(DEBUG1, "id = %li, operation = CMD_SELECT", task.shared->id); break;
@@ -86,11 +89,11 @@ static void rStartup(DestReceiver *self, int operation, TupleDesc tupdesc) {
 }
 
 static void rShutdown(DestReceiver *self) {
-    elog(DEBUG1, "id = %li", task.shared->id);
+    if (task.shared) elog(DEBUG1, "id = %li", task.shared->id);
 }
 
 static void rDestroy(DestReceiver *self) {
-    elog(DEBUG1, "id = %li", task.shared->id);
+    if (task.shared) elog(DEBUG1, "id = %li", task.shared->id);
 }
 
 static
@@ -106,7 +109,7 @@ DestReceiver myDestReceiver = {
 };
 
 DestReceiver *CreateDestReceiverMy(CommandDest dest) {
-    elog(DEBUG1, "id = %li", task.shared->id);
+    if (task.shared) elog(DEBUG1, "id = %li", task.shared->id);
 #if PG_VERSION_NUM >= 120000
     return unconstify(DestReceiver *, &myDestReceiver);
 #else
@@ -115,22 +118,23 @@ DestReceiver *CreateDestReceiverMy(CommandDest dest) {
 }
 
 static void ReadyForQueryMy(CommandDest dest) {
-    elog(DEBUG1, "id = %li", task.shared->id);
+    if (task.shared) elog(DEBUG1, "id = %li", task.shared->id);
 }
 
 void NullCommandMy(CommandDest dest) {
-    elog(DEBUG1, "id = %li", task.shared->id);
+    if (task.shared) elog(DEBUG1, "id = %li", task.shared->id);
 }
 
 #if PG_VERSION_NUM >= 130000
 void BeginCommandMy(CommandTag commandTag, CommandDest dest) {
-    elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, GetCommandTagName(commandTag));
+    if (task.shared) elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, GetCommandTagName(commandTag));
 }
 
 void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undecorated_output) {
     char completionTag[COMPLETION_TAG_BUFSIZE];
     CommandTag tag = qc->commandTag;
     const char *tagname = GetCommandTagName(tag);
+    if (!task.shared) return;
     if (command_tag_display_rowcount(tag) && !force_undecorated_output) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, tag == CMDTAG_INSERT ? "%s 0 %lu" : "%s %lu", tagname, qc->nprocessed);
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
     elog(DEBUG1, "id = %li, completionTag = %s", task.shared->id, completionTag);
@@ -142,10 +146,11 @@ void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undeco
 }
 #else
 void BeginCommandMy(const char *commandTag, CommandDest dest) {
-    elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, commandTag);
+    if (task.shared) elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, commandTag);
 }
 
 void EndCommandMy(const char *commandTag, CommandDest dest) {
+    if (!task.shared) return;
     elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, commandTag);
     if (task.skip) task.skip = 0; else {
         if (!task.output.data) initStringInfoMy(&task.output);

@@ -1,7 +1,5 @@
 #include "include.h"
 
-#include <commands/dbcommands.h>
-#include <nodes/makefuncs.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
@@ -29,40 +27,7 @@
 #include <utils/guc.h>
 #endif
 
-#if PG_VERSION_NUM >= 100000
-#define createdb_my(pstate, stmt) createdb(pstate, stmt)
-#define makeDefElemMy(name, arg) makeDefElem(name, arg, -1)
-#else
-#define createdb_my(pstate, stmt) createdb(stmt)
-#define makeDefElemMy(name, arg) makeDefElem(name, arg)
-#endif
-
 static dlist_head head;
-
-static void conf_data(const Work *w) {
-    List *names = stringToQualifiedNameListMy(w->data);
-    StringInfoData src;
-    elog(DEBUG1, "user = %s, data = %s", w->shared->user, w->shared->data);
-    set_ps_display_my("data");
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(CREATE DATABASE %s WITH OWNER = %s), w->data, w->user);
-    SPI_connect_my(src.data);
-    if (!OidIsValid(get_database_oid(strVal(linitial(names)), true))) {
-        CreatedbStmt *stmt = makeNode(CreatedbStmt);
-        ParseState *pstate = make_parsestate(NULL);
-        stmt->dbname = w->shared->data;
-        stmt->options = list_make1(makeDefElemMy("owner", (Node *)makeString(w->shared->user)));
-        pstate->p_sourcetext = src.data;
-        createdb_my(pstate, stmt);
-        list_free_deep(stmt->options);
-        free_parsestate(pstate);
-        pfree(stmt);
-    }
-    SPI_finish_my();
-    list_free_deep(names);
-    pfree(src.data);
-    set_ps_display_my("idle");
-}
 
 static void conf_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
@@ -82,7 +47,7 @@ static void conf_work(Work *w) {
     w->data = quote_identifier(w->shared->data);
     w->user = quote_identifier(w->shared->user);
     make_user(w);
-    conf_data(w);
+    make_data(w);
     if (w->data != w->shared->data) pfree((void *)w->data);
     if (w->user != w->shared->user) pfree((void *)w->user);
     if ((len = strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
