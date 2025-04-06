@@ -7,9 +7,7 @@
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
 #include <storage/proc.h>
-#include <utils/acl.h>
 #include <utils/builtins.h>
-#include <utils/memutils.h>
 #include <utils/ps_status.h>
 
 #if PG_VERSION_NUM >= 100000
