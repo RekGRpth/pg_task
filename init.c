@@ -6,7 +6,6 @@
 #include <storage/proc.h>
 #include <tcop/utility.h>
 #include <utils/builtins.h>
-#include <utils/memutils.h>
 
 #if PG_VERSION_NUM < 90500
 #include <storage/barrier.h>
