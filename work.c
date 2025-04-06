@@ -802,53 +802,6 @@ static void work_hash(const Work *w) {
     work_trigger(w, name.data, "ROW");
     pfree(name.data);
     pfree(source.data);
-
-    /*Datum values[] = {CStringGetTextDatum(w->shared->schema)};
-    static Oid argtypes[] = {TEXTOID};
-    char *function_literal;
-    const char *function_quote;
-    StringInfoData src;
-    StringInfoData function;
-    initStringInfoMy(&function);
-    appendStringInfo(&function, "%1$s_hash_generate", w->shared->table);
-    function_literal = quote_literal_cstr(function.data);
-    function_quote = quote_identifier(function.data);
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(
-        SELECT (SELECT prosrc FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) %1$s AND nspname OPERATOR(pg_catalog.=) $1) IS NOT DISTINCT FROM $$BEGIN IF tg_op OPERATOR(pg_catalog.=) 'INSERT' OR (NEW.group, NEW.remote) IS DISTINCT FROM (OLD.group, OLD.remote) THEN NEW.hash = pg_catalog.hashtext(NEW.group OPERATOR(pg_catalog.||) COALESCE(NEW.remote, '')); END IF; RETURN NEW; END;$$ AS "test"
-    ), function_literal);
-    if (!work_test(src.data, countof(argtypes), argtypes, values, NULL)) {
-        resetStringInfo(&src);
-        appendStringInfo(&src, SQL(
-            CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$BEGIN
-                IF tg_op OPERATOR(pg_catalog.=) 'INSERT' OR (NEW.group, NEW.remote) IS DISTINCT FROM (OLD.group, OLD.remote) THEN
-                    NEW.hash = pg_catalog.hashtext(NEW.group OPERATOR(pg_catalog.||) COALESCE(NEW.remote, '%3$s'));
-                END IF;
-                RETURN NEW;
-            END;$function$ LANGUAGE plpgsql;
-        ), w->schema, function_quote, "");
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
-    }
-    resetStringInfo(&src);
-    appendStringInfo(&src, SQL(
-        SELECT EXISTS (SELECT * FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) 'hash_generate' AND tgrelid OPERATOR(pg_catalog.=) %1$i) AS "test"
-    ), w->shared->oid);
-    if (!work_test(src.data, 0, NULL, NULL, NULL)) {
-        resetStringInfo(&src);
-        appendStringInfo(&src, SQL(
-            CREATE TRIGGER hash_generate BEFORE INSERT OR UPDATE ON %1$s FOR EACH ROW EXECUTE PROCEDURE %2$s.%3$s();
-        ), w->schema_table, w->schema, function_quote);
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
-    }
-    if (function_quote != function.data) pfree((void *)function_quote);
-    pfree(src.data);
-    pfree(function.data);
-    pfree(function_literal);
-    pfree((void *)values[0]);*/
 }
 #endif
 
