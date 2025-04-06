@@ -11,6 +11,13 @@
 
 #if PG_VERSION_NUM >= 130000
 #include <postmaster/interrupt.h>
+#else
+#include <catalog/pg_type.h>
+#include <miscadmin.h>
+#endif
+
+#if PG_VERSION_NUM < 140000
+#include <utils/timestamp.h>
 #endif
 
 static bool task_live(const Task *t) {

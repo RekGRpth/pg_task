@@ -12,6 +12,11 @@
 #include <storage/barrier.h>
 #endif
 
+#if PG_VERSION_NUM < 130000
+#include <catalog/pg_type.h>
+#include <miscadmin.h>
+#endif
+
 PG_MODULE_MAGIC;
 
 static struct {

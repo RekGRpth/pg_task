@@ -1,6 +1,9 @@
 #include "include.h"
 
+#include <catalog/namespace.h>
+#include <catalog/pg_collation.h>
 #include <libpq/libpq-be.h>
+#include <parser/parse_type.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
@@ -14,8 +17,29 @@
 #include "latch_my.h"
 #endif
 
+#if PG_VERSION_NUM >= 100000
+#include <utils/regproc.h>
+#else
+#include <access/hash.h>
+#endif
+
+#if PG_VERSION_NUM >= 120000
+#include <access/relation.h>
+#endif
+
 #if PG_VERSION_NUM >= 130000
 #include <postmaster/interrupt.h>
+#else
+#include <catalog/pg_type.h>
+#include <miscadmin.h>
+#endif
+
+#if PG_VERSION_NUM < 140000
+#include <utils/timestamp.h>
+#endif
+
+#if PG_VERSION_NUM < 150000
+#include <utils/rel.h>
 #endif
 
 #if PG_VERSION_NUM >= 100000
@@ -23,6 +47,12 @@
 #else
 #define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
 #define WaitEventSetWaitMy(set, timeout, occurred_events, nevents) WaitEventSetWait(set, timeout, occurred_events, nevents)
+#endif
+
+#if PG_VERSION_NUM >= 160000
+#define parseTypeStringMy(str, typeid_p, typmod_p) parseTypeString(str, typeid_p, typmod_p, (Node *)&(ErrorSaveContext){T_ErrorSaveContext})
+#else
+#define parseTypeStringMy(str, typeid_p, typmod_p) parseTypeString(str, typeid_p, typmod_p, true)
 #endif
 
 #if PG_VERSION_NUM >= 170000

@@ -1,11 +1,41 @@
 #include "include.h"
 
 #include <catalog/namespace.h>
+#include <catalog/pg_collation.h>
+#include <libpq/libpq-be.h>
+#include <parser/parse_type.h>
+#include <pgstat.h>
+#include <postmaster/bgworker.h>
+#include <storage/ipc.h>
+#include <storage/proc.h>
+#include <tcop/utility.h>
 #include <utils/builtins.h>
+#include <utils/memutils.h>
 #include <utils/ps_status.h>
 
 #if PG_VERSION_NUM >= 100000
 #include <utils/regproc.h>
+#else
+#include <access/hash.h>
+#endif
+
+#if PG_VERSION_NUM >= 120000
+#include <access/relation.h>
+#endif
+
+#if PG_VERSION_NUM >= 130000
+#include <postmaster/interrupt.h>
+#else
+#include <catalog/pg_type.h>
+#include <miscadmin.h>
+#endif
+
+#if PG_VERSION_NUM < 140000
+#include <utils/timestamp.h>
+#endif
+
+#if PG_VERSION_NUM < 150000
+#include <utils/rel.h>
 #endif
 
 static bool make_test(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
