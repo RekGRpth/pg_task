@@ -18,13 +18,6 @@
 #include <parser/parse_node.h>
 #endif
 
-#if PG_VERSION_NUM >= 130000
-#include <postmaster/interrupt.h>
-#else
-#include <catalog/pg_type.h>
-#include <miscadmin.h>
-#endif
-
 #if PG_VERSION_NUM < 150000
 #include <utils/guc.h>
 #endif
