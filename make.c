@@ -23,13 +23,6 @@
 #include <access/relation.h>
 #endif
 
-#if PG_VERSION_NUM >= 130000
-#include <postmaster/interrupt.h>
-#else
-#include <catalog/pg_type.h>
-#include <miscadmin.h>
-#endif
-
 static bool make_test(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
     bool test;
     SPI_connect_my(src);
