@@ -38,25 +38,6 @@
 #include <utils/rel.h>
 #endif
 
-#if PG_VERSION_NUM >= 100000
-#define WaitEventSetWaitMy(set, timeout, occurred_events, nevents) WaitEventSetWait(set, timeout, occurred_events, nevents, PG_WAIT_EXTENSION)
-#else
-#define WL_SOCKET_MASK (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE)
-#define WaitEventSetWaitMy(set, timeout, occurred_events, nevents) WaitEventSetWait(set, timeout, occurred_events, nevents)
-#endif
-
-#if PG_VERSION_NUM >= 160000
-#define parseTypeStringMy(str, typeid_p, typmod_p) parseTypeString(str, typeid_p, typmod_p, (Node *)&(ErrorSaveContext){T_ErrorSaveContext})
-#else
-#define parseTypeStringMy(str, typeid_p, typmod_p) parseTypeString(str, typeid_p, typmod_p, true)
-#endif
-
-#if PG_VERSION_NUM >= 170000
-#define CreateWaitEventSetMy(nevents) CreateWaitEventSet(NULL, nevents)
-#else
-#define CreateWaitEventSetMy(nevents) CreateWaitEventSet(TopMemoryContext, nevents)
-#endif
-
 static bool make_test(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
     bool test;
     SPI_connect_my(src);
