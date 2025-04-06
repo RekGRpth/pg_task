@@ -30,10 +30,6 @@
 #include <miscadmin.h>
 #endif
 
-#if PG_VERSION_NUM < 140000
-#include <utils/timestamp.h>
-#endif
-
 #if PG_VERSION_NUM >= 100000
 #define WaitEventSetWaitMy(set, timeout, occurred_events, nevents) WaitEventSetWait(set, timeout, occurred_events, nevents, PG_WAIT_EXTENSION)
 #else
