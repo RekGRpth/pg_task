@@ -730,7 +730,7 @@ static void work_function(const Work *w, const char *name, const char *source) {
     pfree((void *)values[2]);
 }
 
-static void work_trigger(const Work *w, const char *name, const char *each) {
+static void work_trigger(const Work *w, const char *name, const char *when, const char *each) {
     Datum values[] = {CStringGetTextDatum(name), ObjectIdGetDatum(w->shared->oid)};
     static Oid argtypes[] = {TEXTOID, OIDOID};
     StringInfoData src;
@@ -742,8 +742,8 @@ static void work_trigger(const Work *w, const char *name, const char *each) {
         const char *quote = quote_identifier(name);
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
-            CREATE TRIGGER %1$s AFTER INSERT ON %2$s FOR EACH %3$s EXECUTE PROCEDURE %4$s.%1$s();
-        ), quote, w->schema_table, each, w->schema);
+            CREATE TRIGGER %1$s %2$s ON %3$s FOR EACH %4$s EXECUTE PROCEDURE %5$s.%1$s();
+        ), quote, when, w->schema_table, each, w->schema);
         SPI_connect_my(src.data);
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         SPI_finish_my();
@@ -772,7 +772,7 @@ static void work_wake_up(const Work *w) {
 #endif
     );
     work_function(w, name.data, source.data);
-    work_trigger(w, name.data,
+    work_trigger(w, name.data, "AFTER INSERT",
 #ifdef GP_VERSION_NUM
         "ROW"
 #else
@@ -799,7 +799,7 @@ static void work_hash(const Work *w) {
         END;
     ));
     work_function(w, name.data, source.data);
-    work_trigger(w, name.data, "ROW");
+    work_trigger(w, name.data, "BEFORE INSERT OR UPDATE", "ROW");
     pfree(name.data);
     pfree(source.data);
 }
