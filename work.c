@@ -23,13 +23,6 @@
 #include <access/relation.h>
 #endif
 
-#if PG_VERSION_NUM >= 130000
-#include <postmaster/interrupt.h>
-#else
-#include <catalog/pg_type.h>
-#include <miscadmin.h>
-#endif
-
 #if PG_VERSION_NUM >= 100000
 #define WaitEventSetWaitMy(set, timeout, occurred_events, nevents) WaitEventSetWait(set, timeout, occurred_events, nevents, PG_WAIT_EXTENSION)
 #else
