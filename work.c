@@ -705,15 +705,92 @@ static void work_constraint(const Work *w, const char *name, const char *value, 
     pfree(src.data);
 }
 
-static void work_trigger(const Work *w) {
-    Datum values[] = {CStringGetTextDatum(w->shared->schema)};
+static void work_function(const Work *w, const char *name, const char *source) {
+    Datum values[] = {CStringGetTextDatum(name), CStringGetTextDatum(w->shared->schema), CStringGetTextDatum(source)};
+    static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID};
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        SELECT (SELECT prosrc FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) $1 AND nspname OPERATOR(pg_catalog.=) $2) IS NOT DISTINCT FROM $3 AS "test"
+    ));
+    if (!work_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+        const char *quote = quote_identifier(name);
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$%3$s$function$ LANGUAGE plpgsql;
+        ), w->schema, quote, source);
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+        if (quote != name) pfree((void *)quote);
+    }
+    pfree(src.data);
+    pfree((void *)values[0]);
+    pfree((void *)values[1]);
+    pfree((void *)values[2]);
+}
+
+static void work_trigger(const Work *w, const char *name, const char *each) {
+    Datum values[] = {CStringGetTextDatum(name), ObjectIdGetDatum(w->shared->oid)};
+    static Oid argtypes[] = {TEXTOID, OIDOID};
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) $1 AND tgrelid OPERATOR(pg_catalog.=) $2) AS "test"
+    ));
+    if (!work_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+        const char *quote = quote_identifier(name);
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            CREATE TRIGGER %1$s AFTER INSERT ON %2$s FOR EACH %3$s EXECUTE PROCEDURE %4$s.%1$s();
+        ), quote, w->schema_table, each, w->schema);
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+        if (quote != name) pfree((void *)quote);
+    }
+    pfree(src.data);
+    pfree((void *)values[0]);
+}
+
+static void work_wake_up(const Work *w) {
+    StringInfoData name;
+    StringInfoData source;
+    initStringInfoMy(&name);
+    appendStringInfo(&name, "%s_wake_up", w->shared->table);
+    initStringInfoMy(&source);
+    appendStringInfo(&source, SQL(
+        BEGIN
+            PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %1$i;
+            RETURN %2$s;
+        END;
+    ), w->shared->hash,
+#ifdef GP_VERSION_NUM
+"NEW"
+#else
+"NULL"
+#endif
+    );
+    work_function(w, name.data, source.data);
+    work_trigger(w, name.data,
+#ifdef GP_VERSION_NUM
+        "ROW"
+#else
+        "STATEMENT"
+#endif
+    );
+    pfree(name.data);
+    pfree(source.data);
+
+
+    /*Datum values[] = {CStringGetTextDatum(w->shared->schema)};
     static Oid argtypes[] = {TEXTOID};
     char *function_literal;
     const char *function_quote;
     StringInfoData src;
-    StringInfoData function;
-    initStringInfoMy(&function);
-    appendStringInfo(&function, "%1$s_wake_up", w->shared->table);
+    StringInfoData name;
+    initStringInfoMy(&name);
+    appendStringInfo(&name, "%1$s_wake_up", w->shared->table);
     function_literal = quote_literal_cstr(function.data);
     function_quote = quote_identifier(function.data);
     initStringInfoMy(&src);
@@ -767,7 +844,7 @@ static void work_trigger(const Work *w) {
     pfree(src.data);
     pfree(function.data);
     pfree(function_literal);
-    pfree((void *)values[0]);
+    pfree((void *)values[0]);*/
 }
 
 #if PG_VERSION_NUM < 120000
@@ -1042,7 +1119,7 @@ static void work_table(const Work *w) {
     work_index(w, "parent");
     work_index(w, "plan");
     work_index(w, "state");
-    work_trigger(w);
+    work_wake_up(w);
 #if PG_VERSION_NUM < 120000
     work_hash(w);
 #endif
