@@ -1,12 +1,12 @@
 #include "include.h"
 
 #include <commands/dbcommands.h>
-#include <commands/user.h>
 #include <nodes/makefuncs.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
 #include <storage/proc.h>
+#include <tcop/utility.h>
 #include <utils/acl.h>
 #include <utils/builtins.h>
 #include <utils/memutils.h>
