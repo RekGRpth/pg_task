@@ -161,6 +161,9 @@ void task_error(Task *t);
 void task_free(Task *t);
 void xact_started_my(bool value);
 Work *get_work(void);
+void make_schema(const Work *w);
+void make_type(const Work *w);
+void make_table(const Work *w);
 
 DestReceiver *CreateDestReceiverMy(CommandDest dest);
 void NullCommandMy(CommandDest dest);
