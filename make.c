@@ -20,10 +20,6 @@
 #include <access/hash.h>
 #endif
 
-#if PG_VERSION_NUM >= 120000
-#include <access/relation.h>
-#endif
-
 #if PG_VERSION_NUM >= 130000
 #include <postmaster/interrupt.h>
 #else

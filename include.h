@@ -51,12 +51,6 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 void SignalHandlerForConfigReload(SIGNAL_ARGS);
 #endif
 
-#if PG_VERSION_NUM >= 160000
-#define stringToQualifiedNameListMy(string) stringToQualifiedNameList(string, NULL)
-#else
-#define stringToQualifiedNameListMy(string) stringToQualifiedNameList(string)
-#endif
-
 #ifndef MemoryContextResetAndDeleteChildren
 #define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
 #endif
