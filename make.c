@@ -39,6 +39,16 @@
 #include <utils/rel.h>
 #endif
 
+static Oid make_oid(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
+    Oid oid;
+    SPI_connect_my(src);
+    SPI_execute_with_args_my(src, nargs, argtypes, values, nulls, SPI_OK_SELECT);
+    if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed %lu != 1", (long)SPI_processed)));
+    oid = DatumGetObjectId(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "oid", false, OIDOID));
+    SPI_finish_my();
+    return oid;
+}
+
 static bool make_test(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
     bool test;
     SPI_connect_my(src);
@@ -263,92 +273,106 @@ static void make_index(const Work *w, const char *name) {
 }
 
 void make_table(const Work *w) {
-    List *names = stringToQualifiedNameListMy(w->schema_table);
-    const RangeVar *rangevar = makeRangeVarFromNameList(names);
-    StringInfoData src, hash;
+    Datum values[] = {CStringGetTextDatum(w->shared->schema), CStringGetTextDatum(w->shared->table)};
+    static Oid argtypes[] = {TEXTOID, TEXTOID};
+    StringInfoData src;
     elog(DEBUG1, "schema_table = %s, schema_type = %s", w->schema_table, w->schema_type);
     set_ps_display_my("table");
-    initStringInfoMy(&hash);
-#if PG_VERSION_NUM >= 120000
-    appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%s'))) STORED), "");
-#endif
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        CREATE TABLE %1$s (
-            "id" serial8 PRIMARY KEY,
-            "parent" pg_catalog.int8 DEFAULT NULLIF(pg_catalog.current_setting('pg_task.id')::pg_catalog.int8, 0),
-            "plan" pg_catalog.timestamptz DEFAULT CURRENT_TIMESTAMP,
-            "start" pg_catalog.timestamptz,
-            "stop" pg_catalog.timestamptz,
-            "active" pg_catalog.interval,
-            "live" pg_catalog.interval,
-            "repeat" pg_catalog.interval,
-            "timeout" pg_catalog.interval,
-            "count" pg_catalog.int4,
-            "hash" pg_catalog.int4 %3$s,
-            "max" pg_catalog.int4,
-            "pid" pg_catalog.int4,
-            "state" %2$s DEFAULT 'PLAN',
-            "delete" pg_catalog.bool,
-            "drift" pg_catalog.bool,
-            "header" pg_catalog.bool,
-            "string" pg_catalog.bool,
-            "delimiter" pg_catalog.char,
-            "escape" pg_catalog.char,
-            "quote" pg_catalog.char,
-            "data" pg_catalog.text,
-            "error" pg_catalog.text,
-            "group" pg_catalog.text,
-            "input" pg_catalog.text,
-            "null" pg_catalog.text,
-            "output" pg_catalog.text,
-            "remote" pg_catalog.text
-        );
-        COMMENT ON TABLE %1$s IS 'Tasks';
-        COMMENT ON COLUMN %1$s."id" IS 'Primary key';
-        COMMENT ON COLUMN %1$s."parent" IS 'Parent task id (if exists, like foreign key to id, but without constraint, for performance)';
-        COMMENT ON COLUMN %1$s."plan" IS 'Planned date and time of start';
-        COMMENT ON COLUMN %1$s."start" IS 'Actual date and time of start';
-        COMMENT ON COLUMN %1$s."stop" IS 'Actual date and time of stop';
-        COMMENT ON COLUMN %1$s."active" IS 'Positive period after plan time, when task is active for executing';
-        COMMENT ON COLUMN %1$s."live" IS 'Non-negative maximum time of live of current background worker process before exit';
-        COMMENT ON COLUMN %1$s."repeat" IS 'Non-negative auto repeat tasks interval';
-        COMMENT ON COLUMN %1$s."timeout" IS 'Non-negative allowed time for task run';
-        COMMENT ON COLUMN %1$s."count" IS 'Non-negative maximum count of tasks, are executed by current background worker process before exit';
-        COMMENT ON COLUMN %1$s."hash" IS 'Hash for identifying tasks group';
-        COMMENT ON COLUMN %1$s."max" IS 'Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds';
-        COMMENT ON COLUMN %1$s."pid" IS 'Id of process executing task';
-        COMMENT ON COLUMN %1$s."state" IS 'Task state';
-        COMMENT ON COLUMN %1$s."delete" IS 'Auto delete task when both output and error are nulls';
-        COMMENT ON COLUMN %1$s."drift" IS 'Compute next repeat time by stop time instead by plan time';
-        COMMENT ON COLUMN %1$s."header" IS 'Show columns headers in output';
-        COMMENT ON COLUMN %1$s."string" IS 'Quote only strings';
-        COMMENT ON COLUMN %1$s."delimiter" IS 'Results columns delimiter';
-        COMMENT ON COLUMN %1$s."escape" IS 'Results columns escape';
-        COMMENT ON COLUMN %1$s."quote" IS 'Results columns quote';
-        COMMENT ON COLUMN %1$s."data" IS 'Some user data';
-        COMMENT ON COLUMN %1$s."error" IS 'Catched error';
-        COMMENT ON COLUMN %1$s."group" IS 'Task grouping by name';
-        COMMENT ON COLUMN %1$s."input" IS 'Sql command(s) to execute';
-        COMMENT ON COLUMN %1$s."null" IS 'Null text value representation';
-        COMMENT ON COLUMN %1$s."output" IS 'Received result(s)';
-        COMMENT ON COLUMN %1$s."remote" IS 'Connect to remote database (if need)';
-    ), w->schema_table, w->schema_type,
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) relnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND relname OPERATOR(pg_catalog.=) $2 AND relkind OPERATOR(pg_catalog.=) ANY(ARRAY['r', 'p']::"char"[])) AS "test"
+    ));
+    if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+#if PG_VERSION_NUM >= 120000
+        StringInfoData hash;
+        initStringInfoMy(&hash);
+#endif
+        resetStringInfo(&src);
+#if PG_VERSION_NUM >= 120000
+        appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%s'))) STORED), "");
+#endif
+        appendStringInfo(&src, SQL(
+            CREATE TABLE %1$s (
+                "id" serial8 PRIMARY KEY,
+                "parent" pg_catalog.int8 DEFAULT NULLIF(pg_catalog.current_setting('pg_task.id')::pg_catalog.int8, 0),
+                "plan" pg_catalog.timestamptz DEFAULT CURRENT_TIMESTAMP,
+                "start" pg_catalog.timestamptz,
+                "stop" pg_catalog.timestamptz,
+                "active" pg_catalog.interval,
+                "live" pg_catalog.interval,
+                "repeat" pg_catalog.interval,
+                "timeout" pg_catalog.interval,
+                "count" pg_catalog.int4,
+                "hash" pg_catalog.int4 %3$s,
+                "max" pg_catalog.int4,
+                "pid" pg_catalog.int4,
+                "state" %2$s DEFAULT 'PLAN',
+                "delete" pg_catalog.bool,
+                "drift" pg_catalog.bool,
+                "header" pg_catalog.bool,
+                "string" pg_catalog.bool,
+                "delimiter" pg_catalog.char,
+                "escape" pg_catalog.char,
+                "quote" pg_catalog.char,
+                "data" pg_catalog.text,
+                "error" pg_catalog.text,
+                "group" pg_catalog.text,
+                "input" pg_catalog.text,
+                "null" pg_catalog.text,
+                "output" pg_catalog.text,
+                "remote" pg_catalog.text
+            );
+            COMMENT ON TABLE %1$s IS 'Tasks';
+            COMMENT ON COLUMN %1$s."id" IS 'Primary key';
+            COMMENT ON COLUMN %1$s."parent" IS 'Parent task id (if exists, like foreign key to id, but without constraint, for performance)';
+            COMMENT ON COLUMN %1$s."plan" IS 'Planned date and time of start';
+            COMMENT ON COLUMN %1$s."start" IS 'Actual date and time of start';
+            COMMENT ON COLUMN %1$s."stop" IS 'Actual date and time of stop';
+            COMMENT ON COLUMN %1$s."active" IS 'Positive period after plan time, when task is active for executing';
+            COMMENT ON COLUMN %1$s."live" IS 'Non-negative maximum time of live of current background worker process before exit';
+            COMMENT ON COLUMN %1$s."repeat" IS 'Non-negative auto repeat tasks interval';
+            COMMENT ON COLUMN %1$s."timeout" IS 'Non-negative allowed time for task run';
+            COMMENT ON COLUMN %1$s."count" IS 'Non-negative maximum count of tasks, are executed by current background worker process before exit';
+            COMMENT ON COLUMN %1$s."hash" IS 'Hash for identifying tasks group';
+            COMMENT ON COLUMN %1$s."max" IS 'Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds';
+            COMMENT ON COLUMN %1$s."pid" IS 'Id of process executing task';
+            COMMENT ON COLUMN %1$s."state" IS 'Task state';
+            COMMENT ON COLUMN %1$s."delete" IS 'Auto delete task when both output and error are nulls';
+            COMMENT ON COLUMN %1$s."drift" IS 'Compute next repeat time by stop time instead by plan time';
+            COMMENT ON COLUMN %1$s."header" IS 'Show columns headers in output';
+            COMMENT ON COLUMN %1$s."string" IS 'Quote only strings';
+            COMMENT ON COLUMN %1$s."delimiter" IS 'Results columns delimiter';
+            COMMENT ON COLUMN %1$s."escape" IS 'Results columns escape';
+            COMMENT ON COLUMN %1$s."quote" IS 'Results columns quote';
+            COMMENT ON COLUMN %1$s."data" IS 'Some user data';
+            COMMENT ON COLUMN %1$s."error" IS 'Catched error';
+            COMMENT ON COLUMN %1$s."group" IS 'Task grouping by name';
+            COMMENT ON COLUMN %1$s."input" IS 'Sql command(s) to execute';
+            COMMENT ON COLUMN %1$s."null" IS 'Null text value representation';
+            COMMENT ON COLUMN %1$s."output" IS 'Received result(s)';
+            COMMENT ON COLUMN %1$s."remote" IS 'Connect to remote database (if need)';
+        ), w->schema_table, w->schema_type,
 #if PG_VERSION_NUM >= 120000
         hash.data
 #else
         ""
 #endif
-    );
-    SPI_connect_my(src.data);
-    if (!OidIsValid(RangeVarGetRelid(rangevar, NoLock, true))) SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    w->shared->oid = RangeVarGetRelid(rangevar, NoLock, false);
-    SPI_finish_my();
-    pfree((void *)rangevar);
-    list_free_deep(names);
+        );
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+#if PG_VERSION_NUM >= 120000
+        pfree(hash.data);
+#endif
+    }
     resetStringInfo(&src);
-    pfree(hash.data);
+    appendStringInfo(&src, SQL(
+        SELECT pg_catalog.pg_class.oid FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) relnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND relname OPERATOR(pg_catalog.=) $2 AND relkind OPERATOR(pg_catalog.=) ANY(ARRAY['r', 'p']::"char"[])
+    ));
+    w->shared->oid = make_oid(src.data, countof(argtypes), argtypes, values, NULL);
     pfree(src.data);
+    pfree((void *)values[0]);
+    pfree((void *)values[1]);
     make_column(w, "parent", "int8");
     make_column(w, "plan", "timestamptz");
     make_column(w, "start", "timestamptz");
@@ -464,7 +488,7 @@ void make_type(const Work *w) {
     set_ps_display_my("type");
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT  EXISTS (SELECT * FROM pg_catalog.pg_type JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND typname OPERATOR(pg_catalog.=) 'state') AS "test"
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_type JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND typname OPERATOR(pg_catalog.=) 'state') AS "test"
     ));
     if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         resetStringInfo(&src);
