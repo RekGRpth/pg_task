@@ -75,7 +75,9 @@ static void task_delete(const Task *t) {
     set_ps_display_my("delete");
     if (!src.data) {
         initStringInfoMy(&src);
-        appendStringInfo(&src, SQL(WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 FOR UPDATE OF t) DELETE FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 RETURNING t.id::pg_catalog.int8), t->work->schema_table);
+        appendStringInfo(&src, SQL(
+            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 FOR UPDATE OF t) DELETE FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 RETURNING t.id::pg_catalog.int8
+        ), t->work->schema_table);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_DELETE_RETURNING);

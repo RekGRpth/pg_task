@@ -67,7 +67,7 @@ void make_schema(const Work *w) {
     if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
-            CREATE SCHEMA %1$s;
+            CREATE SCHEMA %s;
         ), w->schema);
         SPI_connect_my(src.data);
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
@@ -462,7 +462,7 @@ static void make_enum(const Work *w, const char *name) {
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT EXISTS (SELECT * FROM pg_catalog.pg_enum JOIN pg_catalog.pg_type ON pg_catalog.pg_type.oid OPERATOR(pg_catalog.=) enumtypid JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND enumlabel OPERATOR(pg_catalog.=) '%1$s') AS "test"
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_enum JOIN pg_catalog.pg_type ON pg_catalog.pg_type.oid OPERATOR(pg_catalog.=) enumtypid JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND enumlabel OPERATOR(pg_catalog.=) '%s') AS "test"
     ), name);
     if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         resetStringInfo(&src);
@@ -489,7 +489,7 @@ void make_type(const Work *w) {
     if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
-            CREATE TYPE %1$s AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');
+            CREATE TYPE %s AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');
         ), w->schema_type);
         SPI_connect_my(src.data);
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
@@ -519,7 +519,7 @@ void make_user(const Work *w) {
     if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
-            CREATE ROLE %1$s WITH LOGIN;
+            CREATE ROLE %s WITH LOGIN;
         ), w->user);
         SPI_connect_my(src.data);
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);

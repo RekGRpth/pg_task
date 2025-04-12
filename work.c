@@ -119,7 +119,7 @@ static void work_check(const Work *w) {
                         COALESCE("spi", pg_catalog.current_setting('pg_task.spi')::pg_catalog.bool) AS "spi",
                         COALESCE(COALESCE("user", "data"), pg_catalog.current_setting('pg_task.user')) AS "user"
                 FROM    pg_catalog.jsonb_to_recordset(pg_catalog.current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "run" int4, "schema" text, "table" text, "sleep" int8, "spi" bool, "user" text)
-            ) SELECT    DISTINCT j.* FROM j WHERE "user" OPERATOR(pg_catalog.=) current_user AND "data" OPERATOR(pg_catalog.=) current_catalog AND pg_catalog.hashtext(pg_catalog.concat_ws('.', "schema", "table"))::pg_catalog.int4 OPERATOR(pg_catalog.=) %1$i
+            ) SELECT    DISTINCT j.* FROM j WHERE "user" OPERATOR(pg_catalog.=) current_user AND "data" OPERATOR(pg_catalog.=) current_catalog AND pg_catalog.hashtext(pg_catalog.concat_ws('.', "schema", "table"))::pg_catalog.int4 OPERATOR(pg_catalog.=) %i
         ), w->shared->hash);
     }
     SPI_connect_my(src.data);
@@ -553,7 +553,7 @@ static void work_sleep(Work *w) {
         static StringInfoData gp_src = {0};
         initStringInfoMy(&gp_src);
         appendStringInfo(&gp_src, SQL(
-            UPDATE %1$s SET "state" = 'GONE', "start" = CURRENT_TIMESTAMP, "stop" = CURRENT_TIMESTAMP, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0
+            UPDATE %s SET "state" = 'GONE', "start" = CURRENT_TIMESTAMP, "stop" = CURRENT_TIMESTAMP, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0
         ), w->schema_table);
         SPI_connect_my(gp_src.data);
         if (!gp_plan) gp_plan = SPI_prepare_my(gp_src.data, 0, NULL);
@@ -567,7 +567,7 @@ static void work_sleep(Work *w) {
 #ifndef GP_VERSION_NUM
         appendStringInfo(&src, SQL(
             n AS (
-                UPDATE %1$s SET "state" = 'GONE', "start" = CURRENT_TIMESTAMP, "stop" = CURRENT_TIMESTAMP, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0 RETURNING "id"
+                UPDATE %s SET "state" = 'GONE', "start" = CURRENT_TIMESTAMP, "stop" = CURRENT_TIMESTAMP, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) CURRENT_TIMESTAMP AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0 RETURNING "id"
             ),
         ), w->schema_table);
 #endif
