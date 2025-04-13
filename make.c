@@ -268,6 +268,30 @@ static void make_index(const Work *w, const char *name) {
     pfree(src.data);
 }
 
+static void make_comment(const Work *w, const char *name, const char *value) {
+    Datum values[] = {CStringGetTextDatum(value), CStringGetTextDatum(name), ObjectIdGetDatum(w->shared->oid)};
+    static Oid argtypes[] = {TEXTOID, TEXTOID, OIDOID};
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        SELECT (SELECT "description" FROM pg_catalog.pg_description JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) objoid WHERE attnum OPERATOR(pg_catalog.=) objsubid AND attrelid OPERATOR(pg_catalog.=) $3 AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) $2) IS NOT DISTINCT FROM $1 AS "test"
+    ));
+    if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+        const char *quote = quote_identifier(name);
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            COMMENT ON COLUMN %1$s.%2$s IS $1;
+        ), w->schema_table, quote);
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+        if (quote != name) pfree((void *)quote);
+    }
+    pfree(src.data);
+    pfree((void *)values[0]);
+    pfree((void *)values[1]);
+}
+
 void make_table(const Work *w) {
     Datum values[] = {CStringGetTextDatum(w->shared->schema), CStringGetTextDatum(w->shared->table)};
     static Oid argtypes[] = {TEXTOID, TEXTOID};
@@ -319,34 +343,6 @@ void make_table(const Work *w) {
                 "remote" pg_catalog.text
             );
             COMMENT ON TABLE %1$s IS 'Tasks';
-            COMMENT ON COLUMN %1$s."id" IS 'Primary key';
-            COMMENT ON COLUMN %1$s."parent" IS 'Parent task id (if exists, like foreign key to id, but without constraint, for performance)';
-            COMMENT ON COLUMN %1$s."plan" IS 'Planned date and time of start';
-            COMMENT ON COLUMN %1$s."start" IS 'Actual date and time of start';
-            COMMENT ON COLUMN %1$s."stop" IS 'Actual date and time of stop';
-            COMMENT ON COLUMN %1$s."active" IS 'Positive period after plan time, when task is active for executing';
-            COMMENT ON COLUMN %1$s."live" IS 'Non-negative maximum time of live of current background worker process before exit';
-            COMMENT ON COLUMN %1$s."repeat" IS 'Non-negative auto repeat tasks interval';
-            COMMENT ON COLUMN %1$s."timeout" IS 'Non-negative allowed time for task run';
-            COMMENT ON COLUMN %1$s."count" IS 'Non-negative maximum count of tasks, are executed by current background worker process before exit';
-            COMMENT ON COLUMN %1$s."hash" IS 'Hash for identifying tasks group';
-            COMMENT ON COLUMN %1$s."max" IS 'Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds';
-            COMMENT ON COLUMN %1$s."pid" IS 'Id of process executing task';
-            COMMENT ON COLUMN %1$s."state" IS 'Task state';
-            COMMENT ON COLUMN %1$s."delete" IS 'Auto delete task when both output and error are nulls';
-            COMMENT ON COLUMN %1$s."drift" IS 'Compute next repeat time by stop time instead by plan time';
-            COMMENT ON COLUMN %1$s."header" IS 'Show columns headers in output';
-            COMMENT ON COLUMN %1$s."string" IS 'Quote only strings';
-            COMMENT ON COLUMN %1$s."delimiter" IS 'Results columns delimiter';
-            COMMENT ON COLUMN %1$s."escape" IS 'Results columns escape';
-            COMMENT ON COLUMN %1$s."quote" IS 'Results columns quote';
-            COMMENT ON COLUMN %1$s."data" IS 'Some user data';
-            COMMENT ON COLUMN %1$s."error" IS 'Catched error';
-            COMMENT ON COLUMN %1$s."group" IS 'Task grouping by name';
-            COMMENT ON COLUMN %1$s."input" IS 'Sql command(s) to execute';
-            COMMENT ON COLUMN %1$s."null" IS 'Null text value representation';
-            COMMENT ON COLUMN %1$s."output" IS 'Received result(s)';
-            COMMENT ON COLUMN %1$s."remote" IS 'Connect to remote database (if need)';
         ), w->schema_table, w->schema_type,
 #if PG_VERSION_NUM >= 120000
         hash.data
@@ -396,6 +392,34 @@ void make_table(const Work *w) {
     make_column(w, "null", "text");
     make_column(w, "output", "text");
     make_column(w, "remote", "text");
+    make_comment(w, "id", "Primary key");
+    make_comment(w, "parent", "Parent task id (if exists, like foreign key to id, but without constraint, for performance)");
+    make_comment(w, "plan", "Planned date and time of start");
+    make_comment(w, "start", "Actual date and time of start");
+    make_comment(w, "stop", "Actual date and time of stop");
+    make_comment(w, "active", "Positive period after plan time, when task is active for executing");
+    make_comment(w, "live", "Non-negative maximum time of live of current background worker process before exit");
+    make_comment(w, "repeat", "Non-negative auto repeat tasks interval");
+    make_comment(w, "timeout", "Non-negative allowed time for task run");
+    make_comment(w, "count", "Non-negative maximum count of tasks, are executed by current background worker process before exit");
+    make_comment(w, "hash", "Hash for identifying tasks group");
+    make_comment(w, "max", "Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds");
+    make_comment(w, "pid", "Id of process executing task");
+    make_comment(w, "state", "Task state");
+    make_comment(w, "delete", "Auto delete task when both output and error are nulls");
+    make_comment(w, "drift", "Compute next repeat time by stop time instead by plan time");
+    make_comment(w, "header", "Show columns headers in output");
+    make_comment(w, "string", "Quote only strings");
+    make_comment(w, "delimiter", "Results columns delimiter");
+    make_comment(w, "escape", "Results columns escape");
+    make_comment(w, "quote", "Results columns quote");
+    make_comment(w, "data", "Some user data");
+    make_comment(w, "error", "Catched error");
+    make_comment(w, "group", "Task grouping by name");
+    make_comment(w, "input", "Sql command(s) to execute");
+    make_comment(w, "null", "Null text value representation");
+    make_comment(w, "output", "Received result(s)");
+    make_comment(w, "remote", "Connect to remote database (if need)");
     make_not_null(w, "id", true);
     make_not_null(w, "parent", false);
     make_not_null(w, "plan", true);
