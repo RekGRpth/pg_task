@@ -280,7 +280,7 @@ static void make_comment(const Work *w, const char *name, const char *value) {
         const char *quote = quote_identifier(name);
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
-            COMMENT ON COLUMN %1$s.%2$s IS $1;
+            COMMENT ON COLUMN %1$s.%2$s IS '$1';
         ), w->schema_table, quote);
         SPI_connect_my(src.data);
         SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UTILITY);
