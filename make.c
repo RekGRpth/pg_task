@@ -268,6 +268,27 @@ static void make_index(const Work *w, const char *name) {
     pfree(src.data);
 }
 
+static void make_table_comment(const Work *w, const char *value) {
+    Datum values[] = {CStringGetTextDatum(value), ObjectIdGetDatum(w->shared->oid)};
+    static Oid argtypes[] = {TEXTOID, OIDOID};
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        SELECT (SELECT "description" FROM pg_catalog.pg_description WHERE objoid OPERATOR(pg_catalog.=) $2 AND objsubid OPERATOR(pg_catalog.=) 0) IS NOT DISTINCT FROM $1 AS "test"
+    ));
+    if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            COMMENT ON TABLE %1$s IS '$1';
+        ), w->schema_table);
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+    }
+    pfree(src.data);
+    pfree((void *)values[0]);
+}
+
 static void make_comment(const Work *w, const char *name, const char *value) {
     Datum values[] = {CStringGetTextDatum(value), CStringGetTextDatum(name), ObjectIdGetDatum(w->shared->oid)};
     static Oid argtypes[] = {TEXTOID, TEXTOID, OIDOID};
@@ -342,7 +363,6 @@ void make_table(const Work *w) {
                 "output" pg_catalog.text,
                 "remote" pg_catalog.text
             );
-            COMMENT ON TABLE %1$s IS 'Tasks';
         ), w->schema_table, w->schema_type,
 #if PG_VERSION_NUM >= 120000
         hash.data
@@ -392,6 +412,7 @@ void make_table(const Work *w) {
     make_column(w, "null", "text");
     make_column(w, "output", "text");
     make_column(w, "remote", "text");
+    make_table_comment(w, "Tasks");
     make_comment(w, "id", "Primary key");
     make_comment(w, "parent", "Parent task id (if exists, like foreign key to id, but without constraint, for performance)");
     make_comment(w, "plan", "Planned date and time of start");
