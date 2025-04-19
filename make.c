@@ -277,13 +277,15 @@ static void make_table_comment(const Work *w, const char *value) {
         SELECT (SELECT "description" FROM pg_catalog.pg_description WHERE objoid OPERATOR(pg_catalog.=) $2 AND objsubid OPERATOR(pg_catalog.=) 0) IS NOT DISTINCT FROM $1 AS "test"
     ));
     if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+        const char *quote_value = quote_literal_cstr(value);
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
-            COMMENT ON TABLE %1$s IS '$1';
-        ), w->schema_table);
+            COMMENT ON TABLE %1$s IS %2$s;
+        ), w->schema_table, quote_value);
         SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UTILITY);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         SPI_finish_my();
+        if (quote_value != value) pfree((void *)quote_value);
     }
     pfree(src.data);
     pfree((void *)values[0]);
@@ -298,15 +300,17 @@ static void make_comment(const Work *w, const char *name, const char *value) {
         SELECT (SELECT "description" FROM pg_catalog.pg_description JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) objoid WHERE attnum OPERATOR(pg_catalog.=) objsubid AND attrelid OPERATOR(pg_catalog.=) $3 AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) $2) IS NOT DISTINCT FROM $1 AS "test"
     ));
     if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
-        const char *quote = quote_identifier(name);
+        const char *quote_name = quote_identifier(name);
+        const char *quote_value = quote_literal_cstr(value);
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
-            COMMENT ON COLUMN %1$s.%2$s IS '$1';
-        ), w->schema_table, quote);
+            COMMENT ON COLUMN %1$s.%2$s IS %3$s;
+        ), w->schema_table, quote_name, quote_value);
         SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_UTILITY);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         SPI_finish_my();
-        if (quote != name) pfree((void *)quote);
+        if (quote_name != name) pfree((void *)quote_name);
+        if (quote_value != value) pfree((void *)quote_value);
     }
     pfree(src.data);
     pfree((void *)values[0]);
