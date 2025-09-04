@@ -340,7 +340,7 @@ void make_table(const Work *w) {
             CREATE TABLE %1$s (
                 "id" serial8 PRIMARY KEY,
                 "parent" pg_catalog.int8 DEFAULT NULLIF(pg_catalog.current_setting('pg_task.id')::pg_catalog.int8, 0),
-                "plan" pg_catalog.timestamptz DEFAULT CURRENT_TIMESTAMP,
+                "plan" pg_catalog.timestamptz DEFAULT statement_timestamp(),
                 "start" pg_catalog.timestamptz,
                 "stop" pg_catalog.timestamptz,
                 "active" pg_catalog.interval,
