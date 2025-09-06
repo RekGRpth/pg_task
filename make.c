@@ -78,25 +78,7 @@ void make_schema(const Work *w) {
     set_ps_display_my("idle");
 }
 
-static void make_default(const Work *w, const char *name, const char *type, const char *catalog) {
-    StringInfoData src;
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(
-        SELECT (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid WHERE attnum OPERATOR(pg_catalog.=) adnum AND attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') IS NOT DISTINCT FROM $$%3$scurrent_setting('pg_task.%2$s'::text)%4$s%5$s$$ AS "test"
-    ), w->shared->oid, name, type ? "(" : "", type ? ")" : "", type ? type : "");
-    if (!make_test(src.data, 0, NULL, NULL, NULL)) {
-        resetStringInfo(&src);
-        appendStringInfo(&src, SQL(
-            ALTER TABLE %1$s ALTER COLUMN "%2$s" SET DEFAULT (pg_catalog.current_setting('pg_task.%2$s'))::pg_catalog.%3$s;
-        ), w->schema_table, name, catalog);
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
-    }
-    pfree(src.data);
-}
-
-static void make_default2(const Work *w, const char *name, const char *value) {
+static void make_default(const Work *w, const char *name, const char *value) {
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
@@ -357,7 +339,7 @@ void make_table(const Work *w) {
         appendStringInfo(&src, SQL(
             CREATE TABLE %1$s (
                 "id" serial8 PRIMARY KEY,
-                "parent" pg_catalog.int8 DEFAULT NULLIF(pg_catalog.current_setting('pg_task.id')::pg_catalog.int8, 0),
+                "parent" pg_catalog.int8,
                 "plan" pg_catalog.timestamptz,
                 "start" pg_catalog.timestamptz,
                 "stop" pg_catalog.timestamptz,
@@ -369,7 +351,7 @@ void make_table(const Work *w) {
                 "hash" pg_catalog.int4 %3$s,
                 "max" pg_catalog.int4,
                 "pid" pg_catalog.int4,
-                "state" %2$s DEFAULT 'PLAN',
+                "state" %2$s,
                 "delete" pg_catalog.bool,
                 "drift" pg_catalog.bool,
                 "header" pg_catalog.bool,
@@ -496,22 +478,24 @@ void make_table(const Work *w) {
     make_constraint(w, "repeat", ">= '00:00:00'::interval", "::pg_catalog.interval");
     make_constraint(w, "timeout", ">= '00:00:00'::interval", "::pg_catalog.interval");
     make_constraint(w, "count", ">= 0", NULL);
-    make_default2(w, "plan", init_plan());
-    make_default(w, "active", "::interval", "interval");
-    make_default(w, "live", "::interval", "interval");
-    make_default(w, "repeat", "::interval", "interval");
-    make_default(w, "timeout", "::interval", "interval");
-    make_default(w, "count", "::integer", "int4");
-    make_default(w, "max", "::integer", "int4");
-    make_default(w, "delete", "::boolean", "bool");
-    make_default(w, "drift", "::boolean", "bool");
-    make_default(w, "header", "::boolean", "bool");
-    make_default(w, "string", "::boolean", "bool");
-    make_default(w, "delimiter", "::\"char\"", "char");
-    make_default(w, "escape", "::\"char\"", "char");
-    make_default(w, "quote", "::\"char\"", "char");
-    make_default(w, "group", NULL, "text");
-    make_default(w, "null", NULL, "text");
+    make_default(w, "parent", "NULLIF((current_setting('pg_task.id'::text))::bigint, 0)");
+    make_default(w, "plan", init_plan());
+    make_default(w, "active", "(current_setting('pg_task.active'::text))::interval");
+    make_default(w, "live", "(current_setting('pg_task.live'::text))::interval");
+    make_default(w, "repeat", "(current_setting('pg_task.repeat'::text))::interval");
+    make_default(w, "timeout", "(current_setting('pg_task.timeout'::text))::interval");
+    make_default(w, "count", "(current_setting('pg_task.count'::text))::integer");
+    make_default(w, "max", "(current_setting('pg_task.max'::text))::integer");
+    make_default(w, "state", "'PLAN'::state");
+    make_default(w, "delete", "(current_setting('pg_task.delete'::text))::boolean");
+    make_default(w, "drift", "(current_setting('pg_task.drift'::text))::boolean");
+    make_default(w, "header", "(current_setting('pg_task.header'::text))::boolean");
+    make_default(w, "string", "(current_setting('pg_task.string'::text))::boolean");
+    make_default(w, "delimiter", "(current_setting('pg_task.delimiter'::text))::\"char\"");
+    make_default(w, "escape", "(current_setting('pg_task.escape'::text))::\"char\"");
+    make_default(w, "quote", "(current_setting('pg_task.quote'::text))::\"char\"");
+    make_default(w, "group", "current_setting('pg_task.group'::text)");
+    make_default(w, "null", "current_setting('pg_task.null'::text)");
     make_index(w, "hash");
     make_index(w, "input");
     make_index(w, "parent");
