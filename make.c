@@ -479,7 +479,7 @@ void make_table(const Work *w) {
     make_constraint(w, "timeout", ">= '00:00:00'::interval", "::pg_catalog.interval");
     make_constraint(w, "count", ">= 0", NULL);
     make_default(w, "parent", "NULLIF((current_setting('pg_task.id'::text))::bigint, 0)");
-    make_default(w, "plan", init_plan());
+    make_default(w, "plan", init_now());
     make_default(w, "active", "(current_setting('pg_task.active'::text))::interval");
     make_default(w, "live", "(current_setting('pg_task.live'::text))::interval");
     make_default(w, "repeat", "(current_setting('pg_task.repeat'::text))::interval");
