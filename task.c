@@ -32,7 +32,7 @@ static bool task_live(const Task *t) {
         appendStringInfo(&src, SQL(
             WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" OPERATOR(pg_catalog.<=) %3$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%4$s')) OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.>=) $2 AND ("plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.>) %3$s OR "repeat" OPERATOR(pg_catalog.>) '0 sec' OR "max" OPERATOR(pg_catalog.<) 0) AND CASE
                 WHEN "count" OPERATOR(pg_catalog.>) 0 AND "live" OPERATOR(pg_catalog.>) '0 sec' THEN "count" OPERATOR(pg_catalog.>) $3 AND $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) %3$s ELSE "count" OPERATOR(pg_catalog.>) $3 OR $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) %3$s
-            END ORDER BY "max" DESC, "id" LIMIT 1 FOR UPDATE OF t %2$s) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id::pg_catalog.int8
+            END ORDER BY "max" DESC, "id" LIMIT 1 FOR UPDATE OF t %2$s) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id
         ), t->work->schema_table,
 #if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
         "SKIP LOCKED",
@@ -56,7 +56,7 @@ static const char *task_columns(const Task *t) {
     Datum values[] = {ObjectIdGetDatum(t->shared->oid)};
     static Oid argtypes[] = {OIDOID};
     static const char *src = SQL(
-        SELECT pg_catalog.string_agg(pg_catalog.quote_ident(attname), ', ')::pg_catalog.text AS columns FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) $1 AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.<>) ALL(ARRAY['id', 'plan', 'parent', 'start', 'stop', 'pid', 'state', 'error', 'output'])
+        SELECT pg_catalog.string_agg(pg_catalog.quote_ident(attname), ', ') AS columns FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) $1 AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.<>) ALL(ARRAY['id', 'plan', 'parent', 'start', 'stop', 'pid', 'state', 'error', 'output'])
     );
     SPI_execute_with_args_my(src, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
     if (SPI_processed != 1) ereport(WARNING, (errmsg("columns id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed))); else {
@@ -76,7 +76,7 @@ static void task_delete(const Task *t) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 FOR UPDATE OF t) DELETE FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 RETURNING t.id::pg_catalog.int8
+            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 FOR UPDATE OF t) DELETE FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 RETURNING t.id
         ), t->work->schema_table);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -100,7 +100,7 @@ static void task_insert(const Task *t) {
         appendStringInfo(&src, SQL(
             WITH s AS (SELECT * FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 FOR UPDATE OF t) INSERT INTO %1$s AS t ("parent", "plan", %2$s) SELECT "id", CASE
                 WHEN "drift" THEN %3$s OPERATOR(pg_catalog.+) "repeat" ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p OPERATOR(pg_catalog.+) "repeat" FROM r WHERE p OPERATOR(pg_catalog.<=) %3$s) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
-            END AS "plan", %2$s FROM s WHERE "repeat" OPERATOR(pg_catalog.>) '0 sec' LIMIT 1 RETURNING t.id::pg_catalog.int8
+            END AS "plan", %2$s FROM s WHERE "repeat" OPERATOR(pg_catalog.>) '0 sec' LIMIT 1 RETURNING t.id
         ), t->work->schema_table, columns, init_now());
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -125,7 +125,7 @@ static void task_update(const Task *t) {
                 SELECT "id" FROM %1$s AS t
                 WHERE "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) "max")::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.<=) %2$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.<) 0 FOR UPDATE OF t
             ) UPDATE %1$s AS t SET "plan" = CASE WHEN "drift" THEN %2$s ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) "max")::pg_catalog.text, 'msec')::pg_catalog.interval FROM r WHERE p OPERATOR(pg_catalog.<=) %2$s) SELECT * FROM r ORDER BY 1 DESC LIMIT 1) END FROM s
-            WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id::pg_catalog.int8
+            WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id
         ), t->work->schema_table, init_now(), "");
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -156,7 +156,7 @@ bool task_done(Task *t) {
         appendStringInfo(&src, SQL(
             WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 FOR UPDATE OF t)
             UPDATE %1$s AS t SET "state" = CASE WHEN $3 IS NULL THEN 'DONE' ELSE 'FAIL' END::%2$s, "stop" = %3$s, "output" = $2, "error" = $3 FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id
-            RETURNING ("delete" AND "output" IS NULL AND "error" IS NULL)::pg_catalog.bool AS "delete", ("repeat" OPERATOR(pg_catalog.>) '0 sec')::pg_catalog.bool AS "insert", ("max" OPERATOR(pg_catalog.>=) 0 AND ("count" OPERATOR(pg_catalog.>) 0 OR "live" OPERATOR(pg_catalog.>) '0 sec'))::pg_catalog.bool AS "live", ("max" OPERATOR(pg_catalog.<) 0)::pg_catalog.bool AS "update"
+            RETURNING "delete" AND "output" IS NULL AND "error" IS NULL AS "delete", "repeat" OPERATOR(pg_catalog.>) '0 sec'AS "insert", "max" OPERATOR(pg_catalog.>=) 0 AND ("count" OPERATOR(pg_catalog.>) 0 OR "live" OPERATOR(pg_catalog.>) '0 sec') AS "live", "max" OPERATOR(pg_catalog.<) 0 AS "update"
         ), t->work->schema_table, t->work->schema_type, init_now());
     }
     SPI_connect_my(src.data);
@@ -206,7 +206,7 @@ bool task_work(Task *t) {
         appendStringInfo(&src, SQL(
             WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 FOR UPDATE OF t)
             UPDATE %1$s AS t SET "state" = 'WORK', "start" = %2$s, "pid" = $2 FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id
-            RETURNING "group"::pg_catalog.text, pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) AS "hash", "input"::pg_catalog.text, (EXTRACT(epoch FROM "timeout")::pg_catalog.int4 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int4 AS "timeout", "header"::pg_catalog.bool, "string"::pg_catalog.bool, "null"::pg_catalog.text, "delimiter"::pg_catalog.char, "quote"::pg_catalog.char, "escape"::pg_catalog.char, "remote"::pg_catalog.text
+            RETURNING "group", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) AS "hash", "input", (EXTRACT(epoch FROM "timeout")::pg_catalog.int4 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int4 AS "timeout", "header", "string", "null", "delimiter", "quote", "escape", "remote"
         ), t->work->schema_table, init_now(), "");
     }
     SPI_connect_my(src.data);
