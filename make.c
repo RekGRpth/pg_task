@@ -246,6 +246,24 @@ static void make_index(const Work *w, const char *name) {
     pfree(src.data);
 }
 
+static void make_hash(const Work *w, const char *value) {
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_index WHERE 0 OPERATOR(pg_catalog.=) indkey[0] AND indrelid OPERATOR(pg_catalog.=) %1$i AND pg_catalog.pg_get_expr(indexprs, indrelid) OPERATOR(pg_catalog.=) $$%2$s$$) AS "test"
+    ), w->shared->oid, value);
+    if (!make_test(src.data, 0, NULL, NULL, NULL)) {
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            CREATE INDEX ON %1$s USING btree (%2$s);
+        ), w->schema_table, value);
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+    }
+    pfree(src.data);
+}
+
 static void make_table_comment(const Work *w, const char *value) {
     Datum values[] = {CStringGetTextDatum(value), ObjectIdGetDatum(w->shared->oid)};
     static Oid argtypes[] = {TEXTOID, OIDOID};
@@ -454,6 +472,7 @@ void make_table(const Work *w) {
     make_default(w, "quote", "(current_setting('pg_task.quote'::text))::\"char\"");
     make_default(w, "group", "current_setting('pg_task.group'::text)");
     make_default(w, "null", "current_setting('pg_task.null'::text)");
+    make_hash(w, "hashtext((\"group\" || COALESCE(remote, ''::text)))");
     make_index(w, "input");
     make_index(w, "parent");
     make_index(w, "plan");
