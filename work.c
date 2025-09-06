@@ -575,13 +575,13 @@ static void work_sleep(Work *w) {
             l AS (
                 SELECT pg_catalog.count("classid") AS "classid", "objid" FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessShareLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 5 AND "database" OPERATOR(pg_catalog.=) %2$i GROUP BY "objid"
             ), s AS (
-                SELECT "id", pg_catalog.hashtext(pg_catalog.concat("group", "remote")) AS "hash", CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" OPERATOR(pg_catalog.=) pg_catalog.hashtext(pg_catalog.concat("group", "remote"))
+                SELECT "id", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) AS "hash", CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" OPERATOR(pg_catalog.=) pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s'))
                 WHERE "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.<=) %5$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) OPERATOR(pg_catalog.>=) 0
                 %4$s
                 ORDER BY 3 DESC, 1 LIMIT LEAST($1 OPERATOR(pg_catalog.-) (SELECT COALESCE(pg_catalog.sum("classid"), 0) FROM l), pg_catalog.current_setting('pg_task.limit')::pg_catalog.int4) FOR UPDATE OF t %3$s
             ), u AS (
                 SELECT "id", "count" OPERATOR(pg_catalog.-) pg_catalog.row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM s ORDER BY s.count DESC, id
-            ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM u WHERE t.id OPERATOR(pg_catalog.=) u.id AND u.count OPERATOR(pg_catalog.>=) 0 RETURNING t.id::pg_catalog.int8, pg_catalog.hashtext(pg_catalog.concat("group", "remote")) AS "hash", "group"::pg_catalog.text, "remote"::pg_catalog.text, "max"::pg_catalog.int4
+            ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM u WHERE t.id OPERATOR(pg_catalog.=) u.id AND u.count OPERATOR(pg_catalog.>=) 0 RETURNING t.id::pg_catalog.int8, pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) AS "hash", "group"::pg_catalog.text, "remote"::pg_catalog.text, "max"::pg_catalog.int4
         ), w->schema_table, w->shared->oid,
 #if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
         "SKIP LOCKED"
@@ -594,7 +594,7 @@ static void work_sleep(Work *w) {
 #else
         SQL(AND "id" NOT IN (SELECT "id" FROM n)),
 #endif
-        init_now());
+        init_now(), "");
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);

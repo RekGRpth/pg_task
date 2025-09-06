@@ -30,7 +30,7 @@ static bool task_live(const Task *t) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" OPERATOR(pg_catalog.<=) %3$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext(pg_catalog.concat("group", "remote")) OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.>=) $2 AND ("plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.>) %3$s OR "repeat" OPERATOR(pg_catalog.>) '0 sec' OR "max" OPERATOR(pg_catalog.<) 0) AND CASE
+            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" OPERATOR(pg_catalog.<=) %3$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%4$s')) OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.>=) $2 AND ("plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.>) %3$s OR "repeat" OPERATOR(pg_catalog.>) '0 sec' OR "max" OPERATOR(pg_catalog.<) 0) AND CASE
                 WHEN "count" OPERATOR(pg_catalog.>) 0 AND "live" OPERATOR(pg_catalog.>) '0 sec' THEN "count" OPERATOR(pg_catalog.>) $3 AND $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) %3$s ELSE "count" OPERATOR(pg_catalog.>) $3 OR $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) %3$s
             END ORDER BY "max" DESC, "id" LIMIT 1 FOR UPDATE OF t %2$s) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id::pg_catalog.int8
         ), t->work->schema_table,
@@ -39,7 +39,7 @@ static bool task_live(const Task *t) {
 #else
         "",
 #endif
-        init_now());
+        init_now(), "");
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -123,10 +123,10 @@ static void task_update(const Task *t) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT "id" FROM %1$s AS t
-                WHERE "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) "max")::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.<=) %2$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext(pg_catalog.concat("group", "remote")) OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.<) 0 FOR UPDATE OF t
+                WHERE "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) "max")::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.<=) %2$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.<) 0 FOR UPDATE OF t
             ) UPDATE %1$s AS t SET "plan" = CASE WHEN "drift" THEN %2$s ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) "max")::pg_catalog.text, 'msec')::pg_catalog.interval FROM r WHERE p OPERATOR(pg_catalog.<=) %2$s) SELECT * FROM r ORDER BY 1 DESC LIMIT 1) END FROM s
             WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id::pg_catalog.int8
-        ), t->work->schema_table, init_now());
+        ), t->work->schema_table, init_now(), "");
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL, false);
@@ -206,8 +206,8 @@ bool task_work(Task *t) {
         appendStringInfo(&src, SQL(
             WITH s AS (SELECT "id" FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 FOR UPDATE OF t)
             UPDATE %1$s AS t SET "state" = 'WORK', "start" = %2$s, "pid" = $2 FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id
-            RETURNING "group"::pg_catalog.text, pg_catalog.hashtext(pg_catalog.concat("group", "remote")) AS "hash", "input"::pg_catalog.text, (EXTRACT(epoch FROM "timeout")::pg_catalog.int4 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int4 AS "timeout", "header"::pg_catalog.bool, "string"::pg_catalog.bool, "null"::pg_catalog.text, "delimiter"::pg_catalog.char, "quote"::pg_catalog.char, "escape"::pg_catalog.char, "remote"::pg_catalog.text
-        ), t->work->schema_table, init_now());
+            RETURNING "group"::pg_catalog.text, pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) AS "hash", "input"::pg_catalog.text, (EXTRACT(epoch FROM "timeout")::pg_catalog.int4 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int4 AS "timeout", "header"::pg_catalog.bool, "string"::pg_catalog.bool, "null"::pg_catalog.text, "delimiter"::pg_catalog.char, "quote"::pg_catalog.char, "escape"::pg_catalog.char, "remote"::pg_catalog.text
+        ), t->work->schema_table, init_now(), "");
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
