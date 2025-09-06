@@ -96,6 +96,24 @@ static void make_default(const Work *w, const char *name, const char *type, cons
     pfree(src.data);
 }
 
+static void make_default2(const Work *w, const char *name, const char *value) {
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        SELECT (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid WHERE attnum OPERATOR(pg_catalog.=) adnum AND attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') IS NOT DISTINCT FROM $$%3$s$$ AS "test"
+    ), w->shared->oid, name, value);
+    if (!make_test(src.data, 0, NULL, NULL, NULL)) {
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            ALTER TABLE %1$s ALTER COLUMN "%2$s" SET DEFAULT %3$s;
+        ), w->schema_table, name, value);
+        SPI_connect_my(src.data);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+    }
+    pfree(src.data);
+}
+
 static void make_constraint(const Work *w, const char *name, const char *value, const char *type) {
     StringInfoData src;
     initStringInfoMy(&src);
@@ -340,7 +358,7 @@ void make_table(const Work *w) {
             CREATE TABLE %1$s (
                 "id" serial8 PRIMARY KEY,
                 "parent" pg_catalog.int8 DEFAULT NULLIF(pg_catalog.current_setting('pg_task.id')::pg_catalog.int8, 0),
-                "plan" pg_catalog.timestamptz DEFAULT statement_timestamp(),
+                "plan" pg_catalog.timestamptz,
                 "start" pg_catalog.timestamptz,
                 "stop" pg_catalog.timestamptz,
                 "active" pg_catalog.interval,
@@ -478,6 +496,7 @@ void make_table(const Work *w) {
     make_constraint(w, "repeat", ">= '00:00:00'::interval", "::pg_catalog.interval");
     make_constraint(w, "timeout", ">= '00:00:00'::interval", "::pg_catalog.interval");
     make_constraint(w, "count", ">= 0", NULL);
+    make_default2(w, "plan", init_plan());
     make_default(w, "active", "::interval", "interval");
     make_default(w, "live", "::interval", "interval");
     make_default(w, "repeat", "::interval", "interval");
