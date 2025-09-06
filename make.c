@@ -192,28 +192,6 @@ static void make_wake_up(const Work *w) {
     pfree(source.data);
 }
 
-#if PG_VERSION_NUM < 120000
-static void make_hash(const Work *w) {
-    StringInfoData name;
-    StringInfoData source;
-    initStringInfoMy(&name);
-    appendStringInfo(&name, "%s_hash_generate", w->shared->table);
-    initStringInfoMy(&source);
-    appendStringInfo(&source, SQL(
-        BEGIN
-            IF tg_op OPERATOR(pg_catalog.=) 'INSERT' OR (NEW.group, NEW.remote) IS DISTINCT FROM (OLD.group, OLD.remote) THEN
-                NEW.hash = pg_catalog.hashtext(NEW.group OPERATOR(pg_catalog.||) COALESCE(NEW.remote, '%s'));
-            END IF;
-            RETURN NEW;
-        END;
-    ), "");
-    make_function(w, name.data, source.data);
-    make_trigger(w, name.data, "BEFORE INSERT OR UPDATE", "ROW");
-    pfree(name.data);
-    pfree(source.data);
-}
-#endif
-
 static void make_column(const Work *w, const char *name, const char *type) {
     StringInfoData src;
     initStringInfoMy(&src);
@@ -328,14 +306,7 @@ void make_table(const Work *w) {
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) relnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND relname OPERATOR(pg_catalog.=) $2 AND relkind OPERATOR(pg_catalog.=) ANY(ARRAY['r', 'p']::"char"[])) AS "test"
     ));
     if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
-#if PG_VERSION_NUM >= 120000
-        StringInfoData hash;
-        initStringInfoMy(&hash);
-#endif
         resetStringInfo(&src);
-#if PG_VERSION_NUM >= 120000
-        appendStringInfo(&hash, SQL(GENERATED ALWAYS AS (pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%s'))) STORED), "");
-#endif
         appendStringInfo(&src, SQL(
             CREATE TABLE %1$s (
                 "id" serial8 PRIMARY KEY,
@@ -348,7 +319,6 @@ void make_table(const Work *w) {
                 "repeat" pg_catalog.interval,
                 "timeout" pg_catalog.interval,
                 "count" pg_catalog.int4,
-                "hash" pg_catalog.int4 %3$s,
                 "max" pg_catalog.int4,
                 "pid" pg_catalog.int4,
                 "state" %2$s,
@@ -367,19 +337,10 @@ void make_table(const Work *w) {
                 "output" pg_catalog.text,
                 "remote" pg_catalog.text
             );
-        ), w->schema_table, w->schema_type,
-#if PG_VERSION_NUM >= 120000
-        hash.data
-#else
-        ""
-#endif
-        );
+        ), w->schema_table, w->schema_type);
         SPI_connect_my(src.data);
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         SPI_finish_my();
-#if PG_VERSION_NUM >= 120000
-        pfree(hash.data);
-#endif
     }
     resetStringInfo(&src);
     appendStringInfo(&src, SQL(
@@ -398,7 +359,6 @@ void make_table(const Work *w) {
     make_column(w, "repeat", "interval");
     make_column(w, "timeout", "interval");
     make_column(w, "count", "int4");
-    make_column(w, "hash", "int4");
     make_column(w, "max", "int4");
     make_column(w, "pid", "int4");
     make_column(w, "state", w->schema_type);
@@ -427,7 +387,6 @@ void make_table(const Work *w) {
     make_comment(w, "repeat", "Non-negative auto repeat tasks interval");
     make_comment(w, "timeout", "Non-negative allowed time for task run");
     make_comment(w, "count", "Non-negative maximum count of tasks, are executed by current background worker process before exit");
-    make_comment(w, "hash", "Hash for identifying tasks group");
     make_comment(w, "max", "Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds");
     make_comment(w, "pid", "Id of process executing task");
     make_comment(w, "state", "Task state");
@@ -455,7 +414,6 @@ void make_table(const Work *w) {
     make_not_null(w, "repeat", true);
     make_not_null(w, "timeout", true);
     make_not_null(w, "count", true);
-    make_not_null(w, "hash", true);
     make_not_null(w, "max", true);
     make_not_null(w, "pid", false);
     make_not_null(w, "state", true);
@@ -496,15 +454,11 @@ void make_table(const Work *w) {
     make_default(w, "quote", "(current_setting('pg_task.quote'::text))::\"char\"");
     make_default(w, "group", "current_setting('pg_task.group'::text)");
     make_default(w, "null", "current_setting('pg_task.null'::text)");
-    make_index(w, "hash");
     make_index(w, "input");
     make_index(w, "parent");
     make_index(w, "plan");
     make_index(w, "state");
     make_wake_up(w);
-#if PG_VERSION_NUM < 120000
-    make_hash(w);
-#endif
     set_ps_display_my("idle");
 }
 
