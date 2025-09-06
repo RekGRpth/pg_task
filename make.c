@@ -196,13 +196,13 @@ static void make_column(const Work *w, const char *name, const char *type) {
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT EXISTS (SELECT * FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') AS "test"
-    ), w->shared->oid, name);
-    if (!make_test(src.data, 0, NULL, NULL, NULL)) {
+        SELECT %3$s EXISTS (SELECT * FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') AS "test"
+    ), w->shared->oid, name, type ? "NOT" : "");
+    if (make_test(src.data, 0, NULL, NULL, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
-            ALTER TABLE %1$s ADD COLUMN "%2$s" pg_catalog.%3$s;
-        ), w->schema_table, name, type);
+            ALTER TABLE %1$s %2$s COLUMN "%3$s" %4$s%5$s;
+        ), w->schema_table, type ? "ADD" : "DROP", name, type ? "pg_catalog." : "", type ? type : "");
         SPI_connect_my(src.data);
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         SPI_finish_my();
@@ -368,6 +368,7 @@ void make_table(const Work *w) {
     pfree(src.data);
     pfree((void *)values[0]);
     pfree((void *)values[1]);
+    make_column(w, "hash", NULL);
     make_column(w, "parent", "int8");
     make_column(w, "plan", "timestamptz");
     make_column(w, "start", "timestamptz");
