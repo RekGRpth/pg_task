@@ -284,13 +284,13 @@ static long work_timeout(const Work *w) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
            SELECT COALESCE(LEAST(EXTRACT(epoch FROM ((
-                SELECT GREATEST("plan" OPERATOR(pg_catalog.+) pg_catalog.current_setting('pg_task.reset')::pg_catalog.interval OPERATOR(pg_catalog.-) statement_timestamp(), '0 sec'::pg_catalog.interval) AS "plan" FROM %1$s AS t
+                SELECT GREATEST("plan" OPERATOR(pg_catalog.+) pg_catalog.current_setting('pg_task.reset')::pg_catalog.interval OPERATOR(pg_catalog.-) %4$s, '0 sec'::pg_catalog.interval) AS "plan" FROM %1$s AS t
                 LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$i AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.<<) 32 OPERATOR(pg_catalog.>>) 32)
                 WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND l.pid IS NULL ORDER BY 1 LIMIT 1
            )))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000, EXTRACT(epoch FROM ((
-                SELECT "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.-) statement_timestamp() AS "plan" FROM %1$s WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.>=) statement_timestamp() ORDER BY 1 LIMIT 1
+                SELECT "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.-) %4$s AS "plan" FROM %1$s WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.>=) %4$s ORDER BY 1 LIMIT 1
            )))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000), -1)::pg_catalog.int8 as "min"
-        ), w->schema_table, w->shared->oid, w->schema_type);
+        ), w->schema_table, w->shared->oid, w->schema_type, init_plan());
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
@@ -553,8 +553,8 @@ static void work_sleep(Work *w) {
         static StringInfoData gp_src = {0};
         initStringInfoMy(&gp_src);
         appendStringInfo(&gp_src, SQL(
-            UPDATE %s SET "state" = 'GONE', "start" = statement_timestamp(), "stop" = statement_timestamp(), "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) statement_timestamp() AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0
-        ), w->schema_table);
+            UPDATE %s SET "state" = 'GONE', "start" = %2$s, "stop" = %2$s, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) %2$s AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0
+        ), w->schema_table, init_plan());
         SPI_connect_my(gp_src.data);
         if (!gp_plan) gp_plan = SPI_prepare_my(gp_src.data, 0, NULL);
         SPI_execute_plan_my(gp_src.data, gp_plan, NULL, NULL, SPI_OK_UPDATE);
@@ -567,16 +567,16 @@ static void work_sleep(Work *w) {
 #ifndef GP_VERSION_NUM
         appendStringInfo(&src, SQL(
             n AS (
-                UPDATE %s SET "state" = 'GONE', "start" = statement_timestamp(), "stop" = statement_timestamp(), "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) statement_timestamp() AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0 RETURNING "id"
+                UPDATE %1$s SET "state" = 'GONE', "start" = %2$s, "stop" = %2$s, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) %2$s AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0 RETURNING "id"
             ),
-        ), w->schema_table);
+        ), w->schema_table, init_plan());
 #endif
         appendStringInfo(&src, SQL(
             l AS (
                 SELECT pg_catalog.count("classid") AS "classid", "objid" FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessShareLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 5 AND "database" OPERATOR(pg_catalog.=) %2$i GROUP BY "objid"
             ), s AS (
                 SELECT "id", "hash", CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" OPERATOR(pg_catalog.=) "hash"
-                WHERE "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.<=) statement_timestamp() AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) OPERATOR(pg_catalog.>=) 0
+                WHERE "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.<=) %5$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) OPERATOR(pg_catalog.>=) 0
                 %4$s
                 ORDER BY 3 DESC, 1 LIMIT LEAST($1 OPERATOR(pg_catalog.-) (SELECT COALESCE(pg_catalog.sum("classid"), 0) FROM l), pg_catalog.current_setting('pg_task.limit')::pg_catalog.int4) FOR UPDATE OF t %3$s
             ), u AS (
@@ -590,11 +590,11 @@ static void work_sleep(Work *w) {
 #endif
         ,
 #ifdef GP_VERSION_NUM
-        ""
+        "",
 #else
-        SQL(AND "id" NOT IN (SELECT "id" FROM n))
+        SQL(AND "id" NOT IN (SELECT "id" FROM n)),
 #endif
-        );
+        init_plan());
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
