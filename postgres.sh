@@ -1,14 +1,18 @@
 #!/bin/sh -ex
 
 if [ -z $PG_BUILD_FROM_SOURCE ]; then
-	GREENPLUM="$(postgres --version | grep -i Greenplum >/dev/null && echo yes || echo no)"
+	GREEN="$(postgres --version | grep -Ei "Green(plum|gage)" >/dev/null && echo yes || echo no)"
 	PG_MAJOR="$(pg_config --version | cut -f 2 -d ' ' | grep -E -o "[[:digit:]]+" | head -1)"
-	if [ "$GREENPLUM" = "yes" ]; then
+	if [ "$GREEN" = "yes" ]; then
 		ARENADATA="$(pg_config --gp_version | grep -i arenadata >/dev/null && echo yes || echo no)"
+		GREENGAGE="$(pg_config --gp_version | grep -i greengage >/dev/null && echo yes || echo no)"
 		MAIN=main
 		if [ "$ARENADATA" = "yes" ]; then
 			REPO=arenadata/gpdb
 			MAIN=adb-7.2.0
+		elif [ "$GREENGAGE" = "yes" ]; then
+			REPO=GreengageDB/greengage
+			MAIN=7.x
 		else
 			REPO=greenplum-db/gpdb-archive
 		fi
