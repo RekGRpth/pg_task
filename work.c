@@ -674,6 +674,7 @@ void work_main(Datum main_arg) {
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user);
     application_name = MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1;
     set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+    set_config_option_my("search_path", "", PGC_SUSET, PGC_S_OVERRIDE, GUC_ACTION_SAVE, true, 0);
     pgstat_report_appname(application_name);
     set_ps_display_my("main");
     process_session_preload_libraries();

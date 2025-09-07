@@ -463,7 +463,13 @@ void make_table(const Work *w) {
     make_default(w, "timeout", "(current_setting('pg_task.timeout'::text))::interval");
     make_default(w, "count", "(current_setting('pg_task.count'::text))::integer");
     make_default(w, "max", "(current_setting('pg_task.max'::text))::integer");
-    make_default(w, "state", "'PLAN'::state");
+    {
+        StringInfoData state;
+        initStringInfoMy(&state);
+        appendStringInfo(&state, "'PLAN'::%s", w->schema_type);
+        make_default(w, "state", state.data);
+        pfree(state.data);
+    }
     make_default(w, "delete", "(current_setting('pg_task.delete'::text))::boolean");
     make_default(w, "drift", "(current_setting('pg_task.drift'::text))::boolean");
     make_default(w, "header", "(current_setting('pg_task.header'::text))::boolean");
