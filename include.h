@@ -25,10 +25,8 @@
 #endif
 
 #if PG_VERSION_NUM >= 90500
-#define set_config_option_my(name, value, context, source, action, changeVal, elevel) set_config_option(name, value, context, source, action, changeVal, elevel, false)
 #else
 #define MyLatch (&MyProc->procLatch)
-#define set_config_option_my(name, value, context, source, action, changeVal, elevel) set_config_option(name, value, context, source, action, changeVal, elevel)
 #endif
 
 #if PG_VERSION_NUM >= 100000

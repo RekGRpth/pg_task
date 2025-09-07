@@ -198,7 +198,7 @@ bool task_work(Task *t) {
         StringInfoData id;
         initStringInfoMy(&id);
         appendStringInfo(&id, "%li", t->shared->id);
-        set_config_option_my("pg_task.id", id.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+        SetConfigOption("pg_task.id", id.data, PGC_USERSET, PGC_S_SESSION);
         pfree(id.data);
     }
     if (!src.data) {
@@ -229,7 +229,7 @@ bool task_work(Task *t) {
         t->timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "timeout", false, INT4OID));
         if (0 < StatementTimeout && StatementTimeout < t->timeout) t->timeout = StatementTimeout;
         elog(DEBUG1, "group = %s, remote = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c", t->group, t->remote ? t->remote : init_null(), t->shared->hash, t->input, t->timeout, t->header ? "true" : "false", t->string ? "true" : "false", t->null, t->delimiter, t->quote ? t->quote : 30, t->escape ? t->escape : 30);
-        if (!t->remote) set_config_option_my("pg_task.group", t->group, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+        if (!t->remote) SetConfigOption("pg_task.group", t->group, PGC_USERSET, PGC_S_SESSION);
     }
     SPI_finish_my();
     set_ps_display_my("idle");
@@ -346,13 +346,13 @@ void task_main(Datum main_arg) {
     task->work->user = quote_identifier(task->shared->user);
     BackgroundWorkerInitializeConnectionMy(task->shared->data, task->shared->user);
     application_name = MyBgworkerEntry->bgw_name + strlen(task->shared->user) + 1 + strlen(task->shared->data) + 1;
-    set_config_option_my("application_name", application_name, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+    SetConfigOption("application_name", application_name, PGC_USERSET, PGC_S_SESSION);
     pgstat_report_appname(application_name);
     set_ps_display_my("main");
     process_session_preload_libraries();
     elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", task->shared->oid, task->shared->id, task->shared->hash, task->shared->max);
-    set_config_option_my("pg_task.schema", task->shared->schema, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
-    set_config_option_my("pg_task.table", task->shared->table, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+    SetConfigOption("pg_task.schema", task->shared->schema, PGC_USERSET, PGC_S_SESSION);
+    SetConfigOption("pg_task.table", task->shared->table, PGC_USERSET, PGC_S_SESSION);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
     initStringInfoMy(&schema_table);
     appendStringInfo(&schema_table, "%s.%s", task->work->schema, task->work->table);
@@ -362,7 +362,7 @@ void task_main(Datum main_arg) {
     task->work->schema_type = schema_type.data;
     initStringInfoMy(&oid);
     appendStringInfo(&oid, "%i", task->shared->oid);
-    set_config_option_my("pg_task.oid", oid.data, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SET, true, ERROR);
+    SetConfigOption("pg_task.oid", oid.data, PGC_USERSET, PGC_S_SESSION);
     pfree(oid.data);
     task->pid = MyProcPid;
     task->start = GetCurrentTimestamp();
