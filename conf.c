@@ -165,7 +165,7 @@ void conf_main(Datum main_arg) {
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL);
     SetConfigOption("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION);
-    SetConfigOption("search_path", "", PGC_SUSET, PGC_S_OVERRIDE);
+    SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     pgstat_report_appname("pg_conf");
     set_ps_display_my("main");
     process_session_preload_libraries();

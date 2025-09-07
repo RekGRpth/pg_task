@@ -347,6 +347,7 @@ void task_main(Datum main_arg) {
     BackgroundWorkerInitializeConnectionMy(task->shared->data, task->shared->user);
     application_name = MyBgworkerEntry->bgw_name + strlen(task->shared->user) + 1 + strlen(task->shared->data) + 1;
     SetConfigOption("application_name", application_name, PGC_USERSET, PGC_S_SESSION);
+    SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     pgstat_report_appname(application_name);
     set_ps_display_my("main");
     process_session_preload_libraries();
