@@ -52,6 +52,9 @@ cat <<EOF
 #if PG_VERSION_NUM >= 140000
 #include <utils/backend_status.h>
 #endif
+#ifdef GP_VERSION_NUM
+#include "utils/faultinjector.h"
+#endif
 #if PG_VERSION_NUM >= 110000 && PG_VERSION_NUM < 130000
 static bool stmt_timeout_active = false;
 #endif
@@ -85,7 +88,6 @@ curl --no-progress-meter -fL "https://raw.githubusercontent.com/$REPO/$MAIN/src/
 -e '(?s)^static void\nexec_simple_query\(.*?^}' \
 - | sed \
 -e 's/TRACE_POSTGRESQL_QUERY_/\/\/TRACE_POSTGRESQL_QUERY_/' \
--e 's/SIMPLE_FAULT_INJECTOR/\/\/SIMPLE_FAULT_INJECTOR/' \
 -e 's/BeginCommand/BeginCommandMy/' \
 -e 's/CreateDestReceiver/CreateDestReceiverMy/' \
 -e 's/EndCommand/EndCommandMy/' \
