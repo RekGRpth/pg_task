@@ -553,7 +553,7 @@ static void work_sleep(Work *w) {
         static StringInfoData gp_src = {0};
         initStringInfoMy(&gp_src);
         appendStringInfo(&gp_src, SQL(
-            UPDATE %s SET "state" = 'GONE', "start" = %2$s, "stop" = %2$s, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) %2$s AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0
+            UPDATE %1$s SET "state" = 'GONE', "start" = %2$s, "stop" = %2$s, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) %2$s AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0
         ), w->schema_table, init_plan());
         SPI_connect_my(gp_src.data);
         if (!gp_plan) gp_plan = SPI_prepare_my(gp_src.data, 0, NULL);
