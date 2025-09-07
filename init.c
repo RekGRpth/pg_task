@@ -20,8 +20,8 @@
 PG_MODULE_MAGIC;
 
 static struct {
-    char *now;
     char *null;
+    char *plan;
     struct {
         int close;
         int fetch;
@@ -73,8 +73,8 @@ static Shared *shared = NULL;
 volatile sig_atomic_t ShutdownRequestPending = false;
 #endif
 
-const char *init_now(void) { return init.now; }
 const char *init_null(void) { return init.null; }
+const char *init_plan(void) { return init.plan; }
 int init_conf_fetch(void) { return init.conf.fetch; }
 int init_task_fetch(void) { return init.task.fetch; }
 int init_work_fetch(void) { return init.work.fetch; }
@@ -239,8 +239,8 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_task.group", "pg_task group", "Task grouping by name", &init.task.group, "group", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.json", "pg_task json", "Json configuration, available keys: data, reset, schema, table, sleep and user", &init.task.json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.live", "pg_task live", "Non-negative maximum time of live of current background worker process before exit", &init.task.live, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.now", "pg_task now", "Default value for now timestamp", &init.now, "statement_timestamp()", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.null", "pg_task null", "Null text value representation", &init.null, "\\N", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.plan", "pg_task plan", "Default value for plan timestamp", &init.plan, "statement_timestamp()", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.quote", "pg_task quote", "Results columns quote", &init.task.quote, "", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.repeat", "pg_task repeat", "Non-negative auto repeat tasks interval", &init.task.repeat, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.reset", "pg_task reset", "Interval of reset tasks", &init.task.reset, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);

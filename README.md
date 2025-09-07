@@ -45,8 +45,8 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.idle | int | 60 | config, database, user | Idle task count |
 | pg_task.json | json | [{"data":"postgres"}] | config | Json configuration, available keys: data, reset, schema, table, sleep and user |
 | pg_task.live | interval | 0 sec | config, database, user, session | Non-negative maximum time of live of current background worker process before exit |
-| pg_task.now | timestamptz | statement_timestamp() | config, database, user, session | Default value for now timestamp |
 | pg_task.null | text | \N | config, database, user, session | Null text value representation |
+| pg_task.plan | timestamptz | statement_timestamp() | config, database, user, session | Default value for now timestamp |
 | pg_task.quote | char | | config, database, user, session | Results columns quote |
 | pg_task.repeat | interval | 0 sec | config, database, user, session | Non-negative auto repeat tasks interval |
 | pg_task.reset | interval | 1 hour | config, database, user | Interval of reset tasks |
@@ -61,7 +61,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | --- | --- | --- | --- | --- |
 | id | bigserial | NOT NULL | autoincrement | Primary key |
 | parent | bigint | NULL | pg_task.id | Parent task id (if exists, like foreign key to id, but without constraint, for performance) |
-| plan | timestamptz | NOT NULL | pg_task.now | Planned date and time of start |
+| plan | timestamptz | NOT NULL | pg_task.plan | Planned date and time of start |
 | start | timestamptz | NULL | | Actual date and time of start |
 | stop | timestamptz | NULL | | Actual date and time of stop |
 | active | interval | NOT NULL | pg_task.active | Positive period after plan time, when task is active for executing |

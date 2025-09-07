@@ -290,7 +290,7 @@ static long work_timeout(const Work *w) {
            )))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000, EXTRACT(epoch FROM ((
                 SELECT "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.-) %4$s AS "plan" FROM %1$s WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN 0 ELSE "max" END)::pg_catalog.text, 'msec')::pg_catalog.interval OPERATOR(pg_catalog.>=) %4$s ORDER BY 1 LIMIT 1
            )))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000), -1)::pg_catalog.int8 as "min"
-        ), w->schema_table, w->shared->oid, w->schema_type, init_now());
+        ), w->schema_table, w->shared->oid, w->schema_type, init_plan());
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
@@ -554,7 +554,7 @@ static void work_sleep(Work *w) {
         initStringInfoMy(&gp_src);
         appendStringInfo(&gp_src, SQL(
             UPDATE %s SET "state" = 'GONE', "start" = %2$s, "stop" = %2$s, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) %2$s AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0
-        ), w->schema_table, init_now());
+        ), w->schema_table, init_plan());
         SPI_connect_my(gp_src.data);
         if (!gp_plan) gp_plan = SPI_prepare_my(gp_src.data, 0, NULL);
         SPI_execute_plan_my(gp_src.data, gp_plan, NULL, NULL, SPI_OK_UPDATE);
@@ -569,7 +569,7 @@ static void work_sleep(Work *w) {
             n AS (
                 UPDATE %1$s SET "state" = 'GONE', "start" = %2$s, "stop" = %2$s, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) %2$s AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0 RETURNING "id"
             ),
-        ), w->schema_table, init_now());
+        ), w->schema_table, init_plan());
 #endif
         appendStringInfo(&src, SQL(
             l AS (
@@ -594,7 +594,7 @@ static void work_sleep(Work *w) {
 #else
         SQL(AND "id" NOT IN (SELECT "id" FROM n)),
 #endif
-        init_now(), "");
+        init_plan(), "");
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
