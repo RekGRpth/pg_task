@@ -45,7 +45,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.idle | int | 60 | config, database, user | Idle task count |
 | pg_task.json | json | [{"data":"postgres"}] | config | Json configuration, available keys: data, reset, schema, table, sleep and user |
 | pg_task.live | interval | 0 sec | config, database, user, session | Non-negative maximum time of live of current background worker process before exit |
-| pg_task.now | timestamptz | statement_timestamp() | config, database, user, session | Default value for now timestamp |
+| pg_task.now | timestamptz | pg_catalog.statement_timestamp() | config, database, user, session | Default value for now timestamp |
 | pg_task.null | text | \N | config, database, user, session | Null text value representation |
 | pg_task.quote | char | | config, database, user, session | Results columns quote |
 | pg_task.repeat | interval | 0 sec | config, database, user, session | Non-negative auto repeat tasks interval |
