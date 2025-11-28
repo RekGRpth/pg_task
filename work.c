@@ -299,7 +299,6 @@ static long work_timeout(const Work *w) {
     elog(DEBUG1, "timeout = %li", timeout);
     SPI_finish_my();
     set_ps_display_my("idle");
-    // idle_count = 0;
     return timeout;
 }
 
@@ -725,16 +724,14 @@ void work_main(Datum main_arg) {
             if (event->events & WL_SOCKET_READABLE) work_readable(event->user_data);
             if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
-        if (idle_count < (uint64)init_work_idle()) {
-            INSTR_TIME_SET_CURRENT(current_time_reset);
-            INSTR_TIME_SUBTRACT(current_time_reset, start_time_reset);
-            current_reset = work.shared->reset - (long)INSTR_TIME_GET_MILLISEC(current_time_reset);
-            if (current_reset <= 0) work_reset(&work);
-            INSTR_TIME_SET_CURRENT(current_time_sleep);
-            INSTR_TIME_SUBTRACT(current_time_sleep, start_time_sleep);
-            current_sleep = work.shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_time_sleep);
-            if (current_sleep <= 0) work_sleep(&work);
-        }
+        INSTR_TIME_SET_CURRENT(current_time_reset);
+        INSTR_TIME_SUBTRACT(current_time_reset, start_time_reset);
+        current_reset = work.shared->reset - (long)INSTR_TIME_GET_MILLISEC(current_time_reset);
+        if (current_reset <= 0) work_reset(&work);
+        INSTR_TIME_SET_CURRENT(current_time_sleep);
+        INSTR_TIME_SUBTRACT(current_time_sleep, start_time_sleep);
+        current_sleep = work.shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_time_sleep);
+        if (current_sleep <= 0) work_sleep(&work);
         FreeWaitEventSet(set);
         pfree(events);
     }
