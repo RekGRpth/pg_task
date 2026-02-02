@@ -181,7 +181,7 @@ static void make_wake_up(const Work *w) {
 #endif
     );
     make_function(w, name.data, source.data);
-    make_trigger(w, name.data, "AFTER INSERT",
+    make_trigger(w, name.data, "AFTER INSERT OR DELETE OR UPDATE OF plan",
 #ifdef GP_VERSION_NUM
         "ROW"
 #else
