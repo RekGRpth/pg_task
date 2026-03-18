@@ -55,6 +55,10 @@
 #define CreateWaitEventSetMy(nevents) CreateWaitEventSet(TopMemoryContext, nevents)
 #endif
 
+#if PG_VERSION_NUM >= 190000
+#include <storage/fd.h>
+#endif
+
 static dlist_head remote;
 static volatile uint64 idle_count = 0;
 static Work work = {0};
