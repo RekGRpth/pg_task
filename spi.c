@@ -71,7 +71,7 @@ static void check_log_statement_my(STMT_TYPE stmt, const char *src, int nargs, O
     debug_query_string = src;
     SetCurrentStatementStartTimestamp();
     if (!logged) ereport(DEBUG2, (errmsg("%s: %s", stmt_type(stmt), src), errhidestmt(true)));
-    else if (was_logged) ereport(LOG, (errmsg("%s: %s", stmt_type(stmt), src), errhidestmt(true), errhidestmt(true), errdetail_params_my(nargs, argtypes, values, nulls)));
+    else if (was_logged) ereport(LOG, (errmsg("%s: %s", stmt_type(stmt), src), errhidestmt(true), errdetail_params_my(nargs, argtypes, values, nulls)));
 }
 
 static void check_log_duration_my(STMT_TYPE stmt, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
