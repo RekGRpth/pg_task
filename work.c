@@ -663,7 +663,7 @@ void work_main(Datum main_arg) {
 #endif
 #endif
     before_shmem_exit(work_shmem_exit, main_arg);
-    if (!work.shared->in_use) return;
+    if (!work.shared->in_use) { ereport(LOG, (errmsg("shared slot not in use, waiting for pg_conf to reinitialize"))); return; }
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGINT, work_idle);
     BackgroundWorkerUnblockSignals();
