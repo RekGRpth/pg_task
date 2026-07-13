@@ -267,9 +267,12 @@ bool dest_timeout(void) {
         BeginInternalSubTransaction(NULL);
     }
     PG_TRY();
+        SetConfigOption("search_path", task_search_path(), PGC_USERSET, PGC_S_SESSION);
         dest_execute();
+        SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
         if (task.shared->spi) ReleaseCurrentSubTransaction();
     PG_CATCH();
+        SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
         task_error(&task);
         dest_catch();
         if (task.shared->spi) {

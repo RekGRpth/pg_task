@@ -20,6 +20,8 @@
 #include <utils/timestamp.h>
 #endif
 
+static const char *search_path;
+
 static bool task_live(const Task *t) {
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start)};
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID};
@@ -236,6 +238,10 @@ bool task_work(Task *t) {
     return exit;
 }
 
+const char *task_search_path(void) {
+    return search_path;
+}
+
 void task_error(Task *t) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
@@ -347,6 +353,8 @@ void task_main(Datum main_arg) {
     BackgroundWorkerInitializeConnectionMy(task->shared->data, task->shared->user);
     application_name = MyBgworkerEntry->bgw_name + strlen(task->shared->user) + 1 + strlen(task->shared->data) + 1;
     SetConfigOption("application_name", application_name, PGC_USERSET, PGC_S_SESSION);
+    search_path = GetConfigOption("search_path", false, false);
+    search_path = search_path ? pstrdup(search_path) : "";
     SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     pgstat_report_appname(application_name);
     set_ps_display_my("main");
