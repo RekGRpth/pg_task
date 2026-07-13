@@ -445,6 +445,7 @@ static void work_remote(Task *t) {
     bool password = false;
     char *err;
     char *options = NULL;
+    const char *quote_group = quote_literal_cstr(t->group);
     const char **keywords;
     const char **values;
     int arg = 3;
@@ -473,10 +474,11 @@ static void work_remote(Task *t) {
     values[arg] = name.data;
     initStringInfoMy(&value);
     if (options) appendStringInfoString(&value, options);
-    appendStringInfo(&value, " -c pg_task.schema=%s", t->shared->schema);
-    appendStringInfo(&value, " -c pg_task.table=%s", t->shared->table);
+    appendStringInfo(&value, " -c pg_task.schema=%s", t->work->schema);
+    appendStringInfo(&value, " -c pg_task.table=%s", t->work->table);
     appendStringInfo(&value, " -c pg_task.oid=%i", t->shared->oid);
-    appendStringInfo(&value, " -c pg_task.group=%s", t->group);
+    appendStringInfo(&value, " -c pg_task.group=%s", quote_group);
+    if (quote_group != t->group) pfree((void *)quote_group);
     arg++;
     keywords[arg] = "options";
     values[arg] = value.data;
