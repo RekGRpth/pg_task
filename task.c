@@ -343,7 +343,7 @@ void task_main(Datum main_arg) {
     task->work = get_work();
     task->shared = init_shared(main_arg);
     before_shmem_exit(task_shmem_exit, main_arg);
-    if (!task->shared->in_use) return;
+    if (!task->shared->in_use) { ereport(LOG, (errmsg("shared slot not in use, waiting for pg_work to reinitialize"))); return; }
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();
     task->work->data = quote_identifier(task->shared->data);
