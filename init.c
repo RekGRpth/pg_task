@@ -349,13 +349,15 @@ int init_arg(const Shared *s) {
 
 void init_free(int slot) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-    pg_read_barrier();
     MemSet(&shared[slot], 0, sizeof(Shared));
     LWLockRelease(BackgroundWorkerLock);
 }
 
 Shared *init_shared(Datum main_arg) {
-    return &shared[DatumGetInt32(main_arg)];
+    int slot = DatumGetInt32(main_arg);
+    LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
+    LWLockRelease(BackgroundWorkerLock);
+    return &shared[slot];
 }
 
 #if PG_VERSION_NUM < 130000
