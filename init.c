@@ -336,8 +336,8 @@ bool is_log_level_output(int elevel, int log_min_level) {
 int init_arg(const Shared *s) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
     for (int slot = 0; slot < init.conf.max; slot++) if (!shared[slot].in_use) {
-        pg_write_barrier();
         shared[slot] = *s;
+        pg_write_barrier();
         shared[slot].in_use = true;
         LWLockRelease(BackgroundWorkerLock);
         elog(DEBUG1, "slot = %i", slot);
