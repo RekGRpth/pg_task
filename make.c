@@ -575,7 +575,7 @@ void make_data(const Work *w) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             CREATE DATABASE %1$s WITH OWNER = %2$s;
-        ), w->user, w->user);
+        ), w->data, w->user);
         if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
         SetCurrentStatementStartTimestamp();
         exec_simple_query_my(src.data);
