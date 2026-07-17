@@ -647,14 +647,13 @@ static void work_idle(SIGNAL_ARGS) {
 }
 
 void work_main(Datum main_arg) {
-    const char *application_name;
     instr_time current_time_reset;
     instr_time current_time_sleep;
     instr_time start_time_reset;
     instr_time start_time_sleep;
     long current_reset = -1;
     long current_sleep = -1;
-    StringInfoData schema_table, schema_type;
+    StringInfoData application_name, schema_table, schema_type;
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
     work.shared = init_shared(main_arg);
 #ifdef GP_VERSION_NUM
@@ -677,10 +676,12 @@ void work_main(Datum main_arg) {
     work.table = quote_identifier(work.shared->table);
     work.user = quote_identifier(work.shared->user);
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user);
-    application_name = MyBgworkerEntry->bgw_name + strlen(work.shared->user) + 1 + strlen(work.shared->data) + 1;
-    SetConfigOption("application_name", application_name, PGC_USERSET, PGC_S_SESSION);
+    initStringInfoMy(&application_name);
+    appendStringInfo(&application_name, "pg_work %s %s %li", work.shared->schema, work.shared->table, work.shared->sleep);
+    SetConfigOption("application_name", application_name.data, PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
-    pgstat_report_appname(application_name);
+    pgstat_report_appname(application_name.data);
+    pfree(application_name.data);
     set_ps_display_my("main");
     process_session_preload_libraries();
     initStringInfoMy(&schema_table);
