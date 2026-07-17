@@ -479,6 +479,8 @@ static void work_remote(Task *t) {
     quote_group = quote_literal_cstr(t->group);
     appendStringInfo(&value, " -c pg_task.group=%s", quote_group);
     if (quote_group != t->group) pfree((void *)quote_group);
+    if (t->group) pfree(t->group);
+    t->group = NULL;
     arg++;
     keywords[arg] = "options";
     values[arg] = value.data;
@@ -510,8 +512,6 @@ static void work_remote(Task *t) {
     pfree(keywords);
     pfree(values);
     PQconninfoFree(opts);
-    if (t->group) pfree(t->group);
-    t->group = NULL;
 }
 
 static void work_task(Task *t) {
