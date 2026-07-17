@@ -77,7 +77,7 @@ static void work_query(Task *t);
         EmitErrorReport(); \
         FlushErrorState(); \
     PG_END_TRY(); \
-    task_done(t); \
+    task_done(t, false); \
     t->remote != NULL ? work_finish(t) : work_free(t); \
 } while(0)
 
@@ -331,7 +331,7 @@ static void work_done(Task *t) {
         t->event = WL_SOCKET_READABLE;
         return;
     }
-    task_done(t) || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
+    task_done(t, true) || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
 }
 
 static void work_headers(Task *t, const PGresult *result) {
