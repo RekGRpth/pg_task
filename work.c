@@ -356,13 +356,11 @@ static void work_copy(Task *t) {
     char *buffer = NULL;
     int len;
     if (!t->output.data) initStringInfoMy(&t->output);
-    switch ((len = PQgetCopyData(t->conn, &buffer, false))) {
+    while ((len = PQgetCopyData(t->conn, &buffer, false)) != -1) switch (len) {
         case 0: break;
-        case -1: break;
         case -2: work_error((errmsg("id = %li, PQgetCopyData == -2", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); if (buffer) PQfreemem(buffer); return;
-        default: appendBinaryStringInfo(&t->output, buffer, len); break;
+        default: appendBinaryStringInfo(&t->output, buffer, len); PQfreemem(buffer); buffer = NULL; break;
     }
-    if (buffer) PQfreemem(buffer);
     t->skip++;
 }
 
