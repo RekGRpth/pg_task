@@ -77,7 +77,8 @@ static void work_query(Task *t);
         EmitErrorReport(); \
         FlushErrorState(); \
     PG_END_TRY(); \
-    if (task_done(t)) t->remote != NULL ? work_finish(t) : work_free(t); \
+    task_done(t); \
+    t->remote != NULL ? work_finish(t) : work_free(t); \
 } while(0)
 
 static
