@@ -218,6 +218,7 @@ bool task_work(Task *t) {
         ereport(WARNING, (errmsg("id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed)));
         exit = true;
     } else {
+        StringInfoData application_name;
         t->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false, CHAROID));
         t->escape = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "escape", false, CHAROID));
         t->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "group", false, TEXTOID));
@@ -232,6 +233,11 @@ bool task_work(Task *t) {
         if (0 < StatementTimeout && StatementTimeout < t->timeout) t->timeout = StatementTimeout;
         elog(DEBUG1, "group = %s, remote = %s, hash = %i, input = %s, timeout = %i, header = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c", t->group, t->remote ? t->remote : init_null(), t->shared->hash, t->input, t->timeout, t->header ? "true" : "false", t->string ? "true" : "false", t->null, t->delimiter, t->quote ? t->quote : 30, t->escape ? t->escape : 30);
         if (!t->remote) SetConfigOption("pg_task.group", t->group, PGC_USERSET, PGC_S_SESSION);
+        initStringInfoMy(&application_name);
+        appendStringInfo(&application_name, "pg_task %s %s %s", t->shared->schema, t->shared->table, t->group);
+        SetConfigOption("application_name", application_name.data, PGC_USERSET, PGC_S_SESSION);
+        pgstat_report_appname(application_name.data);
+        pfree(application_name.data);
     }
     SPI_finish_my();
     set_ps_display_my("idle");
@@ -336,7 +342,6 @@ void task_free(Task *t) {
 }
 
 void task_main(Datum main_arg) {
-    const char *application_name;
     StringInfoData oid, schema_table, schema_type;
     Task *task = get_task();
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
@@ -351,12 +356,9 @@ void task_main(Datum main_arg) {
     task->work->table = quote_identifier(task->shared->table);
     task->work->user = quote_identifier(task->shared->user);
     BackgroundWorkerInitializeConnectionMy(task->shared->data, task->shared->user);
-    application_name = MyBgworkerEntry->bgw_name + strlen(task->shared->user) + 1 + strlen(task->shared->data) + 1;
-    SetConfigOption("application_name", application_name, PGC_USERSET, PGC_S_SESSION);
     search_path = GetConfigOption("search_path", false, false);
     search_path = search_path ? pstrdup(search_path) : "";
     SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
-    pgstat_report_appname(application_name);
     set_ps_display_my("main");
     process_session_preload_libraries();
     elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", task->shared->oid, task->shared->id, task->shared->hash, task->shared->max);
