@@ -370,6 +370,7 @@ static void work_copy(Task *t) {
 static void work_result(Task *t) {
     for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK && (result = PQgetResult(t->conn)); PQclear(result)) switch (PQresultStatus(result)) {
         case PGRES_COMMAND_OK: work_command(t, result); break;
+        case PGRES_COPY_BOTH: if (PQputCopyEnd(t->conn, "COPY BOTH is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
         case PGRES_COPY_IN: if (PQputCopyEnd(t->conn, "COPY FROM STDIN is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
         case PGRES_COPY_OUT: PQclear(result); work_copy(t); return;
         case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
