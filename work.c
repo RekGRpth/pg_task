@@ -68,6 +68,7 @@ Work *get_work(void) {
 }
 
 static void work_query(Task *t);
+static void work_result(Task *t);
 
 #define work_error(...) do { \
     PG_TRY(); \
@@ -326,9 +327,10 @@ static void work_readable(Task *t) {
 
 static void work_done(Task *t) {
     if (PQstatus(t->conn) == CONNECTION_OK && PQtransactionStatus(t->conn) != PQTRANS_IDLE) {
-        t->socket = work_done;
         if (!PQsendQuery(t->conn, SQL(COMMIT))) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
         t->event = WL_SOCKET_READABLE;
+        t->socket = work_result;
+        t->skip++;
         return;
     }
     task_done(t, true) || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
