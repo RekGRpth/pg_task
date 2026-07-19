@@ -336,19 +336,19 @@ static void work_done(Task *t) {
     }
     if (task_done(t, true) || PQstatus(t->conn) != CONNECTION_OK) { work_finish(t); return; }
     if (t->save) { work_query(t); return; }
-    if (!PQsendQuery(t->conn, SQL(DISCARD ALL;))) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
+    if (!PQsendQuery(t->conn, SQL(DISCARD ALL;))) { ereport(WARNING, (errmsg("id = %li, PQsendQuery failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); work_finish(t); return; }
     t->socket = work_discard;
     t->event = WL_SOCKET_READABLE;
 }
 
 static void work_discard(Task *t) {
+    bool fail = false;
     for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK && (result = PQgetResult(t->conn)); PQclear(result)) switch (PQresultStatus(result)) {
         case PGRES_COMMAND_OK: elog(DEBUG1, "id = %li, %s", t->shared->id, PQcmdStatus(result)); break;
-        case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
+        case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); fail = true; break;
         default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
     }
-    if (t->error.data) { work_done(t); return; }
-    work_query(t);
+    fail || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
 }
 
 static void work_headers(Task *t, const PGresult *result) {
