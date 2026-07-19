@@ -162,9 +162,18 @@ void EndCommandMy(const char *commandTag, CommandDest dest) {
 
 static void dest_execute(void) {
     if (!task.shared->spi) {
+        ListCell *cell;
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
         MemoryContextResetAndDeleteChildren(MessageContext);
         InvalidateCatalogSnapshotConditionally();
+        foreach(cell, pg_parse_query(task.input)) {
+#if PG_VERSION_NUM >= 100000
+            Node *node = ((RawStmt *)lfirst(cell))->stmt;
+#else
+            Node *node = (Node *)lfirst(cell);
+#endif
+            if (IsA(node, CopyStmt) && ((CopyStmt *)node)->is_from && !((CopyStmt *)node)->filename) ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("COPY FROM STDIN is not supported")));
+        }
         MemoryContextSwitchTo(oldMemoryContext);
         whereToSendOutput = DestDebug;
         ReadyForQueryMy(whereToSendOutput);
