@@ -343,6 +343,7 @@ void make_table(const Work *w) {
                 "delete" pg_catalog.bool,
                 "drift" pg_catalog.bool,
                 "header" pg_catalog.bool,
+                "save" pg_catalog.bool,
                 "string" pg_catalog.bool,
                 "delimiter" pg_catalog.char,
                 "escape" pg_catalog.char,
@@ -384,6 +385,7 @@ void make_table(const Work *w) {
     make_column(w, "delete", "bool");
     make_column(w, "drift", "bool");
     make_column(w, "header", "bool");
+    make_column(w, "save", "bool");
     make_column(w, "string", "bool");
     make_column(w, "delimiter", "char");
     make_column(w, "escape", "char");
@@ -412,6 +414,7 @@ void make_table(const Work *w) {
     make_comment(w, "delete", "Auto delete task when both output and error are nulls");
     make_comment(w, "drift", "Compute next repeat time by stop time instead by plan time");
     make_comment(w, "header", "Show columns headers in output");
+    make_comment(w, "save", "Save session state between tasks");
     make_comment(w, "string", "Quote only strings");
     make_comment(w, "delimiter", "Results columns delimiter");
     make_comment(w, "escape", "Results columns escape");
@@ -439,6 +442,7 @@ void make_table(const Work *w) {
     make_not_null(w, "delete", true);
     make_not_null(w, "drift", true);
     make_not_null(w, "header", true);
+    make_not_null(w, "save", true);
     make_not_null(w, "string", true);
     make_not_null(w, "delimiter", true);
     make_not_null(w, "escape", true);
@@ -473,6 +477,7 @@ void make_table(const Work *w) {
     make_default(w, "delete", "(current_setting('pg_task.delete'::text))::boolean");
     make_default(w, "drift", "(current_setting('pg_task.drift'::text))::boolean");
     make_default(w, "header", "(current_setting('pg_task.header'::text))::boolean");
+    make_default(w, "save", "(current_setting('pg_task.save'::text))::boolean");
     make_default(w, "string", "(current_setting('pg_task.string'::text))::boolean");
     make_default(w, "delimiter", "(current_setting('pg_task.delimiter'::text))::\"char\"");
     make_default(w, "escape", "(current_setting('pg_task.escape'::text))::\"char\"");

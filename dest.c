@@ -265,7 +265,23 @@ static void dest_catch(void) {
     }
 }
 
+static void dest_discard(void) {
+    Shared *shared = task.shared;
+    StringInfoData oid;
+    task.shared = NULL; // disable dest receiver and command tags during cleanup
+    exec_simple_query_my(SQL(SET SESSION AUTHORIZATION DEFAULT; RESET ALL; DEALLOCATE ALL; CLOSE ALL; UNLISTEN *; DISCARD PLANS; DISCARD TEMP; DISCARD SEQUENCES;));
+    task.shared = shared;
+    SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
+    SetConfigOption("pg_task.schema", task.shared->schema, PGC_USERSET, PGC_S_SESSION);
+    SetConfigOption("pg_task.table", task.shared->table, PGC_USERSET, PGC_S_SESSION);
+    initStringInfoMy(&oid);
+    appendStringInfo(&oid, "%i", task.shared->oid);
+    SetConfigOption("pg_task.oid", oid.data, PGC_USERSET, PGC_S_SESSION);
+    pfree(oid.data);
+}
+
 bool dest_timeout(void) {
+    bool exit;
     int StatementTimeoutMy = StatementTimeout;
     if (task_work(&task)) return true;
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
@@ -296,5 +312,7 @@ bool dest_timeout(void) {
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
     set_ps_display_my("idle");
-    return task_done(&task, true);
+    exit = task_done(&task, true);
+    if (!exit && !task.save) dest_discard();
+    return exit;
 }

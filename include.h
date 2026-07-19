@@ -84,6 +84,7 @@ typedef struct Work {
 typedef struct Task {
     bool header;
     bool lock;
+    bool save;
     bool string;
     char delimiter;
     char escape;

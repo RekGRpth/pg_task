@@ -32,6 +32,7 @@ static struct {
         bool delete;
         bool drift;
         bool header;
+        bool save;
         bool spi;
         bool string;
         char *active;
@@ -214,6 +215,7 @@ void _PG_init(void) {
     DefineCustomBoolVariable("pg_task.delete", "pg_task delete", "Auto delete task when both output and error are nulls", &init.task.delete, true, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.drift", "pg_task drift", "Compute next repeat time by stop time instead by plan time", &init.task.drift, false, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.header", "pg_task header", "Show columns headers in output", &init.task.header, true, PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomBoolVariable("pg_task.save", "pg_task save", "Save session state between tasks", &init.task.save, false, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.spi", "pg_task spi", "SPI (or local) execution?", &init.task.spi, false, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.string", "pg_task string", "Quote only strings", &init.task.string, true, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomIntVariable("pg_conf.close", "pg_conf close", "Close conf, milliseconds", &init.conf.close, BGW_DEFAULT_RESTART_INTERVAL * 1000, 1, INT_MAX, PGC_SUSET, 0, NULL, NULL, NULL);
