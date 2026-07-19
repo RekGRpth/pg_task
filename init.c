@@ -173,7 +173,7 @@ void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len
     if (!string && quote) appendStringInfoChar(buf, quote);
     if (len) {
         if (!string && escape && quote) for (int i = 0; len-- > 0; i++) {
-            if (quote == data[i]) appendStringInfoChar(buf, escape);
+            if (quote == data[i] || escape == data[i]) appendStringInfoChar(buf, escape);
             appendStringInfoChar(buf, data[i]);
         } else appendBinaryStringInfo(buf, data, len);
     }
