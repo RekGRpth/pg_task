@@ -355,24 +355,23 @@ static void work_success(Task *t, const PGresult *result, int row) {
     }
 }
 
-static bool work_copy(Task *t) {
+static void work_copy(Task *t) {
     char *buffer = NULL;
     int len;
     if (!t->output.data) initStringInfoMy(&t->output);
-    while ((len = PQgetCopyData(t->conn, &buffer, false)) != -1) switch (len) {
-        case 0: break;
-        case -2: work_error((errmsg("id = %li, PQgetCopyData == -2", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); if (buffer) PQfreemem(buffer); return true;
-        default: appendBinaryStringInfo(&t->output, buffer, len); PQfreemem(buffer); buffer = NULL; break;
+    while ((len = PQgetCopyData(t->conn, &buffer, true)) > 0) { appendBinaryStringInfo(&t->output, buffer, len); PQfreemem(buffer); buffer = NULL; }
+    switch (len) {
+        case 0: t->event = WL_SOCKET_READABLE; t->socket = work_copy; break;
+        case -2: work_error((errmsg("id = %li, PQgetCopyData == -2", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
+        default: t->skip++; work_result(t); break;
     }
-    t->skip++;
-    return false;
 }
 
 static void work_result(Task *t) {
     for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK && (result = PQgetResult(t->conn)); PQclear(result)) switch (PQresultStatus(result)) {
         case PGRES_COMMAND_OK: work_command(t, result); break;
         case PGRES_COPY_IN: if (PQputCopyEnd(t->conn, "COPY FROM STDIN is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
-        case PGRES_COPY_OUT: if (work_copy(t)) { PQclear(result); return; } break;
+        case PGRES_COPY_OUT: PQclear(result); work_copy(t); return;
         case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
         case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) work_success(t, result, row); break;
         default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
