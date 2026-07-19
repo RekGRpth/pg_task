@@ -88,6 +88,7 @@ Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bo
     bool isnull;
     Datum datum;
     int fnumber = SPI_fnumber(tupdesc, fname);
+    if (fnumber == SPI_ERROR_NOATTRIBUTE) ereport(ERROR, (errcode(ERRCODE_UNDEFINED_COLUMN), errmsg("column \"%s\" does not exist", fname)));
     if (SPI_gettypeid(tupdesc, fnumber) != typeid) ereport(ERROR, (errcode(ERRCODE_MOST_SPECIFIC_TYPE_MISMATCH), errmsg("type of column \"%s\" must be \"%i\"", fname, typeid)));
     datum = SPI_getbinval(tuple, tupdesc, fnumber, &isnull);
     if (allow_null) return datum;
