@@ -172,7 +172,7 @@ static void dest_execute(void) {
 #else
             Node *node = (Node *)lfirst(cell);
 #endif
-            if (IsA(node, CopyStmt) && ((CopyStmt *)node)->is_from && !((CopyStmt *)node)->filename) ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("COPY FROM STDIN is not supported")));
+            if (IsA(node, CopyStmt) && !((CopyStmt *)node)->filename) ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("COPY %s is not supported", ((CopyStmt *)node)->is_from ? "FROM STDIN" : "TO STDOUT")));
         }
         MemoryContextSwitchTo(oldMemoryContext);
         whereToSendOutput = DestDebug;
