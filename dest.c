@@ -267,9 +267,14 @@ static void dest_catch(void) {
 
 static void dest_discard(void) {
     Shared *shared = task.shared;
+    static const char *src = SQL(SET SESSION AUTHORIZATION DEFAULT; RESET ALL; DEALLOCATE ALL; CLOSE ALL; UNLISTEN *; DISCARD PLANS; DISCARD TEMP; DISCARD SEQUENCES;);
     StringInfoData oid;
     task.shared = NULL; // disable dest receiver and command tags during cleanup
-    exec_simple_query_my(SQL(SET SESSION AUTHORIZATION DEFAULT; RESET ALL; DEALLOCATE ALL; CLOSE ALL; UNLISTEN *; DISCARD PLANS; DISCARD TEMP; DISCARD SEQUENCES;));
+    if (shared->spi) {
+        SPI_connect_my(src);
+        SPI_execute_with_args_my(src, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_finish_my();
+    } else exec_simple_query_my(src);
     task.shared = shared;
     SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("pg_task.schema", task.shared->schema, PGC_USERSET, PGC_S_SESSION);
