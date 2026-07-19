@@ -380,28 +380,32 @@ static void work_result(Task *t) {
     work_done(t);
 }
 
+static void work_input(Task *t) {
+    for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK && (result = PQgetResult(t->conn)); PQclear(result)) switch (PQresultStatus(result)) {
+        case PGRES_COMMAND_OK: elog(DEBUG1, "id = %li, %s", t->shared->id, PQcmdStatus(result)); break;
+        case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
+        default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
+    }
+    if (t->error.data) { work_done(t); return; }
+    if (!PQsendQuery(t->conn, t->input)) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
+    t->socket = work_result;
+    t->event = WL_SOCKET_READABLE;
+}
+
 static void work_query(Task *t) {
-    StringInfoData input;
+    StringInfoData preamble;
     if (ShutdownRequestPending) return;
     t->socket = work_query;
     if (task_work(t)) { work_finish(t); return; }
-    initStringInfoMy(&input);
+    initStringInfoMy(&preamble);
     t->skip = 0;
-    appendStringInfoString(&input, SQL(BEGIN;));
-    t->skip++;
-    appendStringInfo(&input, SQL(SET SESSION "pg_task.id" = %li;), t->shared->id);
-    t->skip++;
-    if (t->timeout) {
-        appendStringInfo(&input, SQL(SET SESSION "statement_timeout" = %i;), t->timeout);
-        t->skip++;
-    }
-    appendStringInfoString(&input, SQL(COMMIT;));
-    t->skip++;
-    appendStringInfoString(&input, t->input);
-    elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", t->shared->id, t->timeout, input.data, t->count);
-    if (!PQsendQuery(t->conn, input.data)) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); pfree(input.data); return; }
-    pfree(input.data);
-    t->socket = work_result;
+    appendStringInfo(&preamble, SQL(SET SESSION "pg_task.id" = %li;), t->shared->id);
+    if (t->timeout) appendStringInfo(&preamble, SQL(SET SESSION "statement_timeout" = %i;), t->timeout);
+    else appendStringInfoString(&preamble, SQL(RESET "statement_timeout";));
+    elog(DEBUG1, "id = %li, timeout = %i, preamble = %s, input = %s, count = %i", t->shared->id, t->timeout, preamble.data, t->input, t->count);
+    if (!PQsendQuery(t->conn, preamble.data)) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); pfree(preamble.data); return; }
+    pfree(preamble.data);
+    t->socket = work_input;
     t->event = WL_SOCKET_READABLE;
 }
 
