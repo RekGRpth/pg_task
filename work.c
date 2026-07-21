@@ -441,6 +441,7 @@ static void work_connect(Task *t) {
     if (connected) {
         if (!(t->pid = PQbackendPID(t->conn))) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQbackendPID failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
         if (!lock_table_pid_hash(t->shared->oid, t->pid, t->shared->hash)) { work_error((errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->pid, t->shared->hash))); return; }
+        if (PQclientEncoding(t->conn) != GetDatabaseEncoding() && PQsetClientEncoding(t->conn, GetDatabaseEncodingName()) == -1) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetClientEncoding failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
         work_query(t);
     }
 }
@@ -534,7 +535,6 @@ static void work_remote(Task *t) {
     else if (PQstatus(t->conn) == CONNECTION_BAD) work_error((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), work_errdetail(PQerrorMessage(t->conn))));
     else if (!PQisnonblocking(t->conn) && PQsetnonblocking(t->conn, true) == -1) work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetnonblocking failed"), work_errdetail(PQerrorMessage(t->conn))));
     else if (!superuser() && !PQconnectionUsedPassword(t->conn)) work_error((errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superuser cannot connect if the server does not request a password."), errhint("Target server's authentication method must be changed.")));
-    else if (PQclientEncoding(t->conn) != GetDatabaseEncoding() && PQsetClientEncoding(t->conn, GetDatabaseEncodingName()) == -1) work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetClientEncoding failed"), work_errdetail(PQerrorMessage(t->conn))));
     pfree(name.data);
     pfree(value.data);
     pfree(keywords);
