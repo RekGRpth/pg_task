@@ -53,8 +53,8 @@ static bool task_live(const Task *t) {
     return ShutdownRequestPending || !t->shared->id;
 }
 
-static const char *task_columns(const Task *t) {
-    const char *columns = NULL;
+static char *task_columns(const Task *t) {
+    char *columns = NULL;
     Datum values[] = {ObjectIdGetDatum(t->shared->oid)};
     static Oid argtypes[] = {OIDOID};
     static const char *src = SQL(
@@ -96,7 +96,7 @@ static void task_insert(const Task *t) {
     elog(DEBUG1, "id = %li", t->shared->id);
     set_ps_display_my("insert");
     if (!src.data) {
-        const char *columns = task_columns(t);
+        char *columns = task_columns(t);
         if (!columns) return;
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
