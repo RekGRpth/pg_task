@@ -584,10 +584,12 @@ static void work_sleep(Work *w) {
     if (true) {
         static SPIPlanPtr gp_plan = NULL;
         static StringInfoData gp_src = {0};
-        initStringInfoMy(&gp_src);
-        appendStringInfo(&gp_src, SQL(
-            UPDATE %1$s SET "state" = 'GONE', "start" = %2$s, "stop" = %2$s, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) %2$s AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0
-        ), w->schema_table, init_plan());
+        if (!gp_src.data) {
+            initStringInfoMy(&gp_src);
+            appendStringInfo(&gp_src, SQL(
+                UPDATE %1$s SET "state" = 'GONE', "start" = %2$s, "stop" = %2$s, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) %2$s AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0
+            ), w->schema_table, init_plan());
+        }
         SPI_connect_my(gp_src.data);
         if (!gp_plan) gp_plan = SPI_prepare_my(gp_src.data, 0, NULL);
         SPI_execute_plan_my(gp_src.data, gp_plan, NULL, NULL, SPI_OK_UPDATE);
