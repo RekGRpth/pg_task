@@ -85,7 +85,7 @@ static void rStartup(DestReceiver *self, int operation, TupleDesc tupdesc) {
         default: elog(DEBUG1, "id = %li, operation = %i", task.shared->id, operation); break;
     }
     task.row = 0;
-    task.skip = 1;
+    task.skip = operation == CMD_SELECT;
 }
 
 static void rShutdown(DestReceiver *self) {
