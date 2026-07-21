@@ -426,6 +426,31 @@ void make_table(const Work *w) {
     make_comment(w, "null", "Null text value representation");
     make_comment(w, "output", "Received result(s)");
     make_comment(w, "remote", "Connect to remote database (if need)");
+    make_default(w, "parent", "NULLIF((current_setting('pg_task.id'::text))::bigint, 0)");
+    make_default(w, "plan", init_plan());
+    make_default(w, "active", "(current_setting('pg_task.active'::text))::interval");
+    make_default(w, "live", "(current_setting('pg_task.live'::text))::interval");
+    make_default(w, "repeat", "(current_setting('pg_task.repeat'::text))::interval");
+    make_default(w, "timeout", "(current_setting('pg_task.timeout'::text))::interval");
+    make_default(w, "count", "(current_setting('pg_task.count'::text))::integer");
+    make_default(w, "max", "(current_setting('pg_task.max'::text))::integer");
+    {
+        StringInfoData state;
+        initStringInfoMy(&state);
+        appendStringInfo(&state, "'PLAN'::%s", w->schema_type);
+        make_default(w, "state", state.data);
+        pfree(state.data);
+    }
+    make_default(w, "delete", "(current_setting('pg_task.delete'::text))::boolean");
+    make_default(w, "drift", "(current_setting('pg_task.drift'::text))::boolean");
+    make_default(w, "header", "(current_setting('pg_task.header'::text))::boolean");
+    make_default(w, "save", "(current_setting('pg_task.save'::text))::boolean");
+    make_default(w, "string", "(current_setting('pg_task.string'::text))::boolean");
+    make_default(w, "delimiter", "(current_setting('pg_task.delimiter'::text))::\"char\"");
+    make_default(w, "escape", "(current_setting('pg_task.escape'::text))::\"char\"");
+    make_default(w, "quote", "(current_setting('pg_task.quote'::text))::\"char\"");
+    make_default(w, "group", "current_setting('pg_task.group'::text)");
+    make_default(w, "null", "current_setting('pg_task.null'::text)");
     make_not_null(w, "id", true);
     make_not_null(w, "parent", false);
     make_not_null(w, "plan", true);
@@ -459,31 +484,6 @@ void make_table(const Work *w) {
     make_constraint(w, "repeat", ">= '00:00:00'::interval", "::pg_catalog.interval");
     make_constraint(w, "timeout", ">= '00:00:00'::interval", "::pg_catalog.interval");
     make_constraint(w, "count", ">= 0", NULL);
-    make_default(w, "parent", "NULLIF((current_setting('pg_task.id'::text))::bigint, 0)");
-    make_default(w, "plan", init_plan());
-    make_default(w, "active", "(current_setting('pg_task.active'::text))::interval");
-    make_default(w, "live", "(current_setting('pg_task.live'::text))::interval");
-    make_default(w, "repeat", "(current_setting('pg_task.repeat'::text))::interval");
-    make_default(w, "timeout", "(current_setting('pg_task.timeout'::text))::interval");
-    make_default(w, "count", "(current_setting('pg_task.count'::text))::integer");
-    make_default(w, "max", "(current_setting('pg_task.max'::text))::integer");
-    {
-        StringInfoData state;
-        initStringInfoMy(&state);
-        appendStringInfo(&state, "'PLAN'::%s", w->schema_type);
-        make_default(w, "state", state.data);
-        pfree(state.data);
-    }
-    make_default(w, "delete", "(current_setting('pg_task.delete'::text))::boolean");
-    make_default(w, "drift", "(current_setting('pg_task.drift'::text))::boolean");
-    make_default(w, "header", "(current_setting('pg_task.header'::text))::boolean");
-    make_default(w, "save", "(current_setting('pg_task.save'::text))::boolean");
-    make_default(w, "string", "(current_setting('pg_task.string'::text))::boolean");
-    make_default(w, "delimiter", "(current_setting('pg_task.delimiter'::text))::\"char\"");
-    make_default(w, "escape", "(current_setting('pg_task.escape'::text))::\"char\"");
-    make_default(w, "quote", "(current_setting('pg_task.quote'::text))::\"char\"");
-    make_default(w, "group", "current_setting('pg_task.group'::text)");
-    make_default(w, "null", "current_setting('pg_task.null'::text)");
     make_hash(w, "hashtext((\"group\" || COALESCE(remote, ''::text)))");
     make_index(w, "input");
     make_index(w, "parent");
