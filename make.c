@@ -88,9 +88,10 @@ static void make_default(const Work *w, const char *name, const char *value) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             ALTER TABLE %1$s ALTER COLUMN "%2$s" SET DEFAULT %3$s;
+            UPDATE %1$s SET "%2$s" = DEFAULT WHERE "%2$s" IS NULL;
         ), w->schema_table, name, value);
         SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UPDATE);
         SPI_finish_my();
     }
     pfree(src.data);
