@@ -102,5 +102,13 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '15' AND plan > :ct::timestamp;
+INSERT INTO task ("group", input) VALUES ('16', 'DELETE FROM task WHERE false');
+DO $body$ BEGIN
+    WHILE true LOOP
+        PERFORM pg_sleep(1);
+        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", input, output, error, state FROM task WHERE "group" = '16' AND plan > :ct::timestamp;
 ALTER SYSTEM RESET pg_task.spi;
 SELECT pg_reload_conf();

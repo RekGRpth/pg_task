@@ -30,3 +30,4 @@ c	d
 13|t|t
 14|t|t
 15|SELECT 'a' || '"' || 'b' || chr(92) || 'c' AS a|"a\"b\\c"||DONE
+16|DELETE FROM task WHERE false|DELETE 0||DONE

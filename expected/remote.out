@@ -33,3 +33,4 @@ DETAIL:  missing "=" after "application_name" in connection info string|FAIL
 15|t|t
 16|SELECT 'a' || '"' || 'b' || chr(92) || 'c' AS a|"a\"b\\c"||DONE
 DONE|t
+17|DELETE FROM task WHERE false|DELETE 0||DONE
