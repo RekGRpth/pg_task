@@ -134,5 +134,19 @@ SELECT "group", count(DISTINCT pid) = 1 AS same_worker, max(output) FILTER (WHER
 FROM task WHERE "group" = '19' AND plan > :ct::timestamp GROUP BY "group";
 SELECT "group", bool_and(CASE WHEN input LIKE 'CREATE%' THEN state = 'DONE' ELSE state = 'FAIL' END) AS discard_worked, count(DISTINCT pid) = 1 AS same_worker
 FROM task WHERE "group" = '20' AND plan > :ct::timestamp GROUP BY "group";
+CREATE SCHEMA sp_probe_schema;
+CREATE FUNCTION sp_probe_schema.search_path_probe() RETURNS text LANGUAGE sql AS $$ SELECT 'found'::text $$;
+SELECT format('ALTER DATABASE %I SET search_path = sp_probe_schema, public', current_database()) \gexec
+INSERT INTO task ("group", input) VALUES ('21', 'SELECT search_path_probe() AS a');
+DO $body$ BEGIN
+    WHILE true LOOP
+        PERFORM pg_sleep(1);
+        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", input, output, error, state FROM task WHERE "group" = '21' AND plan > :ct::timestamp;
+SELECT format('ALTER DATABASE %I RESET search_path', current_database()) \gexec
+DROP FUNCTION sp_probe_schema.search_path_probe();
+DROP SCHEMA sp_probe_schema;
 ALTER SYSTEM RESET pg_task.spi;
 SELECT pg_reload_conf();

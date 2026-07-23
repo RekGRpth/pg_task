@@ -35,4 +35,5 @@ STATEMENT:  COPY (SELECT 1) TO STDOUT|FAIL
 STATEMENT:  COPY task FROM STDIN|FAIL
 19|t|t
 20|t|t
+21|SELECT search_path_probe() AS a|found||DONE
 t
