@@ -92,3 +92,11 @@ END;$body$ LANGUAGE plpgsql;
 SELECT "group", count(DISTINCT pid) > 1 AS multiple_workers, max(cnt) > 1 AS reuse_happened FROM (
     SELECT "group", pid, count(*) AS cnt FROM task WHERE "group" = '14' AND plan > :ct::timestamp GROUP BY "group", pid
 ) x GROUP BY "group";
+INSERT INTO task ("group", input, quote, escape) VALUES ('15', $task$SELECT 'a' || '"' || 'b' || chr(92) || 'c' AS a$task$, '"', '\');
+DO $body$ BEGIN
+    WHILE true LOOP
+        PERFORM pg_sleep(1);
+        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", input, output, error, state FROM task WHERE "group" = '15' AND plan > :ct::timestamp;
