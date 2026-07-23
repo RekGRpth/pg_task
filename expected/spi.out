@@ -26,4 +26,5 @@ STATEMENT:  SELECT pg_sleep(2) AS a|FAIL
 11|SELECT pg_sleep(10) AS a||ERROR:  task not active|GONE|8
 12|t|t
 13|t|t
+14|t|t
 t

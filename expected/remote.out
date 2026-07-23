@@ -30,3 +30,4 @@ c	d
 DETAIL:  missing "=" after "application_name" in connection info string|FAIL
 13|t|t
 14|t|t
+15|t|t
