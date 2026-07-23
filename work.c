@@ -441,7 +441,6 @@ static void work_connect(Task *t) {
     if (connected) {
         if (!(t->pid = PQbackendPID(t->conn))) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQbackendPID failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
         if (!lock_table_pid_hash(t->shared->oid, t->pid, t->shared->hash)) { work_error((errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->pid, t->shared->hash))); return; }
-        if (PQclientEncoding(t->conn) != GetDatabaseEncoding() && PQsetClientEncoding(t->conn, GetDatabaseEncodingName()) == -1) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetClientEncoding failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
         work_query(t);
     }
 }
@@ -471,7 +470,7 @@ static void work_remote(Task *t) {
     const char *quote_group;
     const char **keywords;
     const char **values;
-    int arg = 3;
+    int arg = 4;
     PQconninfoOption *opts = PQconninfoParse(t->remote, &err);
     StringInfoData name, value;
     elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : init_null(), t->shared->max, t->shared->oid);
@@ -508,6 +507,9 @@ static void work_remote(Task *t) {
     arg++;
     keywords[arg] = "options";
     values[arg] = value.data;
+    arg++;
+    keywords[arg] = "client_encoding";
+    values[arg] = GetDatabaseEncodingName();
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
         if (!strcmp(opt->keyword, "fallback_application_name")) continue;
