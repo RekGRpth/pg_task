@@ -120,5 +120,19 @@ DO $body$ BEGIN
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '17' AND plan > :ct::timestamp;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '18' AND plan > :ct::timestamp;
+INSERT INTO task ("group", input, count, save) VALUES ('19', 'CREATE TEMP TABLE save_probe_19 AS SELECT 1 AS a', 5, true);
+INSERT INTO task ("group", input, count, save) VALUES ('19', 'SELECT count(*) FROM save_probe_19', 5, true);
+INSERT INTO task ("group", input, count, save) VALUES ('20', 'CREATE TEMP TABLE save_probe_20 AS SELECT 1 AS a', 5, false);
+INSERT INTO task ("group", input, count, save) VALUES ('20', 'SELECT count(*) FROM save_probe_20', 5, false);
+DO $body$ BEGIN
+    WHILE true LOOP
+        PERFORM pg_sleep(1);
+        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", count(DISTINCT pid) = 1 AS same_worker, max(output) FILTER (WHERE input LIKE 'SELECT count%') = '1' AS state_preserved
+FROM task WHERE "group" = '19' AND plan > :ct::timestamp GROUP BY "group";
+SELECT "group", bool_and(CASE WHEN input LIKE 'CREATE%' THEN state = 'DONE' ELSE state = 'FAIL' END) AS discard_worked, count(DISTINCT pid) = 1 AS same_worker
+FROM task WHERE "group" = '20' AND plan > :ct::timestamp GROUP BY "group";
 ALTER SYSTEM RESET pg_task.spi;
 SELECT pg_reload_conf();
