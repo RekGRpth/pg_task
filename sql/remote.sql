@@ -124,3 +124,13 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '17' AND plan > :ct::timestamp;
+INSERT INTO task ("group", input, remote) VALUES ('18', 'COPY (SELECT 1) TO STDOUT', 'application_name=test');
+INSERT INTO task ("group", input, remote) VALUES ('19', 'COPY task FROM STDIN', 'application_name=test');
+DO $body$ BEGIN
+    WHILE true LOOP
+        PERFORM pg_sleep(1);
+        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", input, output, error, state FROM task WHERE "group" = '18' AND plan > :ct::timestamp;
+SELECT "group", input, output, error, state FROM task WHERE "group" = '19' AND plan > :ct::timestamp;

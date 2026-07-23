@@ -31,3 +31,7 @@ c	d
 14|t|t
 15|SELECT 'a' || '"' || 'b' || chr(92) || 'c' AS a|"a\"b\\c"||DONE
 16|DELETE FROM task WHERE false|DELETE 0||DONE
+17|COPY (SELECT 1) TO STDOUT||ERROR:  COPY TO STDOUT is not supported
+STATEMENT:  COPY (SELECT 1) TO STDOUT|FAIL
+18|COPY task FROM STDIN||ERROR:  COPY FROM STDIN is not supported
+STATEMENT:  COPY task FROM STDIN|FAIL
