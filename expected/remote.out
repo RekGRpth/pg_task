@@ -28,3 +28,5 @@ c	d
 11|SELECT pg_sleep(10) AS a||ERROR:  task not active|GONE|8
 12|SELECT 1||ERROR:  PQconninfoParse failed
 DETAIL:  missing "=" after "application_name" in connection info string|FAIL
+13|t|t
+14|t|t

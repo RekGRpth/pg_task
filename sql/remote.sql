@@ -68,3 +68,25 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '12' AND plan > :ct::timestamp;
+SELECT quote_literal(clock_timestamp()) AS ct13 \gset
+WITH s AS (SELECT generate_series(1, 3) AS s) INSERT INTO task ("group", input, max, remote) SELECT '13', 'SELECT clock_timestamp() AS a', -3000, 'application_name=test' FROM s;
+DO $body$ BEGIN
+    WHILE true LOOP
+        PERFORM pg_sleep(1);
+        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", min(start) - :ct13::timestamptz < interval '2500 ms' AS first_run_immediate, bool_and(gap IS NULL OR gap BETWEEN interval '2 sec' AND interval '5 sec') AS pause_ok FROM (
+    SELECT "group", start, start - lag(start) OVER (ORDER BY start) AS gap FROM task WHERE "group" = '13' AND plan > :ct::timestamp
+) x GROUP BY "group";
+SELECT quote_literal(clock_timestamp()) AS ct14 \gset
+WITH s AS (SELECT generate_series(1, 3) AS s) INSERT INTO task ("group", input, max, drift, remote) SELECT '14', 'SELECT clock_timestamp() AS a', -3000, true, 'application_name=test' FROM s;
+DO $body$ BEGIN
+    WHILE true LOOP
+        PERFORM pg_sleep(1);
+        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", min(start) - :ct14::timestamptz < interval '2500 ms' AS first_run_immediate, bool_and(gap IS NULL OR gap BETWEEN interval '2 sec' AND interval '5 sec') AS pause_ok FROM (
+    SELECT "group", start, start - lag(start) OVER (ORDER BY start) AS gap FROM task WHERE "group" = '14' AND plan > :ct::timestamp
+) x GROUP BY "group";
