@@ -134,3 +134,15 @@ DO $body$ BEGIN
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '18' AND plan > :ct::timestamp;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '19' AND plan > :ct::timestamp;
+INSERT INTO task ("group", input, remote) VALUES ('20', 'COPY (SELECT generate_series(1, 100000)) TO STDOUT', 'application_name=test');
+DO $body$ BEGIN
+    WHILE true LOOP
+        PERFORM pg_sleep(1);
+        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", state,
+    array_length(regexp_split_to_array(rtrim(output, chr(10)), chr(10)), 1) = 100000 AS row_count_ok,
+    (regexp_split_to_array(rtrim(output, chr(10)), chr(10)))[1] = '1' AS first_row_ok,
+    (regexp_split_to_array(rtrim(output, chr(10)), chr(10)))[100000] = '100000' AS last_row_ok
+FROM task WHERE "group" = '20' AND plan > :ct::timestamp;

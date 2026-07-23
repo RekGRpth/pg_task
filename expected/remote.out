@@ -39,3 +39,4 @@ DONE|t
 19|COPY task FROM STDIN||ERROR:  COPY from stdin failed: COPY FROM STDIN is not supported
 CONTEXT:  COPY task, line 1
 STATEMENT:  COPY task FROM STDIN|FAIL
+20|DONE|t|t|t
