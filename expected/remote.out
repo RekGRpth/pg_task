@@ -40,3 +40,4 @@ DONE|t
 CONTEXT:  COPY task, line 1
 STATEMENT:  COPY task FROM STDIN|FAIL
 20|DONE|t|t|t
+21|t|t

@@ -146,3 +146,15 @@ SELECT "group", state,
     (regexp_split_to_array(rtrim(output, chr(10)), chr(10)))[1] = '1' AS first_row_ok,
     (regexp_split_to_array(rtrim(output, chr(10)), chr(10)))[100000] = '100000' AS last_row_ok
 FROM task WHERE "group" = '20' AND plan > :ct::timestamp;
+INSERT INTO task ("group", input, remote, save, count, timeout) VALUES ('21', 'SELECT pg_sleep(3)', 'application_name=test', true, 5, '1 sec');
+INSERT INTO task ("group", input, remote, save, count) VALUES ('21', 'SELECT pg_sleep(2)', 'application_name=test', true, 5);
+DO $body$ BEGIN
+    WHILE true LOOP
+        PERFORM pg_sleep(1);
+        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group",
+    bool_and(CASE WHEN input = 'SELECT pg_sleep(3)' THEN state = 'FAIL' AND error LIKE '%statement timeout%' ELSE state = 'DONE' END) AS timeout_leak_fixed,
+    count(DISTINCT pid) = 1 AS same_connection_reused
+FROM task WHERE "group" = '21' AND plan > :ct::timestamp GROUP BY "group";
