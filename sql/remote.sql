@@ -108,3 +108,11 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '16' AND plan > :ct::timestamp;
+INSERT INTO task ("group", input, remote) VALUES ($task$it's a \group$task$, 'SELECT current_setting(''pg_task.group'') AS a', 'application_name=test');
+DO $body$ BEGIN
+    WHILE true LOOP
+        PERFORM pg_sleep(1);
+        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, "group" OPERATOR(pg_catalog.=) output AS group_roundtrip_ok FROM task WHERE "group" = $task$it's a \group$task$ AND plan > :ct::timestamp;

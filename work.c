@@ -13,6 +13,8 @@
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
 
+#include <ctype.h>
+
 #if PG_VERSION_NUM < 90600
 #include "latch_my.h"
 #endif
@@ -463,6 +465,16 @@ static void work_shmem_exit(int code, Datum arg) {
     }
 }
 
+static char *work_escape_options(const char *value) {
+    StringInfoData buf;
+    initStringInfoMy(&buf);
+    for (const char *p = value; *p; p++) {
+        if (*p == '\\' || isspace((unsigned char)*p)) appendStringInfoChar(&buf, '\\');
+        appendStringInfoChar(&buf, *p);
+    }
+    return buf.data;
+}
+
 static void work_remote(Task *t) {
     bool password = false;
     char *err;
@@ -499,9 +511,9 @@ static void work_remote(Task *t) {
     appendStringInfo(&value, " -c pg_task.schema=%s", t->work->schema);
     appendStringInfo(&value, " -c pg_task.table=%s", t->work->table);
     appendStringInfo(&value, " -c pg_task.oid=%i", t->shared->oid);
-    quote_group = quote_literal_cstr(t->group);
+    quote_group = work_escape_options(t->group);
     appendStringInfo(&value, " -c pg_task.group=%s", quote_group);
-    if (quote_group != t->group) pfree((void *)quote_group);
+    pfree((void *)quote_group);
     if (t->group) pfree(t->group);
     t->group = NULL;
     arg++;
