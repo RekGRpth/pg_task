@@ -158,3 +158,11 @@ SELECT "group",
     bool_and(CASE WHEN input = 'SELECT pg_sleep(3)' THEN state = 'FAIL' AND error LIKE '%statement timeout%' ELSE state = 'DONE' END) AS timeout_leak_fixed,
     count(DISTINCT pid) = 1 AS same_connection_reused
 FROM task WHERE "group" = '21' AND plan > :ct::timestamp GROUP BY "group";
+INSERT INTO task ("group", input, remote) VALUES ('22', 'SELECT current_setting(''pg_task.schema'') || ''.'' || current_setting(''pg_task.table'') AS a', 'application_name=test');
+DO $body$ BEGIN
+    WHILE true LOOP
+        PERFORM pg_sleep(1);
+        IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", input, output, error, state FROM task WHERE "group" = '22' AND plan > :ct::timestamp;
