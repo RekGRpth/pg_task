@@ -409,7 +409,7 @@ static void work_input(Task *t) {
 
 static void work_query(Task *t) {
     StringInfoData preamble;
-    const char *quote_group;
+    const char *quote_group, *quote_schema, *quote_table;
     if (ShutdownRequestPending) return;
     t->socket = work_query;
     if (task_work(t)) { work_finish(t); return; }
@@ -419,6 +419,12 @@ static void work_query(Task *t) {
     quote_group = quote_literal_cstr(t->group);
     appendStringInfo(&preamble, SQL(SET SESSION "pg_task.group" = %s;), quote_group);
     if (quote_group != t->group) pfree((void *)quote_group);
+    quote_schema = quote_literal_cstr(t->work->schema);
+    appendStringInfo(&preamble, SQL(SET SESSION "pg_task.schema" = %s;), quote_schema);
+    if (quote_schema != t->work->schema) pfree((void *)quote_schema);
+    quote_table = quote_literal_cstr(t->work->table);
+    appendStringInfo(&preamble, SQL(SET SESSION "pg_task.table" = %s;), quote_table);
+    if (quote_table != t->work->table) pfree((void *)quote_table);
     if (t->timeout) appendStringInfo(&preamble, SQL(SET SESSION "statement_timeout" = %i;), t->timeout);
     else appendStringInfoString(&preamble, SQL(RESET "statement_timeout";));
     elog(DEBUG1, "id = %li, timeout = %i, preamble = %s, input = %s, count = %i", t->shared->id, t->timeout, preamble.data, t->input, t->count);
@@ -499,8 +505,6 @@ static void work_remote(Task *t) {
     values[arg] = name.data;
     initStringInfoMy(&value);
     if (options) appendStringInfoString(&value, options);
-    appendStringInfo(&value, " -c pg_task.schema=%s", t->work->schema);
-    appendStringInfo(&value, " -c pg_task.table=%s", t->work->table);
     appendStringInfo(&value, " -c pg_task.oid=%i", t->shared->oid);
     arg++;
     keywords[arg] = "options";
