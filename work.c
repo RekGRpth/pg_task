@@ -13,8 +13,6 @@
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
 
-#include <ctype.h>
-
 #if PG_VERSION_NUM < 90600
 #include "latch_my.h"
 #endif
@@ -411,12 +409,16 @@ static void work_input(Task *t) {
 
 static void work_query(Task *t) {
     StringInfoData preamble;
+    const char *quote_group;
     if (ShutdownRequestPending) return;
     t->socket = work_query;
     if (task_work(t)) { work_finish(t); return; }
     initStringInfoMy(&preamble);
     t->skip = 0;
     appendStringInfo(&preamble, SQL(SET SESSION "pg_task.id" = %li;), t->shared->id);
+    quote_group = quote_literal_cstr(t->group);
+    appendStringInfo(&preamble, SQL(SET SESSION "pg_task.group" = %s;), quote_group);
+    if (quote_group != t->group) pfree((void *)quote_group);
     if (t->timeout) appendStringInfo(&preamble, SQL(SET SESSION "statement_timeout" = %i;), t->timeout);
     else appendStringInfoString(&preamble, SQL(RESET "statement_timeout";));
     elog(DEBUG1, "id = %li, timeout = %i, preamble = %s, input = %s, count = %i", t->shared->id, t->timeout, preamble.data, t->input, t->count);
@@ -465,21 +467,10 @@ static void work_shmem_exit(int code, Datum arg) {
     }
 }
 
-static char *work_escape_options(const char *value) {
-    StringInfoData buf;
-    initStringInfoMy(&buf);
-    for (const char *p = value; *p; p++) {
-        if (*p == '\\' || isspace((unsigned char)*p)) appendStringInfoChar(&buf, '\\');
-        appendStringInfoChar(&buf, *p);
-    }
-    return buf.data;
-}
-
 static void work_remote(Task *t) {
     bool password = false;
     char *err;
     char *options = NULL;
-    const char *quote_group;
     const char **keywords;
     const char **values;
     int arg = 4;
@@ -511,11 +502,6 @@ static void work_remote(Task *t) {
     appendStringInfo(&value, " -c pg_task.schema=%s", t->work->schema);
     appendStringInfo(&value, " -c pg_task.table=%s", t->work->table);
     appendStringInfo(&value, " -c pg_task.oid=%i", t->shared->oid);
-    quote_group = work_escape_options(t->group);
-    appendStringInfo(&value, " -c pg_task.group=%s", quote_group);
-    pfree((void *)quote_group);
-    if (t->group) pfree(t->group);
-    t->group = NULL;
     arg++;
     keywords[arg] = "options";
     values[arg] = value.data;
