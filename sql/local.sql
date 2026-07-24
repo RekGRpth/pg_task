@@ -134,7 +134,7 @@ SELECT "group", bool_and(CASE WHEN input LIKE 'CREATE%' THEN state = 'DONE' ELSE
 FROM task WHERE "group" = '20' AND plan > :ct::timestamp GROUP BY "group";
 CREATE SCHEMA sp_probe_schema;
 CREATE FUNCTION sp_probe_schema.search_path_probe() RETURNS text LANGUAGE sql AS $$ SELECT 'found'::text $$;
-SELECT format('ALTER DATABASE %I SET search_path = sp_probe_schema, public', current_database()) \gexec
+DO $$ BEGIN EXECUTE format('ALTER DATABASE %I SET search_path = sp_probe_schema, public', current_database()); END $$;
 INSERT INTO task ("group", input) VALUES ('21', 'SELECT search_path_probe() AS a');
 DO $body$ BEGIN
     WHILE true LOOP
@@ -143,6 +143,6 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '21' AND plan > :ct::timestamp;
-SELECT format('ALTER DATABASE %I RESET search_path', current_database()) \gexec
+DO $$ BEGIN EXECUTE format('ALTER DATABASE %I RESET search_path', current_database()); END $$;
 DROP FUNCTION sp_probe_schema.search_path_probe();
 DROP SCHEMA sp_probe_schema;
