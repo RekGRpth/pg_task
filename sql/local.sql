@@ -146,3 +146,49 @@ SELECT "group", input, output, error, state FROM task WHERE "group" = '21' AND p
 DO $$ BEGIN EXECUTE format('ALTER DATABASE %I RESET search_path', current_database()); END $$;
 DROP FUNCTION sp_probe_schema.search_path_probe();
 DROP SCHEMA sp_probe_schema;
+INSERT INTO task ("group", input, repeat) VALUES ('22', 'SELECT pg_sleep(1) AS a', '3 sec');
+INSERT INTO task ("group", input, repeat, drift) VALUES ('23', 'SELECT pg_sleep(1) AS a', '3 sec', true);
+DO $$ BEGIN PERFORM pg_sleep(16); END $$;
+DELETE FROM task WHERE "group" IN ('22', '23') AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" IN ('22', '23') AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" IN ('22', '23') AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" IN ('22', '23') AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" IN ('22', '23') AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" IN ('22', '23') AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" IN ('22', '23') AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" IN ('22', '23') AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" IN ('22', '23') AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" IN ('22', '23') AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" IN ('22', '23') AND state = 'PLAN';
+DO $body$ BEGIN
+    WHILE true LOOP
+        IF (SELECT count(*) FROM task WHERE "group" IN ('22', '23') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+WITH g AS (
+    SELECT id, parent, lag(id) OVER (ORDER BY plan) AS prev_id, plan - lag(plan) OVER (ORDER BY plan) AS gap
+    FROM task WHERE "group" = '22' AND plan > :ct::timestamp
+)
+SELECT count(*) >= 3 AS repeated_enough,
+    bool_and(parent IS NOT DISTINCT FROM prev_id) AS parent_chain_ok,
+    bool_and(gap IS NULL OR LEAST(extract(epoch FROM gap)::numeric % 3, 3 - extract(epoch FROM gap)::numeric % 3) < 0.5) AS grid_aligned
+FROM g;
+WITH g AS (
+    SELECT id, parent, lag(id) OVER (ORDER BY plan) AS prev_id, plan - lag(stop) OVER (ORDER BY plan) AS gap
+    FROM task WHERE "group" = '23' AND plan > :ct::timestamp
+)
+SELECT count(*) >= 3 AS repeated_enough,
+    bool_and(parent IS NOT DISTINCT FROM prev_id) AS parent_chain_ok,
+    bool_and(gap IS NULL OR gap BETWEEN interval '2900 ms' AND interval '3500 ms') AS drift_from_stop_ok
+FROM g;
