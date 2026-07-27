@@ -218,6 +218,8 @@ bool task_work(Task *t) {
     if (SPI_processed != 1) {
         ereport(WARNING, (errmsg("id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed)));
         exit = true;
+        if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) ereport(WARNING, (errmsg("!unlock_table_id(%i, %li)", t->shared->oid, t->shared->id)));
+        t->lock = false;
     } else {
         StringInfoData application_name;
         t->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false, CHAROID));
