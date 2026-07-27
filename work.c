@@ -55,6 +55,12 @@
 #define CreateWaitEventSetMy(nevents) CreateWaitEventSet(TopMemoryContext, nevents)
 #endif
 
+#if PG_VERSION_NUM >= 90600
+#define PG_DIAG_SEVERITY_MY PG_DIAG_SEVERITY_NONLOCALIZED
+#else
+#define PG_DIAG_SEVERITY_MY PG_DIAG_SEVERITY
+#endif
+
 #if PG_VERSION_NUM >= 190000
 #include <storage/fd.h>
 #endif
@@ -162,6 +168,11 @@ static void work_events(WaitEventSet *set) {
     }
 }
 
+static char *work_severity(const PGresult *result) {
+    char *severity = PQresultErrorField(result, PG_DIAG_SEVERITY_MY);
+    return severity ? severity : PQresultErrorField(result, PG_DIAG_SEVERITY); // older remote servers don't send the nonlocalized field
+}
+
 static void work_fatal(Task *t, const PGresult *result) {
     char *value = NULL;
     char *value2 = NULL;
@@ -170,7 +181,7 @@ static void work_fatal(Task *t, const PGresult *result) {
     if (!t->error.data) initStringInfoMy(&t->error);
     t->skip++;
     if (t->error.len) appendStringInfoChar(&t->error, '\n');
-    if ((value = PQresultErrorField(result, PG_DIAG_SEVERITY))) appendStringInfo(&t->error, "%s:  ", _(value));
+    if ((value = work_severity(result))) appendStringInfo(&t->error, "%s:  ", _(error_severity(severity_error(value))));
     if (Log_error_verbosity >= PGERROR_VERBOSE && (value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&t->error, "%s: ", value);
     if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY))) append_with_tabs(&t->error, value);
     else append_with_tabs(&t->error, _("missing error text"));
@@ -209,7 +220,7 @@ static void work_fatal(Task *t, const PGresult *result) {
             }
         }
     }
-    if (is_log_level_output(severity_error(PQresultErrorField(result, PG_DIAG_SEVERITY)), log_min_error_statement)) { // If the user wants the query that generated this error logged, do it.
+    if (is_log_level_output(severity_error(work_severity(result)), log_min_error_statement)) { // If the user wants the query that generated this error logged, do it.
         if (t->error.len) appendStringInfoChar(&t->error, '\n');
         appendStringInfoString(&t->error, _("STATEMENT:  "));
         append_with_tabs(&t->error, t->input);
