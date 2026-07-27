@@ -23,9 +23,12 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.delete | bool | true | config, database, user, session | Auto delete task when both output and error are nulls |
 | pg_task.drift | bool | false | config, database, user, session | Compute next repeat time by stop time instead by plan time |
 | pg_task.header | bool | true | config, database, user, session | Show columns headers in output |
+| pg_task.save | bool | false | config, database, user, session | Save session state between tasks |
+| pg_task.spi | bool | false | config, database, user, session | SPI (or local) execution? |
 | pg_task.string | bool | true | config, database, user, session | Quote only strings |
 | pg_conf.close | int | 60 * 1000 | config, database, superuser | Close conf, milliseconds |
 | pg_conf.fetch | int | 10 | config, database, superuser | Fetch conf rows at once |
+| pg_conf.max | int | max_worker_processes | config | Maximum task and work workers |
 | pg_conf.restart | int | 60 | config, database, superuser | Restart conf interval, seconds |
 | pg_task.count | int | 0 | config, database, user, session | Non-negative maximum count of tasks, are executed by current background worker process before exit |
 | pg_task.fetch | int | 100 | config, database, user | Fetch task rows at once |
@@ -36,17 +39,17 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.sleep | int | 1000 | config, database, user | Check tasks every sleep milliseconds |
 | pg_work.close | int | 60 * 1000 | config, database, superuser | Close work, milliseconds |
 | pg_work.fetch | int | 100 | config, database, superuser | Fetch work rows at once |
+| pg_work.idle | int | 60 | config, database, user | Idle work count |
 | pg_work.restart | int | 60 | config, database, superuser | Restart work interval, seconds |
 | pg_task.active | interval | 1 hour | config, database, user, session | Positive period after plan time, when task is active for executing |
 | pg_task.data | text | postgres | config | Database name for tasks table |
 | pg_task.delimiter | char | \t | config, database, user, session | Results columns delimiter |
 | pg_task.escape | char | | config, database, user, session | Results columns escape |
 | pg_task.group | text | group | config, database, user, session | Task grouping by name |
-| pg_task.idle | int | 60 | config, database, user | Idle task count |
 | pg_task.json | json | [{"data":"postgres"}] | config | Json configuration, available keys: data, reset, schema, table, sleep and user |
 | pg_task.live | interval | 0 sec | config, database, user, session | Non-negative maximum time of live of current background worker process before exit |
 | pg_task.null | text | \N | config, database, user, session | Null text value representation |
-| pg_task.plan | timestamptz | statement_timestamp() | config, database, user, session | Default value for now timestamp |
+| pg_task.plan | timestamptz | statement_timestamp() | config, database, user, session | Default value for plan timestamp |
 | pg_task.quote | char | | config, database, user, session | Results columns quote |
 | pg_task.repeat | interval | 0 sec | config, database, user, session | Non-negative auto repeat tasks interval |
 | pg_task.reset | interval | 1 hour | config, database, user | Interval of reset tasks |
@@ -71,10 +74,11 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | count | int | NOT NULL | pg_task.count | Non-negative maximum count of tasks, are executed by current background worker process before exit |
 | max | int | NOT NULL | pg_task.max | Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds |
 | pid | int | NULL | | Id of process executing task |
-| state | enum state (PLAN, TAKE, WORK, DONE, STOP) | NOT NULL | PLAN | Task state |
+| state | enum state (PLAN, GONE, TAKE, WORK, DONE, FAIL, STOP) | NOT NULL | PLAN | Task state |
 | delete | bool | NOT NULL | pg_task.delete | Auto delete task when both output and error are nulls |
 | drift | bool | NOT NULL | pg_task.drift | Compute next repeat time by stop time instead by plan time |
 | header | bool | NOT NULL | pg_task.header | Show columns headers in output |
+| save | bool | NOT NULL | pg_task.save | Save session state between tasks |
 | string | bool | NOT NULL | pg_task.string | Quote only strings |
 | delimiter | char | NOT NULL | pg_task.delimiter | Results columns delimiter |
 | escape | char | NOT NULL | pg_task.escape | Results columns escape |
