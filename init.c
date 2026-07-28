@@ -306,6 +306,7 @@ const char *error_severity(int elevel) {
 }
 
 int severity_error(const char *error) {
+    if (!error) return ERROR;
     if (!pg_strcasecmp("DEBUG", error)) return DEBUG1;
     if (!pg_strcasecmp("ERROR", error)) return ERROR;
     if (!pg_strcasecmp("FATAL", error)) return FATAL;
