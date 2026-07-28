@@ -219,3 +219,18 @@ SELECT count(*) >= 3 AS repeated_enough,
     bool_and(parent IS NOT DISTINCT FROM prev_id) AS parent_chain_ok,
     bool_and(gap IS NULL OR gap BETWEEN interval '2900 ms' AND interval '3500 ms') AS drift_from_stop_ok
 FROM g;
+DELETE FROM task WHERE "group" = '26';
+INSERT INTO task ("group", input, remote) VALUES ('26', 'INSERT INTO task ("group", input, remote) VALUES (''26'', ''SELECT 1 AS a'', ''application_name=test'')', 'application_name=test');
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = '26') >= 2 AND (SELECT count(*) FROM task WHERE "group" = '26' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+WITH g AS (
+    SELECT id, parent, input, state FROM task WHERE "group" = '26' AND plan > :ct::timestamp
+)
+SELECT count(*) = 2 AS both_rows_present,
+    bool_and(state = 'DONE') AS both_done,
+    (SELECT parent FROM g WHERE input LIKE 'SELECT%') = (SELECT id FROM g WHERE input LIKE 'INSERT%') AS chaining_ok
+FROM g;

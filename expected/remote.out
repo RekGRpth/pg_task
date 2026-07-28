@@ -44,3 +44,4 @@ STATEMENT:  COPY task FROM STDIN|FAIL
 22|SELECT current_setting('pg_task.schema') || '.' || current_setting('pg_task.table') AS a|public.task||DONE
 t|t|t
 t|t|t
+t|t|t
