@@ -146,9 +146,15 @@ SELECT "group", input, output, error, state FROM task WHERE "group" = '21' AND p
 DO $$ BEGIN EXECUTE format('ALTER DATABASE %I RESET search_path', current_database()); END $$;
 DROP FUNCTION sp_probe_schema.search_path_probe();
 DROP SCHEMA sp_probe_schema;
+DELETE FROM task WHERE "group" IN ('22', '23');
 INSERT INTO task ("group", input, repeat) VALUES ('22', 'SELECT pg_sleep(1) AS a', '3 sec');
 INSERT INTO task ("group", input, repeat, drift) VALUES ('23', 'SELECT pg_sleep(1) AS a', '3 sec', true);
-DO $$ BEGIN PERFORM pg_sleep(16); END $$;
+DO $body$ BEGIN
+    FOR i IN 1..90 LOOP
+        IF (SELECT count(*) FILTER (WHERE "group" = '22') >= 3 AND count(*) FILTER (WHERE "group" = '23') >= 3 FROM task WHERE "group" IN ('22', '23') AND state = 'DONE') THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
 DELETE FROM task WHERE "group" IN ('22', '23') AND state = 'PLAN';
 DO $$ BEGIN PERFORM pg_sleep(1); END $$;
 DELETE FROM task WHERE "group" IN ('22', '23') AND state = 'PLAN';

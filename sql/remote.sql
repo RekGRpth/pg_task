@@ -166,9 +166,15 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '22' AND plan > :ct::timestamp;
+DELETE FROM task WHERE "group" IN ('24', '25');
 INSERT INTO task ("group", input, repeat, remote) VALUES ('24', 'SELECT pg_sleep(1) AS a', '3 sec', 'application_name=test');
 INSERT INTO task ("group", input, repeat, drift, remote) VALUES ('25', 'SELECT pg_sleep(1) AS a', '3 sec', true, 'application_name=test');
-DO $$ BEGIN PERFORM pg_sleep(16); END $$;
+DO $body$ BEGIN
+    FOR i IN 1..90 LOOP
+        IF (SELECT count(*) FILTER (WHERE "group" = '24') >= 3 AND count(*) FILTER (WHERE "group" = '25') >= 3 FROM task WHERE "group" IN ('24', '25') AND state = 'DONE') THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
 DELETE FROM task WHERE "group" IN ('24', '25') AND state = 'PLAN';
 DO $$ BEGIN PERFORM pg_sleep(1); END $$;
 DELETE FROM task WHERE "group" IN ('24', '25') AND state = 'PLAN';
