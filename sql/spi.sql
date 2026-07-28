@@ -173,11 +173,12 @@ DELETE FROM task WHERE "group" IN ('22', '23') AND state = 'PLAN';
 DO $$ BEGIN PERFORM pg_sleep(1); END $$;
 DELETE FROM task WHERE "group" IN ('22', '23') AND state = 'PLAN';
 DO $body$ BEGIN
-    WHILE true LOOP
+    FOR i IN 1..30 LOOP
         IF (SELECT count(*) FROM task WHERE "group" IN ('22', '23') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
+DELETE FROM task WHERE "group" IN ('22', '23') AND state NOT IN ('DONE', 'GONE', 'FAIL');
 WITH g AS (
     SELECT id, parent, lag(id) OVER (ORDER BY plan) AS prev_id, plan - lag(plan) OVER (ORDER BY plan) AS gap
     FROM task WHERE "group" = '22' AND plan > :ct::timestamp
