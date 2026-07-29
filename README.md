@@ -26,7 +26,6 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.save | bool | false | config, database, user, session | Save session state between tasks |
 | pg_task.spi | bool | false | config, database, user, session | SPI (or local) execution? |
 | pg_task.string | bool | true | config, database, user, session | Quote only strings |
-| pg_conf.close | int | 60 * 1000 | config, database, superuser | Close conf, milliseconds |
 | pg_conf.fetch | int | 10 | config, database, superuser | Fetch conf rows at once |
 | pg_conf.max | int | max_worker_processes | config | Maximum task and work workers |
 | pg_conf.restart | int | 60 | config, database, superuser | Restart conf interval, seconds |
@@ -37,7 +36,6 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.max | int | 0 | config, database, user, session | Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds |
 | pg_task.run | int | 2147483647 | config, database, user, session | Maximum count of concurrently executing tasks in work |
 | pg_task.sleep | int | 1000 | config, database, user | Check tasks every sleep milliseconds |
-| pg_work.close | int | 60 * 1000 | config, database, superuser | Close work, milliseconds |
 | pg_work.fetch | int | 100 | config, database, superuser | Fetch work rows at once |
 | pg_work.idle | int | 60 | config, database, user | Idle work count |
 | pg_work.restart | int | 60 | config, database, superuser | Restart work interval, seconds |
