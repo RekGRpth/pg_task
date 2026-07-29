@@ -214,3 +214,25 @@ SELECT count(*) = 2 AS both_rows_present,
     bool_and(state = 'DONE') AS both_done,
     (SELECT parent FROM g WHERE input LIKE 'SELECT%') = (SELECT id FROM g WHERE input LIKE 'INSERT%') AS chaining_ok
 FROM g;
+DELETE FROM task WHERE "group" = '25';
+INSERT INTO task ("group", input) VALUES ('25', 'SELECT pg_sleep(10) AS a');
+DO $body$ BEGIN
+    FOR i IN 1..15 LOOP
+        IF (SELECT state FROM task WHERE "group" = '25') = 'WORK' THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT pid AS orig_pid FROM task WHERE "group" = '25'
+\gset
+SELECT count(pg_terminate_backend(:orig_pid)) > 0 AS worker_killed;
+ALTER SYSTEM SET pg_task.reset = '2 sec';
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF (SELECT state FROM task WHERE "group" = '25') = 'DONE' THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+ALTER SYSTEM RESET pg_task.reset;
+SELECT pg_reload_conf();
+SELECT state = 'DONE' AS recovered, pid != :orig_pid AS pid_changed FROM task WHERE "group" = '25';

@@ -41,3 +41,7 @@ STATEMENT:  COPY task FROM STDIN|FAIL
 t|t|t
 t|t|t
 t|t|t
+t
+t
+t
+t|t
