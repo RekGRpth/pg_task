@@ -277,3 +277,35 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT output = '"1","text",<NULL>' AS format_ok FROM task WHERE "group" = '29' AND plan > :ct::timestamp;
+DELETE FROM task WHERE "group" IN ('30', '31', '32');
+ALTER SYSTEM SET pg_task."limit" = 1;
+SELECT pg_reload_conf();
+INSERT INTO task ("group", input, remote) VALUES ('30', 'SELECT pg_sleep(5) AS a', 'application_name=test');
+INSERT INTO task ("group", input, remote) VALUES ('31', 'SELECT pg_sleep(5) AS a', 'application_name=test');
+INSERT INTO task ("group", input, remote) VALUES ('32', 'SELECT pg_sleep(5) AS a', 'application_name=test');
+DO $$ BEGIN PERFORM pg_sleep(2); END $$;
+SELECT count(*) FILTER (WHERE state != 'PLAN') >= 1 AS some_dispatched, count(*) FILTER (WHERE state = 'PLAN') >= 1 AS some_capped FROM task WHERE "group" IN ('30', '31', '32') AND plan > :ct::timestamp;
+ALTER SYSTEM RESET pg_task."limit";
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" IN ('30', '31', '32') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+DELETE FROM task WHERE "group" IN ('30', '31', '32');
+ALTER SYSTEM SET pg_task.run = 1;
+SELECT pg_reload_conf();
+INSERT INTO task ("group", input, remote) VALUES ('30', 'SELECT pg_sleep(5) AS a', 'application_name=test');
+INSERT INTO task ("group", input, remote) VALUES ('31', 'SELECT pg_sleep(5) AS a', 'application_name=test');
+INSERT INTO task ("group", input, remote) VALUES ('32', 'SELECT pg_sleep(5) AS a', 'application_name=test');
+DO $$ BEGIN PERFORM pg_sleep(2); END $$;
+SELECT count(*) FILTER (WHERE state != 'PLAN') >= 1 AS some_dispatched, count(*) FILTER (WHERE state = 'PLAN') >= 1 AS some_capped FROM task WHERE "group" IN ('30', '31', '32') AND plan > :ct::timestamp;
+ALTER SYSTEM RESET pg_task.run;
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" IN ('30', '31', '32') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
