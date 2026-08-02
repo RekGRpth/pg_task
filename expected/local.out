@@ -61,3 +61,6 @@ STATEMENT:  DO $inner$ BEGIN RAISE EXCEPTION 'boom' USING DETAIL = 'detail text'
 t
 t
 t
+t
+t|t
+t
