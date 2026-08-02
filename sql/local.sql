@@ -291,3 +291,12 @@ DO $body$ BEGIN
         PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
+DELETE FROM task WHERE "group" = '33';
+INSERT INTO task ("group", input) VALUES ('33', 'BEGIN; SELECT 1 AS a');
+DO $body$ BEGIN
+    FOR i IN 1..15 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = '33' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT output, error, state FROM task WHERE "group" = '33' AND plan > :ct::timestamp;

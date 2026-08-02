@@ -293,5 +293,14 @@ DO $body$ BEGIN
         PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
+DELETE FROM task WHERE "group" = '33';
+INSERT INTO task ("group", input) VALUES ('33', 'BEGIN');
+DO $body$ BEGIN
+    FOR i IN 1..15 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = '33' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, error LIKE '%transaction control statement is not supported%' AS rejected_cleanly FROM task WHERE "group" = '33' AND plan > :ct::timestamp;
 ALTER SYSTEM RESET pg_task.spi;
 SELECT pg_reload_conf();
