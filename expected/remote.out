@@ -55,3 +55,8 @@ t|t
 t
 BEGIN
 1||DONE
+|ERROR:  boom
+DETAIL:  detail text
+HINT:  hint text
+CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE
+STATEMENT:  DO $inner$ BEGIN RAISE EXCEPTION 'boom' USING DETAIL = 'detail text', HINT = 'hint text'; END $inner$;|FAIL
