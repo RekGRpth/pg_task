@@ -42,6 +42,7 @@ cat postgres.c | pcregrep -M \
 -e '(?s)^static void start_xact_command\(.*?\);' \
 -e '(?s)^static void drop_unnamed_stmt\(.*?\);' \
 -e '(?s)^static bool check_log_statement\(.*?\);' \
+-e '(?s)^static char \*truncate_query_log\(.*?\);' \
 -e '(?s)^static int\N+errdetail_execute\(.*?\);' \
 -e '(?s)^static bool IsTransactionExitStmt\(.*?\);' \
 -e '(?s)^static int\N+errdetail_abort\(.*?\);' \
@@ -53,6 +54,7 @@ cat postgres.c | pcregrep -M \
 -e '(?s)^static void\n^start_xact_command\(.*?^}' \
 -e '(?s)^static void\n^drop_unnamed_stmt\(.*?^}' \
 -e '(?s)^static bool\n^check_log_statement\(.*?^}' \
+-e '(?s)^static char \*\ntruncate_query_log\(.*?^}' \
 -e '(?s)^static int\n^errdetail_execute\(.*?^}' \
 -e '(?s)^static bool\n^IsTransactionExitStmt\(.*?^}' \
 -e '(?s)^static int\n^errdetail_abort\(.*?^}' \
