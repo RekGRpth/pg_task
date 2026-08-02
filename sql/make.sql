@@ -106,7 +106,12 @@ END;$body$ LANGUAGE plpgsql;
 SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'task_make_user_test') AS role_created;
 ALTER SYSTEM RESET pg_task.json;
 SELECT pg_reload_conf();
-DO $$ BEGIN PERFORM pg_sleep(5); END $$;
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE usename = 'task_make_user_test') THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
 DROP ROLE task_make_user_test;
 ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"task_make_data_test"}]';
 SELECT pg_reload_conf();
