@@ -305,8 +305,8 @@ SELECT state, error LIKE '%transaction control statement is not supported%' AS r
 CREATE TABLE returning_probe (id serial primary key, val int);
 INSERT INTO returning_probe (val) VALUES (1), (2), (3);
 DELETE FROM task WHERE "group" IN ('34', '35', '36', '37');
-INSERT INTO task ("group", input) VALUES ('34', 'UPDATE returning_probe SET val = val + 1 WHERE val = 1');
-INSERT INTO task ("group", input) VALUES ('35', 'UPDATE returning_probe SET val = val + 1 WHERE val = 2 RETURNING id');
+INSERT INTO task ("group", input) VALUES ('34', 'UPDATE returning_probe SET val = val + 1 WHERE id = 1');
+INSERT INTO task ("group", input) VALUES ('35', 'UPDATE returning_probe SET val = val + 1 WHERE id = 2 RETURNING id');
 INSERT INTO task ("group", input) VALUES ('36', 'DELETE FROM returning_probe WHERE val = 99 RETURNING id');
 INSERT INTO task ("group", input) VALUES ('37', 'INSERT INTO returning_probe (val) VALUES (100) RETURNING id');
 INSERT INTO task ("group", input) VALUES ('38', 'INSERT INTO returning_probe (id, val) VALUES (1, 1) ON CONFLICT (id) DO NOTHING RETURNING id');
