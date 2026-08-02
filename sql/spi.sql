@@ -302,5 +302,21 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT state, error LIKE '%transaction control statement is not supported%' AS rejected_cleanly FROM task WHERE "group" = '33' AND plan > :ct::timestamp;
+CREATE TABLE returning_probe (id serial primary key, val int);
+INSERT INTO returning_probe (val) VALUES (1), (2), (3);
+DELETE FROM task WHERE "group" IN ('34', '35', '36', '37');
+INSERT INTO task ("group", input) VALUES ('34', 'UPDATE returning_probe SET val = val + 1 WHERE val = 1');
+INSERT INTO task ("group", input) VALUES ('35', 'UPDATE returning_probe SET val = val + 1 WHERE val = 2 RETURNING id');
+INSERT INTO task ("group", input) VALUES ('36', 'DELETE FROM returning_probe WHERE val = 99 RETURNING id');
+INSERT INTO task ("group", input) VALUES ('37', 'INSERT INTO returning_probe (val) VALUES (100) RETURNING id');
+INSERT INTO task ("group", input) VALUES ('38', 'INSERT INTO returning_probe (id, val) VALUES (1, 1) ON CONFLICT (id) DO NOTHING RETURNING id');
+DO $body$ BEGIN
+    FOR i IN 1..15 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" IN ('34', '35', '36', '37', '38') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", output, error, state FROM task WHERE "group" IN ('34', '35', '36', '37', '38') AND plan > :ct::timestamp ORDER BY "group";
+DROP TABLE returning_probe;
 ALTER SYSTEM RESET pg_task.spi;
 SELECT pg_reload_conf();
