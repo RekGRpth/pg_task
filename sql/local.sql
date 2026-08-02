@@ -351,3 +351,20 @@ SELECT count(*) FILTER (WHERE state = 'FAIL' AND error LIKE '%deadlock detected%
 ALTER SYSTEM RESET deadlock_timeout;
 SELECT pg_reload_conf();
 DROP TABLE deadlock_probe;
+ALTER SYSTEM SET log_error_verbosity = 'verbose';
+SELECT pg_reload_conf();
+SET check_function_bodies = off;
+CREATE FUNCTION local_query_location_probe() RETURNS int LANGUAGE SQL AS $probe$SELECT SELEKT 1$probe$;
+RESET check_function_bodies;
+DELETE FROM task WHERE "group" = '38';
+INSERT INTO task ("group", input) VALUES ('38', 'SELECT local_query_location_probe()');
+DO $body$ BEGIN
+    FOR i IN 1..15 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = '38' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT error LIKE '%QUERY:  SELECT SELEKT 1%' AS query_field_ok, error LIKE '%LOCATION:  %, %:%' AS location_field_ok, state FROM task WHERE "group" = '38' AND plan > :ct::timestamp;
+DROP FUNCTION local_query_location_probe();
+ALTER SYSTEM RESET log_error_verbosity;
+SELECT pg_reload_conf();
