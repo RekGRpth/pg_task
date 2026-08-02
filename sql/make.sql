@@ -54,3 +54,70 @@ SELECT pg_reload_conf();
 DO $$ BEGIN PERFORM pg_sleep(5); END $$;
 DROP SCHEMA role_test_schema CASCADE;
 DROP ROLE task_role_test;
+ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"postgres","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]';
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF to_regclass('task_column_drift_test_schema.task_column_drift_test') IS NOT NULL THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+ALTER SYSTEM RESET pg_task.json;
+SELECT pg_reload_conf();
+DO $$ BEGIN PERFORM pg_sleep(5); END $$;
+ALTER TABLE task_column_drift_test_schema.task_column_drift_test DROP COLUMN "delimiter";
+SELECT count(*) = 0 AS column_dropped FROM pg_catalog.pg_attribute WHERE attrelid = 'task_column_drift_test_schema.task_column_drift_test'::regclass AND attname = 'delimiter' AND NOT attisdropped;
+ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"postgres","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]';
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF (SELECT count(*) FROM pg_catalog.pg_attribute WHERE attrelid = 'task_column_drift_test_schema.task_column_drift_test'::regclass AND attname = 'delimiter' AND NOT attisdropped) = 1 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT count(*) = 1 AS column_healed FROM pg_catalog.pg_attribute WHERE attrelid = 'task_column_drift_test_schema.task_column_drift_test'::regclass AND attname = 'delimiter' AND NOT attisdropped;
+ALTER SYSTEM RESET pg_task.json;
+SELECT pg_reload_conf();
+DO $$ BEGIN PERFORM pg_sleep(5); END $$;
+DROP SCHEMA task_column_drift_test_schema CASCADE;
+CREATE SCHEMA task_enum_drift_test_schema;
+CREATE TYPE task_enum_drift_test_schema.state AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL');
+ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"postgres","schema":"task_enum_drift_test_schema","table":"task_enum_drift_test"}]';
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF to_regclass('task_enum_drift_test_schema.task_enum_drift_test') IS NOT NULL THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT array_agg(enumlabel::text ORDER BY enumsortorder) = ARRAY['PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP'] AS enum_healed FROM pg_catalog.pg_enum WHERE enumtypid = 'task_enum_drift_test_schema.state'::regtype;
+ALTER SYSTEM RESET pg_task.json;
+SELECT pg_reload_conf();
+DO $$ BEGIN PERFORM pg_sleep(5); END $$;
+DROP SCHEMA task_enum_drift_test_schema CASCADE;
+ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"postgres","user":"task_make_user_test","schema":"task_user_make_test_schema","table":"task_user_make_test"}]';
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'task_make_user_test') THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'task_make_user_test') AS role_created;
+ALTER SYSTEM RESET pg_task.json;
+SELECT pg_reload_conf();
+DO $$ BEGIN PERFORM pg_sleep(5); END $$;
+DROP ROLE task_make_user_test;
+ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"task_make_data_test"}]';
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_database WHERE datname = 'task_make_data_test') THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_database WHERE datname = 'task_make_data_test') AS database_created;
+ALTER SYSTEM RESET pg_task.json;
+SELECT pg_reload_conf();
+DO $$ BEGIN PERFORM pg_sleep(5); END $$;
+DROP DATABASE task_make_data_test;
