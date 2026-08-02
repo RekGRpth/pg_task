@@ -507,9 +507,16 @@ static void make_enum(const Work *w, const char *name) {
         appendStringInfo(&src, SQL(
             ALTER TYPE %1$s ADD VALUE '%2$s';
         ), w->schema_type, name);
+#if PG_VERSION_NUM >= 120000
         SPI_connect_my(src.data);
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         SPI_finish_my();
+#else
+        if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
+        SetCurrentStatementStartTimestamp();
+        exec_simple_query_my(src.data);
+        MemoryContextResetAndDeleteChildren(MessageContext);
+#endif
     }
     pfree(src.data);
     pfree((void *)values[0]);
