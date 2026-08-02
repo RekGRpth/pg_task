@@ -774,10 +774,10 @@ void work_main(Datum main_arg) {
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
-            if (event->events & WL_LATCH_SET) work_latch(&work);
             if (event->events & WL_SOCKET_READABLE) work_readable(event->user_data);
             else if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
+        work_latch(&work);
         INSTR_TIME_SET_CURRENT(current_time_reset);
         INSTR_TIME_SUBTRACT(current_time_reset, start_time_reset);
         current_reset = work.shared->reset - (long)INSTR_TIME_GET_MILLISEC(current_time_reset);

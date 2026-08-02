@@ -174,7 +174,7 @@ void conf_main(Datum main_arg) {
     while (!ShutdownRequestPending) {
         int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, -1);
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
-        if (rc & WL_LATCH_SET) conf_latch();
+        conf_latch();
     }
     if (!unlock_data_user(MyDatabaseId, GetUserId())) ereport(WARNING, (errmsg("!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId())));
 }
