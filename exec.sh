@@ -5,6 +5,7 @@ cat <<EOF
 #include <access/printtup.h>
 #include <access/xact.h>
 #include <commands/prepare.h>
+#include <mb/pg_wchar.h>
 #include <miscadmin.h>
 #include <parser/analyze.h>
 #include <pgstat.h>
