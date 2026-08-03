@@ -1,0 +1,17 @@
+*.o
+*.bc
+*.so
+*.gcda
+*.gcno
+*.gcov
+.deps/
+results/
+regression.diffs
+regression.out
+log/
+core
+postgres.c
+exec.c
+latch.c
+latch.h
+latch_my.h
