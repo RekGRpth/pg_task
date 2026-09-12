@@ -124,9 +124,9 @@ DO $body$ BEGIN
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '17' AND plan > :ct::timestamp;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '18' AND plan > :ct::timestamp;
-INSERT INTO task ("group", input, count, save) VALUES ('19', 'CREATE TEMP TABLE save_probe_19 AS SELECT 1 AS a', 5, true);
+INSERT INTO task ("group", input, count, save) VALUES ('19', 'CREATE TEMP TABLE save_probe_19 (a int); INSERT INTO save_probe_19 VALUES (1)', 5, true);
 INSERT INTO task ("group", input, count, save) VALUES ('19', 'SELECT count(*) FROM save_probe_19', 5, true);
-INSERT INTO task ("group", input, count, save) VALUES ('20', 'CREATE TEMP TABLE save_probe_20 AS SELECT 1 AS a', 5, false);
+INSERT INTO task ("group", input, count, save) VALUES ('20', 'CREATE TEMP TABLE save_probe_20 (a int); INSERT INTO save_probe_20 VALUES (1)', 5, false);
 INSERT INTO task ("group", input, count, save) VALUES ('20', 'SELECT count(*) FROM save_probe_20', 5, false);
 DO $body$ BEGIN
     WHILE true LOOP
