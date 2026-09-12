@@ -219,7 +219,7 @@ static void dest_execute(void) {
                 }
             }
         }
-        if (count) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, insert ? "%s 0 %lu" : "%s %lu", tagname, (long)SPI_processed);
+        if (count) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, insert ? "%s 0 %lu" : "%s %lu", tagname, (unsigned long)SPI_processed);
         else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
         elog(DEBUG1, "id = %li, completionTag = %s", task.shared->id, completionTag);
         if (task.skip) task.skip = 0; else {
