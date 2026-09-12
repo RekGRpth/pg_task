@@ -33,7 +33,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.fetch | int | 100 | config, database, user | Fetch task rows at once |
 | pg_task.id | bigint | 0 | session | Current task id (for read only) |
 | pg_task.limit | int | 1000 | config, database, user | Limit task rows at once |
-| pg_task.max | int | 0 | config, database, user, session | Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds |
+| pg_task.max | int | 0 | config, database, user, session | Maximum count of additional concurrently executing tasks in group (total concurrency = max + 1), negative value means pause between tasks in milliseconds |
 | pg_task.run | int | 2147483647 | config, database, user, session | Maximum count of concurrently executing tasks in work |
 | pg_task.sleep | int | 1000 | config, database, user | Check tasks every sleep milliseconds |
 | pg_work.fetch | int | 100 | config, database, superuser | Fetch work rows at once |
@@ -70,7 +70,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | repeat | interval | NOT NULL | pg_task.repeat | Non-negative auto repeat tasks interval |
 | timeout | interval | NOT NULL | pg_task.timeout | Non-negative allowed time for task run |
 | count | int | NOT NULL | pg_task.count | Non-negative maximum count of tasks, are executed by current background worker process before exit |
-| max | int | NOT NULL | pg_task.max | Maximum count of concurrently executing tasks in group, negative value means pause between tasks in milliseconds |
+| max | int | NOT NULL | pg_task.max | Maximum count of additional concurrently executing tasks in group (total concurrency = max + 1), negative value means pause between tasks in milliseconds |
 | pid | int | NULL | | Id of process executing task |
 | state | enum state (PLAN, GONE, TAKE, WORK, DONE, FAIL, STOP) | NOT NULL | PLAN | Task state |
 | delete | bool | NOT NULL | pg_task.delete | Auto delete task when both output and error are nulls |
