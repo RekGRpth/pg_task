@@ -22,7 +22,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | --- | --- | --- | --- | --- |
 | pg_task.delete | bool | true | config, database, user, session | Auto delete task when both output and error are nulls |
 | pg_task.drift | bool | false | config, database, user, session | Compute next repeat time by stop time instead by plan time |
-| pg_task.header | bool | true | config, database, user, session | Show columns headers in output |
+| pg_task.header | bool | true | config, database, user, session | Show columns headers in output (only when the query returns at least one row) |
 | pg_task.save | bool | false | config, database, user, session | Save session state between tasks |
 | pg_task.spi | bool | false | config, database, user, session | SPI (or local) execution? |
 | pg_task.string | bool | true | config, database, user, session | Quote only strings |
@@ -75,7 +75,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | state | enum state (PLAN, GONE, TAKE, WORK, DONE, FAIL, STOP) | NOT NULL | PLAN | Task state |
 | delete | bool | NOT NULL | pg_task.delete | Auto delete task when both output and error are nulls |
 | drift | bool | NOT NULL | pg_task.drift | Compute next repeat time by stop time instead by plan time |
-| header | bool | NOT NULL | pg_task.header | Show columns headers in output |
+| header | bool | NOT NULL | pg_task.header | Show columns headers in output (only when the query returns at least one row) |
 | save | bool | NOT NULL | pg_task.save | Save session state between tasks |
 | string | bool | NOT NULL | pg_task.string | Quote only strings |
 | delimiter | char | NOT NULL | pg_task.delimiter | Results columns delimiter |
