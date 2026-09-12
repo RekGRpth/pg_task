@@ -193,17 +193,17 @@ static void make_wake_up(const Work *w) {
     pfree(source.data);
 }
 
-static void make_column(const Work *w, const char *name, const char *type) {
+static void make_column(const Work *w, const char *name, const char *schema_type) {
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         SELECT %3$s EXISTS (SELECT * FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') AS "test"
-    ), w->shared->oid, name, type ? "NOT" : "");
+    ), w->shared->oid, name, schema_type ? "NOT" : "");
     if (make_test(src.data, 0, NULL, NULL, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
-            ALTER TABLE %1$s %2$s COLUMN "%3$s" %4$s%5$s;
-        ), w->schema_table, type ? "ADD" : "DROP", name, type ? "pg_catalog." : "", type ? type : "");
+            ALTER TABLE %1$s %2$s COLUMN "%3$s" %4$s;
+        ), w->schema_table, schema_type ? "ADD" : "DROP", name, schema_type ? schema_type : "");
         SPI_connect_my(src.data);
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         SPI_finish_my();
@@ -371,33 +371,33 @@ void make_table(const Work *w) {
     pfree((void *)values[0]);
     pfree((void *)values[1]);
     make_column(w, "hash", NULL);
-    make_column(w, "parent", "int8");
-    make_column(w, "plan", "timestamptz");
-    make_column(w, "start", "timestamptz");
-    make_column(w, "stop", "timestamptz");
-    make_column(w, "active", "interval");
-    make_column(w, "live", "interval");
-    make_column(w, "repeat", "interval");
-    make_column(w, "timeout", "interval");
-    make_column(w, "count", "int4");
-    make_column(w, "max", "int4");
-    make_column(w, "pid", "int4");
+    make_column(w, "parent", "pg_catalog.int8");
+    make_column(w, "plan", "pg_catalog.timestamptz");
+    make_column(w, "start", "pg_catalog.timestamptz");
+    make_column(w, "stop", "pg_catalog.timestamptz");
+    make_column(w, "active", "pg_catalog.interval");
+    make_column(w, "live", "pg_catalog.interval");
+    make_column(w, "repeat", "pg_catalog.interval");
+    make_column(w, "timeout", "pg_catalog.interval");
+    make_column(w, "count", "pg_catalog.int4");
+    make_column(w, "max", "pg_catalog.int4");
+    make_column(w, "pid", "pg_catalog.int4");
     make_column(w, "state", w->schema_type);
-    make_column(w, "delete", "bool");
-    make_column(w, "drift", "bool");
-    make_column(w, "header", "bool");
-    make_column(w, "save", "bool");
-    make_column(w, "string", "bool");
-    make_column(w, "delimiter", "char");
-    make_column(w, "escape", "char");
-    make_column(w, "quote", "char");
-    make_column(w, "data", "text");
-    make_column(w, "error", "text");
-    make_column(w, "group", "text");
-    make_column(w, "input", "text");
-    make_column(w, "null", "text");
-    make_column(w, "output", "text");
-    make_column(w, "remote", "text");
+    make_column(w, "delete", "pg_catalog.bool");
+    make_column(w, "drift", "pg_catalog.bool");
+    make_column(w, "header", "pg_catalog.bool");
+    make_column(w, "save", "pg_catalog.bool");
+    make_column(w, "string", "pg_catalog.bool");
+    make_column(w, "delimiter", "pg_catalog.char");
+    make_column(w, "escape", "pg_catalog.char");
+    make_column(w, "quote", "pg_catalog.char");
+    make_column(w, "data", "pg_catalog.text");
+    make_column(w, "error", "pg_catalog.text");
+    make_column(w, "group", "pg_catalog.text");
+    make_column(w, "input", "pg_catalog.text");
+    make_column(w, "null", "pg_catalog.text");
+    make_column(w, "output", "pg_catalog.text");
+    make_column(w, "remote", "pg_catalog.text");
     make_table_comment(w, "Tasks");
     make_comment(w, "id", "Primary key");
     make_comment(w, "parent", "Parent task id (if exists, like foreign key to id, but without constraint, for performance)");
