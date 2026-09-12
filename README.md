@@ -24,7 +24,7 @@ INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host');
 | pg_task.drift | bool | false | config, database, user, session | Compute next repeat time by stop time instead by plan time |
 | pg_task.header | bool | true | config, database, user, session | Show columns headers in output (only when the query returns at least one row and more than one column) |
 | pg_task.save | bool | false | config, database, user, session | Save session state between tasks |
-| pg_task.spi | bool | false | config, database, user, session | SPI (or local) execution? |
+| pg_task.spi | bool | false | config, database, user, session | SPI (or local) execution? Also affects `input` containing multiple `;`-separated statements: SPI mode returns only the last statement's result, local mode returns all of them |
 | pg_task.string | bool | true | config, database, user, session | Quote only strings |
 | pg_conf.fetch | int | 10 | config, database, superuser | Fetch conf rows at once |
 | pg_conf.max | int | max_worker_processes | config | Maximum task and work workers |
