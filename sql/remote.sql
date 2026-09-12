@@ -348,3 +348,33 @@ SELECT error LIKE '%QUERY:  SELECT SELEKT 1%' AS query_field_ok, error LIKE '%LO
 DROP FUNCTION query_location_probe();
 ALTER SYSTEM RESET log_error_verbosity;
 SELECT pg_reload_conf();
+CREATE ROLE task_remote_nopass_test LOGIN;
+GRANT CREATE ON DATABASE :"DBNAME" TO task_remote_nopass_test;
+ALTER ROLE task_remote_nopass_test SET pg_task.schema = 'remote_nopass_test_schema';
+ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"postgres","user":"task_remote_nopass_test"}]';
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF to_regclass('remote_nopass_test_schema.task') IS NOT NULL THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+INSERT INTO remote_nopass_test_schema.task ("group", input, remote) VALUES ('nopass', 'SELECT 1 AS a', 'application_name=test');
+DO $body$ BEGIN
+    FOR i IN 1..15 LOOP
+        IF (SELECT count(*) FROM remote_nopass_test_schema.task WHERE "group" = 'nopass' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT state = 'FAIL' AS rejected_without_password, error LIKE '%password is required%' AS password_error_ok FROM remote_nopass_test_schema.task WHERE "group" = 'nopass';
+ALTER SYSTEM RESET pg_task.json;
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_stat_activity WHERE usename = 'task_remote_nopass_test') THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+DROP SCHEMA remote_nopass_test_schema CASCADE;
+REVOKE CREATE ON DATABASE :"DBNAME" FROM task_remote_nopass_test;
+DROP ROLE task_remote_nopass_test;

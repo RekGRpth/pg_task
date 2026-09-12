@@ -62,3 +62,11 @@ STATEMENT:  DO $inner$ BEGIN RAISE EXCEPTION 'boom' USING DETAIL = 'detail text'
 t
 t|t|FAIL
 t
+NOTICE:  resource queue required -- using default resource queue "pg_default"
+t
+t|t
+t
+NOTICE:  drop cascades to 3 other objects
+DETAIL:  drop cascades to type remote_nopass_test_schema.state
+drop cascades to table remote_nopass_test_schema.task
+drop cascades to function remote_nopass_test_schema.task_wake_up()
