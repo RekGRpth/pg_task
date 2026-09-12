@@ -126,3 +126,10 @@ ALTER SYSTEM RESET pg_task.json;
 SELECT pg_reload_conf();
 DO $$ BEGIN PERFORM pg_sleep(5); END $$;
 DROP DATABASE task_make_data_test;
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE usename = 'task_make_data_test') THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+DROP ROLE task_make_data_test;
