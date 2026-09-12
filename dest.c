@@ -208,15 +208,7 @@ static void dest_execute(void) {
         if (SPI_tuptable) for (uint64 row = 0; row < SPI_processed; row++) {
             task.skip = 1;
             if (!task.output.data) initStringInfoMy(&task.output);
-            if (task.header && !row && SPI_tuptable->tupdesc->natts > 1) {
-                if (task.output.len) appendStringInfoString(&task.output, "\n");
-                for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-                    char *fname = SPI_fname(SPI_tuptable->tupdesc, col);
-                    if (col > 1) appendStringInfoChar(&task.output, task.delimiter);
-                    appendBinaryStringInfoEscapeQuote(&task.output, fname, strlen(fname), false, task.escape, task.quote);
-                    pfree(fname);
-                }
-            }
+            if (task.header && !row && SPI_tuptable->tupdesc->natts > 1) headers(SPI_tuptable->tupdesc);
             if (task.output.len) appendStringInfoString(&task.output, "\n");
             for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
                 char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
