@@ -87,7 +87,7 @@ static void conf_check(void) {
             WITH j AS (
                 WITH s AS (
                     WITH s AS (
-                        SELECT "setdatabase", "setrole", pg_catalog.regexp_split_to_array(pg_catalog.unnest("setconfig"), '=') AS "setconfig" FROM "pg_catalog"."pg_db_role_setting"
+                        SELECT "setdatabase", "setrole", ARRAY[pg_catalog.split_part("kv", '=', 1), pg_catalog.substr("kv", pg_catalog.length(pg_catalog.split_part("kv", '=', 1)) OPERATOR(pg_catalog.+) 2)] AS "setconfig" FROM "pg_catalog"."pg_db_role_setting", pg_catalog.unnest("setconfig") AS "kv"
                     ) SELECT "setdatabase", "setrole", pg_catalog.%s(pg_catalog.array_agg("setconfig"[1]), pg_catalog.array_agg("setconfig"[2])) AS "setconfig" FROM s GROUP BY 1, 2
                 ) SELECT    COALESCE("data", "user", pg_catalog.current_setting('pg_task.data'))::pg_catalog.text AS "data",
                             (EXTRACT(epoch FROM COALESCE("reset", (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, pg_catalog.current_setting('pg_task.reset')::pg_catalog.interval))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int8 AS "reset",
