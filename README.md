@@ -99,3 +99,15 @@ pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"
 ```
 
 if database and/or user and/or schema and/or table does not exist then `pg_task` create it/their
+
+## Security considerations
+
+`pg_task` executes the raw SQL text stored in `task.input` as the database role configured via `pg_task.user` (default: `postgres`). This means **anyone who can `INSERT` into the `task` table effectively gets the privileges of that role**, not just their own — the same trust model as a cron job running as `root`/`postgres`.
+
+Things to keep in mind:
+
+- **Do not assume `pg_task.user = 'postgres'` is unprivileged.** In a stock PostgreSQL install the bootstrap role named `postgres` is normally a superuser. If task authors are not fully trusted, create a dedicated, non-superuser role for `pg_task.user` with only the privileges tasks actually need (`NOSUPERUSER`, no `pg_execute_server_program`/`pg_read_server_files`/`pg_write_server_files`, no unnecessary grants).
+- **Restrict who can write to `task`** if its authors should not have the same privileges as `pg_task.user` — e.g. `REVOKE INSERT ON task FROM PUBLIC` and grant it selectively, use row-level security, or only allow inserts through a `SECURITY DEFINER` wrapper function that validates `input` against an allow-list instead of accepting arbitrary SQL.
+- **`pg_task.spi = off` (the default) executes `input` as a normal top-level statement**, so anything the connected role is allowed to do is possible — including `COPY ... TO`/`FROM` a server-side file or program if the role has the required privilege. `pg_task.spi = on` runs `input` through SPI instead, where `COPY` in any form is rejected outright (`SPI_ERROR_COPY`), which removes that specific class of vector at the cost of SPI's other limitations (no multiple statements, no explicit transaction control in `input`, etc.).
+- Review which extensions/functions the `pg_task.user` role can execute (`dblink`, `adminpack`, large-object functions, `pg_read_file`, etc.) and revoke what isn't needed.
+- Consider auditing (e.g. `pgaudit`) or alerting on `task.input` containing sensitive constructs (`COPY ... PROGRAM`, `CREATE FUNCTION ... LANGUAGE c`, `ALTER SYSTEM`, `dblink`, ...) if task authorship is not fully trusted.
