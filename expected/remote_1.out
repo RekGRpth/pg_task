@@ -62,7 +62,6 @@ STATEMENT:  DO $inner$ BEGIN RAISE EXCEPTION 'boom' USING DETAIL = 'detail text'
 t
 t|t|FAIL
 t
-NOTICE:  resource queue required -- using default resource queue "pg_default"
 t
 t|t
 t
