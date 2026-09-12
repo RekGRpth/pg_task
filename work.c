@@ -110,7 +110,7 @@ work_errdetail(const char *err) {
 #else
         return 0;
 #endif
-    len--;
+    if (err[len - 1] == '\n') len--;
     return errdetail("%.*s", len, err);
 }
 
