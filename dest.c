@@ -36,8 +36,10 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
 static void headers(TupleDesc tupdesc) {
     if (task.output.len) appendStringInfoString(&task.output, "\n");
     for (int col = 1; col <= tupdesc->natts; col++) {
+        char *fname = SPI_fname(tupdesc, col);
         if (col > 1) appendStringInfoChar(&task.output, task.delimiter);
-        appendBinaryStringInfoEscapeQuote(&task.output, SPI_fname(tupdesc, col), strlen(SPI_fname(tupdesc, col)), false, task.escape, task.quote);
+        appendBinaryStringInfoEscapeQuote(&task.output, fname, strlen(fname), false, task.escape, task.quote);
+        pfree(fname);
     }
 }
 
@@ -209,8 +211,10 @@ static void dest_execute(void) {
             if (task.header && !row && SPI_tuptable->tupdesc->natts > 1) {
                 if (task.output.len) appendStringInfoString(&task.output, "\n");
                 for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
+                    char *fname = SPI_fname(SPI_tuptable->tupdesc, col);
                     if (col > 1) appendStringInfoChar(&task.output, task.delimiter);
-                    appendBinaryStringInfoEscapeQuote(&task.output, SPI_fname(SPI_tuptable->tupdesc, col), strlen(SPI_fname(SPI_tuptable->tupdesc, col)), false, task.escape, task.quote);
+                    appendBinaryStringInfoEscapeQuote(&task.output, fname, strlen(fname), false, task.escape, task.quote);
+                    pfree(fname);
                 }
             }
             if (task.output.len) appendStringInfoString(&task.output, "\n");
