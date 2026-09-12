@@ -190,7 +190,7 @@ static void dest_execute(void) {
         bool insert = false;
         char completionTag[COMPLETION_TAG_BUFSIZE];
         int rc = SPI_execute(task.input, false, 0);
-        const char *tagname = SPI_result_code_string(rc) + sizeof("SPI_OK_") - 1;
+        const char *tagname = SPI_result_code_string(rc) + (rc >= 0 ? sizeof("SPI_OK_") - 1 : sizeof("SPI_ERROR_") - 1);
         switch (rc) {
             case SPI_ERROR_ARGUMENT: ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("invalid arguments"))); break;
             case SPI_ERROR_COPY: ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("COPY is not supported"))); break;
