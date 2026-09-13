@@ -3,6 +3,12 @@
 \pset format unaligned
 \pset tuples_only true
 \pset pager off
+CREATE TEMP TABLE make_test_grant_state AS SELECT has_database_privilege('postgres', 'postgres', 'CREATE') AS had_create;
+DO $$ BEGIN
+    IF NOT (SELECT had_create FROM make_test_grant_state) THEN
+        EXECUTE 'GRANT CREATE ON DATABASE postgres TO postgres';
+    END IF;
+END $$;
 ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"postgres","schema":"task_make_test_schema","table":"task_make_test"}]';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
@@ -133,3 +139,9 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 DROP ROLE task_make_data_test;
+DO $$ BEGIN
+    IF NOT (SELECT had_create FROM make_test_grant_state) THEN
+        EXECUTE 'REVOKE CREATE ON DATABASE postgres FROM postgres';
+    END IF;
+END $$;
+DROP TABLE make_test_grant_state;
