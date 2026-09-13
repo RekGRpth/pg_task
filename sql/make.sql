@@ -3,13 +3,17 @@
 \pset format unaligned
 \pset tuples_only true
 \pset pager off
+SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored
+\gset
 DO $$ BEGIN
-    PERFORM set_config('pg_task_test.had_create', has_database_privilege('postgres', 'postgres', 'CREATE')::text, false);
-    IF NOT has_database_privilege('postgres', 'postgres', 'CREATE') THEN
-        EXECUTE 'GRANT CREATE ON DATABASE postgres TO postgres';
+    PERFORM set_config('pg_task_test.had_create', has_database_privilege(current_setting('pg_task_test.dbname'), current_setting('pg_task_test.dbname'), 'CREATE')::text, false);
+    IF NOT has_database_privilege(current_setting('pg_task_test.dbname'), current_setting('pg_task_test.dbname'), 'CREATE') THEN
+        EXECUTE format('GRANT CREATE ON DATABASE %I TO %I', current_setting('pg_task_test.dbname'), current_setting('pg_task_test.dbname'));
     END IF;
 END $$;
-ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"postgres","schema":"task_make_test_schema","table":"task_make_test"}]';
+SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","schema":"task_make_test_schema","table":"task_make_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
@@ -38,7 +42,9 @@ DO $$ BEGIN PERFORM pg_sleep(5); END $$;
 DROP SCHEMA task_make_test_schema CASCADE;
 CREATE ROLE task_role_test LOGIN SUPERUSER;
 ALTER ROLE task_role_test SET pg_task.schema = 'role_test_schema';
-ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"postgres","user":"task_role_test"}]';
+SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","user":"task_role_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
@@ -60,7 +66,9 @@ SELECT pg_reload_conf();
 DO $$ BEGIN PERFORM pg_sleep(5); END $$;
 DROP SCHEMA role_test_schema CASCADE;
 DROP ROLE task_role_test;
-ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"postgres","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]';
+SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
@@ -73,7 +81,9 @@ SELECT pg_reload_conf();
 DO $$ BEGIN PERFORM pg_sleep(5); END $$;
 ALTER TABLE task_column_drift_test_schema.task_column_drift_test DROP COLUMN "delimiter";
 SELECT count(*) = 0 AS column_dropped FROM pg_catalog.pg_attribute WHERE attrelid = 'task_column_drift_test_schema.task_column_drift_test'::regclass AND attname = 'delimiter' AND NOT attisdropped;
-ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"postgres","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]';
+SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
@@ -88,7 +98,9 @@ DO $$ BEGIN PERFORM pg_sleep(5); END $$;
 DROP SCHEMA task_column_drift_test_schema CASCADE;
 CREATE SCHEMA task_enum_drift_test_schema;
 CREATE TYPE task_enum_drift_test_schema.state AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL');
-ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"postgres","schema":"task_enum_drift_test_schema","table":"task_enum_drift_test"}]';
+SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","schema":"task_enum_drift_test_schema","table":"task_enum_drift_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
@@ -101,7 +113,9 @@ ALTER SYSTEM RESET pg_task.json;
 SELECT pg_reload_conf();
 DO $$ BEGIN PERFORM pg_sleep(5); END $$;
 DROP SCHEMA task_enum_drift_test_schema CASCADE;
-ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"postgres","user":"task_make_user_test","schema":"task_user_make_test_schema","table":"task_user_make_test"}]';
+SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","user":"task_make_user_test","schema":"task_user_make_test_schema","table":"task_user_make_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
@@ -119,7 +133,9 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 DROP ROLE task_make_user_test;
-ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"task_make_data_test"}]';
+SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"task_make_data_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
@@ -141,6 +157,6 @@ END;$body$ LANGUAGE plpgsql;
 DROP ROLE task_make_data_test;
 DO $$ BEGIN
     IF NOT current_setting('pg_task_test.had_create')::boolean THEN
-        EXECUTE 'REVOKE CREATE ON DATABASE postgres FROM postgres';
+        EXECUTE format('REVOKE CREATE ON DATABASE %I FROM %I', current_setting('pg_task_test.dbname'), current_setting('pg_task_test.dbname'));
     END IF;
 END $$;
