@@ -128,7 +128,9 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '17' AND plan > :ct::timestamp;
+SET client_min_messages = warning;
 CREATE TABLE copy_probe (a int);
+RESET client_min_messages;
 INSERT INTO task ("group", input, remote) VALUES ('18', 'COPY (SELECT 1) TO STDOUT', 'application_name=test');
 INSERT INTO task ("group", input, remote) VALUES ('19', 'COPY copy_probe FROM STDIN', 'application_name=test');
 DO $body$ BEGIN
@@ -350,7 +352,9 @@ SELECT error LIKE '%QUERY:  SELECT SELEKT 1%' AS query_field_ok, error LIKE '%LO
 DROP FUNCTION query_location_probe();
 ALTER SYSTEM RESET log_error_verbosity;
 SELECT pg_reload_conf();
+SET client_min_messages = warning;
 CREATE ROLE task_remote_nopass_test LOGIN;
+RESET client_min_messages;
 GRANT CREATE ON DATABASE :"DBNAME" TO task_remote_nopass_test;
 ALTER ROLE task_remote_nopass_test SET pg_task.schema = 'remote_nopass_test_schema';
 SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","user":"task_remote_nopass_test"}]' AS json_val
