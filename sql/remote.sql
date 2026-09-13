@@ -351,7 +351,9 @@ SELECT pg_reload_conf();
 CREATE ROLE task_remote_nopass_test LOGIN;
 GRANT CREATE ON DATABASE :"DBNAME" TO task_remote_nopass_test;
 ALTER ROLE task_remote_nopass_test SET pg_task.schema = 'remote_nopass_test_schema';
-ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"postgres","user":"task_remote_nopass_test"}]';
+SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","user":"task_remote_nopass_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
