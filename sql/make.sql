@@ -3,9 +3,9 @@
 \pset format unaligned
 \pset tuples_only true
 \pset pager off
-CREATE TEMP TABLE make_test_grant_state AS SELECT has_database_privilege('postgres', 'postgres', 'CREATE') AS had_create;
 DO $$ BEGIN
-    IF NOT (SELECT had_create FROM make_test_grant_state) THEN
+    PERFORM set_config('pg_task_test.had_create', has_database_privilege('postgres', 'postgres', 'CREATE')::text, false);
+    IF NOT has_database_privilege('postgres', 'postgres', 'CREATE') THEN
         EXECUTE 'GRANT CREATE ON DATABASE postgres TO postgres';
     END IF;
 END $$;
@@ -140,8 +140,7 @@ DO $body$ BEGIN
 END;$body$ LANGUAGE plpgsql;
 DROP ROLE task_make_data_test;
 DO $$ BEGIN
-    IF NOT (SELECT had_create FROM make_test_grant_state) THEN
+    IF NOT current_setting('pg_task_test.had_create')::boolean THEN
         EXECUTE 'REVOKE CREATE ON DATABASE postgres FROM postgres';
     END IF;
 END $$;
-DROP TABLE make_test_grant_state;
