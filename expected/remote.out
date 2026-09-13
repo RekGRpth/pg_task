@@ -34,9 +34,9 @@ DONE|t
 17|DELETE FROM task WHERE false|DELETE 0||DONE
 18|COPY (SELECT 1) TO STDOUT|1
 ||DONE
-19|COPY task FROM STDIN||ERROR:  COPY from stdin failed: COPY FROM STDIN is not supported
-CONTEXT:  COPY task, line 1
-STATEMENT:  COPY task FROM STDIN|FAIL
+19|COPY copy_probe FROM STDIN||ERROR:  COPY from stdin failed: COPY FROM STDIN is not supported
+CONTEXT:  COPY copy_probe, line 1
+STATEMENT:  COPY copy_probe FROM STDIN|FAIL
 20|DONE|t|t|t
 21|t|t
 22|SELECT current_setting('pg_task.schema') || '.' || current_setting('pg_task.table') AS a|public.task||DONE

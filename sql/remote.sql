@@ -128,8 +128,9 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '17' AND plan > :ct::timestamp;
+CREATE TABLE copy_probe (a int);
 INSERT INTO task ("group", input, remote) VALUES ('18', 'COPY (SELECT 1) TO STDOUT', 'application_name=test');
-INSERT INTO task ("group", input, remote) VALUES ('19', 'COPY task FROM STDIN', 'application_name=test');
+INSERT INTO task ("group", input, remote) VALUES ('19', 'COPY copy_probe FROM STDIN', 'application_name=test');
 DO $body$ BEGIN
     WHILE true LOOP
         PERFORM pg_sleep(1);
@@ -138,6 +139,7 @@ DO $body$ BEGIN
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '18' AND plan > :ct::timestamp;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '19' AND plan > :ct::timestamp;
+DROP TABLE copy_probe;
 INSERT INTO task ("group", input, remote) VALUES ('20', 'COPY (SELECT generate_series(1, 100000)) TO STDOUT', 'application_name=test');
 DO $body$ BEGIN
     WHILE true LOOP
