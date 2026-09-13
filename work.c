@@ -9,6 +9,7 @@
 #include <storage/ipc.h>
 #include <storage/proc.h>
 #include <tcop/utility.h>
+#include <utils/acl.h>
 #include <utils/builtins.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
@@ -486,6 +487,24 @@ static void work_shmem_exit(int code, Datum arg) {
     }
 }
 
+static bool work_superuser(const char *user) {
+    Datum values[] = {CStringGetTextDatum(user)};
+    static Oid argtypes[] = {TEXTOID};
+    bool result;
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfoString(&src, SQL(
+        SELECT COALESCE((SELECT "rolsuper" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) $1), false) AS "test"
+    ));
+    SPI_connect_my(src.data);
+    SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
+    result = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "test", false, BOOLOID));
+    SPI_finish_my();
+    pfree(src.data);
+    pfree((void *)values[0]);
+    return result;
+}
+
 static void work_remote(Task *t) {
     bool password = false;
     char *err;
@@ -508,7 +527,7 @@ static void work_remote(Task *t) {
         if (!strcmp(opt->keyword, "options")) { options = opt->val; continue; }
         arg++;
     }
-    if (!superuser() && !password) { work_error((errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superusers must provide a password in the connection string."))); PQconninfoFree(opts); return; }
+    if (!work_superuser(t->user) && !password) { work_error((errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superusers must provide a password in the connection string."))); PQconninfoFree(opts); return; }
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
     initStringInfoMy(&name);
@@ -633,7 +652,7 @@ static void work_sleep(Work *w) {
                 ORDER BY 3 DESC, 1 LIMIT GREATEST(LEAST($1 OPERATOR(pg_catalog.-) (SELECT COALESCE(pg_catalog.sum("classid"), 0) FROM l), pg_catalog.current_setting('pg_task.limit')::pg_catalog.int4), 0) FOR UPDATE OF t %3$s
             ), u AS (
                 SELECT "id", "count" OPERATOR(pg_catalog.-) pg_catalog.row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM s ORDER BY s.count DESC, id
-            ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM u WHERE t.id OPERATOR(pg_catalog.=) u.id AND u.count OPERATOR(pg_catalog.>=) 0 RETURNING t.id, pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) AS "hash", "group", "remote", "max"
+            ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM u WHERE t.id OPERATOR(pg_catalog.=) u.id AND u.count OPERATOR(pg_catalog.>=) 0 RETURNING t.id, pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) AS "hash", "group", "remote", "max", ("user")::pg_catalog.text AS "user"
         ), w->schema_table, w->shared->oid,
 #if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
         "SKIP LOCKED"
@@ -659,6 +678,7 @@ static void work_sleep(Work *w) {
             TupleDesc tupdesc = SPI_tuptable->tupdesc;
             t->group = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "group", false, TEXTOID));
             t->remote = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "remote", true, TEXTOID));
+            t->user = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "user", false, TEXTOID));
             t->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(Shared));
             *t->shared = *w->shared;
             t->work = w;

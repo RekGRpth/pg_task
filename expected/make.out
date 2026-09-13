@@ -9,35 +9,39 @@ t
 t
 1||DONE
 t
-NOTICE:  drop cascades to 3 other objects
+NOTICE:  drop cascades to 4 other objects
 DETAIL:  drop cascades to type task_make_test_schema.state
 drop cascades to table task_make_test_schema.task_make_test
 drop cascades to function task_make_test_schema.task_make_test_wake_up()
+drop cascades to function task_make_test_schema.task_make_test_user()
 t
 t
 1||DONE
 t
-NOTICE:  drop cascades to 3 other objects
+NOTICE:  drop cascades to 4 other objects
 DETAIL:  drop cascades to type role_test_schema.state
 drop cascades to table role_test_schema.task
 drop cascades to function role_test_schema.task_wake_up()
+drop cascades to function role_test_schema.task_user()
 t
 t
 t
 t
 t
 t
-NOTICE:  drop cascades to 3 other objects
+NOTICE:  drop cascades to 4 other objects
 DETAIL:  drop cascades to type task_column_drift_test_schema.state
 drop cascades to table task_column_drift_test_schema.task_column_drift_test
 drop cascades to function task_column_drift_test_schema.task_column_drift_test_wake_up()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_user()
 t
 t
 t
-NOTICE:  drop cascades to 3 other objects
+NOTICE:  drop cascades to 4 other objects
 DETAIL:  drop cascades to type task_enum_drift_test_schema.state
 drop cascades to table task_enum_drift_test_schema.task_enum_drift_test
 drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_wake_up()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_user()
 t
 t
 t

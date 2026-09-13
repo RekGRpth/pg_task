@@ -359,7 +359,11 @@ DO $body$ BEGIN
         PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
+GRANT INSERT ON remote_nopass_test_schema.task TO task_remote_nopass_test;
+GRANT USAGE ON SEQUENCE remote_nopass_test_schema.task_id_seq TO task_remote_nopass_test;
+SET ROLE task_remote_nopass_test;
 INSERT INTO remote_nopass_test_schema.task ("group", input, remote) VALUES ('nopass', 'SELECT 1 AS a', 'application_name=test');
+RESET ROLE;
 DO $body$ BEGIN
     FOR i IN 1..15 LOOP
         IF (SELECT count(*) FROM remote_nopass_test_schema.task WHERE "group" = 'nopass' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
@@ -378,3 +382,21 @@ END;$body$ LANGUAGE plpgsql;
 DROP SCHEMA remote_nopass_test_schema CASCADE;
 REVOKE CREATE ON DATABASE :"DBNAME" FROM task_remote_nopass_test;
 DROP ROLE task_remote_nopass_test;
+CREATE ROLE task_remote_author_nopass_test LOGIN;
+GRANT INSERT ON task TO task_remote_author_nopass_test;
+GRANT USAGE ON SEQUENCE task_id_seq TO task_remote_author_nopass_test;
+DELETE FROM task WHERE "group" = 'author_nopass';
+SET ROLE task_remote_author_nopass_test;
+INSERT INTO task ("group", input, remote) VALUES ('author_nopass', 'SELECT 1 AS a', 'application_name=test');
+RESET ROLE;
+DO $body$ BEGIN
+    FOR i IN 1..15 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'author_nopass' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT state = 'FAIL' AS rejected_without_password_for_unprivileged_author, error LIKE '%password is required%' AS password_error_ok FROM task WHERE "group" = 'author_nopass' AND plan > :ct::timestamp;
+DELETE FROM task WHERE "group" = 'author_nopass';
+REVOKE INSERT ON task FROM task_remote_author_nopass_test;
+REVOKE USAGE ON SEQUENCE task_id_seq FROM task_remote_author_nopass_test;
+DROP ROLE task_remote_author_nopass_test;

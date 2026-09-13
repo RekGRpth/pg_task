@@ -115,7 +115,7 @@ static void make_constraint(const Work *w, const char *name, const char *value, 
     pfree(src.data);
 }
 
-static void make_function(const Work *w, const char *name, const char *source) {
+static void make_function(const Work *w, const char *name, const char *source, bool security_definer) {
     Datum values[] = {CStringGetTextDatum(name), CStringGetTextDatum(w->shared->schema), CStringGetTextDatum(source)};
     static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID};
     StringInfoData src;
@@ -127,8 +127,8 @@ static void make_function(const Work *w, const char *name, const char *source) {
         const char *quote = quote_identifier(name);
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
-            CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp AS $function$%3$s$function$ LANGUAGE plpgsql;
-        ), w->schema, quote, source);
+            CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp %4$s AS $function$%3$s$function$ LANGUAGE plpgsql;
+        ), w->schema, quote, source, security_definer ? "SECURITY DEFINER" : "SECURITY INVOKER");
         SPI_connect_my(src.data);
         SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
         SPI_finish_my();
@@ -171,7 +171,10 @@ static void make_wake_up(const Work *w) {
     initStringInfoMy(&source);
     appendStringInfo(&source, SQL(
         BEGIN
-            PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %1$i;
+            BEGIN
+                PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %1$i;
+            EXCEPTION WHEN insufficient_privilege THEN NULL;
+            END;
             RETURN %2$s;
         END;
     ), w->shared->hash,
@@ -181,7 +184,7 @@ static void make_wake_up(const Work *w) {
 "NULL"
 #endif
     );
-    make_function(w, name.data, source.data);
+    make_function(w, name.data, source.data, true);
     make_trigger(w, name.data, "AFTER INSERT OR DELETE OR UPDATE OF plan",
 #ifdef GP_VERSION_NUM
         "ROW"
@@ -189,6 +192,30 @@ static void make_wake_up(const Work *w) {
         "STATEMENT"
 #endif
     );
+    pfree(name.data);
+    pfree(source.data);
+}
+
+static void make_user_immutable(const Work *w) {
+    StringInfoData name;
+    StringInfoData source;
+    initStringInfoMy(&name);
+    appendStringInfo(&name, "%s_user", w->shared->table);
+    initStringInfoMy(&source);
+    appendStringInfo(&source, SQL(
+        BEGIN
+            IF TG_OP OPERATOR(pg_catalog.=) 'INSERT' THEN
+                BEGIN
+                    IF NOT pg_catalog.pg_has_role(current_user, NEW."user", 'MEMBER') THEN NEW."user" := current_user; END IF;
+                EXCEPTION WHEN undefined_object THEN NEW."user" := current_user;
+                END;
+            ELSIF NEW."user" IS DISTINCT FROM OLD."user" THEN RAISE EXCEPTION 'user column is immutable';
+            END IF;
+            RETURN NEW;
+        END;
+    ));
+    make_function(w, name.data, source.data, false);
+    make_trigger(w, name.data, "BEFORE INSERT OR UPDATE OF \"user\"", "ROW");
     pfree(name.data);
     pfree(source.data);
 }
@@ -355,7 +382,8 @@ void make_table(const Work *w) {
                 "input" pg_catalog.text,
                 "null" pg_catalog.text,
                 "output" pg_catalog.text,
-                "remote" pg_catalog.text
+                "remote" pg_catalog.text,
+                "user" pg_catalog.name
             );
         ), w->schema_table, w->schema_type);
         SPI_connect_my(src.data);
@@ -398,6 +426,7 @@ void make_table(const Work *w) {
     make_column(w, "null", "pg_catalog.text");
     make_column(w, "output", "pg_catalog.text");
     make_column(w, "remote", "pg_catalog.text");
+    make_column(w, "user", "pg_catalog.name");
     make_table_comment(w, "Tasks");
     make_comment(w, "id", "Primary key");
     make_comment(w, "parent", "Parent task id (if exists, like foreign key to id, but without constraint, for performance)");
@@ -427,6 +456,7 @@ void make_table(const Work *w) {
     make_comment(w, "null", "Null text value representation");
     make_comment(w, "output", "Received result(s)");
     make_comment(w, "remote", "Connect to remote database (if need)");
+    make_comment(w, "user", "Role that inserted the task; input is executed as this role");
     make_default(w, "parent", "NULLIF((current_setting('pg_task.id'::text))::bigint, 0)");
     make_default(w, "plan", init_plan());
     make_default(w, "active", "(current_setting('pg_task.active'::text))::interval");
@@ -452,6 +482,7 @@ void make_table(const Work *w) {
     make_default(w, "quote", "(current_setting('pg_task.quote'::text))::\"char\"");
     make_default(w, "group", "current_setting('pg_task.group'::text)");
     make_default(w, "null", "current_setting('pg_task.null'::text)");
+    make_default(w, "user", "CURRENT_USER");
     make_not_null(w, "id", true);
     make_not_null(w, "parent", false);
     make_not_null(w, "plan", true);
@@ -480,6 +511,7 @@ void make_table(const Work *w) {
     make_not_null(w, "null", true);
     make_not_null(w, "output", false);
     make_not_null(w, "remote", false);
+    make_not_null(w, "user", true);
     make_constraint(w, "active", "> '00:00:00'::interval", "::pg_catalog.interval");
     make_constraint(w, "live", ">= '00:00:00'::interval", "::pg_catalog.interval");
     make_constraint(w, "repeat", ">= '00:00:00'::interval", "::pg_catalog.interval");
@@ -491,6 +523,7 @@ void make_table(const Work *w) {
     make_index(w, "plan");
     make_index(w, "state");
     make_wake_up(w);
+    make_user_immutable(w);
     set_ps_display_my("idle");
 }
 

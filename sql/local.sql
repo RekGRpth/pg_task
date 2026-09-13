@@ -368,3 +368,72 @@ SELECT error LIKE '%QUERY:  SELECT SELEKT 1%' AS query_field_ok, error LIKE '%LO
 DROP FUNCTION local_query_location_probe();
 ALTER SYSTEM RESET log_error_verbosity;
 SELECT pg_reload_conf();
+CREATE ROLE task_owner_test LOGIN;
+GRANT INSERT ON task TO task_owner_test;
+GRANT USAGE ON SEQUENCE task_id_seq TO task_owner_test;
+CREATE ROLE task_owner_test_b LOGIN;
+GRANT INSERT ON task TO task_owner_test_b;
+GRANT USAGE ON SEQUENCE task_id_seq TO task_owner_test_b;
+DELETE FROM task WHERE "group" IN ('39', '40', '41', '42', '43');
+SET ROLE task_owner_test;
+INSERT INTO task ("group", input, header) VALUES ('39', 'SELECT NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS a', false);
+RESET ROLE;
+DO $body$ BEGIN
+    WHILE true LOOP
+        PERFORM pg_sleep(1);
+        IF (SELECT count(*) FROM task WHERE "group" = '39' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "user" = 'task_owner_test' AS owner_recorded, output = 't' AS ran_unprivileged, state FROM task WHERE "group" = '39' AND plan > :ct::timestamp;
+SET ROLE task_owner_test;
+INSERT INTO task ("group", input, "user") VALUES ('40', 'SELECT 1 AS a', 'postgres');
+RESET ROLE;
+DO $body$ BEGIN
+    WHILE true LOOP
+        PERFORM pg_sleep(1);
+        IF (SELECT count(*) FROM task WHERE "group" = '40' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "user" = 'task_owner_test' AS forged_owner_rejected, state FROM task WHERE "group" = '40' AND plan > :ct::timestamp;
+INSERT INTO task ("group", input) VALUES ('41', 'SELECT 1 AS a');
+DO $$ BEGIN
+    UPDATE task SET "user" = 'task_owner_test' WHERE "group" = '41';
+EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'user column is immutable' THEN RAISE; END IF;
+END $$;
+SELECT "user" = current_user AS owner_immutable FROM task WHERE "group" = '41' AND plan > :ct::timestamp;
+DO $body$ BEGIN
+    WHILE true LOOP
+        PERFORM pg_sleep(1);
+        IF (SELECT count(*) FROM task WHERE "group" = '41' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SET ROLE task_owner_test;
+INSERT INTO task ("group", input, repeat) VALUES ('42', 'SELECT pg_sleep(0.2) AS a', '1 sec');
+RESET ROLE;
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF (SELECT count(*) FILTER (WHERE state = 'DONE') FROM task WHERE "group" = '42') >= 3 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT count(*) >= 3 AS repeated_enough, bool_and("user" = 'task_owner_test') AS owner_preserved_across_repeats FROM task WHERE "group" = '42' AND plan > :ct::timestamp;
+DELETE FROM task WHERE "group" = '42';
+SET ROLE task_owner_test;
+INSERT INTO task ("group", input, header) VALUES ('43', 'SELECT current_user OPERATOR(pg_catalog.=) ''task_owner_test'' AS a', false);
+RESET ROLE;
+SET ROLE task_owner_test_b;
+INSERT INTO task ("group", input, header) VALUES ('43', 'SELECT current_user OPERATOR(pg_catalog.=) ''task_owner_test_b'' AS a', false);
+RESET ROLE;
+DO $body$ BEGIN
+    WHILE true LOOP
+        PERFORM pg_sleep(1);
+        IF (SELECT count(*) FROM task WHERE "group" = '43' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT bool_and(output = 't') AS each_task_saw_its_own_identity, count(DISTINCT "user") = 2 AS two_distinct_owners FROM task WHERE "group" = '43' AND plan > :ct::timestamp;
+DELETE FROM task WHERE "group" IN ('39', '40', '41', '42', '43');
+REVOKE INSERT ON task FROM task_owner_test, task_owner_test_b;
+REVOKE USAGE ON SEQUENCE task_id_seq FROM task_owner_test, task_owner_test_b;
+DROP ROLE task_owner_test;
+DROP ROLE task_owner_test_b;

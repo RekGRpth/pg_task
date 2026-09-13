@@ -93,6 +93,7 @@ typedef struct Task {
     char *null;
     char quote;
     char *remote;
+    char *user;
     dlist_node node;
     int count;
     int event;
