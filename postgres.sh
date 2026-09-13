@@ -16,7 +16,7 @@ if [ -z $PG_BUILD_FROM_SOURCE ]; then
 		else
 			REPO=greenplum-db/gpdb-archive
 		fi
-		REL="$(test "$PG_MAJOR" -lt 10 && pg_config --gp_version | cut -f 2 -d ' ' | cut -f 1 -d '+' || echo "main")"
+		REL="$(test "$PG_MAJOR" -lt 10 && pg_config --gp_version | cut -f 2 -d ' ' | cut -f 1 -d '+' || echo "$MAIN")"
 	else
 		MAIN=master
 		REPO=postgres/postgres
