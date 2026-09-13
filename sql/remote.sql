@@ -128,8 +128,11 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '17' AND plan > :ct::timestamp;
+SET client_min_messages = warning;
+CREATE TABLE copy_probe (a int);
+RESET client_min_messages;
 INSERT INTO task ("group", input, remote) VALUES ('18', 'COPY (SELECT 1) TO STDOUT', 'application_name=test');
-INSERT INTO task ("group", input, remote) VALUES ('19', 'COPY task FROM STDIN', 'application_name=test');
+INSERT INTO task ("group", input, remote) VALUES ('19', 'COPY copy_probe FROM STDIN', 'application_name=test');
 DO $body$ BEGIN
     WHILE true LOOP
         PERFORM pg_sleep(1);
@@ -138,6 +141,7 @@ DO $body$ BEGIN
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '18' AND plan > :ct::timestamp;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '19' AND plan > :ct::timestamp;
+DROP TABLE copy_probe;
 INSERT INTO task ("group", input, remote) VALUES ('20', 'COPY (SELECT generate_series(1, 100000)) TO STDOUT', 'application_name=test');
 DO $body$ BEGIN
     WHILE true LOOP
@@ -348,10 +352,14 @@ SELECT error LIKE '%QUERY:  SELECT SELEKT 1%' AS query_field_ok, error LIKE '%LO
 DROP FUNCTION query_location_probe();
 ALTER SYSTEM RESET log_error_verbosity;
 SELECT pg_reload_conf();
+SET client_min_messages = warning;
 CREATE ROLE task_remote_nopass_test LOGIN;
+RESET client_min_messages;
 GRANT CREATE ON DATABASE :"DBNAME" TO task_remote_nopass_test;
 ALTER ROLE task_remote_nopass_test SET pg_task.schema = 'remote_nopass_test_schema';
-ALTER SYSTEM SET pg_task.json = '[{"data":"postgres"},{"data":"postgres","user":"task_remote_nopass_test"}]';
+SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","user":"task_remote_nopass_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
@@ -379,7 +387,7 @@ DO $body$ BEGIN
         PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
-DROP SCHEMA remote_nopass_test_schema CASCADE;
+DROP SCHEMA IF EXISTS remote_nopass_test_schema CASCADE;
 REVOKE CREATE ON DATABASE :"DBNAME" FROM task_remote_nopass_test;
 DROP ROLE task_remote_nopass_test;
 CREATE ROLE task_remote_author_nopass_test LOGIN;

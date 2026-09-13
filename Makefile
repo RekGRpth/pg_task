@@ -30,3 +30,4 @@ REGRESS_OPTS = --use-existing
 SHLIB_LINK = $(libpq)
 TESTS = $(wildcard sql/*.sql)
 include $(PGXS)
+.DEFAULT_GOAL := all
