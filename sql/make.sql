@@ -39,7 +39,7 @@ SELECT output, error, state FROM task_make_test_schema.task_make_test;
 ALTER SYSTEM RESET pg_task.json;
 SELECT pg_reload_conf();
 DO $$ BEGIN PERFORM pg_sleep(5); END $$;
-DROP SCHEMA task_make_test_schema CASCADE;
+DROP SCHEMA IF EXISTS task_make_test_schema CASCADE;
 CREATE ROLE task_role_test LOGIN SUPERUSER;
 ALTER ROLE task_role_test SET pg_task.schema = 'role_test_schema';
 SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","user":"task_role_test"}]' AS json_val
@@ -64,7 +64,7 @@ SELECT output, error, state FROM role_test_schema.task;
 ALTER SYSTEM RESET pg_task.json;
 SELECT pg_reload_conf();
 DO $$ BEGIN PERFORM pg_sleep(5); END $$;
-DROP SCHEMA role_test_schema CASCADE;
+DROP SCHEMA IF EXISTS role_test_schema CASCADE;
 DROP ROLE task_role_test;
 SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]' AS json_val
 \gset
@@ -95,7 +95,7 @@ SELECT count(*) = 1 AS column_healed FROM pg_catalog.pg_attribute WHERE attrelid
 ALTER SYSTEM RESET pg_task.json;
 SELECT pg_reload_conf();
 DO $$ BEGIN PERFORM pg_sleep(5); END $$;
-DROP SCHEMA task_column_drift_test_schema CASCADE;
+DROP SCHEMA IF EXISTS task_column_drift_test_schema CASCADE;
 CREATE SCHEMA task_enum_drift_test_schema;
 CREATE TYPE task_enum_drift_test_schema.state AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL');
 SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","schema":"task_enum_drift_test_schema","table":"task_enum_drift_test"}]' AS json_val
@@ -112,7 +112,7 @@ SELECT array_agg(enumlabel::text ORDER BY enumsortorder) = ARRAY['PLAN', 'GONE',
 ALTER SYSTEM RESET pg_task.json;
 SELECT pg_reload_conf();
 DO $$ BEGIN PERFORM pg_sleep(5); END $$;
-DROP SCHEMA task_enum_drift_test_schema CASCADE;
+DROP SCHEMA IF EXISTS task_enum_drift_test_schema CASCADE;
 SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","user":"task_make_user_test","schema":"task_user_make_test_schema","table":"task_user_make_test"}]' AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';

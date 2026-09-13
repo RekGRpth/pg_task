@@ -383,6 +383,6 @@ DO $body$ BEGIN
         PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
-DROP SCHEMA remote_nopass_test_schema CASCADE;
+DROP SCHEMA IF EXISTS remote_nopass_test_schema CASCADE;
 REVOKE CREATE ON DATABASE :"DBNAME" FROM task_remote_nopass_test;
 DROP ROLE task_remote_nopass_test;
