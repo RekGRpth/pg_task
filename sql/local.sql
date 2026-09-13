@@ -368,12 +368,23 @@ SELECT error LIKE '%QUERY:  SELECT SELEKT 1%' AS query_field_ok, error LIKE '%LO
 DROP FUNCTION local_query_location_probe();
 ALTER SYSTEM RESET log_error_verbosity;
 SELECT pg_reload_conf();
+SET client_min_messages = warning;
 CREATE ROLE task_owner_test LOGIN;
-GRANT INSERT ON task TO task_owner_test;
-GRANT USAGE ON SEQUENCE task_id_seq TO task_owner_test;
 CREATE ROLE task_owner_test_b LOGIN;
+RESET client_min_messages;
+SELECT (SELECT count(*) FROM pg_catalog.pg_settings WHERE name = 'gp_role') > 0 AS is_gp
+\gset
+SELECT '/tmp/pg_task_gp_utility_' || pg_backend_pid() || '.sql' AS gp_utility_file
+\gset
+\o :gp_utility_file
+SELECT CASE WHEN :'is_gp' = 't' THEN '\connect "dbname=' || :'DBNAME' || ' options=' || chr(39) || '-c gp_session_role=utility' || chr(39) || '"' ELSE '' END;
+\o
+\i :gp_utility_file
+GRANT INSERT ON task TO task_owner_test;
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq TO task_owner_test;
 GRANT INSERT ON task TO task_owner_test_b;
-GRANT USAGE ON SEQUENCE task_id_seq TO task_owner_test_b;
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq TO task_owner_test_b;
+\connect :DBNAME
 DELETE FROM task WHERE "group" IN ('39', '40', '41', '42', '43');
 SET ROLE task_owner_test;
 INSERT INTO task ("group", input, header) VALUES ('39', 'SELECT NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS a', false);
@@ -433,7 +444,9 @@ DO $body$ BEGIN
 END;$body$ LANGUAGE plpgsql;
 SELECT bool_and(output = 't') AS each_task_saw_its_own_identity, count(DISTINCT "user") = 2 AS two_distinct_owners FROM task WHERE "group" = '43' AND plan > :ct::timestamp;
 DELETE FROM task WHERE "group" IN ('39', '40', '41', '42', '43');
+\i :gp_utility_file
 REVOKE INSERT ON task FROM task_owner_test, task_owner_test_b;
-REVOKE USAGE ON SEQUENCE task_id_seq FROM task_owner_test, task_owner_test_b;
+REVOKE USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq FROM task_owner_test, task_owner_test_b;
+\connect :DBNAME
 DROP ROLE task_owner_test;
 DROP ROLE task_owner_test_b;

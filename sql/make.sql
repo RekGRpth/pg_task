@@ -11,6 +11,15 @@ DO $$ BEGIN
         EXECUTE format('GRANT CREATE ON DATABASE %I TO %I', current_setting('pg_task_test.dbname'), current_setting('pg_task_test.dbname'));
     END IF;
 END $$;
+SELECT current_setting('pg_task_test.had_create') AS had_create
+\gset
+SELECT (SELECT count(*) FROM pg_catalog.pg_settings WHERE name = 'gp_role') > 0 AS is_gp
+\gset
+SELECT '/tmp/pg_task_gp_utility_' || pg_backend_pid() || '.sql' AS gp_utility_file
+\gset
+\o :gp_utility_file
+SELECT CASE WHEN :'is_gp' = 't' THEN '\connect "dbname=' || :'DBNAME' || ' options=' || chr(39) || '-c gp_session_role=utility' || chr(39) || '"' ELSE '' END;
+\o
 SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","schema":"task_make_test_schema","table":"task_make_test"}]' AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
@@ -38,8 +47,17 @@ END;$body$ LANGUAGE plpgsql;
 SELECT output, error, state FROM task_make_test_schema.task_make_test;
 ALTER SYSTEM RESET pg_task.json;
 SELECT pg_reload_conf();
-DO $$ BEGIN PERFORM pg_sleep(5); END $$;
-DROP SCHEMA IF EXISTS task_make_test_schema CASCADE;
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work task_make_test_schema %') THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+\i :gp_utility_file
+DROP SCHEMA task_make_test_schema CASCADE;
+\connect :DBNAME
+SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored1, set_config('pg_task_test.had_create', :'had_create', false) AS ignored2
+\gset
 CREATE ROLE task_role_test LOGIN SUPERUSER;
 ALTER ROLE task_role_test SET pg_task.schema = 'role_test_schema';
 SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","user":"task_role_test"}]' AS json_val
@@ -63,8 +81,17 @@ END;$body$ LANGUAGE plpgsql;
 SELECT output, error, state FROM role_test_schema.task;
 ALTER SYSTEM RESET pg_task.json;
 SELECT pg_reload_conf();
-DO $$ BEGIN PERFORM pg_sleep(5); END $$;
-DROP SCHEMA IF EXISTS role_test_schema CASCADE;
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work role_test_schema %') THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+\i :gp_utility_file
+DROP SCHEMA role_test_schema CASCADE;
+\connect :DBNAME
+SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored1, set_config('pg_task_test.had_create', :'had_create', false) AS ignored2
+\gset
 DROP ROLE task_role_test;
 SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]' AS json_val
 \gset
@@ -78,8 +105,17 @@ DO $body$ BEGIN
 END;$body$ LANGUAGE plpgsql;
 ALTER SYSTEM RESET pg_task.json;
 SELECT pg_reload_conf();
-DO $$ BEGIN PERFORM pg_sleep(5); END $$;
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work task_column_drift_test_schema %') THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+\i :gp_utility_file
 ALTER TABLE task_column_drift_test_schema.task_column_drift_test DROP COLUMN "delimiter";
+\connect :DBNAME
+SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored1, set_config('pg_task_test.had_create', :'had_create', false) AS ignored2
+\gset
 SELECT count(*) = 0 AS column_dropped FROM pg_catalog.pg_attribute WHERE attrelid = 'task_column_drift_test_schema.task_column_drift_test'::regclass AND attname = 'delimiter' AND NOT attisdropped;
 SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]' AS json_val
 \gset
@@ -94,8 +130,17 @@ END;$body$ LANGUAGE plpgsql;
 SELECT count(*) = 1 AS column_healed FROM pg_catalog.pg_attribute WHERE attrelid = 'task_column_drift_test_schema.task_column_drift_test'::regclass AND attname = 'delimiter' AND NOT attisdropped;
 ALTER SYSTEM RESET pg_task.json;
 SELECT pg_reload_conf();
-DO $$ BEGIN PERFORM pg_sleep(5); END $$;
-DROP SCHEMA IF EXISTS task_column_drift_test_schema CASCADE;
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work task_column_drift_test_schema %') THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+\i :gp_utility_file
+DROP SCHEMA task_column_drift_test_schema CASCADE;
+\connect :DBNAME
+SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored1, set_config('pg_task_test.had_create', :'had_create', false) AS ignored2
+\gset
 CREATE SCHEMA task_enum_drift_test_schema;
 CREATE TYPE task_enum_drift_test_schema.state AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL');
 SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","schema":"task_enum_drift_test_schema","table":"task_enum_drift_test"}]' AS json_val
@@ -111,7 +156,12 @@ END;$body$ LANGUAGE plpgsql;
 SELECT array_agg(enumlabel::text ORDER BY enumsortorder) = ARRAY['PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP'] AS enum_healed FROM pg_catalog.pg_enum WHERE enumtypid = 'task_enum_drift_test_schema.state'::regtype;
 ALTER SYSTEM RESET pg_task.json;
 SELECT pg_reload_conf();
-DO $$ BEGIN PERFORM pg_sleep(5); END $$;
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work task_enum_drift_test_schema %') THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
 DROP SCHEMA IF EXISTS task_enum_drift_test_schema CASCADE;
 SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","user":"task_make_user_test","schema":"task_user_make_test_schema","table":"task_user_make_test"}]' AS json_val
 \gset

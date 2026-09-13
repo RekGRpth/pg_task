@@ -367,8 +367,17 @@ DO $body$ BEGIN
         PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
+SELECT (SELECT count(*) FROM pg_catalog.pg_settings WHERE name = 'gp_role') > 0 AS is_gp
+\gset
+SELECT '/tmp/pg_task_gp_utility_' || pg_backend_pid() || '.sql' AS gp_utility_file
+\gset
+\o :gp_utility_file
+SELECT CASE WHEN :'is_gp' = 't' THEN '\connect "dbname=' || :'DBNAME' || ' options=' || chr(39) || '-c gp_session_role=utility' || chr(39) || '"' ELSE '' END;
+\o
+\i :gp_utility_file
 GRANT INSERT ON remote_nopass_test_schema.task TO task_remote_nopass_test;
-GRANT USAGE ON SEQUENCE remote_nopass_test_schema.task_id_seq TO task_remote_nopass_test;
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE remote_nopass_test_schema.task_id_seq TO task_remote_nopass_test;
+\connect :DBNAME
 SET ROLE task_remote_nopass_test;
 INSERT INTO remote_nopass_test_schema.task ("group", input, remote) VALUES ('nopass', 'SELECT 1 AS a', 'application_name=test');
 RESET ROLE;
@@ -387,12 +396,18 @@ DO $body$ BEGIN
         PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
-DROP SCHEMA IF EXISTS remote_nopass_test_schema CASCADE;
+\i :gp_utility_file
+DROP SCHEMA remote_nopass_test_schema CASCADE;
+\connect :DBNAME
 REVOKE CREATE ON DATABASE :"DBNAME" FROM task_remote_nopass_test;
 DROP ROLE task_remote_nopass_test;
+SET client_min_messages = warning;
 CREATE ROLE task_remote_author_nopass_test LOGIN;
+RESET client_min_messages;
+\i :gp_utility_file
 GRANT INSERT ON task TO task_remote_author_nopass_test;
-GRANT USAGE ON SEQUENCE task_id_seq TO task_remote_author_nopass_test;
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq TO task_remote_author_nopass_test;
+\connect :DBNAME
 DELETE FROM task WHERE "group" = 'author_nopass';
 SET ROLE task_remote_author_nopass_test;
 INSERT INTO task ("group", input, remote) VALUES ('author_nopass', 'SELECT 1 AS a', 'application_name=test');
@@ -405,6 +420,8 @@ DO $body$ BEGIN
 END;$body$ LANGUAGE plpgsql;
 SELECT state = 'FAIL' AS rejected_without_password_for_unprivileged_author, error LIKE '%password is required%' AS password_error_ok FROM task WHERE "group" = 'author_nopass' AND plan > :ct::timestamp;
 DELETE FROM task WHERE "group" = 'author_nopass';
+\i :gp_utility_file
 REVOKE INSERT ON task FROM task_remote_author_nopass_test;
-REVOKE USAGE ON SEQUENCE task_id_seq FROM task_remote_author_nopass_test;
+REVOKE USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq FROM task_remote_author_nopass_test;
+\connect :DBNAME
 DROP ROLE task_remote_author_nopass_test;
