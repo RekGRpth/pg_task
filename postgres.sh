@@ -4,18 +4,8 @@ if [ -z $PG_BUILD_FROM_SOURCE ]; then
 	GREEN="$(postgres --version | grep -Ei "Green(plum|gage)" >/dev/null && echo yes || echo no)"
 	PG_MAJOR="$(pg_config --version | cut -f 2 -d ' ' | grep -E -o "[[:digit:]]+" | head -1)"
 	if [ "$GREEN" = "yes" ]; then
-		ARENADATA="$(pg_config --gp_version | grep -i arenadata >/dev/null && echo yes || echo no)"
-		GREENGAGE="$(pg_config --gp_version | grep -i greengage >/dev/null && echo yes || echo no)"
-		MAIN=main
-		if [ "$ARENADATA" = "yes" ]; then
-			REPO=arenadata/gpdb
-			MAIN=adb-7.2.0
-		elif [ "$GREENGAGE" = "yes" ]; then
-			REPO=GreengageDB/greengage
-			MAIN=7.x
-		else
-			REPO=greenplum-db/gpdb-archive
-		fi
+		REPO=GreengageDB/greengage
+		MAIN=7.x
 		REL="$(pg_config --gp_version | cut -f 2 -d ' ' | cut -f 1 -d '+')"
 	else
 		MAIN=master
@@ -29,6 +19,7 @@ else
 	REL="$(test "$PG_MAJOR" -lt 10 && echo "REL9_${PG_MAJOR}_STABLE" || echo "REL_${PG_MAJOR}_STABLE")"
 	REPO=postgres/postgres
 fi
-(curl --no-progress-meter -fL "https://raw.githubusercontent.com/$REPO/$REL/src/backend/tcop/postgres.c" || \
-curl --no-progress-meter -fL "https://raw.githubusercontent.com/$REPO/$STABLE/src/backend/tcop/postgres.c" || \
-curl --no-progress-meter -fL "https://raw.githubusercontent.com/$REPO/$MAIN/src/backend/tcop/postgres.c")
+for TAG in "$REL" "$STABLE" "$MAIN"; do
+	[ -n "$TAG" ] || continue
+	curl --no-progress-meter -fL "https://raw.githubusercontent.com/$REPO/$TAG/src/backend/tcop/postgres.c" && break
+done
