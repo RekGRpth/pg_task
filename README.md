@@ -16,6 +16,20 @@ INSERT INTO task (group, max, input) VALUES ('group', 2, 'SELECT now()'); -- if 
 INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host'); -- to run sql on remote database use remote
 ```
 
+## Build
+
+`pg_task` is a standard [PGXS](https://www.postgresql.org/docs/current/extend-pgxs.html) extension, built against an installed PostgreSQL, Greenplum or Greengage server.
+
+Requirements: matching `-dev`/`-devel` package with `pg_config` on `PATH`, a C compiler, `make`, `curl` and `pcregrep`.
+
+```sh
+make USE_PGXS=1 install
+```
+
+Before compiling, the build auto-generates `postgres.c` (and `exec.c` from it) by detecting the installed server's flavor and version (`postgres --version`, `pg_config --version`/`--gp_version`) and downloading the matching `src/backend/tcop/postgres.c` from the corresponding upstream repository (`postgres/postgres` or `GreengageDB/greengage`) on GitHub.
+
+If you already have the exact source tree the server was built from (e.g. a custom/unreleased build), you can skip the network fetch: place a symlink named `postgres.c` pointing at `src/backend/tcop/postgres.c` in that tree before running `make` — an existing `postgres.c` is used as-is.
+
 `pg_task` creates the following GUCs:
 
 | Name | Type | Default | Level | Description |
