@@ -14,6 +14,12 @@
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
 
+#ifdef GP_VERSION_NUM
+#ifdef HAVE_CREATING_EXTENSION_LOCAL
+#include <commands/extension.h>
+#endif
+#endif
+
 #if PG_VERSION_NUM < 90600
 #include "latch_my.h"
 #endif
@@ -761,18 +767,26 @@ void work_main(Datum main_arg) {
     work.schema_type = schema_type.data;
     elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.shared->hash);
 #ifdef GP_VERSION_NUM
+#ifdef HAVE_CREATING_EXTENSION_LOCAL
+    creating_extension_local = true; // force an ENTRY distribution policy without leaving GP_ROLE_DISPATCH, so segments still learn about the relation (see master_only_dispatch_bug)
+#else
     Gp_role = GP_ROLE_UTILITY;
 #if PG_VERSION_NUM < 120000
     Gp_session_role = GP_ROLE_UTILITY;
+#endif
 #endif
 #endif
     make_schema(&work);
     make_type(&work);
     make_table(&work);
 #ifdef GP_VERSION_NUM
+#ifdef HAVE_CREATING_EXTENSION_LOCAL
+    creating_extension_local = false;
+#else
     Gp_role = GP_ROLE_DISPATCH;
 #if PG_VERSION_NUM < 120000
     Gp_session_role = GP_ROLE_DISPATCH;
+#endif
 #endif
 #endif
     set_ps_display_my("idle");
