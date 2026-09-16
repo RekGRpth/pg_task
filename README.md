@@ -115,6 +115,97 @@ pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"
 
 if database and/or user and/or schema and/or table does not exist then `pg_task` create it/their
 
+## Architecture
+
+`pg_task` has no `pg_task--<version>.sql` control script and is never activated with `CREATE EXTENSION` — everything it needs (role, database, schema, table, the `state` enum, indexes, defaults, constraints and two helper triggers) is created idempotently by the extension itself the first time it starts, by checking `pg_catalog` before every `CREATE`/`ALTER` and only touching what's missing or mismatched. Rerunning it, or adding your own columns/partitions by hand, is safe — `pg_task` never drops or rewrites what it didn't create itself.
+
+### Process hierarchy
+
+The extension is split into four parts, each backed by its own source file and, except the first, its own background worker type:
+
+1. **`init`** registers the extension's GUCs and, once, the single static background worker `pg_conf` (started under `shared_preload_libraries`).
+2. **`pg_conf`** (one process per postmaster; on Green(plum|gage), coordinator only) parses `pg_task.json` — together with any per-database/per-role overrides — every `pg_conf.restart` seconds, creates the referenced role/database if missing, and launches one dynamic background worker `pg_work` per `{data, schema, table, user, sleep, ...}` entry.
+3. **`pg_work`** (one process per such entry) is the scheduler proper: it provisions the schema/table on first connect (see below), then loops on a wait-event set — its latch plus the sockets of any open remote connections — periodically claiming due rows from the task table (respecting `plan`, `active` and per-group concurrency), expiring overdue non-repeating rows to `GONE`, and resetting rows orphaned by a crashed worker back to `PLAN`. Local tasks (no `remote`) are handed off to a child `pg_task` worker; remote tasks are driven directly by `pg_work` over an async, non-blocking `libpq` connection — no extra OS process per remote task.
+4. **`pg_task`** (one process per concurrently running local task) connects, executes `input` (locally or via SPI, see below), writes `output`/`error`, flips `state` to `DONE`/`FAIL`, schedules the next `repeat` occurrence if any, and exits — or, within `count`/`live`, picks up another task of the same group before exiting.
+
+Parameters are passed down the hierarchy through dynamic shared memory allocated at worker startup, not through command-line arguments or files.
+
+### Task state machine
+
+`PLAN → TAKE → WORK → DONE | FAIL`, or `PLAN → GONE` when a non-repeating task's `active` window elapses before it's picked up (typically: the server was down longer than `active` allows). `STOP` exists in the `state` enum as a placeholder for marking a task "don't run" — no code currently transitions a row into it automatically, and setting it does not cancel an already-running query; use `pg_cancel_backend(pid)` for that.
+
+`PLAN → TAKE` is a single `UPDATE ... SKIP LOCKED` that also counts current concurrency for the task's `group`/`remote` hash — via session-level advisory locks visible in `pg_locks` — against `max`. So `max` behaves less like a hard cap feeding one shared queue and more like a priority: a group with a higher `max` picks up its own next tasks sooner, independently of other groups. A negative `max` instead schedules a pause: on completion, the other `PLAN` rows of the same group get their `plan` pushed forward by `|max|` milliseconds.
+
+`WORK → DONE/FAIL` is a single `UPDATE ... RETURNING` that, in the same round trip, decides whether to delete the row (`delete`, when both `output` and `error` are null), whether to insert the next `repeat` occurrence (computed from the original `plan` or from the actual finish time, depending on `drift`), whether the same worker process may pick up another task of the group without exiting (within `count`/`live`), and whether to reschedule the rest of the group (negative `max`).
+
+`timeout` bounds how long `input` itself may run — locally via a timeout event in the `pg_task` worker's loop, remotely via `SET SESSION statement_timeout` sent ahead of `input`. `live`/`count` instead bound the executor *process*, not the task: how many tasks in a row, or how long, one `pg_task` worker lives before being recycled.
+
+### Wake-up and crash recovery
+
+Instead of `LISTEN`/`NOTIFY`, `pg_task` wakes idle workers with session-level advisory locks plus `pg_cancel_backend()`. Each `pg_work` process holds an advisory lock tagged with its group's hash for as long as it's alive; the `AFTER INSERT OR DELETE OR UPDATE OF plan` trigger (see below) looks up the holder of that lock in `pg_locks` and cancels it directly. `pg_work` installs its own `SIGINT` handler — instead of the default query-cancel one — that just sets the latch, so the wait-event loop returns immediately instead of waiting out the rest of `pg_task.sleep`.
+
+A second, per-task advisory lock (tagged by the task's own `id`) is used to detect a crashed executor: every `pg_task.reset` interval, `pg_work` looks for rows still in `TAKE`/`WORK` whose `id`-tagged lock nobody currently holds, and resets them to `PLAN`. That's the crash-recovery mechanism.
+
+When there's genuinely nothing to do, `pg_work` doesn't poll in a tight loop: it computes, in one query, the soonest moment something will actually need attention — the closer of the next `active`/`timeout` deadline among running tasks and the next `PLAN` task's `plan` — and sleeps exactly until then. `pg_task.sleep` is a floor on responsiveness for a busy queue, not a fixed polling interval.
+
+### Self-provisioning and the two helper triggers
+
+On first connect, `pg_work` walks through a series of idempotent `SELECT EXISTS ...` checks against `pg_catalog` and issues the matching `CREATE`/`ALTER` only for what's missing: schema, the `state` enum, the table (with all columns, `current_setting('pg_task.…')`-backed defaults, `NOT NULL`/`CHECK` constraints), and indexes — including a functional index on the hash of `group`/`remote` that the concurrency accounting above relies on — plus two trigger functions:
+
+- the **`user`-immutability trigger** (`BEFORE INSERT OR UPDATE OF "user"`) forces `NEW."user"` to `current_user` on insert unless the inserting role is a member of the claimed role, and rejects any later change — this is what makes the `user` column trustworthy for the Security considerations below.
+- the **wake-up trigger** (`AFTER INSERT OR DELETE OR UPDATE OF plan`) is the mechanism described above; it does not use `NOTIFY`.
+
+### Three ways to run `input`
+
+There are three distinct execution paths, not two — which one applies is decided first by whether `remote` is set, and only then, for the non-remote case, by `pg_task.spi`:
+
+- **local (no `remote`, default `spi = off`)** dispatches `input` through `exec_simple_query()` in the `pg_task` worker's own backend — the same function extracted from the matching version's `postgres.c` into `exec.c` at build time (see Build above) — i.e. the same multi-statement dispatcher PostgreSQL uses for a real client connection: full DDL, multiple `;`-separated statements, implicit transaction handling. Its result stream is captured by swapping in a custom `DestReceiver` that formats each row (honoring the task's `delimiter`/`quote`/`escape`/`null`/`string`) straight into `output`, turning command-completion tags (`UPDATE 3`, ...) into `output` lines too.
+- **SPI (no `remote`, `spi = on`)** calls `SPI_execute()` directly in the same backend, instead of `exec_simple_query()` — faster, but strictly narrower (see the table below).
+- **remote (`remote` is set)** bypasses both of the above entirely: `pg_task.spi` is not even read in this path. `pg_work` doesn't spawn a `pg_task` worker at all — it opens the connection itself, asynchronously and non-blocking (`PQconnectStartParams` + `PQsetnonblocking`), and adds its socket to its own wait-event set, so dozens of concurrent remote tasks cost no extra OS process beyond `pg_work` itself. Once connected it sends a preamble (`SET SESSION` for the relevant `pg_task.*` parameters and `statement_timeout`) followed by `input`, and `input` is dispatched by the remote server's own query processor over the wire, exactly as if a regular client had sent it — `pg_task`'s local `DestReceiver`/SPI code never runs. The streamed result is formatted into `output`/`error` the same way as in local mode, statement by statement. Once `input` finishes, `pg_work` sends `COMMIT` (closing whatever transaction `input` left open) and then `DISCARD ALL` unless `save` asks to keep the session for the next task of the group — before the connection is either reused or closed.
+
+In every case the final state transition (`WORK → DONE/FAIL`) is written locally via SPI, regardless of which of the three paths actually ran `input`.
+
+Each path has its own restrictions on what `input` can contain:
+
+| | local | SPI | remote |
+| --- | --- | --- | --- |
+| Several `;`-separated statements | all results appended to `output` | only the *last* statement's result | all results appended to `output` |
+| `COPY ... FROM STDIN` / `... TO STDOUT` / `COPY BOTH` | rejected outright (`COPY … is not supported`) | rejected outright (`SPI_ERROR_COPY`) | `FROM STDIN`/`BOTH` rejected (pg_task has no data to stream in); `TO STDOUT` **is** supported and streamed straight into `output` |
+| `COPY ... TO/FROM` a server-side file or `PROGRAM` | allowed, if the role has the privilege | rejected (SPI rejects any `COPY`) | allowed, if the role has the privilege — runs on the remote server |
+| Explicit `BEGIN`/`COMMIT`/`ROLLBACK` in `input` | allowed (a transaction left open at the end is closed automatically) | rejected (`SPI_ERROR_TRANSACTION`) | allowed (it's a real client session on the far side) |
+| DDL | allowed | allowed (as an SPI utility statement) | allowed |
+
+### Signals
+
+`SIGHUP` — in `pg_conf`, `pg_work` and `pg_task` alike — reloads `postgresql.conf` and re-runs the relevant config/task check, so most GUCs and `pg_task.json` can be changed without a server restart. `SIGTERM` is handled the standard background-worker way; on the way out, each level releases its advisory locks, and `pg_work` additionally closes any open remote connections cleanly instead of dropping them.
+
+## Capabilities and limitations
+
+Capabilities:
+- run arbitrary SQL as soon as possible, at a specific time (`plan`), or repeatedly every N (`repeat`, counted from the original `plan` or from the actual finish time via `drift`);
+- catch execution errors without taking down a worker — the error text goes to `error`, the result to `output`;
+- run tasks concurrently with per-group concurrency control (`group` + `max`), or, with a negative `max`, pace them with a fixed delay instead — a built-in rate limiter;
+- run `input` on the local database or on an arbitrary remote one (`remote`), over a non-blocking connection that doesn't block the scheduler from polling everything else;
+- run in several databases, schemas, tables and as several roles at once, via `pg_task.json`;
+- for non-`remote` tasks, run `input` either through the same dispatcher a real client connection uses (full DDL/`COPY`/multi-statement, `spi = off`) or through SPI (`spi = on`, faster and narrower) — see Three ways to run `input` above for how `remote` tasks differ from both;
+- reuse one session across several consecutive tasks of a group (`pg_task.save`), keeping temp tables/prepared statements/settings between runs;
+- bound a task's own run time (`timeout`) independently of how long the executing process itself lives (`live`, `count`);
+- react to a new or changed task almost immediately rather than only on the next poll, thanks to the advisory-lock/`pg_cancel_backend` wake-up described in Architecture above;
+- recover from a worker crashing mid-task — orphaned `TAKE`/`WORK` rows are reset to `PLAN` every `pg_task.reset`;
+- format results (delimiter, quoting, escaping, `NULL` representation, headers);
+- run every task as the role that actually inserted it, not as the scheduler's own connecting role (see Security considerations below).
+
+GUCs, and most `task` columns, cascade through up to five levels — the config file, then per-database, per-role and per-session overrides, and finally the value on the row itself — the most specific one wins.
+
+Limitations:
+- there's no SQL-level way to cancel a running task: `STOP` exists in the `state` enum but nothing sets or acts on it automatically — cancelling a running task means calling `pg_cancel_backend(pid)` yourself;
+- no built-in dashboard or UI — monitoring is `SELECT * FROM task` and, as needed, `pg_locks`/`pg_stat_activity`;
+- tasks only run where the table can be written to — a read-only replica can't run a scheduler against it;
+- no coordination across independent clusters — if the same `task` table or the same `remote` target is reachable from more than one place at once, consistency is on you; the advisory locks only protect against races inside one server instance;
+- building requires network access to GitHub, or a pre-existing source tree (see Build above) — the extension pulls part of the matching version's real `postgres.c` at build time rather than just linking against an installed server;
+- only the server branches/versions actually exercised by CI are supported — a brand-new major version may need a follow-up patch before the code extracted from its `postgres.c` matches again;
+- with the default `spi = off`, a task has exactly the privileges of a normal client session for its role, including `COPY ... TO/FROM PROGRAM` if the role can do that — this follows directly from running `input` as a real client would, not from a bug; if task authors aren't fully trusted, use `spi = on` or restrict the role's privileges (see Security considerations below).
+
 ## Security considerations
 
 `pg_task` executes the raw SQL text stored in `task.input` as the role recorded in `task.user`. That column defaults to `current_user` at insert time, is force-overwritten to `current_user` by a `BEFORE INSERT` trigger regardless of what value the client supplies, and is immutable afterwards (a `BEFORE UPDATE OF "user"` trigger rejects any change). Since `task.user` is trustworthy, execution switches to it (`SET ROLE`) only for the duration of running `input`, then reverts to the worker's own connecting role (configured via `pg_task.user`, default: `postgres`) before any further housekeeping (recording `state`/`output`/`error`, scheduling repeats, etc.).
