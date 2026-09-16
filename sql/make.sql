@@ -15,11 +15,6 @@ SELECT current_setting('pg_task_test.had_create') AS had_create
 \gset
 SELECT (SELECT count(*) FROM pg_catalog.pg_settings WHERE name = 'gp_role') > 0 AS is_gp
 \gset
-SELECT '/tmp/pg_task_gp_utility_' || pg_backend_pid() || '.sql' AS gp_utility_file
-\gset
-\o :gp_utility_file
-SELECT CASE WHEN :'is_gp' = 't' THEN '\connect "dbname=' || :'DBNAME' || ' options=' || chr(39) || '-c gp_session_role=utility' || chr(39) || '"' ELSE '' END;
-\o
 SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","schema":"task_make_test_schema","table":"task_make_test"}]' AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
@@ -31,6 +26,18 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT to_regclass('task_make_test_schema.task_make_test') IS NOT NULL AS table_created;
+SELECT '/tmp/pg_task_gp_policy_' || pg_backend_pid() || '.sql' AS gp_policy_file
+\gset
+\o :gp_policy_file
+SELECT CASE WHEN :'is_gp' = 't' THEN 'SELECT NOT EXISTS (SELECT 1 FROM gp_dist_random(' || chr(39) || 'pg_class' || chr(39) || ') WHERE oid = ' || chr(39) || 'task_make_test_schema.task_make_test' || chr(39) || '::regclass) AS need_gp_utility' ELSE 'SELECT false AS need_gp_utility' END;
+SELECT '\gset';
+\o
+\i :gp_policy_file
+SELECT '/tmp/pg_task_gp_utility_' || pg_backend_pid() || '.sql' AS gp_utility_file
+\gset
+\o :gp_utility_file
+SELECT CASE WHEN :'need_gp_utility' = 't' THEN '\connect "dbname=' || :'DBNAME' || ' options=' || chr(39) || '-c gp_session_role=utility' || chr(39) || '"' ELSE '' END;
+\o
 SELECT count(*) = 29 AS column_count_ok FROM pg_catalog.pg_attribute WHERE attrelid = 'task_make_test_schema.task_make_test'::regclass AND attnum > 0 AND NOT attisdropped;
 SELECT array_agg(enumlabel::text ORDER BY enumsortorder) = ARRAY['PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP'] AS enum_ok FROM pg_catalog.pg_enum WHERE enumtypid = 'task_make_test_schema.state'::regtype;
 SELECT bool_and(attnotnull) AS not_null_ok FROM pg_catalog.pg_attribute WHERE attrelid = 'task_make_test_schema.task_make_test'::regclass AND attname IN ('id', 'plan', 'active', 'live', 'repeat', 'timeout', 'count', 'max', 'state', 'delete', 'drift', 'header', 'save', 'string', 'delimiter', 'escape', 'quote', 'group', 'input', 'null');

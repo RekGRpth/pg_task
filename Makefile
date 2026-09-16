@@ -24,6 +24,10 @@ ifeq ($(PG94),no)
 	$(error Minimum version of PostgreSQL required is 9.4.0)
 endif
 PG_CPPFLAGS = -I$(libpq_srcdir)
+HAVE_CREATING_EXTENSION_LOCAL = $(shell grep -q creating_extension_local $(shell $(PG_CONFIG) --includedir-server)/commands/extension.h 2>/dev/null && echo yes || echo no)
+ifeq ($(HAVE_CREATING_EXTENSION_LOCAL),yes)
+PG_CPPFLAGS += -DHAVE_CREATING_EXTENSION_LOCAL
+endif
 PGXS = $(shell $(PG_CONFIG) --pgxs)
 REGRESS = $(patsubst sql/%.sql,%,$(TESTS))
 REGRESS_OPTS = --use-existing
