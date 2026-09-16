@@ -1,20 +1,40 @@
-PostgreSQL, Greenplum and Greengage job scheduler `pg_task` allows to execute any sql command at any specific time at background asynchronously
+# pg_task
 
-first
+PostgreSQL, Greenplum and Greengage job scheduler `pg_task` allows to execute any sql command at any specific time at background asynchronously.
+
+It runs entirely inside the database as a set of background workers — no external daemon, no client library, nothing to babysit outside PostgreSQL itself. You enable it with a single GUC, and from then on scheduling a job is just an `INSERT` into a plain table: `pg_task` polls that table, runs `input`, and writes the result back into the same row (see [Task state machine](#task-state-machine) for exactly how).
+
+## Table of contents
+
+- [Quick start](#quick-start)
+- [Build](#build)
+- [Configuration (GUCs)](#configuration-gucs)
+- [Task table](#task-table)
+- [Running in multiple databases](#running-in-multiple-databases)
+- [Architecture](#architecture)
+- [Capabilities and limitations](#capabilities-and-limitations)
+- [Security considerations](#security-considerations)
+
+## Quick start
+
+First, enable the extension by adding it to `shared_preload_libraries` and restarting PostgreSQL:
 ```conf
 shared_preload_libraries = 'pg_task' # add pg_task to shared_preload_libraries
 ```
-second
+On startup, `pg_task` sets up everything it needs by itself — role, database, schema and the `task` table — using built-in defaults (database `postgres`, user `postgres`, schema `public`, table `task`; see [Configuration (GUCs)](#configuration-gucs) to point it elsewhere, and [Self-provisioning and the two helper triggers](#self-provisioning-and-the-two-helper-triggers) for how).
+
+Second, schedule work by inserting rows into the `task` table — one row is one job:
 ```sql
-INSERT INTO task (input) VALUES ('SELECT now()'); -- to run sql more quickly use only input
-INSERT INTO task (plan, input) VALUES (now() + '5 min':INTERVAL, 'SELECT now()'); -- to run sql after 5 minutes point plan(ned time)
-INSERT INTO task (plan, input) VALUES ('2029-07-01 12:51:00', 'SELECT now()'); -- to run sql at specific time point it as plan(ned time)
-INSERT INTO task (repeat, input) VALUES ('5 min', 'SELECT now()'); -- to repeat sql every 5 minutes point repeat( interval)
-INSERT INTO task (input) VALUES ('SELECT 1/0'); -- exception is catched and writed in error as text
-INSERT INTO task (group, max, input) VALUES ('group', 1, 'SELECT now()'); -- if some group needs concurently run only 2 parallel sqls then use max = 1
-INSERT INTO task (group, max, input) VALUES ('group', 2, 'SELECT now()'); -- if in this group there are more sqls and they are executing concurently by 2 then passing max = 2 will execute sql as more early in this group (it is like priority)
-INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host'); -- to run sql on remote database use remote
+INSERT INTO task (input) VALUES ('SELECT now()'); -- no plan/repeat: runs once, as soon as possible
+INSERT INTO task (plan, input) VALUES (now() + '5 min':INTERVAL, 'SELECT now()'); -- runs once, after a 5 minute delay (plan = planned time)
+INSERT INTO task (plan, input) VALUES ('2029-07-01 12:51:00', 'SELECT now()'); -- runs once, at that exact timestamp (plan = planned time)
+INSERT INTO task (repeat, input) VALUES ('5 min', 'SELECT now()'); -- runs, then reinserts itself to run again every 5 minutes (repeat = interval)
+INSERT INTO task (input) VALUES ('SELECT 1/0'); -- an error doesn't crash the worker: it's caught and written to error as text
+INSERT INTO task (group, max, input) VALUES ('group', 1, 'SELECT now()'); -- max = 1 lets one extra task of this group run concurrently with this one (2 at a time total)
+INSERT INTO task (group, max, input) VALUES ('group', 2, 'SELECT now()'); -- a higher max also jumps the queue ahead of lower-max tasks in the same group — it behaves like a priority, not just a concurrency cap
+INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host'); -- remote runs input on another database instead of the local one
 ```
+`pg_task` notices a new or changed row almost immediately — no polling delay to wait out (see [Wake-up and crash recovery](#wake-up-and-crash-recovery)) — executes `input`, and writes the outcome straight back into that row: the result goes to `output`, any error to `error`, and `state` tracks progress along the way (`PLAN → TAKE → WORK → DONE`/`FAIL`). There's no separate status API — just query the table: `SELECT * FROM task WHERE id = ...`.
 
 ## Build
 
@@ -30,7 +50,9 @@ Before compiling, the build auto-generates `postgres.c` (and `exec.c` from it) b
 
 If you already have the exact source tree the server was built from (e.g. a custom/unreleased build), you can skip the network fetch: place a symlink named `postgres.c` pointing at `src/backend/tcop/postgres.c` in that tree before running `make` — an existing `postgres.c` is used as-is.
 
-`pg_task` creates the following GUCs:
+## Configuration (GUCs)
+
+`pg_task` creates the following GUCs. `Level` lists where each one can be set; when a GUC is settable at more than one level, the most specific value wins — a per-session `SET` beats a per-role/database default, which beats the config file. Several `task` columns (see [Task table](#task-table) below) default to the matching GUC's current value at insert time, so setting the GUC once is often enough without repeating it on every row.
 
 | Name | Type | Default | Level | Description |
 | --- | --- | --- | --- | --- |
@@ -70,7 +92,9 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | pg_task.timeout | interval | 0 sec | config, database, user, session | Non-negative allowed time for task run |
 | pg_task.user | text | postgres | config | User name for tasks table |
 
-`pg_task` creates table with the following columns:
+## Task table
+
+`pg_task` creates the `task` table (name and location configurable, see above) with the following columns. Most of them default to the corresponding GUC and can be overridden per row — so a task can, for example, use a longer `timeout` or a different `group` than the session default just by setting that column on insert.
 
 | Name | Type | Nullable? | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -104,16 +128,17 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | remote | text | NULL | | Connect to remote database (if need) |
 | user | name | NOT NULL | current_user | Role that inserted the task; input is executed as this role, and the column is immutable after insert |
 
-but you may add any needed colums and/or make partitions
+You may freely add your own columns to `task` and/or partition it — `pg_task` only ever touches the columns it created (see [Self-provisioning and the two helper triggers](#self-provisioning-and-the-two-helper-triggers)).
 
-by default `pg_task` runs on default database with default user with default schema with default table with default sleep
+## Running in multiple databases
 
-to run specific database and/or specific user and/or specific schema and/or specific table and/or specific sleep, set config (in json format)
+By default `pg_task` runs a single scheduler, on the default database (`postgres`), as the default user (`postgres`), watching the default schema (`public`) and table (`task`), polling every default `sleep` interval.
+
+To run more than one scheduler — e.g. one per application database, each with its own user/schema/table/poll interval — list them in `pg_task.json`, one object per scheduler; any key you omit falls back to its GUC default:
 ```conf
 pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"data":"database3","schema":"schema3"},{"data":"database4","table":"table4"},{"data":"database5","sleep":100}]'
 ```
-
-if database and/or user and/or schema and/or table does not exist then `pg_task` create it/their
+`pg_task` creates whichever of the referenced database, user, schema or table don't already exist — you don't need to provision them by hand first.
 
 ## Architecture
 
