@@ -457,3 +457,4 @@ REVOKE USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq FROM task_owner_test, task_
 \connect :DBNAME
 DROP ROLE task_owner_test;
 DROP ROLE task_owner_test_b;
+DELETE FROM task WHERE plan > :ct::timestamp; -- catch-all: remove anything this run inserted that an earlier per-group DELETE missed

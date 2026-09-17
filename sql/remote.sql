@@ -451,3 +451,4 @@ REVOKE INSERT ON task FROM task_remote_author_nopass_test;
 REVOKE USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq FROM task_remote_author_nopass_test;
 \connect :DBNAME
 DROP ROLE task_remote_author_nopass_test;
+DELETE FROM task WHERE plan > :ct::timestamp; -- catch-all: remove anything this run inserted that an earlier per-group DELETE missed

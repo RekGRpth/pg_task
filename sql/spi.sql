@@ -320,3 +320,4 @@ SELECT "group", output, error, state FROM task WHERE "group" IN ('34', '35', '36
 DROP TABLE returning_probe;
 ALTER SYSTEM RESET pg_task.spi;
 SELECT pg_reload_conf();
+DELETE FROM task WHERE plan > :ct::timestamp; -- catch-all: remove anything this run inserted that an earlier per-group DELETE missed
