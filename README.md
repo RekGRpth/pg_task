@@ -457,6 +457,34 @@ FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE FUNCTION task_hook();
 
 Tested against a real local listener: both `DONE` and `FAIL` rows produced a correctly-formed JSON POST. The one thing to get right: this trigger runs synchronously, inside the same transaction that `task_done()`/`task_error()` (`task.c`) use to record the result — a webhook call that hangs or errors would otherwise hang or fail that write too, which is why the call is wrapped in its own `EXCEPTION WHEN OTHERS` and given an explicit `timeout_ms` rather than left to block indefinitely.
 
+### History/archive instead of a bare delete
+
+Rather than `pg_task.delete` sending finished rows into nowhere, copy them into a partitioned archive table on the way out — an `AFTER DELETE` trigger, so it uniformly covers both `task_delete()`'s own auto-delete (`delete = true` with `output`/`error` both null) and any periodic cleanup you run yourself (e.g. a repeating `pg_task` job whose `input` is `DELETE FROM task WHERE state IN ('DONE', 'GONE') AND plan < now() - interval '7 days'`):
+
+```sql
+CREATE TABLE task_archive (LIKE task INCLUDING DEFAULTS, PRIMARY KEY (id, stop))
+    PARTITION BY RANGE (stop);
+CREATE TABLE task_archive_default PARTITION OF task_archive DEFAULT;
+-- plus dated partitions, by hand or, since pg_partman is already commonly
+-- paired with pg_task, via SELECT partman.create_parent('public.task_archive', 'stop', 'native', 'monthly');
+
+CREATE OR REPLACE FUNCTION task_archive() RETURNS trigger AS $f$
+BEGIN
+    BEGIN
+        INSERT INTO task_archive SELECT OLD.*;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'task_archive: failed to archive id = %: %', OLD.id, SQLERRM;
+    END;
+    RETURN OLD;
+END;
+$f$ LANGUAGE plpgsql;
+
+CREATE TRIGGER task_archive_trigger AFTER DELETE ON task
+FOR EACH ROW EXECUTE FUNCTION task_archive();
+```
+
+Two things confirmed by testing this end to end: a partitioned table's unique/primary key must include the partition key, so this is `PRIMARY KEY (id, stop)`, not just `(id)` — `LIKE task INCLUDING ALL` would carry over `task`'s own `(id)` primary key and fail with `PRIMARY KEY constraint ... must include all partitioning columns`. And the `DEFAULT` partition and the `EXCEPTION WHEN OTHERS` are both load-bearing, not redundant: like the webhook trigger above, this one runs inside the same transaction `task_done()`/`task_error()` use to delete the row, so an archive insert failing outright (no partition covers this `stop`, some constraint, ...) would otherwise take that deletion — and the task's own bookkeeping — down with it. With the `DEFAULT` partition in place a row with no dedicated partition still lands somewhere; with neither, the deletion still succeeds and only a `WARNING` is logged, verified by deliberately deleting both safety nets and confirming the row failed to archive but `DELETE FROM task` still returned normally.
+
 ## Capabilities and limitations
 
 Capabilities:
