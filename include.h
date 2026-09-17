@@ -64,6 +64,7 @@ typedef struct Shared {
     int64 reset;
     int64 sleep;
     int hash;
+    int limit;
     int max;
     int run;
     Oid oid;

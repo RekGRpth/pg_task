@@ -301,6 +301,70 @@ DO $body$ BEGIN
         PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
+DELETE FROM task WHERE "group" = '44';
+INSERT INTO task ("group", input) VALUES ('44', 'SELECT pg_sleep(10) AS a');
+DO $body$ BEGIN
+    FOR i IN 1..15 LOOP
+        IF (SELECT state FROM task WHERE "group" = '44') = 'WORK' THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT pid AS orig_pid_db FROM task WHERE "group" = '44'
+\gset
+SELECT count(pg_terminate_backend(:orig_pid_db)) > 0 AS worker_killed_db_override;
+ALTER DATABASE :DBNAME SET pg_task.reset = '2 sec';
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF (SELECT state FROM task WHERE "group" = '44') = 'DONE' THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+ALTER DATABASE :DBNAME RESET pg_task.reset;
+SELECT pg_reload_conf();
+SELECT state = 'DONE' AS recovered_via_db_override, pid != :orig_pid_db AS pid_changed_db_override FROM task WHERE "group" = '44';
+DELETE FROM task WHERE "group" IN ('45', '46', '47');
+ALTER DATABASE :DBNAME SET pg_task."limit" = 1;
+SELECT pg_reload_conf();
+INSERT INTO task ("group", input) VALUES ('45', 'SELECT pg_sleep(5) AS a');
+INSERT INTO task ("group", input) VALUES ('46', 'SELECT pg_sleep(5) AS a');
+INSERT INTO task ("group", input) VALUES ('47', 'SELECT pg_sleep(5) AS a');
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF (SELECT count(*) FILTER (WHERE state != 'PLAN') FROM task WHERE "group" IN ('45', '46', '47')) >= 1 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT count(*) FILTER (WHERE state != 'PLAN') >= 1 AS some_dispatched_limit_db_override, count(*) FILTER (WHERE state = 'PLAN') >= 1 AS some_capped_limit_db_override FROM task WHERE "group" IN ('45', '46', '47') AND plan > :ct::timestamp;
+ALTER DATABASE :DBNAME RESET pg_task."limit";
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" IN ('45', '46', '47') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+DELETE FROM task WHERE "group" IN ('45', '46', '47');
+ALTER DATABASE :DBNAME SET pg_task.run = 1;
+SELECT pg_reload_conf();
+INSERT INTO task ("group", input) VALUES ('45', 'SELECT pg_sleep(5) AS a');
+INSERT INTO task ("group", input) VALUES ('46', 'SELECT pg_sleep(5) AS a');
+INSERT INTO task ("group", input) VALUES ('47', 'SELECT pg_sleep(5) AS a');
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF (SELECT count(*) FILTER (WHERE state != 'PLAN') FROM task WHERE "group" IN ('45', '46', '47')) >= 1 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT count(*) FILTER (WHERE state != 'PLAN') >= 1 AS some_dispatched_run_db_override, count(*) FILTER (WHERE state = 'PLAN') >= 1 AS some_capped_run_db_override FROM task WHERE "group" IN ('45', '46', '47') AND plan > :ct::timestamp;
+ALTER DATABASE :DBNAME RESET pg_task.run;
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..30 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" IN ('45', '46', '47') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
 DELETE FROM task WHERE "group" = '33';
 INSERT INTO task ("group", input) VALUES ('33', 'BEGIN; SELECT 1 AS a');
 DO $body$ BEGIN

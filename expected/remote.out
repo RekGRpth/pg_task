@@ -54,6 +54,12 @@ t
 t
 t|t
 t
+t
+t|t
+t
+t
+t|t
+t
 BEGIN
 1||DONE
 |ERROR:  boom
