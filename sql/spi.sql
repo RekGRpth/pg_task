@@ -16,9 +16,9 @@ INSERT INTO task ("group", input) VALUES ('5', 'SELECT 1 AS a;SELECT 2 AS b');
 INSERT INTO task ("group", input) VALUES ('6', 'SELECT 1 AS a, 2 AS b;SELECT 3 AS c');
 INSERT INTO task ("group", input) VALUES ('7', 'SELECT 1 AS a, 2 AS b;SELECT 3 AS c, 4 AS d');
 DO $body$ BEGIN
-    WHILE true LOOP
-        PERFORM pg_sleep(1);
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '0' AND plan > :ct::timestamp;
@@ -31,18 +31,18 @@ SELECT "group", input, output, error, state FROM task WHERE "group" = '6' AND pl
 SELECT "group", input, output, error, state FROM task WHERE "group" = '7' AND plan > :ct::timestamp;
 WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, count) SELECT '8', 'SELECT pg_sleep(1) AS a', 1, 5 FROM s;
 DO $body$ BEGIN
-    WHILE true LOOP
-        PERFORM pg_sleep(1);
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state, count(id) FROM task WHERE "group" = '8' AND plan > :ct::timestamp GROUP BY "group", input, output, error, state, pid;
 WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, count) SELECT '9', 'SELECT pg_sleep(1) AS a', 1, 6 FROM s;
 INSERT INTO task ("group", input, max, count) VALUES ('9', 'SELECT pg_sleep(1) AS a', 2, 6);
 DO $body$ BEGIN
-    WHILE true LOOP
-        PERFORM pg_sleep(1);
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT
@@ -52,26 +52,26 @@ SELECT
     (SELECT count(DISTINCT pid) FROM task WHERE "group" = '9' AND max = 1 AND plan > :ct::timestamp) >= 2 AS max1_multiple_workers;
 WITH s AS (SELECT generate_series(1, 20) AS s) INSERT INTO task ("group", input, max, count) SELECT '10', 'SELECT pg_sleep(1) AS a', 1, 5 FROM s;
 DO $body$ BEGIN
-    WHILE true LOOP
-        PERFORM pg_sleep(1);
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state, count(id) FROM task WHERE "group" = '10' AND plan > :ct::timestamp GROUP BY "group", input, output, error, state, pid;
 WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, count, active) SELECT '11', 'SELECT pg_sleep(10) AS a', 1, 5, '5 sec' FROM s;
 DO $body$ BEGIN
-    WHILE true LOOP
-        PERFORM pg_sleep(1);
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state, count(id) FROM task WHERE "group" = '11' AND plan > :ct::timestamp GROUP BY "group", input, output, error, state ORDER BY 6;
 SELECT quote_literal(clock_timestamp()) AS ct12 \gset
 WITH s AS (SELECT generate_series(1, 3) AS s) INSERT INTO task ("group", input, max) SELECT '12', 'SELECT clock_timestamp() AS a', -3000 FROM s;
 DO $body$ BEGIN
-    WHILE true LOOP
-        PERFORM pg_sleep(1);
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", min(start) - :ct12::timestamptz < interval '2500 ms' AS first_run_immediate, bool_and(gap IS NULL OR gap BETWEEN interval '2 sec' AND interval '5 sec') AS pause_ok FROM (
@@ -80,9 +80,9 @@ SELECT "group", min(start) - :ct12::timestamptz < interval '2500 ms' AS first_ru
 SELECT quote_literal(clock_timestamp()) AS ct13 \gset
 WITH s AS (SELECT generate_series(1, 3) AS s) INSERT INTO task ("group", input, max, drift) SELECT '13', 'SELECT clock_timestamp() AS a', -3000, true FROM s;
 DO $body$ BEGIN
-    WHILE true LOOP
-        PERFORM pg_sleep(1);
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", min(start) - :ct13::timestamptz < interval '2500 ms' AS first_run_immediate, bool_and(gap IS NULL OR gap BETWEEN interval '2 sec' AND interval '5 sec') AS pause_ok FROM (
@@ -90,9 +90,9 @@ SELECT "group", min(start) - :ct13::timestamptz < interval '2500 ms' AS first_ru
 ) x GROUP BY "group";
 WITH s AS (SELECT generate_series(1, 8) AS s) INSERT INTO task ("group", input, live) SELECT '14', 'SELECT pg_sleep(0.3) AS a', '2 sec' FROM s;
 DO $body$ BEGIN
-    WHILE true LOOP
-        PERFORM pg_sleep(1);
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", count(DISTINCT pid) > 1 AS multiple_workers, max(cnt) > 1 AS reuse_happened FROM (
@@ -100,26 +100,26 @@ SELECT "group", count(DISTINCT pid) > 1 AS multiple_workers, max(cnt) > 1 AS reu
 ) x GROUP BY "group";
 INSERT INTO task ("group", input, quote, escape) VALUES ('15', $task$SELECT 'a' || '"' || 'b' || chr(92) || 'c' AS a$task$, '"', '\');
 DO $body$ BEGIN
-    WHILE true LOOP
-        PERFORM pg_sleep(1);
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '15' AND plan > :ct::timestamp;
 INSERT INTO task ("group", input) VALUES ('16', 'DELETE FROM task WHERE false');
 DO $body$ BEGIN
-    WHILE true LOOP
-        PERFORM pg_sleep(1);
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '16' AND plan > :ct::timestamp;
 INSERT INTO task ("group", input) VALUES ('17', 'COPY (SELECT 1) TO STDOUT');
 INSERT INTO task ("group", input) VALUES ('18', 'COPY task FROM STDIN');
 DO $body$ BEGIN
-    WHILE true LOOP
-        PERFORM pg_sleep(1);
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '17' AND plan > :ct::timestamp;
@@ -129,9 +129,9 @@ INSERT INTO task ("group", input, count, save) VALUES ('19', 'SELECT count(*) FR
 INSERT INTO task ("group", input, count, save) VALUES ('20', 'CREATE TEMP TABLE save_probe_20 (a int); INSERT INTO save_probe_20 VALUES (1)', 5, false);
 INSERT INTO task ("group", input, count, save) VALUES ('20', 'SELECT count(*) FROM save_probe_20', 5, false);
 DO $body$ BEGIN
-    WHILE true LOOP
-        PERFORM pg_sleep(1);
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", count(DISTINCT pid) = 1 AS same_worker, max(output) FILTER (WHERE input LIKE 'SELECT count%') = '1' AS state_preserved
@@ -143,9 +143,9 @@ CREATE FUNCTION sp_probe_schema.search_path_probe() RETURNS text LANGUAGE sql AS
 DO $$ BEGIN EXECUTE format('ALTER DATABASE %I SET search_path = sp_probe_schema, public', current_database()); END $$;
 INSERT INTO task ("group", input) VALUES ('21', 'SELECT search_path_probe() AS a');
 DO $body$ BEGIN
-    WHILE true LOOP
-        PERFORM pg_sleep(1);
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = '21' AND plan > :ct::timestamp;
