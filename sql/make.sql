@@ -15,7 +15,9 @@ SELECT current_setting('pg_task_test.had_create') AS had_create
 \gset
 SELECT (SELECT count(*) FROM pg_catalog.pg_settings WHERE name = 'gp_role') > 0 AS is_gp
 \gset
-SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","schema":"task_make_test_schema","table":"task_make_test"}]' AS json_val
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT (:'json_baseline'::jsonb || ('[{"data":"' || :'DBNAME' || '","schema":"task_make_test_schema","table":"task_make_test"}]')::jsonb)::text AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
@@ -76,7 +78,7 @@ EXCEPTION WHEN OTHERS THEN
 END $$;
 SELECT state = 'STOP' AS stop_is_terminal FROM task_make_test_schema.task_make_test WHERE id = :state_test_id;
 DELETE FROM task_make_test_schema.task_make_test WHERE id = :state_test_id;
-ALTER SYSTEM RESET pg_task.json;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
@@ -93,7 +95,7 @@ SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored1, set_conf
 \gset
 CREATE ROLE task_role_test LOGIN SUPERUSER;
 ALTER ROLE task_role_test SET pg_task.schema = 'role_test_schema';
-SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","user":"task_role_test"}]' AS json_val
+SELECT (:'json_baseline'::jsonb || ('[{"data":"' || :'DBNAME' || '","user":"task_role_test"}]')::jsonb)::text AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
@@ -112,7 +114,7 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT output, error, state FROM role_test_schema.task;
-ALTER SYSTEM RESET pg_task.json;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
@@ -128,7 +130,7 @@ RESET client_min_messages;
 SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored1, set_config('pg_task_test.had_create', :'had_create', false) AS ignored2
 \gset
 DROP ROLE task_role_test;
-SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]' AS json_val
+SELECT (:'json_baseline'::jsonb || ('[{"data":"' || :'DBNAME' || '","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]')::jsonb)::text AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
@@ -138,7 +140,7 @@ DO $body$ BEGIN
         PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
-ALTER SYSTEM RESET pg_task.json;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
@@ -152,7 +154,7 @@ ALTER TABLE task_column_drift_test_schema.task_column_drift_test DROP COLUMN "de
 SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored1, set_config('pg_task_test.had_create', :'had_create', false) AS ignored2
 \gset
 SELECT count(*) = 0 AS column_dropped FROM pg_catalog.pg_attribute WHERE attrelid = 'task_column_drift_test_schema.task_column_drift_test'::regclass AND attname = 'delimiter' AND NOT attisdropped;
-SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]' AS json_val
+SELECT (:'json_baseline'::jsonb || ('[{"data":"' || :'DBNAME' || '","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]')::jsonb)::text AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
@@ -163,7 +165,7 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT count(*) = 1 AS column_healed FROM pg_catalog.pg_attribute WHERE attrelid = 'task_column_drift_test_schema.task_column_drift_test'::regclass AND attname = 'delimiter' AND NOT attisdropped;
-ALTER SYSTEM RESET pg_task.json;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
@@ -180,7 +182,7 @@ SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored1, set_conf
 \gset
 CREATE SCHEMA task_enum_drift_test_schema;
 CREATE TYPE task_enum_drift_test_schema.state AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL');
-SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","schema":"task_enum_drift_test_schema","table":"task_enum_drift_test"}]' AS json_val
+SELECT (:'json_baseline'::jsonb || ('[{"data":"' || :'DBNAME' || '","schema":"task_enum_drift_test_schema","table":"task_enum_drift_test"}]')::jsonb)::text AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
@@ -191,7 +193,7 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT array_agg(enumlabel::text ORDER BY enumsortorder) = ARRAY['PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP'] AS enum_healed FROM pg_catalog.pg_enum WHERE enumtypid = 'task_enum_drift_test_schema.state'::regtype;
-ALTER SYSTEM RESET pg_task.json;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
@@ -202,7 +204,7 @@ END;$body$ LANGUAGE plpgsql;
 SET client_min_messages TO WARNING;
 DROP SCHEMA IF EXISTS task_enum_drift_test_schema CASCADE;
 RESET client_min_messages;
-SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","user":"task_make_user_test","schema":"task_user_make_test_schema","table":"task_user_make_test"}]' AS json_val
+SELECT (:'json_baseline'::jsonb || ('[{"data":"' || :'DBNAME' || '","user":"task_make_user_test","schema":"task_user_make_test_schema","table":"task_user_make_test"}]')::jsonb)::text AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
@@ -213,7 +215,7 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'task_make_user_test') AS role_created;
-ALTER SYSTEM RESET pg_task.json;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
@@ -222,7 +224,7 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 DROP ROLE task_make_user_test;
-SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"task_make_data_test"}]' AS json_val
+SELECT (:'json_baseline'::jsonb || '[{"data":"task_make_data_test"}]'::jsonb)::text AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
@@ -233,7 +235,7 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_database WHERE datname = 'task_make_data_test') AS database_created;
-ALTER SYSTEM RESET pg_task.json;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
 DO $$ BEGIN PERFORM pg_sleep(5); END $$;
 DROP DATABASE task_make_data_test;
