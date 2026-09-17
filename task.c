@@ -154,7 +154,7 @@ bool task_done(Task *t, bool exit) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            UPDATE %1$s AS t SET "state" = CASE WHEN $3 IS NULL THEN 'DONE' ELSE 'FAIL' END::%2$s, "stop" = %3$s, "output" = $2, "error" = $3 WHERE "id" OPERATOR(pg_catalog.=) $1
+            UPDATE %1$s AS t SET "state" = CASE WHEN t."state" OPERATOR(pg_catalog.=) 'STOP' THEN 'STOP' WHEN $3 IS NULL THEN 'DONE' ELSE 'FAIL' END::%2$s, "stop" = %3$s, "output" = $2, "error" = $3 WHERE "id" OPERATOR(pg_catalog.=) $1
             RETURNING "delete" AND "output" IS NULL AND "error" IS NULL AS "delete", "repeat" OPERATOR(pg_catalog.>) '0 sec'AS "insert", "max" OPERATOR(pg_catalog.>=) 0 AND ("count" OPERATOR(pg_catalog.>) 0 OR "live" OPERATOR(pg_catalog.>) '0 sec') AS "live", "max" OPERATOR(pg_catalog.<) 0 AS "update"
         ), t->work->schema_table, t->work->schema_type, init_plan());
     }

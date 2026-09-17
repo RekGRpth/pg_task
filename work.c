@@ -83,6 +83,7 @@ Work *get_work(void) {
 static void work_discard(Task *t);
 static void work_query(Task *t);
 static void work_result(Task *t);
+static void work_stop(const Work *w);
 
 #define work_error(...) do { \
     PG_TRY(); \
@@ -337,6 +338,7 @@ static void work_latch(const Work *w) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
     if (ConfigReloadPending) work_reload(w);
+    work_stop(w);
 }
 
 static void work_readable(Task *t) {
@@ -475,22 +477,61 @@ static void work_connect(Task *t) {
     }
 }
 
+static bool work_cancel(Task *t) {
+    char errbuf[256];
+    PGcancel *cancel;
+    if (PQstatus(t->conn) != CONNECTION_OK) return false;
+    if (!(cancel = PQgetCancel(t->conn))) { ereport(WARNING, (errmsg("PQgetCancel failed"), work_errdetail(PQerrorMessage(t->conn)))); return false; }
+    if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { ereport(WARNING, (errmsg("PQcancel failed"), errdetail("%s", errbuf))); PQfreeCancel(cancel); return false; }
+    ereport(WARNING, (errmsg("cancel id = %li", t->shared->id)));
+    PQfreeCancel(cancel);
+    return true;
+}
+
 static void work_shmem_exit(int code, Datum arg) {
     dlist_mutable_iter iter;
     elog(DEBUG1, "code = %i", code);
     if (!code) init_free(DatumGetInt32(arg));
     dlist_foreach_modify(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
-        if (PQstatus(t->conn) == CONNECTION_OK) {
-            char errbuf[256];
-            PGcancel *cancel = PQgetCancel(t->conn);
-            if (!cancel) { ereport(WARNING, (errmsg("PQgetCancel failed"), work_errdetail(PQerrorMessage(t->conn)))); continue; }
-            if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { ereport(WARNING, (errmsg("PQcancel failed"), errdetail("%s", errbuf))); PQfreeCancel(cancel); continue; }
-            ereport(WARNING, (errmsg("cancel id = %li", t->shared->id)));
-            PQfreeCancel(cancel);
-        }
+        work_cancel(t);
         work_finish(t);
     }
+}
+
+static void work_stop(const Work *w) {
+    dlist_mutable_iter iter;
+    instr_time now;
+    static instr_time last;
+    static SPIPlanPtr plan = NULL;
+    static StringInfoData src = {0};
+    if (dlist_is_empty(&remote)) return;
+    INSTR_TIME_SET_CURRENT(now);
+    if (!INSTR_TIME_IS_ZERO(last)) {
+        instr_time diff = now;
+        INSTR_TIME_SUBTRACT(diff, last);
+        if (INSTR_TIME_GET_MILLISEC(diff) < w->shared->sleep) return;
+    }
+    last = now;
+    set_ps_display_my("stop");
+    if (!src.data) {
+        initStringInfoMy(&src);
+        appendStringInfo(&src, SQL(
+            SELECT "id" FROM %1$s WHERE "remote" IS NOT NULL AND "state" OPERATOR(pg_catalog.=) 'STOP'
+        ), w->schema_table);
+    }
+    SPI_connect_my(src.data);
+    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
+    SPI_execute_plan_my(src.data, plan, NULL, NULL, SPI_OK_SELECT);
+    for (uint64 row = 0; row < SPI_processed; row++) {
+        int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false, INT8OID));
+        dlist_foreach_modify(iter, &remote) {
+            Task *t = dlist_container(Task, node, iter.cur);
+            if (t->shared->id == id) { work_cancel(t); break; }
+        }
+    }
+    SPI_finish_my();
+    set_ps_display_my("idle");
 }
 
 static bool work_superuser(const char *user) {

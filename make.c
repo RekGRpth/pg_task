@@ -196,6 +196,33 @@ static void make_wake_up(const Work *w) {
     pfree(source.data);
 }
 
+static void make_stop(const Work *w) {
+    StringInfoData name;
+    StringInfoData source;
+    initStringInfoMy(&name);
+    appendStringInfo(&name, "%s_stop", w->shared->table);
+    initStringInfoMy(&source);
+    appendStringInfo(&source, SQL(
+        BEGIN
+            IF OLD."state" OPERATOR(pg_catalog.=) 'WORK' AND NEW."state" OPERATOR(pg_catalog.=) 'STOP' THEN
+                BEGIN
+                    IF NEW."remote" IS NULL THEN
+                        PERFORM pg_catalog.pg_cancel_backend(NEW."pid");
+                    ELSE
+                        PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %1$i;
+                    END IF;
+                EXCEPTION WHEN insufficient_privilege THEN NULL;
+                END;
+            END IF;
+            RETURN NEW;
+        END;
+    ), w->shared->hash);
+    make_function(w, name.data, source.data, true);
+    make_trigger(w, name.data, "AFTER UPDATE OF \"state\"", "ROW");
+    pfree(name.data);
+    pfree(source.data);
+}
+
 static void make_user_immutable(const Work *w) {
     StringInfoData name;
     StringInfoData source;
@@ -231,7 +258,7 @@ static void make_state_machine(const Work *w) {
             IF NEW."state" OPERATOR(pg_catalog.<>) OLD."state" AND NEW."state" OPERATOR(pg_catalog.<>) ALL (CASE OLD."state"
                 WHEN 'PLAN'::%1$s THEN ARRAY['TAKE', 'GONE', 'STOP']::%1$s[]
                 WHEN 'TAKE'::%1$s THEN ARRAY['WORK', 'PLAN', 'DONE', 'FAIL']::%1$s[]
-                WHEN 'WORK'::%1$s THEN ARRAY['DONE', 'FAIL', 'PLAN']::%1$s[]
+                WHEN 'WORK'::%1$s THEN ARRAY['DONE', 'FAIL', 'PLAN', 'STOP']::%1$s[]
                 ELSE ARRAY[]::%1$s[]
             END) THEN RAISE EXCEPTION 'invalid state transition';
             END IF;
@@ -593,6 +620,7 @@ void make_table(const Work *w) {
     make_index(w, "plan");
     make_index(w, "state");
     make_wake_up(w);
+    make_stop(w);
     make_user_immutable(w);
     make_state_machine(w);
     make_immutable(w, "group");
