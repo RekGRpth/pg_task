@@ -495,6 +495,95 @@ FOR EACH ROW EXECUTE FUNCTION task_archive();
 
 Two things confirmed by testing this end to end: a partitioned table's unique/primary key must include the partition key, so this is `PRIMARY KEY (id, stop)`, not just `(id)` — `LIKE task INCLUDING ALL` would carry over `task`'s own `(id)` primary key and fail with `PRIMARY KEY constraint ... must include all partitioning columns`. And the `DEFAULT` partition and the `EXCEPTION WHEN OTHERS` are both load-bearing, not redundant: like the webhook trigger above, this one runs inside the same transaction `task_done()`/`task_error()` use to delete the row, so an archive insert failing outright (no partition covers this `stop`, some constraint, ...) would otherwise take that deletion — and the task's own bookkeeping — down with it. With the `DEFAULT` partition in place a row with no dedicated partition still lands somewhere; with neither, the deletion still succeeds and only a `WARNING` is logged, verified by deliberately deleting both safety nets and confirming the row failed to archive but `DELETE FROM task` still returned normally.
 
+### Structured tags/metadata
+
+`data` already exists for free-form user data, but filtering or grouping tasks by it means parsing whatever ad hoc format ended up in there. For external tooling (monitoring, orchestration, multi-tenant setups) that wants to query tasks by arbitrary, evolving labels without a schema migration for every new one, a `jsonb` column with a GIN index does the job — plain DDL, `pg_task` never touches a column it didn't create itself:
+
+```sql
+ALTER TABLE task ADD COLUMN meta jsonb NOT NULL DEFAULT '{}';
+CREATE INDEX task_meta_gin ON task USING gin (meta jsonb_path_ops);
+```
+
+```sql
+INSERT INTO task (input, meta) VALUES ($$SELECT 1$$, '{"tenant": "acme", "job_type": "report"}');
+
+SELECT * FROM task WHERE meta @> '{"tenant": "acme"}';
+```
+
+No trigger needed — `meta` is just carried along like any other column you add, `jsonb_path_ops` keeps the index small and fast for the `@>` containment queries this is normally used for. Reach for a proper typed column instead if you find yourself always filtering on the same one or two keys; `jsonb` earns its keep for labels whose shape you don't want to commit to up front.
+
+### Idempotency key
+
+Nothing stops the same logical job from being inserted twice — a retrying caller, an at-least-once event delivery, a cron trigger firing twice on a clock skew. A unique key, checked while the row is still "live", turns a duplicate `INSERT` into a no-op instead of a duplicate run:
+
+```sql
+ALTER TABLE task ADD COLUMN idem_key text;
+
+CREATE UNIQUE INDEX task_idem_key_uq ON task (idem_key)
+    WHERE idem_key IS NOT NULL AND state IN ('PLAN', 'TAKE', 'WORK');
+
+INSERT INTO task (input, idem_key) VALUES ($$...$$, 'daily-report-2026-09-17')
+    ON CONFLICT (idem_key) WHERE idem_key IS NOT NULL AND state IN ('PLAN', 'TAKE', 'WORK') DO NOTHING;
+```
+
+The index has to be partial, and specifically scoped to `PLAN`/`TAKE`/`WORK`, not unconditional: a task that already reached `DONE`/`FAIL`/`GONE`/`STOP` has settled, so the same `idem_key` should be insertable again for the next occurrence of that logical job. An unconditional unique index would instead permanently block any future insert of that key the moment the first one finishes.
+
+### OpenTelemetry trace propagation
+
+To see a chain of `parent`/child tasks as a single trace in Jaeger/Tempo/etc. rather than as unrelated rows, carry a trace context through the same `parent` link `pg_task` already tracks:
+
+```sql
+ALTER TABLE task ADD COLUMN trace_id text;
+ALTER TABLE task ADD COLUMN span_id text;
+
+CREATE OR REPLACE FUNCTION task_trace_insert() RETURNS trigger AS $f$
+BEGIN
+    IF NEW.parent IS NOT NULL AND NEW.trace_id IS NULL THEN
+        SELECT trace_id INTO NEW.trace_id FROM task WHERE id = NEW.parent;
+    END IF;
+    IF NEW.trace_id IS NOT NULL THEN
+        NEW.span_id := encode(gen_random_bytes(8), 'hex');
+    END IF;
+    RETURN NEW;
+END;
+$f$ LANGUAGE plpgsql;
+
+CREATE TRIGGER task_trace_insert_trigger BEFORE INSERT ON task
+FOR EACH ROW EXECUTE FUNCTION task_trace_insert();
+```
+
+This only populates the columns; actually exporting them as OTLP spans needs a process outside `pg_task` itself, since none of the three execution paths (see Three ways to run `input`) can make an arbitrary HTTP/gRPC call — `remote` only speaks the PostgreSQL protocol. A periodic `pg_task` job (or an external poller) reading newly-`DONE`/`FAIL` rows and pushing them to a collector, e.g. via [`pg_curl`](https://github.com/RekGRpth/pg_curl) against an OTLP/HTTP endpoint the same way the webhook pattern above posts JSON, is one way to close that gap.
+
+### Dry-run validation
+
+Before letting a batch of externally-generated tasks anywhere near the real queue, validate `input` without letting its effects stick — actually run it, then unconditionally roll back, inside a `BEFORE INSERT` trigger:
+
+```sql
+ALTER TABLE task ADD COLUMN dry_run bool NOT NULL DEFAULT false;
+
+CREATE OR REPLACE FUNCTION task_dry_run() RETURNS trigger AS $f$
+BEGIN
+    IF NOT NEW.dry_run THEN RETURN NEW; END IF;
+    BEGIN
+        EXECUTE NEW.input;
+        RAISE EXCEPTION 'task_dry_run: rollback sentinel';
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF SQLERRM <> 'task_dry_run: rollback sentinel' THEN
+                NEW.error := SQLERRM;
+            END IF;
+    END;
+    NEW.state := 'STOP';
+    RETURN NEW;
+END;
+$f$ LANGUAGE plpgsql;
+
+CREATE TRIGGER task_dry_run_trigger BEFORE INSERT ON task
+FOR EACH ROW WHEN (NEW.dry_run) EXECUTE FUNCTION task_dry_run();
+```
+
+The `BEGIN ... EXCEPTION ... END` block is an implicit savepoint, so raising the sentinel exception right after `EXECUTE` unconditionally discards whatever `input` just did, real side effects included — this is closer to actually validating the statement than `EXPLAIN` would be (which rejects DDL and most utility statements outright), at the cost of genuinely executing `input` once. This does not reproduce all three execution paths equally: PL/pgSQL's `EXECUTE` runs through SPI regardless of the task's own `spi` setting, so a `dry_run` task using `COPY ... TO/FROM` a file or program — allowed for a real `spi = off` run — is rejected here (`SPI_ERROR_COPY`) even though it would have succeeded for real. Treat a clean dry run as "no syntax/permission/missing-object errors caught this way", not as a full guarantee.
+
 ## Capabilities and limitations
 
 Capabilities:
