@@ -12,6 +12,7 @@ It runs entirely inside the database as a set of background workers — no exter
 - [Task table](#task-table)
 - [Running in multiple databases](#running-in-multiple-databases)
 - [Architecture](#architecture)
+- [Patterns](#patterns)
 - [Capabilities and limitations](#capabilities-and-limitations)
 - [Security considerations](#security-considerations)
 
@@ -205,6 +206,65 @@ Each path has its own restrictions on what `input` can contain:
 ### Signals
 
 `SIGHUP` — in `pg_conf`, `pg_work` and `pg_task` alike — reloads `postgresql.conf` and re-runs the relevant config/task check, so most GUCs and `pg_task.json` can be changed without a server restart. `SIGTERM` is handled the standard background-worker way; on the way out, each level releases its advisory locks, and `pg_work` additionally closes any open remote connections cleanly instead of dropping them.
+
+## Patterns
+
+`pg_task` is intentionally minimal — no built-in retry, backoff or conditional repeat. Both of the recipes below build the missing behavior entirely in SQL, on top of mechanics already described above: the atomicity of running `input` (see Three ways to run `input`), and the fact that `pg_task` only ever touches the columns it created (see Self-provisioning and the helper triggers), so your own columns and triggers on `task` compose freely with it. No core code changes needed for either.
+
+### Retry until success
+
+A repeating task (`repeat > 0`) that should actually run once, and only keep repeating while it keeps failing: make the *last* statement of `input` cancel the row's own `repeat`, referencing the running task's own id via `pg_task.id` (see Configuration (GUCs)):
+
+```sql
+INSERT INTO task (input, repeat) VALUES ($$
+    -- do the real work; an unhandled error here aborts everything below too
+    INSERT INTO some_table (...) VALUES (...);
+
+    -- reached, and committed, only if everything above succeeded
+    UPDATE task SET repeat = '0 sec' WHERE id = current_setting('pg_task.id')::bigint;
+$$, '1 min');
+```
+
+This works because `input` runs as one atomic unit — the local dispatcher treats a `;`-separated `input` sent in one go as a single implicit transaction (see Three ways to run `input`), and SPI mode wraps it in one subtransaction — while the state/`repeat`-scheduling update (`task_done()`/`task_insert()` in `task.c`) always runs afterwards, in its own transaction, and reads whatever `repeat` value actually ended up committed on the row:
+
+- **on success**, the `UPDATE ... repeat = '0 sec'` commits together with the real work, so by the time `pg_task` decides whether to schedule the next occurrence, `repeat` is already `0 sec` — no further occurrence is inserted, and the task effectively ran once.
+- **on failure**, the whole `input` — including that trailing `UPDATE` — rolls back together, so `repeat` is left exactly as it was; `pg_task` sees `repeat > 0` and inserts the next occurrence as usual, so the task keeps retrying at that interval until it finally succeeds.
+
+The one thing to avoid: don't wrap the real work in its own `EXCEPTION WHEN OTHERS` handler that swallows the error — that would make a failed run look successful to `pg_task` (and to the `UPDATE` that cancels `repeat`).
+
+### Retry with exponential backoff
+
+For a bounded number of retries with a growing delay between attempts (rather than "forever, at a fixed interval"), add your own bookkeeping columns and an `AFTER UPDATE` trigger that re-inserts a `FAIL`ed task with a computed `plan`:
+
+```sql
+ALTER TABLE task ADD COLUMN retry           int      NOT NULL DEFAULT 0;
+ALTER TABLE task ADD COLUMN retry_max       int      NOT NULL DEFAULT 0;
+ALTER TABLE task ADD COLUMN retry_interval  interval NOT NULL DEFAULT '1 min';
+
+CREATE OR REPLACE FUNCTION task_retry() RETURNS trigger AS $f$
+DECLARE
+    columns text;
+BEGIN
+    IF NEW.retry >= NEW.retry_max THEN
+        RETURN NEW;
+    END IF;
+    SELECT string_agg(quote_ident(attname), ', ' ORDER BY attnum) INTO columns
+    FROM pg_attribute
+    WHERE attrelid = TG_RELID AND attnum > 0 AND NOT attisdropped
+      AND attname NOT IN ('id', 'plan', 'parent', 'start', 'stop', 'pid', 'state', 'error', 'output', 'retry');
+    EXECUTE format(
+        'INSERT INTO %I (parent, plan, retry, %s) SELECT id, statement_timestamp() + retry_interval * power(2, retry), retry + 1, %s FROM %I WHERE id = $1',
+        TG_TABLE_NAME, columns, columns, TG_TABLE_NAME
+    ) USING NEW.id;
+    RETURN NEW;
+END;
+$f$ LANGUAGE plpgsql;
+
+CREATE TRIGGER task_retry_trigger AFTER UPDATE OF state ON task
+FOR EACH ROW WHEN (NEW.state = 'FAIL') EXECUTE FUNCTION task_retry();
+```
+
+The column list is looked up dynamically (the same trick `pg_task` itself uses in `task_columns()` to clone a row for `repeat`), so the trigger keeps working as you add more columns of your own. `parent` is set to the id of the attempt that just failed, so the whole retry chain stays visible through `parent`. `retry_interval * power(2, retry)` doubles the delay each attempt (`1 min`, `2 min`, `4 min`, ...); once `retry` reaches `retry_max` no new row is inserted and the last attempt is left at `FAIL`. `FAIL` rows are never auto-deleted by `pg_task.delete`, since that only fires when both `output` and `error` are null — a `FAIL` row always has `error` set — so the trigger always gets to see it.
 
 ## Capabilities and limitations
 
