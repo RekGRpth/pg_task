@@ -266,6 +266,22 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT state = 'DONE' AS worker_recovered FROM task WHERE "group" = '27' AND input = 'SELECT 1 AS a';
+DELETE FROM task WHERE "group" = '28';
+INSERT INTO task ("group", input, repeat, remote) VALUES ('28', 'SELECT pg_sleep(30)', '3 sec', 'application_name=test');
+DO $body$ BEGIN
+    FOR i IN 1..90 LOOP
+        IF (SELECT state FROM task WHERE "group" = '28' AND parent IS NULL) = 'WORK' THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+UPDATE task SET state = 'STOP' WHERE "group" = '28' AND parent IS NULL AND state = 'WORK';
+DO $body$ BEGIN
+    FOR i IN 1..15 LOOP
+        IF (SELECT state FROM task WHERE "group" = '28' AND parent IS NULL) = 'STOP' THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT count(*) = 1 AS no_repeat_after_stop, bool_and(state = 'STOP') AS cancelled_cleanly FROM task WHERE "group" = '28';
 SET pg_task.header = false;
 SET pg_task.string = false;
 SET pg_task.delimiter = ',';
