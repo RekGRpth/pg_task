@@ -12,43 +12,55 @@ t
 t
 t
 t
-NOTICE:  drop cascades to 5 other objects
+NOTICE:  drop cascades to 8 other objects
 DETAIL:  drop cascades to type task_make_test_schema.state
 drop cascades to table task_make_test_schema.task_make_test
 drop cascades to function task_make_test_schema.task_make_test_wake_up()
 drop cascades to function task_make_test_schema.task_make_test_user()
 drop cascades to function task_make_test_schema.task_make_test_state()
+drop cascades to function task_make_test_schema.task_make_test_group()
+drop cascades to function task_make_test_schema.task_make_test_remote()
+drop cascades to function task_make_test_schema.task_make_test_parent()
 t
 t
 1||DONE
 t
-NOTICE:  drop cascades to 5 other objects
+NOTICE:  drop cascades to 8 other objects
 DETAIL:  drop cascades to type role_test_schema.state
 drop cascades to table role_test_schema.task
 drop cascades to function role_test_schema.task_wake_up()
 drop cascades to function role_test_schema.task_user()
 drop cascades to function role_test_schema.task_state()
+drop cascades to function role_test_schema.task_group()
+drop cascades to function role_test_schema.task_remote()
+drop cascades to function role_test_schema.task_parent()
 t
 t
 t
 t
 t
 t
-NOTICE:  drop cascades to 5 other objects
+NOTICE:  drop cascades to 8 other objects
 DETAIL:  drop cascades to type task_column_drift_test_schema.state
 drop cascades to table task_column_drift_test_schema.task_column_drift_test
 drop cascades to function task_column_drift_test_schema.task_column_drift_test_wake_up()
 drop cascades to function task_column_drift_test_schema.task_column_drift_test_user()
 drop cascades to function task_column_drift_test_schema.task_column_drift_test_state()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_group()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_remote()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_parent()
 t
 t
 t
-NOTICE:  drop cascades to 5 other objects
+NOTICE:  drop cascades to 8 other objects
 DETAIL:  drop cascades to type task_enum_drift_test_schema.state
 drop cascades to table task_enum_drift_test_schema.task_enum_drift_test
 drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_wake_up()
 drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_user()
 drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_state()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_group()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_remote()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_parent()
 t
 t
 t

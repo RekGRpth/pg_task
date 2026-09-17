@@ -244,6 +244,29 @@ static void make_state_machine(const Work *w) {
     pfree(source.data);
 }
 
+static void make_immutable(const Work *w, const char *column) {
+    StringInfoData name;
+    StringInfoData when;
+    StringInfoData source;
+    initStringInfoMy(&name);
+    appendStringInfo(&name, "%s_%s", w->shared->table, column);
+    initStringInfoMy(&source);
+    appendStringInfo(&source, SQL(
+        BEGIN
+            IF NEW."%1$s" IS DISTINCT FROM OLD."%1$s" THEN RAISE EXCEPTION '%1$s column is immutable';
+            END IF;
+            RETURN NEW;
+        END;
+    ), column);
+    make_function(w, name.data, source.data, false);
+    initStringInfoMy(&when);
+    appendStringInfo(&when, "BEFORE UPDATE OF \"%s\"", column);
+    make_trigger(w, name.data, when.data, "ROW");
+    pfree(name.data);
+    pfree(when.data);
+    pfree(source.data);
+}
+
 static void make_column(const Work *w, const char *name, const char *schema_type) {
     StringInfoData src;
     initStringInfoMy(&src);
@@ -549,6 +572,9 @@ void make_table(const Work *w) {
     make_wake_up(w);
     make_user_immutable(w);
     make_state_machine(w);
+    make_immutable(w, "group");
+    make_immutable(w, "remote");
+    make_immutable(w, "parent");
     set_ps_display_my("idle");
 }
 

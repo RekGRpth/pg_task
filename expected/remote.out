@@ -66,10 +66,13 @@ t
 t
 t|t
 t
-NOTICE:  drop cascades to 5 other objects
+NOTICE:  drop cascades to 8 other objects
 DETAIL:  drop cascades to type remote_nopass_test_schema.state
 drop cascades to table remote_nopass_test_schema.task
 drop cascades to function remote_nopass_test_schema.task_wake_up()
 drop cascades to function remote_nopass_test_schema.task_user()
 drop cascades to function remote_nopass_test_schema.task_state()
+drop cascades to function remote_nopass_test_schema.task_group()
+drop cascades to function remote_nopass_test_schema.task_remote()
+drop cascades to function remote_nopass_test_schema.task_parent()
 t|t
