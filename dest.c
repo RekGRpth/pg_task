@@ -298,7 +298,12 @@ static void dest_role(const char *role, bool reset) {
             appendStringInfo(&src, SQL(SET ROLE %s;), quote);
             if (quote != role) pfree((void *)quote);
         }
-        exec_simple_query_my(src.data);
+        PG_TRY();
+            exec_simple_query_my(src.data);
+        PG_CATCH();
+            task.shared = shared; // restore before any error handling dereferences it
+            PG_RE_THROW();
+        PG_END_TRY();
         pfree(src.data);
         task.shared = shared;
     }
@@ -309,11 +314,16 @@ static void dest_discard(void) {
     static const char *src = SQL(SET SESSION AUTHORIZATION DEFAULT; RESET ALL; DEALLOCATE ALL; CLOSE ALL; UNLISTEN *; DISCARD PLANS; DISCARD TEMP; DISCARD SEQUENCES;);
     StringInfoData oid;
     task.shared = NULL; // disable dest receiver and command tags during cleanup
-    if (shared->spi) {
-        SPI_connect_my(src);
-        SPI_execute_with_args_my(src, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
-    } else exec_simple_query_my(src);
+    PG_TRY();
+        if (shared->spi) {
+            SPI_connect_my(src);
+            SPI_execute_with_args_my(src, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+            SPI_finish_my();
+        } else exec_simple_query_my(src);
+    PG_CATCH();
+        task.shared = shared; // restore before any error handling dereferences it
+        PG_RE_THROW();
+    PG_END_TRY();
     task.shared = shared;
     SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("pg_task.schema", task.shared->schema, PGC_USERSET, PGC_S_SESSION);
