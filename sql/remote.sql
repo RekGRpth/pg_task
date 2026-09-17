@@ -404,7 +404,9 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 \i :gp_utility_file
+SET client_min_messages TO WARNING;
 DROP SCHEMA remote_nopass_test_schema CASCADE;
+RESET client_min_messages;
 \connect :DBNAME
 REVOKE CREATE ON DATABASE :"DBNAME" FROM task_remote_nopass_test;
 DROP ROLE task_remote_nopass_test;

@@ -85,7 +85,9 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 \i :gp_utility_file
+SET client_min_messages TO WARNING;
 DROP SCHEMA task_make_test_schema CASCADE;
+RESET client_min_messages;
 \connect :DBNAME
 SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored1, set_config('pg_task_test.had_create', :'had_create', false) AS ignored2
 \gset
@@ -119,7 +121,9 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 \i :gp_utility_file
+SET client_min_messages TO WARNING;
 DROP SCHEMA role_test_schema CASCADE;
+RESET client_min_messages;
 \connect :DBNAME
 SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored1, set_config('pg_task_test.had_create', :'had_create', false) AS ignored2
 \gset
@@ -168,7 +172,9 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 \i :gp_utility_file
+SET client_min_messages TO WARNING;
 DROP SCHEMA task_column_drift_test_schema CASCADE;
+RESET client_min_messages;
 \connect :DBNAME
 SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored1, set_config('pg_task_test.had_create', :'had_create', false) AS ignored2
 \gset
@@ -193,7 +199,9 @@ DO $body$ BEGIN
         PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
+SET client_min_messages TO WARNING;
 DROP SCHEMA IF EXISTS task_enum_drift_test_schema CASCADE;
+RESET client_min_messages;
 SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","user":"task_make_user_test","schema":"task_user_make_test_schema","table":"task_user_make_test"}]' AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';

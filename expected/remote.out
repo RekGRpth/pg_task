@@ -66,31 +66,4 @@ t
 t
 t|t
 t
-NOTICE:  drop cascades to 26 other objects
-DETAIL:  drop cascades to type remote_nopass_test_schema.state
-drop cascades to table remote_nopass_test_schema.task
-drop cascades to function remote_nopass_test_schema.task_wake_up()
-drop cascades to function remote_nopass_test_schema.task_user()
-drop cascades to function remote_nopass_test_schema.task_state()
-drop cascades to function remote_nopass_test_schema.task_group()
-drop cascades to function remote_nopass_test_schema.task_remote()
-drop cascades to function remote_nopass_test_schema.task_parent()
-drop cascades to function remote_nopass_test_schema.task_plan()
-drop cascades to function remote_nopass_test_schema.task_active()
-drop cascades to function remote_nopass_test_schema.task_live()
-drop cascades to function remote_nopass_test_schema.task_repeat()
-drop cascades to function remote_nopass_test_schema.task_timeout()
-drop cascades to function remote_nopass_test_schema.task_count()
-drop cascades to function remote_nopass_test_schema.task_max()
-drop cascades to function remote_nopass_test_schema.task_delete()
-drop cascades to function remote_nopass_test_schema.task_drift()
-drop cascades to function remote_nopass_test_schema.task_header()
-drop cascades to function remote_nopass_test_schema.task_save()
-drop cascades to function remote_nopass_test_schema.task_string()
-drop cascades to function remote_nopass_test_schema.task_delimiter()
-drop cascades to function remote_nopass_test_schema.task_escape()
-drop cascades to function remote_nopass_test_schema.task_quote()
-drop cascades to function remote_nopass_test_schema.task_input()
-drop cascades to function remote_nopass_test_schema.task_null()
-drop cascades to function remote_nopass_test_schema.task_data()
 t|t
