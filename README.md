@@ -404,6 +404,59 @@ FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE FUNCTION task_cron();
 
 This parser only covers the classic 5-field syntax (numeric fields, `*`, ranges, steps, lists) — no named days/months (`MON`, `JAN`), no `L`/`W`/`#`, no seconds field. Extend `cron_field()`/`cron_next()` if you need those.
 
+### Notifications on completion
+
+Rather than polling `task`, have it push: `pg_notify()` for listeners inside the same database, or a webhook (via the [`pg_curl`](https://github.com/RekGRpth/pg_curl) extension) for anything outside it — both as a plain `AFTER UPDATE OF state` trigger, no core changes needed.
+
+`NOTIFY`, no extra dependencies:
+
+```sql
+CREATE OR REPLACE FUNCTION task_notify() RETURNS trigger AS $f$
+BEGIN
+    PERFORM pg_notify('task_done', json_build_object(
+        'id', NEW.id, 'group', NEW."group", 'state', NEW.state,
+        'output', NEW.output, 'error', NEW.error
+    )::text);
+    RETURN NEW;
+END;
+$f$ LANGUAGE plpgsql;
+
+CREATE TRIGGER task_notify_trigger AFTER UPDATE OF state ON task
+FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE FUNCTION task_notify();
+```
+
+Webhook, opt-in per row via its own `hook` column (`NULL` — no call), via `pg_curl`:
+
+```sql
+ALTER TABLE task ADD COLUMN hook text;
+
+CREATE EXTENSION IF NOT EXISTS pg_curl;
+
+CREATE OR REPLACE FUNCTION task_hook() RETURNS trigger AS $f$
+BEGIN
+    IF NEW.hook IS NULL THEN RETURN NEW; END IF;
+    BEGIN
+        PERFORM curl_easy_reset();
+        PERFORM curl_easy_setopt_url(NEW.hook);
+        PERFORM curl_easy_setopt_post(1);
+        PERFORM curl_header_append('Content-Type', 'application/json');
+        PERFORM curl_easy_setopt_postfields(convert_to(json_build_object(
+            'id', NEW.id, 'group', NEW."group", 'state', NEW.state,
+            'output', NEW.output, 'error', NEW.error
+        )::text, 'UTF8'));
+        PERFORM curl_easy_perform(timeout_ms => 5000);
+    EXCEPTION WHEN OTHERS THEN NULL; -- a broken/slow endpoint must not fail the task itself
+    END;
+    RETURN NEW;
+END;
+$f$ LANGUAGE plpgsql;
+
+CREATE TRIGGER task_hook_trigger AFTER UPDATE OF state ON task
+FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE FUNCTION task_hook();
+```
+
+Tested against a real local listener: both `DONE` and `FAIL` rows produced a correctly-formed JSON POST. The one thing to get right: this trigger runs synchronously, inside the same transaction that `task_done()`/`task_error()` (`task.c`) use to record the result — a webhook call that hangs or errors would otherwise hang or fail that write too, which is why the call is wrapped in its own `EXCEPTION WHEN OTHERS` and given an explicit `timeout_ms` rather than left to block indefinitely.
+
 ## Capabilities and limitations
 
 Capabilities:
