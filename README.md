@@ -21,7 +21,7 @@ First, enable the extension by adding it to `shared_preload_libraries` and resta
 ```conf
 shared_preload_libraries = 'pg_task' # add pg_task to shared_preload_libraries
 ```
-On startup, `pg_task` sets up everything it needs by itself — role, database, schema and the `task` table — using built-in defaults (database `postgres`, user `postgres`, schema `public`, table `task`; see [Configuration (GUCs)](#configuration-gucs) to point it elsewhere, and [Self-provisioning and the two helper triggers](#self-provisioning-and-the-two-helper-triggers) for how).
+On startup, `pg_task` sets up everything it needs by itself — role, database, schema and the `task` table — using built-in defaults (database `postgres`, user `postgres`, schema `public`, table `task`; see [Configuration (GUCs)](#configuration-gucs) to point it elsewhere, and [Self-provisioning and the helper triggers](#self-provisioning-and-the-helper-triggers) for how).
 
 Second, schedule work by inserting rows into the `task` table — one row is one job:
 ```sql
@@ -33,6 +33,7 @@ INSERT INTO task (input) VALUES ('SELECT 1/0'); -- an error doesn't crash the wo
 INSERT INTO task (group, max, input) VALUES ('group', 1, 'SELECT now()'); -- max = 1 lets one extra task of this group run concurrently with this one (2 at a time total)
 INSERT INTO task (group, max, input) VALUES ('group', 2, 'SELECT now()'); -- a higher max also jumps the queue ahead of lower-max tasks in the same group — it behaves like a priority, not just a concurrency cap
 INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host'); -- remote runs input on another database instead of the local one
+UPDATE task SET state = 'STOP' WHERE id = ...; -- cancels a running (state = WORK) task, local or remote; input's query gets cancelled and state stays STOP, not FAIL
 ```
 `pg_task` notices a new or changed row almost immediately — no polling delay to wait out (see [Wake-up and crash recovery](#wake-up-and-crash-recovery)) — executes `input`, and writes the outcome straight back into that row: the result goes to `output`, any error to `error`, and `state` tracks progress along the way (`PLAN → TAKE → WORK → DONE`/`FAIL`). There's no separate status API — just query the table: `SELECT * FROM task WHERE id = ...`.
 
@@ -128,7 +129,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | remote | text | NULL | | Connect to remote database (if need) |
 | user | name | NOT NULL | current_user | Role that inserted the task; input is executed as this role, and the column is immutable after insert |
 
-You may freely add your own columns to `task` and/or partition it — `pg_task` only ever touches the columns it created (see [Self-provisioning and the two helper triggers](#self-provisioning-and-the-two-helper-triggers)).
+You may freely add your own columns to `task` and/or partition it — `pg_task` only ever touches the columns it created (see [Self-provisioning and the helper triggers](#self-provisioning-and-the-helper-triggers)).
 
 ## Running in multiple databases
 
@@ -157,7 +158,7 @@ Parameters are passed down the hierarchy through dynamic shared memory allocated
 
 ### Task state machine
 
-`PLAN → TAKE → WORK → DONE | FAIL`, or `PLAN → GONE` when a non-repeating task's `active` window elapses before it's picked up (typically: the server was down longer than `active` allows). `STOP` exists in the `state` enum as a placeholder for marking a task "don't run" — no code currently transitions a row into it automatically, and setting it does not cancel an already-running query; use `pg_cancel_backend(pid)` for that.
+`PLAN → TAKE → WORK → DONE | FAIL`, or `PLAN → GONE` when a non-repeating task's `active` window elapses before it's picked up (typically: the server was down longer than `active` allows). `STOP` is a manual, terminal state you set yourself (`UPDATE task SET state = 'STOP' WHERE id = ...`); no code transitions a row into it automatically. Setting it on a `PLAN` row just keeps it from ever being claimed (it's filtered out by `state = 'PLAN'` like any other non-`PLAN` row). Setting it on a `WORK` row actually cancels the running task: a trigger cancels the local backend directly, or, for a `remote` task, wakes the owning `pg_work` (the same advisory-lock mechanism as the wake-up trigger below) so it calls `PQcancel()` on that connection. Either way the cancelled query's error is caught the normal way, but the row is left at `STOP` instead of being overwritten to `FAIL`. There's still no way to cancel a task from SQL other than this — `pg_cancel_backend(pid)` directly works too, but leaves the row at `FAIL` since nothing marked it `STOP` first.
 
 `PLAN → TAKE` is a single `UPDATE ... SKIP LOCKED` that also counts current concurrency for the task's `group`/`remote` hash — via session-level advisory locks visible in `pg_locks` — against `max`. So `max` behaves less like a hard cap feeding one shared queue and more like a priority: a group with a higher `max` picks up its own next tasks sooner, independently of other groups. A negative `max` instead schedules a pause: on completion, the other `PLAN` rows of the same group get their `plan` pushed forward by `|max|` milliseconds.
 
@@ -167,18 +168,19 @@ Parameters are passed down the hierarchy through dynamic shared memory allocated
 
 ### Wake-up and crash recovery
 
-Instead of `LISTEN`/`NOTIFY`, `pg_task` wakes idle workers with session-level advisory locks plus `pg_cancel_backend()`. Each `pg_work` process holds an advisory lock tagged with its group's hash for as long as it's alive; the `AFTER INSERT OR DELETE OR UPDATE OF plan` trigger (see below) looks up the holder of that lock in `pg_locks` and cancels it directly. `pg_work` installs its own `SIGINT` handler — instead of the default query-cancel one — that just sets the latch, so the wait-event loop returns immediately instead of waiting out the rest of `pg_task.sleep`.
+Instead of `LISTEN`/`NOTIFY`, `pg_task` wakes idle workers with session-level advisory locks plus `pg_cancel_backend()`. Each `pg_work` process holds an advisory lock tagged with its group's hash for as long as it's alive; the `AFTER INSERT OR DELETE OR UPDATE OF plan` trigger (see below) looks up the holder of that lock in `pg_locks` and cancels it directly. `pg_work` installs its own `SIGINT` handler — instead of the default query-cancel one — that just sets the latch, so the wait-event loop returns immediately instead of waiting out the rest of `pg_task.sleep`. The `STOP`-on-a-remote-task trigger (see [Task state machine](#task-state-machine)) reuses this exact same wake-up: once woken, `pg_work` checks, at most once per `pg_task.sleep`, whether any of its currently active remote tasks now has `state = 'STOP'` and cancels that connection with `PQcancel()`.
 
 A second, per-task advisory lock (tagged by the task's own `id`) is used to detect a crashed executor: every `pg_task.reset` interval, `pg_work` looks for rows still in `TAKE`/`WORK` whose `id`-tagged lock nobody currently holds, and resets them to `PLAN`. That's the crash-recovery mechanism.
 
 When there's genuinely nothing to do, `pg_work` doesn't poll in a tight loop: it computes, in one query, the soonest moment something will actually need attention — the closer of the next `active`/`timeout` deadline among running tasks and the next `PLAN` task's `plan` — and sleeps exactly until then. `pg_task.sleep` is a floor on responsiveness for a busy queue, not a fixed polling interval.
 
-### Self-provisioning and the two helper triggers
+### Self-provisioning and the helper triggers
 
-On first connect, `pg_work` walks through a series of idempotent `SELECT EXISTS ...` checks against `pg_catalog` and issues the matching `CREATE`/`ALTER` only for what's missing: schema, the `state` enum, the table (with all columns, `current_setting('pg_task.…')`-backed defaults, `NOT NULL`/`CHECK` constraints), and indexes — including a functional index on the hash of `group`/`remote` that the concurrency accounting above relies on — plus two trigger functions:
+On first connect, `pg_work` walks through a series of idempotent `SELECT EXISTS ...` checks against `pg_catalog` and issues the matching `CREATE`/`ALTER` only for what's missing: schema, the `state` enum, the table (with all columns, `current_setting('pg_task.…')`-backed defaults, `NOT NULL`/`CHECK` constraints), and indexes — including a functional index on the hash of `group`/`remote` that the concurrency accounting above relies on — plus, among others, three trigger functions of particular note:
 
 - the **`user`-immutability trigger** (`BEFORE INSERT OR UPDATE OF "user"`) forces `NEW."user"` to `current_user` on insert unless the inserting role is a member of the claimed role, and rejects any later change — this is what makes the `user` column trustworthy for the Security considerations below.
 - the **wake-up trigger** (`AFTER INSERT OR DELETE OR UPDATE OF plan`) is the mechanism described above; it does not use `NOTIFY`.
+- the **`STOP` trigger** (`AFTER UPDATE OF "state"`) is what makes setting `state = 'STOP'` on a `WORK` row actually cancel it, as described in [Task state machine](#task-state-machine) above.
 
 ### Three ways to run `input`
 
@@ -216,6 +218,7 @@ Capabilities:
 - reuse one session across several consecutive tasks of a group (`pg_task.save`), keeping temp tables/prepared statements/settings between runs;
 - bound a task's own run time (`timeout`) independently of how long the executing process itself lives (`live`, `count`);
 - react to a new or changed task almost immediately rather than only on the next poll, thanks to the advisory-lock/`pg_cancel_backend` wake-up described in Architecture above;
+- cancel a running task from SQL (`UPDATE task SET state = 'STOP' WHERE id = ...`), local or remote, leaving it distinguishably at `STOP` rather than `FAIL` — see [Task state machine](#task-state-machine);
 - recover from a worker crashing mid-task — orphaned `TAKE`/`WORK` rows are reset to `PLAN` every `pg_task.reset`;
 - format results (delimiter, quoting, escaping, `NULL` representation, headers);
 - run every task as the role that actually inserted it, not as the scheduler's own connecting role (see Security considerations below).
@@ -223,7 +226,7 @@ Capabilities:
 GUCs, and most `task` columns, cascade through up to five levels — the config file, then per-database, per-role and per-session overrides, and finally the value on the row itself — the most specific one wins.
 
 Limitations:
-- there's no SQL-level way to cancel a running task: `STOP` exists in the `state` enum but nothing sets or acts on it automatically — cancelling a running task means calling `pg_cancel_backend(pid)` yourself;
+- cancelling a repeating task (`STOP` while `WORK`) only stops that one run — its next `repeat` occurrence still gets inserted, since that decision is based on `repeat`/`drift` alone, not on how the current run ended; delete the newly-inserted `PLAN` row yourself if you don't want it to run either;
 - no built-in dashboard or UI — monitoring is `SELECT * FROM task` and, as needed, `pg_locks`/`pg_stat_activity`;
 - tasks only run where the table can be written to — a read-only replica can't run a scheduler against it;
 - no coordination across independent clusters — if the same `task` table or the same `remote` target is reachable from more than one place at once, consistency is on you; the advisory locks only protect against races inside one server instance;
