@@ -266,6 +266,52 @@ FOR EACH ROW WHEN (NEW.state = 'FAIL') EXECUTE FUNCTION task_retry();
 
 The column list is looked up dynamically (the same trick `pg_task` itself uses in `task_columns()` to clone a row for `repeat`), so the trigger keeps working as you add more columns of your own. `parent` is set to the id of the attempt that just failed, so the whole retry chain stays visible through `parent`. `retry_interval * power(2, retry)` doubles the delay each attempt (`1 min`, `2 min`, `4 min`, ...); once `retry` reaches `retry_max` no new row is inserted and the last attempt is left at `FAIL`. `FAIL` rows are never auto-deleted by `pg_task.delete`, since that only fires when both `output` and `error` are null — a `FAIL` row always has `error` set — so the trigger always gets to see it.
 
+### Conditional launch on a parent task ("on success" / "on failure")
+
+`parent` (see Task table) records ancestry but by itself doesn't hold a child back from running — it's picked up as soon as its own `plan` is due, regardless of the parent. To actually gate a child on how its parent finished, without waiting on a brand-new `state` (self-provisioning only ever adds enum values it knows about, and the built-in `BEFORE UPDATE OF "state"` transition-validation trigger accepts no transition at all out of a state it doesn't recognize — you'd paint yourself into a corner trying to move a custom "waiting" state back to `PLAN`), hold the child in `PLAN` with `plan` pushed out to `infinity` instead, and only bring `plan` back down once the parent settles:
+
+```sql
+ALTER TABLE task ADD COLUMN depend text NOT NULL DEFAULT 'always' CHECK (depend IN ('success', 'failure', 'always'));
+
+CREATE OR REPLACE FUNCTION task_depend_insert() RETURNS trigger AS $f$
+DECLARE
+    parent_state state;
+BEGIN
+    IF NEW.parent IS NULL THEN RETURN NEW; END IF;
+    SELECT state INTO parent_state FROM task WHERE id = NEW.parent;
+    IF parent_state IS NULL OR parent_state NOT IN ('DONE', 'FAIL') THEN
+        NEW.plan := 'infinity';                  -- parent hasn't settled yet — wait
+    ELSIF NOT ((parent_state = 'DONE' AND NEW.depend IN ('success', 'always'))
+            OR (parent_state = 'FAIL' AND NEW.depend IN ('failure', 'always'))) THEN
+        NEW.state := 'STOP';                      -- parent already settled the other way — never run
+    END IF;
+    RETURN NEW;
+END;
+$f$ LANGUAGE plpgsql;
+CREATE TRIGGER task_depend_insert BEFORE INSERT ON task
+FOR EACH ROW EXECUTE FUNCTION task_depend_insert();
+
+CREATE OR REPLACE FUNCTION task_depend_update() RETURNS trigger AS $f$
+BEGIN
+    UPDATE task SET plan = statement_timestamp()
+    WHERE parent = NEW.id AND state = 'PLAN' AND plan = 'infinity'
+      AND ((NEW.state = 'DONE' AND depend IN ('success', 'always'))
+        OR (NEW.state = 'FAIL' AND depend IN ('failure', 'always')));
+    UPDATE task SET state = 'STOP'
+    WHERE parent = NEW.id AND state = 'PLAN' AND plan = 'infinity'
+      AND NOT ((NEW.state = 'DONE' AND depend IN ('success', 'always'))
+            OR (NEW.state = 'FAIL' AND depend IN ('failure', 'always')));
+    RETURN NEW;
+END;
+$f$ LANGUAGE plpgsql;
+CREATE TRIGGER task_depend_update AFTER UPDATE OF state ON task
+FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE FUNCTION task_depend_update();
+```
+
+This relies on two more of `pg_task`'s own self-provisioned triggers, beyond the three named in Self-provisioning and the helper triggers above: `plan` is only frozen *after* a task leaves `PLAN` (`BEFORE UPDATE OF "plan"`, conditional on `OLD.state <> 'PLAN'`), so a still-`PLAN` child's `plan` remains freely updatable — and updating it fires the existing wake-up trigger for free, so a released child is picked up immediately rather than on the next poll. `plan = 'infinity'` also keeps the child out of reach of the `active`-window `GONE` transition (`plan + active` stays `infinity` too), so it can wait indefinitely without expiring. Moving an unsatisfied child straight to `STOP` is the one transition the built-in state-machine trigger allows out of `PLAN` besides `TAKE`/`GONE`.
+
+This only expresses a single upstream dependency (one `depend` per `parent`, matching the column's own cardinality), not a multi-parent join.
+
 ## Capabilities and limitations
 
 Capabilities:
