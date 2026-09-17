@@ -43,7 +43,7 @@ SELECT array_agg(enumlabel::text ORDER BY enumsortorder) = ARRAY['PLAN', 'GONE',
 SELECT bool_and(attnotnull) AS not_null_ok FROM pg_catalog.pg_attribute WHERE attrelid = 'task_make_test_schema.task_make_test'::regclass AND attname IN ('id', 'plan', 'active', 'live', 'repeat', 'timeout', 'count', 'max', 'state', 'delete', 'drift', 'header', 'save', 'string', 'delimiter', 'escape', 'quote', 'group', 'input', 'null');
 SELECT bool_and(NOT attnotnull) AS nullable_ok FROM pg_catalog.pg_attribute WHERE attrelid = 'task_make_test_schema.task_make_test'::regclass AND attname IN ('parent', 'start', 'stop', 'pid', 'data', 'error', 'output', 'remote');
 SELECT count(*) = 6 AS index_count_ok FROM pg_catalog.pg_index WHERE indrelid = 'task_make_test_schema.task_make_test'::regclass;
-SELECT count(*) = 2 AS trigger_ok FROM pg_catalog.pg_trigger WHERE tgrelid = 'task_make_test_schema.task_make_test'::regclass AND NOT tgisinternal;
+SELECT count(*) = 3 AS trigger_ok FROM pg_catalog.pg_trigger WHERE tgrelid = 'task_make_test_schema.task_make_test'::regclass AND NOT tgisinternal;
 INSERT INTO task_make_test_schema.task_make_test (input) VALUES ('SELECT 1 AS a');
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
@@ -52,6 +52,30 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT output, error, state FROM task_make_test_schema.task_make_test;
+INSERT INTO task_make_test_schema.task_make_test (input, plan) VALUES ('SELECT 1 AS a', CURRENT_TIMESTAMP + interval '1 hour') RETURNING id AS state_test_id
+\gset
+SELECT set_config('pg_task_test.state_id', :'state_test_id', false) AS ignored
+\gset
+DO $$ BEGIN
+    UPDATE task_make_test_schema.task_make_test SET state = 'DONE' WHERE id = current_setting('pg_task_test.state_id')::bigint;
+EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'invalid state transition' THEN RAISE; END IF;
+END $$;
+DO $$ BEGIN
+    UPDATE task_make_test_schema.task_make_test SET state = 'WORK' WHERE id = current_setting('pg_task_test.state_id')::bigint;
+EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'invalid state transition' THEN RAISE; END IF;
+END $$;
+SELECT state = 'PLAN' AS invalid_state_transition_rejected FROM task_make_test_schema.task_make_test WHERE id = :state_test_id;
+UPDATE task_make_test_schema.task_make_test SET state = 'STOP' WHERE id = :state_test_id;
+SELECT state = 'STOP' AS manual_stop_accepted FROM task_make_test_schema.task_make_test WHERE id = :state_test_id;
+DO $$ BEGIN
+    UPDATE task_make_test_schema.task_make_test SET state = 'PLAN' WHERE id = current_setting('pg_task_test.state_id')::bigint;
+EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'invalid state transition' THEN RAISE; END IF;
+END $$;
+SELECT state = 'STOP' AS stop_is_terminal FROM task_make_test_schema.task_make_test WHERE id = :state_test_id;
+DELETE FROM task_make_test_schema.task_make_test WHERE id = :state_test_id;
 ALTER SYSTEM RESET pg_task.json;
 SELECT pg_reload_conf();
 DO $body$ BEGIN

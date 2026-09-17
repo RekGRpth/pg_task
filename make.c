@@ -220,6 +220,30 @@ static void make_user_immutable(const Work *w) {
     pfree(source.data);
 }
 
+static void make_state_machine(const Work *w) {
+    StringInfoData name;
+    StringInfoData source;
+    initStringInfoMy(&name);
+    appendStringInfo(&name, "%s_state", w->shared->table);
+    initStringInfoMy(&source);
+    appendStringInfo(&source, SQL(
+        BEGIN
+            IF NEW."state" OPERATOR(pg_catalog.<>) OLD."state" AND NEW."state" OPERATOR(pg_catalog.<>) ALL (CASE OLD."state"
+                WHEN 'PLAN'::%1$s THEN ARRAY['TAKE', 'GONE', 'STOP']::%1$s[]
+                WHEN 'TAKE'::%1$s THEN ARRAY['WORK', 'PLAN', 'DONE', 'FAIL']::%1$s[]
+                WHEN 'WORK'::%1$s THEN ARRAY['DONE', 'FAIL', 'PLAN']::%1$s[]
+                ELSE ARRAY[]::%1$s[]
+            END) THEN RAISE EXCEPTION 'invalid state transition';
+            END IF;
+            RETURN NEW;
+        END;
+    ), w->schema_type);
+    make_function(w, name.data, source.data, false);
+    make_trigger(w, name.data, "BEFORE UPDATE OF \"state\"", "ROW");
+    pfree(name.data);
+    pfree(source.data);
+}
+
 static void make_column(const Work *w, const char *name, const char *schema_type) {
     StringInfoData src;
     initStringInfoMy(&src);
@@ -524,6 +548,7 @@ void make_table(const Work *w) {
     make_index(w, "state");
     make_wake_up(w);
     make_user_immutable(w);
+    make_state_machine(w);
     set_ps_display_my("idle");
 }
 
