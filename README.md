@@ -312,6 +312,98 @@ This relies on two more of `pg_task`'s own self-provisioned triggers, beyond the
 
 This only expresses a single upstream dependency (one `depend` per `parent`, matching the column's own cardinality), not a multi-parent join.
 
+### Cron-like scheduling
+
+`repeat` is a fixed `interval` — it can't express "every weekday at 9am" or "the 1st of the month". Rather than a fixed step, compute the next occurrence yourself from a 5-field cron expression (`min hour dom month dow`) and drive `plan` with it directly, leaving `repeat` at its default `0 sec` so the built-in auto-repeat stays out of the way:
+
+```sql
+CREATE OR REPLACE FUNCTION cron_field(spec text, lo int, hi int) RETURNS int[] AS $f$
+DECLARE
+    part text; rng text; step int; a int; b int; result int[] := '{}';
+BEGIN
+    FOREACH part IN ARRAY string_to_array(spec, ',') LOOP
+        IF part LIKE '%/%' THEN
+            rng := split_part(part, '/', 1); step := split_part(part, '/', 2)::int;
+        ELSE
+            rng := part; step := 1;
+        END IF;
+        IF rng = '*' THEN a := lo; b := hi;
+        ELSIF rng LIKE '%-%' THEN a := split_part(rng, '-', 1)::int; b := split_part(rng, '-', 2)::int;
+        ELSE a := rng::int; b := a;
+        END IF;
+        IF a < lo OR b > hi THEN RAISE EXCEPTION 'cron field value out of range [%,%]: %', lo, hi, part; END IF;
+        SELECT result || array_agg(x) FROM generate_series(a, b, step) x INTO result;
+    END LOOP;
+    RETURN ARRAY(SELECT DISTINCT x FROM unnest(result) x ORDER BY x);
+END;
+$f$ LANGUAGE plpgsql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION cron_next(expr text, from_ts timestamptz DEFAULT now()) RETURNS timestamptz AS $f$
+DECLARE
+    fields text[] := regexp_split_to_array(btrim(expr), '\s+');
+    min_set int[]; hour_set int[]; dom_set int[]; mon_set int[]; dow_set int[];
+    dom_restricted boolean; dow_restricted boolean;
+    d date; h int; mi int; day_ok boolean;
+BEGIN
+    IF array_length(fields, 1) <> 5 THEN
+        RAISE EXCEPTION 'cron expression must have 5 fields (min hour dom month dow): %', expr;
+    END IF;
+    min_set  := cron_field(fields[1], 0, 59);
+    hour_set := cron_field(fields[2], 0, 23);
+    dom_set  := cron_field(fields[3], 1, 31);
+    mon_set  := cron_field(fields[4], 1, 12);
+    dow_set  := cron_field(fields[5], 0, 6);
+    dom_restricted := fields[3] <> '*';
+    dow_restricted := fields[5] <> '*';
+    d := date_trunc('minute', from_ts)::date;
+    FOR i IN 0 .. 1465 LOOP -- ~4 years, enough to always catch a Feb-29-only schedule
+        day_ok := mon_set @> ARRAY[EXTRACT(month FROM d)::int] AND (
+            CASE WHEN dom_restricted AND dow_restricted -- vixie-cron semantics: dom/dow combine with OR when both are restricted
+                 THEN dom_set @> ARRAY[EXTRACT(day FROM d)::int] OR dow_set @> ARRAY[EXTRACT(dow FROM d)::int]
+                 ELSE dom_set @> ARRAY[EXTRACT(day FROM d)::int] AND dow_set @> ARRAY[EXTRACT(dow FROM d)::int]
+            END);
+        IF day_ok THEN
+            FOREACH h IN ARRAY hour_set LOOP
+                FOREACH mi IN ARRAY min_set LOOP
+                    IF (d + h * interval '1 hour' + mi * interval '1 min') > from_ts THEN
+                        RETURN d + h * interval '1 hour' + mi * interval '1 min';
+                    END IF;
+                END LOOP;
+            END LOOP;
+        END IF;
+        d := d + 1;
+    END LOOP;
+    RAISE EXCEPTION 'no matching time found for cron expression % within search horizon', expr;
+END;
+$f$ LANGUAGE plpgsql STABLE;
+
+ALTER TABLE task ADD COLUMN cron text; -- NULL for ordinary, non-cron tasks
+
+CREATE OR REPLACE FUNCTION task_cron() RETURNS trigger AS $f$
+DECLARE
+    columns text;
+BEGIN
+    IF NEW.cron IS NULL THEN RETURN NEW; END IF;
+    SELECT string_agg(quote_ident(attname), ', ' ORDER BY attnum) INTO columns
+    FROM pg_attribute
+    WHERE attrelid = TG_RELID AND attnum > 0 AND NOT attisdropped
+      AND attname NOT IN ('id', 'plan', 'parent', 'start', 'stop', 'pid', 'state', 'error', 'output');
+    EXECUTE format(
+        'INSERT INTO %I (parent, plan, %s) SELECT id, cron_next(cron, statement_timestamp()), %s FROM %I WHERE id = $1',
+        TG_TABLE_NAME, columns, columns, TG_TABLE_NAME
+    ) USING NEW.id;
+    RETURN NEW;
+END;
+$f$ LANGUAGE plpgsql;
+
+CREATE TRIGGER task_cron_trigger AFTER UPDATE OF state ON task
+FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE FUNCTION task_cron();
+```
+
+`cron_field()` expands one field (`*`, `a-b`, `*/n`, `a-b/n`, comma-separated lists of any of those) into a sorted array of matching values; `cron_next()` walks forward day by day (bounded to roughly four years, long enough to land on a Feb-29-only schedule) and, on a day that matches month/day-of-month/day-of-week, returns the first hour:minute in the field sets that's after `from_ts`. Both are ordinary `IMMUTABLE`/`STABLE` SQL functions, so you can also call `cron_next()` directly to sanity-check an expression before using it. `task_cron()` reuses the same dynamic column-clone trick as the retry trigger above; only rows with `cron IS NOT NULL` are affected, so it's safe to add alongside tasks that use plain `repeat`.
+
+This parser only covers the classic 5-field syntax (numeric fields, `*`, ranges, steps, lists) — no named days/months (`MON`, `JAN`), no `L`/`W`/`#`, no seconds field. Extend `cron_field()`/`cron_next()` if you need those.
+
 ## Capabilities and limitations
 
 Capabilities:
