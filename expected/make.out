@@ -12,7 +12,7 @@ t
 t
 t
 t
-NOTICE:  drop cascades to 8 other objects
+NOTICE:  drop cascades to 26 other objects
 DETAIL:  drop cascades to type task_make_test_schema.state
 drop cascades to table task_make_test_schema.task_make_test
 drop cascades to function task_make_test_schema.task_make_test_wake_up()
@@ -21,11 +21,29 @@ drop cascades to function task_make_test_schema.task_make_test_state()
 drop cascades to function task_make_test_schema.task_make_test_group()
 drop cascades to function task_make_test_schema.task_make_test_remote()
 drop cascades to function task_make_test_schema.task_make_test_parent()
+drop cascades to function task_make_test_schema.task_make_test_plan()
+drop cascades to function task_make_test_schema.task_make_test_active()
+drop cascades to function task_make_test_schema.task_make_test_live()
+drop cascades to function task_make_test_schema.task_make_test_repeat()
+drop cascades to function task_make_test_schema.task_make_test_timeout()
+drop cascades to function task_make_test_schema.task_make_test_count()
+drop cascades to function task_make_test_schema.task_make_test_max()
+drop cascades to function task_make_test_schema.task_make_test_delete()
+drop cascades to function task_make_test_schema.task_make_test_drift()
+drop cascades to function task_make_test_schema.task_make_test_header()
+drop cascades to function task_make_test_schema.task_make_test_save()
+drop cascades to function task_make_test_schema.task_make_test_string()
+drop cascades to function task_make_test_schema.task_make_test_delimiter()
+drop cascades to function task_make_test_schema.task_make_test_escape()
+drop cascades to function task_make_test_schema.task_make_test_quote()
+drop cascades to function task_make_test_schema.task_make_test_input()
+drop cascades to function task_make_test_schema.task_make_test_null()
+drop cascades to function task_make_test_schema.task_make_test_data()
 t
 t
 1||DONE
 t
-NOTICE:  drop cascades to 8 other objects
+NOTICE:  drop cascades to 26 other objects
 DETAIL:  drop cascades to type role_test_schema.state
 drop cascades to table role_test_schema.task
 drop cascades to function role_test_schema.task_wake_up()
@@ -34,13 +52,32 @@ drop cascades to function role_test_schema.task_state()
 drop cascades to function role_test_schema.task_group()
 drop cascades to function role_test_schema.task_remote()
 drop cascades to function role_test_schema.task_parent()
+drop cascades to function role_test_schema.task_plan()
+drop cascades to function role_test_schema.task_active()
+drop cascades to function role_test_schema.task_live()
+drop cascades to function role_test_schema.task_repeat()
+drop cascades to function role_test_schema.task_timeout()
+drop cascades to function role_test_schema.task_count()
+drop cascades to function role_test_schema.task_max()
+drop cascades to function role_test_schema.task_delete()
+drop cascades to function role_test_schema.task_drift()
+drop cascades to function role_test_schema.task_header()
+drop cascades to function role_test_schema.task_save()
+drop cascades to function role_test_schema.task_string()
+drop cascades to function role_test_schema.task_delimiter()
+drop cascades to function role_test_schema.task_escape()
+drop cascades to function role_test_schema.task_quote()
+drop cascades to function role_test_schema.task_input()
+drop cascades to function role_test_schema.task_null()
+drop cascades to function role_test_schema.task_data()
+t
+t
+NOTICE:  drop cascades to trigger task_column_drift_test_delimiter on table task_column_drift_test_schema.task_column_drift_test
 t
 t
 t
 t
-t
-t
-NOTICE:  drop cascades to 8 other objects
+NOTICE:  drop cascades to 26 other objects
 DETAIL:  drop cascades to type task_column_drift_test_schema.state
 drop cascades to table task_column_drift_test_schema.task_column_drift_test
 drop cascades to function task_column_drift_test_schema.task_column_drift_test_wake_up()
@@ -49,10 +86,28 @@ drop cascades to function task_column_drift_test_schema.task_column_drift_test_s
 drop cascades to function task_column_drift_test_schema.task_column_drift_test_group()
 drop cascades to function task_column_drift_test_schema.task_column_drift_test_remote()
 drop cascades to function task_column_drift_test_schema.task_column_drift_test_parent()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_plan()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_active()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_live()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_repeat()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_timeout()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_count()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_max()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_delete()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_drift()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_header()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_save()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_string()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_delimiter()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_escape()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_quote()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_input()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_null()
+drop cascades to function task_column_drift_test_schema.task_column_drift_test_data()
 t
 t
 t
-NOTICE:  drop cascades to 8 other objects
+NOTICE:  drop cascades to 26 other objects
 DETAIL:  drop cascades to type task_enum_drift_test_schema.state
 drop cascades to table task_enum_drift_test_schema.task_enum_drift_test
 drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_wake_up()
@@ -61,6 +116,24 @@ drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_state
 drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_group()
 drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_remote()
 drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_parent()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_plan()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_active()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_live()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_repeat()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_timeout()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_count()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_max()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_delete()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_drift()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_header()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_save()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_string()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_delimiter()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_escape()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_quote()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_input()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_null()
+drop cascades to function task_enum_drift_test_schema.task_enum_drift_test_data()
 t
 t
 t

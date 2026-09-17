@@ -267,6 +267,29 @@ static void make_immutable(const Work *w, const char *column) {
     pfree(source.data);
 }
 
+static void make_conditional_immutable(const Work *w, const char *column) {
+    StringInfoData name;
+    StringInfoData when;
+    StringInfoData source;
+    initStringInfoMy(&name);
+    appendStringInfo(&name, "%s_%s", w->shared->table, column);
+    initStringInfoMy(&source);
+    appendStringInfo(&source, SQL(
+        BEGIN
+            IF OLD."state" OPERATOR(pg_catalog.<>) 'PLAN'::%2$s AND NEW."%1$s" IS DISTINCT FROM OLD."%1$s" THEN RAISE EXCEPTION '%1$s column is immutable once task left PLAN state';
+            END IF;
+            RETURN NEW;
+        END;
+    ), column, w->schema_type);
+    make_function(w, name.data, source.data, false);
+    initStringInfoMy(&when);
+    appendStringInfo(&when, "BEFORE UPDATE OF \"%s\"", column);
+    make_trigger(w, name.data, when.data, "ROW");
+    pfree(name.data);
+    pfree(when.data);
+    pfree(source.data);
+}
+
 static void make_column(const Work *w, const char *name, const char *schema_type) {
     StringInfoData src;
     initStringInfoMy(&src);
@@ -575,6 +598,24 @@ void make_table(const Work *w) {
     make_immutable(w, "group");
     make_immutable(w, "remote");
     make_immutable(w, "parent");
+    make_conditional_immutable(w, "plan");
+    make_conditional_immutable(w, "active");
+    make_conditional_immutable(w, "live");
+    make_conditional_immutable(w, "repeat");
+    make_conditional_immutable(w, "timeout");
+    make_conditional_immutable(w, "count");
+    make_conditional_immutable(w, "max");
+    make_conditional_immutable(w, "delete");
+    make_conditional_immutable(w, "drift");
+    make_conditional_immutable(w, "header");
+    make_conditional_immutable(w, "save");
+    make_conditional_immutable(w, "string");
+    make_conditional_immutable(w, "delimiter");
+    make_conditional_immutable(w, "escape");
+    make_conditional_immutable(w, "quote");
+    make_conditional_immutable(w, "input");
+    make_conditional_immutable(w, "null");
+    make_conditional_immutable(w, "data");
     set_ps_display_my("idle");
 }
 
