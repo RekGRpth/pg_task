@@ -475,8 +475,7 @@ Rather than `pg_task.delete` sending finished rows into nowhere, copy them into 
 CREATE TABLE task_archive (LIKE task INCLUDING DEFAULTS, PRIMARY KEY (id, stop))
     PARTITION BY RANGE (stop);
 CREATE TABLE task_archive_default PARTITION OF task_archive DEFAULT;
--- plus dated partitions, by hand or, since pg_partman is already commonly
--- paired with pg_task, via SELECT partman.create_parent('public.task_archive', 'stop', 'native', 'monthly');
+-- plus dated partitions, by hand or on a schedule -- see Automatic partitioning below
 
 CREATE OR REPLACE FUNCTION task_archive() RETURNS trigger AS $f$
 BEGIN
@@ -494,6 +493,31 @@ FOR EACH ROW EXECUTE FUNCTION task_archive();
 ```
 
 Two things confirmed by testing this end to end: a partitioned table's unique/primary key must include the partition key, so this is `PRIMARY KEY (id, stop)`, not just `(id)` — `LIKE task INCLUDING ALL` would carry over `task`'s own `(id)` primary key and fail with `PRIMARY KEY constraint ... must include all partitioning columns`. And the `DEFAULT` partition and the `EXCEPTION WHEN OTHERS` are both load-bearing, not redundant: like the webhook trigger above, this one runs inside the same transaction `task_done()`/`task_error()` use to delete the row, so an archive insert failing outright (no partition covers this `stop`, some constraint, ...) would otherwise take that deletion — and the task's own bookkeeping — down with it. With the `DEFAULT` partition in place a row with no dedicated partition still lands somewhere; with neither, the deletion still succeeds and only a `WARNING` is logged, verified by deliberately deleting both safety nets and confirming the row failed to archive but `DELETE FROM task` still returned normally.
+
+### Automatic partitioning via a repeating task
+
+Rather than reaching for an extension like `pg_partman` to keep a partitioned table (e.g. `task_archive` above) supplied with future partitions, `pg_task` can do it itself — a repeating task is exactly a scheduler already living inside the database:
+
+```sql
+CREATE OR REPLACE FUNCTION task_archive_partition(lead interval DEFAULT '1 month') RETURNS void AS $f$
+DECLARE
+    from_ts timestamptz := date_trunc('month', now());
+    to_ts timestamptz := date_trunc('month', now() + lead) + '1 month';
+BEGIN
+    WHILE from_ts < to_ts LOOP
+        EXECUTE format(
+            'CREATE TABLE IF NOT EXISTS %I PARTITION OF task_archive FOR VALUES FROM (%L) TO (%L)',
+            'task_archive_' || to_char(from_ts, 'YYYY_MM'), from_ts, from_ts + '1 month'
+        );
+        from_ts := from_ts + '1 month';
+    END LOOP;
+END;
+$f$ LANGUAGE plpgsql;
+
+INSERT INTO task (repeat, input) VALUES ('1 day', $$SELECT task_archive_partition()$$);
+```
+
+The repeating task keeps one month of lead time stocked up ahead of the current date; `CREATE TABLE IF NOT EXISTS` makes each daily run a no-op once that month's partition already exists, so a missed or doubled-up firing is harmless. Widen `lead` or shrink the `repeat` interval for finer-grained (weekly/daily) partitioning.
 
 ### Structured tags/metadata
 
