@@ -426,7 +426,9 @@ CREATE ROLE task_remote_nopass_test LOGIN;
 RESET client_min_messages;
 GRANT CREATE ON DATABASE :"DBNAME" TO task_remote_nopass_test;
 ALTER ROLE task_remote_nopass_test SET pg_task.schema = 'remote_nopass_test_schema';
-SELECT '[{"data":"' || :'DBNAME' || '"},{"data":"' || :'DBNAME' || '","user":"task_remote_nopass_test"}]' AS json_val
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"task_remote_nopass_test"}]' AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
@@ -464,7 +466,7 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT state = 'FAIL' AS rejected_without_password, error LIKE '%password is required%' AS password_error_ok FROM remote_nopass_test_schema.task WHERE "group" = 'nopass';
-ALTER SYSTEM RESET pg_task.json;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
     FOR i IN 1..30 LOOP
