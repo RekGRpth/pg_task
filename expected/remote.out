@@ -1,4 +1,5 @@
 \unset ECHO
+t
 1|SELECT 1/0 AS a||ERROR:  division by zero
 STATEMENT:  SELECT 1/0 AS a|FAIL
 2|SELECT pg_sleep(2) AS a||ERROR:  canceling statement due to statement timeout
@@ -74,3 +75,4 @@ t
 t|t
 t
 t|t
+t

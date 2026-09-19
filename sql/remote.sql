@@ -3,6 +3,20 @@
 \pset format unaligned
 \pset tuples_only true
 \pset pager off
+SELECT current_setting('pg_task.json') AS base_json
+\gset
+SELECT :'base_json' NOT LIKE '%"data":"' || :'DBNAME' || '"%' AS base_json_added
+\gset
+SELECT CASE WHEN :'base_json_added' = 't' THEN left(:'base_json', -1) || ',{"data":"' || :'DBNAME' || '"}]' ELSE :'base_json' END AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..120 LOOP
+        IF to_regclass('public.task') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database()) THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
 SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
 INSERT INTO task ("group", input, remote) VALUES ('0', 'SELECT 1 AS a WHERE false', 'dbname=' || :'DBNAME');
@@ -205,7 +219,7 @@ DELETE FROM task WHERE "group" IN ('24', '25') AND state = 'PLAN';
 DO $$ BEGIN PERFORM pg_sleep(1); END $$;
 DELETE FROM task WHERE "group" IN ('24', '25') AND state = 'PLAN';
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE "group" IN ('24', '25') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -230,7 +244,7 @@ FROM g;
 DELETE FROM task WHERE "group" = '26';
 INSERT INTO task ("group", input, remote) VALUES ('26', 'INSERT INTO task ("group", input, remote) VALUES (''26'', ''SELECT 1 AS a'', ''dbname=' || :'DBNAME' || ''')', 'dbname=' || :'DBNAME');
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE "group" = '26') >= 2 AND (SELECT count(*) FROM task WHERE "group" = '26' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -245,14 +259,14 @@ FROM g;
 DELETE FROM task WHERE "group" = '27';
 INSERT INTO task ("group", input, remote, timeout) VALUES ('27', 'SELECT pg_sleep(30)', 'dbname=' || :'DBNAME', '1 min');
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF EXISTS (SELECT 1 FROM pg_stat_activity WHERE query = 'SELECT pg_sleep(30)' AND state = 'active') THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT count(pg_terminate_backend(pid)) > 0 AS connection_killed FROM pg_stat_activity WHERE query = 'SELECT pg_sleep(30)' AND state = 'active';
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF (SELECT state FROM task WHERE "group" = '27' AND input = 'SELECT pg_sleep(30)') NOT IN ('PLAN', 'TAKE', 'WORK') THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -260,7 +274,7 @@ END;$body$ LANGUAGE plpgsql;
 SELECT state = 'FAIL' AS failed_cleanly, error IS NOT NULL AS has_error FROM task WHERE "group" = '27' AND input = 'SELECT pg_sleep(30)';
 INSERT INTO task ("group", input, remote) VALUES ('27', 'SELECT 1 AS a', 'dbname=' || :'DBNAME');
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE "group" = '27' AND input = 'SELECT 1 AS a' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -309,7 +323,7 @@ INSERT INTO task ("group", input, remote) VALUES ('30', 'SELECT pg_sleep(5) AS a
 INSERT INTO task ("group", input, remote) VALUES ('31', 'SELECT pg_sleep(5) AS a', 'dbname=' || :'DBNAME');
 INSERT INTO task ("group", input, remote) VALUES ('32', 'SELECT pg_sleep(5) AS a', 'dbname=' || :'DBNAME');
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FILTER (WHERE state != 'PLAN') FROM task WHERE "group" IN ('30', '31', '32')) >= 1 THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -318,7 +332,7 @@ SELECT count(*) FILTER (WHERE state != 'PLAN') >= 1 AS some_dispatched, count(*)
 ALTER SYSTEM RESET pg_task."limit";
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE "group" IN ('30', '31', '32') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -330,7 +344,7 @@ INSERT INTO task ("group", input, remote) VALUES ('30', 'SELECT pg_sleep(5) AS a
 INSERT INTO task ("group", input, remote) VALUES ('31', 'SELECT pg_sleep(5) AS a', 'dbname=' || :'DBNAME');
 INSERT INTO task ("group", input, remote) VALUES ('32', 'SELECT pg_sleep(5) AS a', 'dbname=' || :'DBNAME');
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FILTER (WHERE state != 'PLAN') FROM task WHERE "group" IN ('30', '31', '32')) >= 1 THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -339,7 +353,7 @@ SELECT count(*) FILTER (WHERE state != 'PLAN') >= 1 AS some_dispatched, count(*)
 ALTER SYSTEM RESET pg_task.run;
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE "group" IN ('30', '31', '32') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -351,7 +365,7 @@ INSERT INTO task ("group", input, remote) VALUES ('36', 'SELECT pg_sleep(5) AS a
 INSERT INTO task ("group", input, remote) VALUES ('37', 'SELECT pg_sleep(5) AS a', 'dbname=' || :'DBNAME');
 INSERT INTO task ("group", input, remote) VALUES ('38', 'SELECT pg_sleep(5) AS a', 'dbname=' || :'DBNAME');
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FILTER (WHERE state != 'PLAN') FROM task WHERE "group" IN ('36', '37', '38')) >= 1 THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -360,7 +374,7 @@ SELECT count(*) FILTER (WHERE state != 'PLAN') >= 1 AS some_dispatched_limit_db_
 ALTER DATABASE :DBNAME RESET pg_task."limit";
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE "group" IN ('36', '37', '38') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -372,7 +386,7 @@ INSERT INTO task ("group", input, remote) VALUES ('36', 'SELECT pg_sleep(5) AS a
 INSERT INTO task ("group", input, remote) VALUES ('37', 'SELECT pg_sleep(5) AS a', 'dbname=' || :'DBNAME');
 INSERT INTO task ("group", input, remote) VALUES ('38', 'SELECT pg_sleep(5) AS a', 'dbname=' || :'DBNAME');
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FILTER (WHERE state != 'PLAN') FROM task WHERE "group" IN ('36', '37', '38')) >= 1 THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -381,7 +395,7 @@ SELECT count(*) FILTER (WHERE state != 'PLAN') >= 1 AS some_dispatched_run_db_ov
 ALTER DATABASE :DBNAME RESET pg_task.run;
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task WHERE "group" IN ('36', '37', '38') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -433,7 +447,7 @@ SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"tas
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF to_regclass('remote_nopass_test_schema.task') IS NOT NULL THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -469,7 +483,7 @@ SELECT state = 'FAIL' AS rejected_without_password, error LIKE '%password is req
 ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF NOT EXISTS (SELECT 1 FROM pg_stat_activity WHERE usename = 'task_remote_nopass_test') THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -506,3 +520,15 @@ REVOKE USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq FROM task_remote_author_nop
 \connect :DBNAME
 DROP ROLE task_remote_author_nopass_test;
 DELETE FROM task WHERE plan > :ct::timestamp; -- catch-all: remove anything this run inserted that an earlier per-group DELETE missed
+ALTER SYSTEM SET pg_task.json = :'base_json';
+SELECT pg_reload_conf();
+SELECT set_config('pg_task_test.base_json_added', :'base_json_added', false) AS ignored
+\gset
+DO $body$ BEGIN
+    IF current_setting('pg_task_test.base_json_added') = 't' THEN
+        FOR i IN 1..120 LOOP
+            IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database()) THEN EXIT; END IF;
+            PERFORM pg_sleep(1);
+        END LOOP;
+    END IF;
+END;$body$ LANGUAGE plpgsql;

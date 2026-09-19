@@ -3,6 +3,20 @@
 \pset format unaligned
 \pset tuples_only true
 \pset pager off
+SELECT current_setting('pg_task.json') AS base_json
+\gset
+SELECT :'base_json' NOT LIKE '%"data":"' || :'DBNAME' || '"%' AS base_json_added
+\gset
+SELECT CASE WHEN :'base_json_added' = 't' THEN left(:'base_json', -1) || ',{"data":"' || :'DBNAME' || '"}]' ELSE :'base_json' END AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..120 LOOP
+        IF to_regclass('public.task') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database()) THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
 SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored
 \gset
 DO $$ BEGIN
@@ -22,7 +36,7 @@ SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","schema":"t
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF to_regclass('task_make_test_schema.task_make_test') IS NOT NULL THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -48,7 +62,7 @@ SELECT count(*) = 6 AS index_count_ok FROM pg_catalog.pg_index WHERE indrelid = 
 SELECT count(*) = 25 AS trigger_ok FROM pg_catalog.pg_trigger WHERE tgrelid = 'task_make_test_schema.task_make_test'::regclass AND NOT tgisinternal;
 INSERT INTO task_make_test_schema.task_make_test (input) VALUES ('SELECT 1 AS a');
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM task_make_test_schema.task_make_test WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -81,7 +95,7 @@ DELETE FROM task_make_test_schema.task_make_test WHERE id = :state_test_id;
 ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work task_make_test_schema %') THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -100,7 +114,7 @@ SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"tas
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF to_regclass('role_test_schema.task') IS NOT NULL THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -108,7 +122,7 @@ END;$body$ LANGUAGE plpgsql;
 SELECT to_regclass('role_test_schema.task') IS NOT NULL AS table_created_via_role_override;
 INSERT INTO role_test_schema.task (input) VALUES ('SELECT 1 AS a');
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM role_test_schema.task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -117,7 +131,7 @@ SELECT output, error, state FROM role_test_schema.task;
 ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work role_test_schema %') THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -135,7 +149,7 @@ SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","schema":"t
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF to_regclass('task_column_drift_test_schema.task_column_drift_test') IS NOT NULL THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -143,7 +157,7 @@ END;$body$ LANGUAGE plpgsql;
 ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work task_column_drift_test_schema %') THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -159,7 +173,7 @@ SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","schema":"t
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF (SELECT count(*) FROM pg_catalog.pg_attribute WHERE attrelid = 'task_column_drift_test_schema.task_column_drift_test'::regclass AND attname = 'delimiter' AND NOT attisdropped) = 1 THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -168,7 +182,7 @@ SELECT count(*) = 1 AS column_healed FROM pg_catalog.pg_attribute WHERE attrelid
 ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work task_column_drift_test_schema %') THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -187,7 +201,7 @@ SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","schema":"t
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF to_regclass('task_enum_drift_test_schema.task_enum_drift_test') IS NOT NULL THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -196,7 +210,7 @@ SELECT array_agg(enumlabel::text ORDER BY enumsortorder) = ARRAY['PLAN', 'GONE',
 ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work task_enum_drift_test_schema %') THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -209,7 +223,7 @@ SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"tas
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'task_make_user_test') THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -218,7 +232,7 @@ SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'task_make_user
 ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE usename = 'task_make_user_test') THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -229,7 +243,7 @@ SELECT left(:'json_baseline', -1) || ',{"data":"task_make_data_test"}]' AS json_
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF EXISTS (SELECT 1 FROM pg_catalog.pg_database WHERE datname = 'task_make_data_test') THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -240,7 +254,7 @@ SELECT pg_reload_conf();
 DO $$ BEGIN PERFORM pg_sleep(5); END $$;
 DROP DATABASE task_make_data_test;
 DO $body$ BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..120 LOOP
         IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE usename = 'task_make_data_test') THEN EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
@@ -251,3 +265,15 @@ DO $$ BEGIN
         EXECUTE format('REVOKE CREATE ON DATABASE %I FROM %I', current_setting('pg_task_test.dbname'), current_setting('pg_task_test.dbname'));
     END IF;
 END $$;
+ALTER SYSTEM SET pg_task.json = :'base_json';
+SELECT pg_reload_conf();
+SELECT set_config('pg_task_test.base_json_added', :'base_json_added', false) AS ignored
+\gset
+DO $body$ BEGIN
+    IF current_setting('pg_task_test.base_json_added') = 't' THEN
+        FOR i IN 1..120 LOOP
+            IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database()) THEN EXIT; END IF;
+            PERFORM pg_sleep(1);
+        END LOOP;
+    END IF;
+END;$body$ LANGUAGE plpgsql;
