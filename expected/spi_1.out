@@ -1,5 +1,6 @@
 \unset ECHO
 t
+t
 1|SELECT 1/0 AS a||ERROR:  division by zero
 CONTEXT:  SQL statement "SELECT 1/0 AS a"
 STATEMENT:  SELECT 1/0 AS a|FAIL
@@ -66,4 +67,5 @@ FAIL|t
 38||ERROR:  syntax error at or near "ON" at character 53
 QUERY:  INSERT INTO returning_probe (id, val) VALUES (1, 1) ON CONFLICT (id) DO NOTHING RETURNING id
 STATEMENT:  INSERT INTO returning_probe (id, val) VALUES (1, 1) ON CONFLICT (id) DO NOTHING RETURNING id|FAIL
+t
 t

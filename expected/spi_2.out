@@ -1,5 +1,6 @@
 \unset ECHO
 t
+t
 1|SELECT 1/0 AS a||ERROR:  division by zero
 CONTEXT:  SQL statement "SELECT 1/0 AS a"
 STATEMENT:  SELECT 1/0 AS a|FAIL
@@ -64,4 +65,5 @@ FAIL|t
 36|DELETE_RETURNING 0||DONE
 37|4||DONE
 38|INSERT_RETURNING 0 0||DONE
+t
 t

@@ -30,8 +30,22 @@ PG_CPPFLAGS += -DHAVE_CREATING_EXTENSION_LOCAL
 endif
 PGXS = $(shell $(PG_CONFIG) --pgxs)
 REGRESS = $(patsubst sql/%.sql,%,$(TESTS))
-REGRESS_OPTS = --use-existing
+PG_TASK_TEST_INSTANCE ?= temp
+PG_TASK_TEST_USER ?= $(shell whoami)
+ifeq ($(PG_TASK_TEST_INSTANCE),existing)
+REGRESS_OPTS = --use-existing --user=$(PG_TASK_TEST_USER)
+else
+REGRESS_OPTS = --temp-config=./test.conf --temp-instance=./tmp_check --user=$(PG_TASK_TEST_USER)
+endif
 SHLIB_LINK = $(libpq)
 TESTS = $(wildcard sql/*.sql)
+EXTRA_CLEAN += test.conf
 include $(PGXS)
 .DEFAULT_GOAL := all
+.PHONY: test.conf
+test.conf:
+	echo "shared_preload_libraries = 'pg_task'" >$@
+	echo "max_worker_processes = 20" >>$@
+	echo "pg_task.json = '[{\"data\":\"$(CONTRIB_TESTDB)\",\"user\":\"$(PG_TASK_TEST_USER)\"}]'" >>$@
+installcheck: test.conf
+check: test.conf

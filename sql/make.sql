@@ -17,21 +17,13 @@ DO $body$ BEGIN
         PERFORM pg_sleep(1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
-SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored
-\gset
-DO $$ BEGIN
-    PERFORM set_config('pg_task_test.had_create', has_database_privilege(current_setting('pg_task_test.dbname'), current_setting('pg_task_test.dbname'), 'CREATE')::text, false);
-    IF NOT has_database_privilege(current_setting('pg_task_test.dbname'), current_setting('pg_task_test.dbname'), 'CREATE') THEN
-        EXECUTE format('GRANT CREATE ON DATABASE %I TO %I', current_setting('pg_task_test.dbname'), current_setting('pg_task_test.dbname'));
-    END IF;
-END $$;
-SELECT current_setting('pg_task_test.had_create') AS had_create
-\gset
 SELECT (SELECT count(*) FROM pg_catalog.pg_settings WHERE name = 'gp_role') > 0 AS is_gp
 \gset
 SELECT current_setting('pg_task.json') AS json_baseline
 \gset
-SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","schema":"task_make_test_schema","table":"task_make_test"}]' AS json_val
+SELECT current_user AS test_user
+\gset
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || :'test_user' || '","schema":"task_make_test_schema","table":"task_make_test"}]' AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
@@ -105,8 +97,6 @@ SET client_min_messages TO WARNING;
 DROP SCHEMA task_make_test_schema CASCADE;
 RESET client_min_messages;
 \connect :DBNAME
-SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored1, set_config('pg_task_test.had_create', :'had_create', false) AS ignored2
-\gset
 CREATE ROLE task_role_test LOGIN SUPERUSER;
 ALTER ROLE task_role_test SET pg_task.schema = 'role_test_schema';
 SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"task_role_test"}]' AS json_val
@@ -141,10 +131,8 @@ SET client_min_messages TO WARNING;
 DROP SCHEMA role_test_schema CASCADE;
 RESET client_min_messages;
 \connect :DBNAME
-SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored1, set_config('pg_task_test.had_create', :'had_create', false) AS ignored2
-\gset
 DROP ROLE task_role_test;
-SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]' AS json_val
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || :'test_user' || '","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]' AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
@@ -165,10 +153,8 @@ END;$body$ LANGUAGE plpgsql;
 \i :gp_utility_file
 ALTER TABLE task_column_drift_test_schema.task_column_drift_test DROP COLUMN "delimiter" CASCADE;
 \connect :DBNAME
-SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored1, set_config('pg_task_test.had_create', :'had_create', false) AS ignored2
-\gset
 SELECT count(*) = 0 AS column_dropped FROM pg_catalog.pg_attribute WHERE attrelid = 'task_column_drift_test_schema.task_column_drift_test'::regclass AND attname = 'delimiter' AND NOT attisdropped;
-SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]' AS json_val
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || :'test_user' || '","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]' AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
@@ -192,11 +178,9 @@ SET client_min_messages TO WARNING;
 DROP SCHEMA task_column_drift_test_schema CASCADE;
 RESET client_min_messages;
 \connect :DBNAME
-SELECT set_config('pg_task_test.dbname', :'DBNAME', false) AS ignored1, set_config('pg_task_test.had_create', :'had_create', false) AS ignored2
-\gset
 CREATE SCHEMA task_enum_drift_test_schema;
 CREATE TYPE task_enum_drift_test_schema.state AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL');
-SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","schema":"task_enum_drift_test_schema","table":"task_enum_drift_test"}]' AS json_val
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || :'test_user' || '","schema":"task_enum_drift_test_schema","table":"task_enum_drift_test"}]' AS json_val
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
@@ -260,11 +244,6 @@ DO $body$ BEGIN
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 DROP ROLE task_make_data_test;
-DO $$ BEGIN
-    IF NOT current_setting('pg_task_test.had_create')::boolean THEN
-        EXECUTE format('REVOKE CREATE ON DATABASE %I FROM %I', current_setting('pg_task_test.dbname'), current_setting('pg_task_test.dbname'));
-    END IF;
-END $$;
 ALTER SYSTEM SET pg_task.json = :'base_json';
 SELECT pg_reload_conf();
 SELECT set_config('pg_task_test.base_json_added', :'base_json_added', false) AS ignored
