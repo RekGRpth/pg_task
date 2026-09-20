@@ -1,0 +1,21 @@
+DELETE FROM task WHERE "group" = 'max1_vs_max2';
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, count, remote) SELECT 'max1_vs_max2', 'SELECT pg_sleep(1) AS a', 1, 6, 'dbname=' || :'DBNAME' FROM s;
+INSERT INTO task ("group", input, max, count, remote) VALUES ('max1_vs_max2', 'SELECT pg_sleep(1) AS a', 2, 6, 'dbname=' || :'DBNAME');
+DO $body$ BEGIN
+    FOR i IN 1..120 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'max1_vs_max2' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT
+    (SELECT count(*) FROM task WHERE "group" = 'max1_vs_max2' AND max = 2 AND plan > :ct::timestamp AND state = 'DONE') = 1 AS max2_task_done,
+    (SELECT count(DISTINCT pid) FROM task WHERE "group" = 'max1_vs_max2' AND max = 2 AND plan > :ct::timestamp) = 1 AS max2_single_worker,
+    (SELECT count(*) FROM task WHERE "group" = 'max1_vs_max2' AND max = 1 AND plan > :ct::timestamp AND state = 'DONE') = 10 AS max1_all_done,
+    (SELECT count(DISTINCT pid) FROM task WHERE "group" = 'max1_vs_max2' AND max = 1 AND plan > :ct::timestamp) >= 2 AS max1_multiple_workers;
+ max2_task_done | max2_single_worker | max1_all_done | max1_multiple_workers 
+----------------+--------------------+---------------+-----------------------
+ t              | t                  | t             | t
+(1 row)
+

@@ -1,0 +1,24 @@
+DELETE FROM task WHERE "group" = 'worker_crash_recovery';
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+INSERT INTO task ("group", input) VALUES ('worker_crash_recovery', 'SELECT pg_sleep(10) AS a');
+DO $body$ BEGIN
+    FOR i IN 1..15 LOOP
+        IF (SELECT state FROM task WHERE "group" = 'worker_crash_recovery') = 'WORK' THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT pid AS orig_pid FROM task WHERE "group" = 'worker_crash_recovery'
+\gset
+SELECT count(pg_terminate_backend(:orig_pid)) > 0 AS worker_killed;
+ALTER SYSTEM SET pg_task.reset = '2 sec';
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..120 LOOP
+        IF (SELECT state FROM task WHERE "group" = 'worker_crash_recovery') = 'DONE' THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+ALTER SYSTEM RESET pg_task.reset;
+SELECT pg_reload_conf();
+SELECT state = 'DONE' AS recovered, pid != :orig_pid AS pid_changed FROM task WHERE "group" = 'worker_crash_recovery';

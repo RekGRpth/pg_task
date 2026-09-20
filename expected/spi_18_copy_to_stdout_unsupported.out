@@ -1,0 +1,17 @@
+DELETE FROM task WHERE "group" = 'copy_to_stdout';
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+INSERT INTO task ("group", input) VALUES ('copy_to_stdout', 'COPY (SELECT 1) TO STDOUT');
+DO $body$ BEGIN
+    FOR i IN 1..120 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'copy_to_stdout' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", input, output, error, state FROM task WHERE "group" = 'copy_to_stdout' AND plan > :ct::timestamp;
+     group      |           input           | output |                 error                 | state 
+----------------+---------------------------+--------+---------------------------------------+-------
+ copy_to_stdout | COPY (SELECT 1) TO STDOUT |        | ERROR:  COPY is not supported        +| FAIL
+                |                           |        | STATEMENT:  COPY (SELECT 1) TO STDOUT | 
+(1 row)
+

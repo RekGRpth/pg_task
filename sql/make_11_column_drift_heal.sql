@@ -1,0 +1,15 @@
+SELECT value AS json_baseline FROM pg_task_test_state WHERE key = 'json_baseline'
+\gset
+SELECT current_user AS test_user
+\gset
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || :'test_user' || '","schema":"task_column_drift_test_schema","table":"task_column_drift_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+DO $body$ BEGIN
+    FOR i IN 1..120 LOOP
+        IF (SELECT count(*) FROM pg_catalog.pg_attribute WHERE attrelid = 'task_column_drift_test_schema.task_column_drift_test'::regclass AND attname = 'delimiter' AND NOT attisdropped) = 1 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT count(*) = 1 AS column_healed FROM pg_catalog.pg_attribute WHERE attrelid = 'task_column_drift_test_schema.task_column_drift_test'::regclass AND attname = 'delimiter' AND NOT attisdropped;

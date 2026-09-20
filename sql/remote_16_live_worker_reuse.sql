@@ -1,0 +1,13 @@
+DELETE FROM task WHERE "group" = 'live_worker_reuse';
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+WITH s AS (SELECT generate_series(1, 8) AS s) INSERT INTO task ("group", input, live, remote) SELECT 'live_worker_reuse', 'SELECT pg_sleep(0.3) AS a', '2 sec', 'dbname=' || :'DBNAME' FROM s;
+DO $body$ BEGIN
+    FOR i IN 1..120 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'live_worker_reuse' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", count(DISTINCT pid) > 1 AS multiple_workers, max(cnt) > 1 AS reuse_happened FROM (
+    SELECT "group", pid, count(*) AS cnt FROM task WHERE "group" = 'live_worker_reuse' AND plan > :ct::timestamp GROUP BY "group", pid
+) x GROUP BY "group";

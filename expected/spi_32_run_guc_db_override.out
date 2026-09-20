@@ -1,0 +1,38 @@
+DELETE FROM task WHERE "group" IN ('run_db_a', 'run_db_b', 'run_db_c');
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+ALTER DATABASE :DBNAME SET pg_task.run = 1;
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+INSERT INTO task ("group", input) VALUES ('run_db_a', 'SELECT pg_sleep(5) AS a');
+INSERT INTO task ("group", input) VALUES ('run_db_b', 'SELECT pg_sleep(5) AS a');
+INSERT INTO task ("group", input) VALUES ('run_db_c', 'SELECT pg_sleep(5) AS a');
+DO $body$ BEGIN
+    FOR i IN 1..120 LOOP
+        IF (SELECT count(*) FILTER (WHERE state != 'PLAN') FROM task WHERE "group" IN ('run_db_a', 'run_db_b', 'run_db_c')) >= 1 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT count(*) FILTER (WHERE state != 'PLAN') >= 1 AS some_dispatched_run_db_override, count(*) FILTER (WHERE state = 'PLAN') >= 1 AS some_capped_run_db_override FROM task WHERE "group" IN ('run_db_a', 'run_db_b', 'run_db_c') AND plan > :ct::timestamp;
+ some_dispatched_run_db_override | some_capped_run_db_override 
+---------------------------------+-----------------------------
+ t                               | t
+(1 row)
+
+ALTER DATABASE :DBNAME RESET pg_task.run;
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ BEGIN
+    FOR i IN 1..120 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" IN ('run_db_a', 'run_db_b', 'run_db_c') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;

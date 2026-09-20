@@ -1,0 +1,14 @@
+DELETE FROM task WHERE "group" = 'pause_no_drift';
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+SELECT quote_literal(clock_timestamp()) AS ct12 \gset
+WITH s AS (SELECT generate_series(1, 3) AS s) INSERT INTO task ("group", input, max) SELECT 'pause_no_drift', 'SELECT clock_timestamp() AS a', -3000 FROM s;
+DO $body$ BEGIN
+    FOR i IN 1..120 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'pause_no_drift' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", min(start) - :ct12::timestamptz < interval '2500 ms' AS first_run_immediate, bool_and(gap IS NULL OR gap BETWEEN interval '2 sec' AND interval '5 sec') AS pause_ok FROM (
+    SELECT "group", start, start - lag(start) OVER (ORDER BY start) AS gap FROM task WHERE "group" = 'pause_no_drift' AND plan > :ct::timestamp
+) x GROUP BY "group";

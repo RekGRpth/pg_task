@@ -1,0 +1,42 @@
+DELETE FROM task WHERE "group" = 'repeat_no_drift';
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+INSERT INTO task ("group", input, repeat) VALUES ('repeat_no_drift', 'SELECT pg_sleep(1) AS a', '3 sec');
+DO $body$ BEGIN
+    FOR i IN 1..90 LOOP
+        IF (SELECT count(*) FILTER (WHERE state = 'DONE') >= 3 FROM task WHERE "group" = 'repeat_no_drift') THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+DELETE FROM task WHERE "group" = 'repeat_no_drift' AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" = 'repeat_no_drift' AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" = 'repeat_no_drift' AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" = 'repeat_no_drift' AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" = 'repeat_no_drift' AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" = 'repeat_no_drift' AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" = 'repeat_no_drift' AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" = 'repeat_no_drift' AND state = 'PLAN';
+DO $$ BEGIN PERFORM pg_sleep(1); END $$;
+DELETE FROM task WHERE "group" = 'repeat_no_drift' AND state = 'PLAN';
+DO $body$ BEGIN
+    FOR i IN 1..120 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'repeat_no_drift' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+DELETE FROM task WHERE "group" = 'repeat_no_drift' AND state NOT IN ('DONE', 'GONE', 'FAIL');
+WITH g AS (
+    SELECT id, parent, lag(id) OVER (ORDER BY plan) AS prev_id, plan - lag(plan) OVER (ORDER BY plan) AS gap
+    FROM task WHERE "group" = 'repeat_no_drift' AND plan > :ct::timestamp
+)
+SELECT count(*) >= 3 AS repeated_enough,
+    bool_and(parent IS NOT DISTINCT FROM prev_id) AS parent_chain_ok,
+    bool_and(gap IS NULL OR LEAST(extract(epoch FROM gap)::numeric % 3, 3 - extract(epoch FROM gap)::numeric % 3) < 0.5) AS grid_aligned
+FROM g;

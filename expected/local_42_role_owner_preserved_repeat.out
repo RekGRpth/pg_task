@@ -1,0 +1,19 @@
+DELETE FROM task WHERE "group" = 'role_owner_preserved_repeat';
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+SET ROLE task_owner_test;
+INSERT INTO task ("group", input, repeat) VALUES ('role_owner_preserved_repeat', 'SELECT pg_sleep(0.2) AS a', '1 sec');
+RESET ROLE;
+DO $body$ BEGIN
+    FOR i IN 1..120 LOOP
+        IF (SELECT count(*) FILTER (WHERE state = 'DONE') FROM task WHERE "group" = 'role_owner_preserved_repeat') >= 3 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT count(*) >= 3 AS repeated_enough, bool_and("user" = 'task_owner_test') AS owner_preserved_across_repeats FROM task WHERE "group" = 'role_owner_preserved_repeat' AND plan > :ct::timestamp;
+ repeated_enough | owner_preserved_across_repeats 
+-----------------+--------------------------------
+ t               | t
+(1 row)
+
+DELETE FROM task WHERE "group" = 'role_owner_preserved_repeat';

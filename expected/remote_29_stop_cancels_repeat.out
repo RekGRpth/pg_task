@@ -1,0 +1,24 @@
+DELETE FROM task WHERE "group" = 'stop_cancels_repeat';
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+INSERT INTO task ("group", input, repeat, remote) VALUES ('stop_cancels_repeat', 'SELECT pg_sleep(30)', '3 sec', 'dbname=' || :'DBNAME');
+DO $body$ BEGIN
+    FOR i IN 1..90 LOOP
+        IF (SELECT state FROM task WHERE "group" = 'stop_cancels_repeat' AND parent IS NULL) = 'WORK' THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+UPDATE task SET state = 'STOP' WHERE "group" = 'stop_cancels_repeat' AND parent IS NULL AND state = 'WORK';
+DO $body$ BEGIN
+    FOR i IN 1..15 LOOP
+        IF (SELECT state FROM task WHERE "group" = 'stop_cancels_repeat' AND parent IS NULL) = 'STOP' THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT count(*) = 1 AS no_repeat_after_stop, bool_and(state = 'STOP') AS cancelled_cleanly FROM task WHERE "group" = 'stop_cancels_repeat';
+ no_repeat_after_stop | cancelled_cleanly 
+----------------------+-------------------
+ t                    | t
+(1 row)
+
+DELETE FROM task WHERE "group" = 'stop_cancels_repeat'; -- a STOP row is terminal and never cleaned up by pg_task itself; leaving it behind would make every later "wait for everything to finish" loop spin out to its full bound

@@ -1,0 +1,34 @@
+ALTER SYSTEM SET log_error_verbosity = 'verbose';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+SET check_function_bodies = off;
+CREATE FUNCTION query_location_probe() RETURNS int LANGUAGE SQL AS $probe$SELECT SELEKT 1$probe$;
+RESET check_function_bodies;
+DELETE FROM task WHERE "group" = 'error_query_location';
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+INSERT INTO task ("group", input, remote) VALUES ('error_query_location', 'SELECT query_location_probe()', 'dbname=' || :'DBNAME');
+DO $body$ BEGIN
+    FOR i IN 1..15 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'error_query_location' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT error LIKE '%QUERY:  SELECT SELEKT 1%' AS query_field_ok, error LIKE '%LOCATION:  %, %:%' AS location_field_ok, state FROM task WHERE "group" = 'error_query_location' AND plan > :ct::timestamp;
+ query_field_ok | location_field_ok | state 
+----------------+-------------------+-------
+ t              | t                 | FAIL
+(1 row)
+
+DROP FUNCTION query_location_probe();
+ALTER SYSTEM RESET log_error_verbosity;
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+

@@ -1,0 +1,16 @@
+DELETE FROM task WHERE "group" = 'transaction_control_rejected';
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+INSERT INTO task ("group", input) VALUES ('transaction_control_rejected', 'BEGIN');
+DO $body$ BEGIN
+    FOR i IN 1..15 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'transaction_control_rejected' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, error LIKE '%transaction control statement is not supported%' AS rejected_cleanly FROM task WHERE "group" = 'transaction_control_rejected' AND plan > :ct::timestamp;
+ state | rejected_cleanly 
+-------+------------------
+ FAIL  | t
+(1 row)
+
