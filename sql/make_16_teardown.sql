@@ -3,6 +3,7 @@ SELECT value AS base_json FROM pg_task_test_state WHERE key = 'base_json'
 SELECT set_config('pg_task_test.base_json_added', value, false) AS ignored FROM pg_task_test_state WHERE key = 'base_json_added'
 \gset
 DROP TABLE pg_task_test_state;
+ALTER SYSTEM RESET pg_work.restart;
 ALTER SYSTEM SET pg_task.json = :'base_json';
 SELECT pg_reload_conf();
 DO $body$ DECLARE ok boolean := false; BEGIN

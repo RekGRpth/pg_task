@@ -6,6 +6,7 @@ SELECT CASE WHEN :'base_json_added' = 't' THEN left(:'base_json', -1) || ',{"dat
 \gset
 CREATE TABLE pg_task_test_state (key text PRIMARY KEY, value text);
 INSERT INTO pg_task_test_state VALUES ('base_json', :'base_json'), ('base_json_added', :'base_json_added');
+ALTER SYSTEM SET pg_work.restart = 1;
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ DECLARE ok boolean := false; BEGIN

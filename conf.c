@@ -28,9 +28,40 @@
 #endif
 
 static dlist_head head;
+static dlist_head reg_head;
+
+typedef struct Registered {
+    BackgroundWorkerHandle *handle;
+    char data[NAMEDATALEN];
+    char user[NAMEDATALEN];
+    dlist_node node;
+    int hash;
+    int slot;
+} Registered;
 
 static void conf_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
+}
+
+static void conf_reconcile(void) {
+    dlist_mutable_iter iter;
+    dlist_foreach_modify(iter, &reg_head) {
+        Registered *r = dlist_container(Registered, node, iter.cur);
+        dlist_iter want;
+        bool wanted = false;
+        dlist_foreach(want, &head) {
+            const Work *w = dlist_container(Work, node, want.cur);
+            if (w->shared->hash == r->hash && !strcmp(w->shared->data, r->data) && !strcmp(w->shared->user, r->user)) { wanted = true; break; }
+        }
+        if (wanted) continue;
+        elog(DEBUG1, "terminating orphaned worker, data = %s, user = %s, hash = %i, slot = %i", r->data, r->user, r->hash, r->slot);
+        TerminateBackgroundWorker(r->handle);
+        WaitForBackgroundWorkerShutdown(r->handle);
+        init_free(r->slot);
+        pfree(r->handle);
+        dlist_delete(&r->node);
+        pfree(r);
+    }
 }
 
 static void conf_free(Work *w) {
@@ -42,6 +73,7 @@ static void conf_free(Work *w) {
 static void conf_work(Work *w) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker = {0};
+    int slot;
     size_t len;
     set_ps_display_my("work");
     w->data = quote_identifier(w->shared->data);
@@ -57,19 +89,32 @@ static void conf_work(Work *w) {
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    if ((worker.bgw_main_arg = Int32GetDatum(init_arg(w->shared))) == Int32GetDatum(-1)) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not find empty slot")));
+    if ((slot = init_arg(w->shared)) == -1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not find empty slot")));
+    worker.bgw_main_arg = Int32GetDatum(slot);
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = init_work_restart();
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
     if (!RegisterDynamicBackgroundWorker(&worker, &handle)) {
-        init_free(worker.bgw_main_arg);
+        init_free(slot);
         ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
     }
     switch (WaitForBackgroundWorkerStartup(handle, &w->pid)) {
-        case BGWH_NOT_YET_STARTED: init_free(worker.bgw_main_arg); ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
-        case BGWH_POSTMASTER_DIED: init_free(worker.bgw_main_arg); ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
-        case BGWH_STARTED: elog(DEBUG1, "started"); conf_free(w); break;
-        case BGWH_STOPPED: init_free(worker.bgw_main_arg); ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
+        case BGWH_NOT_YET_STARTED: init_free(slot); ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
+        case BGWH_POSTMASTER_DIED: init_free(slot); ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
+        case BGWH_STARTED: {
+            Registered *r = MemoryContextAllocZero(TopMemoryContext, sizeof(Registered));
+            r->handle = handle;
+            r->hash = w->shared->hash;
+            r->slot = slot;
+            strlcpy(r->data, w->shared->data, sizeof(r->data));
+            strlcpy(r->user, w->shared->user, sizeof(r->user));
+            dlist_push_tail(&reg_head, &r->node);
+            handle = NULL;
+            elog(DEBUG1, "started, slot = %i", slot);
+            conf_free(w);
+            break;
+        }
+        case BGWH_STOPPED: init_free(slot); ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     if (handle) pfree(handle);
 }
@@ -101,14 +146,13 @@ static void conf_check(void) {
                 FROM        pg_catalog.jsonb_to_recordset(pg_catalog.current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "run" int4, "schema" text, "table" text, "sleep" int8, "spi" bool, "user" text)
                 LEFT JOIN   s AS d on d."setdatabase" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) COALESCE("data", "user", pg_catalog.current_setting('pg_task.data')))
                 LEFT JOIN   s AS u on u."setrole" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) COALESCE("user", "data", pg_catalog.current_setting('pg_task.user')))
-            ) SELECT    DISTINCT j.*, pg_catalog.hashtext(pg_catalog.concat_ws('.', "schema", "table"))::pg_catalog.int4 AS "hash" FROM j
+            ) SELECT    DISTINCT j.*, pg_catalog.hashtext(pg_catalog.concat_ws('.', "schema", "table"))::pg_catalog.int4 AS "hash", "pid" IS NULL AS "new" FROM j
             LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock'
             AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock'
             AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3
             AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) "data")
             AND "classid" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) "user")
             AND "objid" OPERATOR(pg_catalog.=) pg_catalog.hashtext(pg_catalog.concat_ws('.', "schema", "table"))::pg_catalog.oid
-            WHERE "pid" IS NULL
         ),
 #if PG_VERSION_NUM >= 90500
         "jsonb_object"
@@ -129,6 +173,7 @@ static void conf_check(void) {
             set_ps_display_my("row");
             w->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(Shared));
             w->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
+            w->spawn = DatumGetBool(SPI_getbinval_my(val, tupdesc, "new", false, BOOLOID));
             w->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false, INT8OID));
             w->shared->run = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "run", false, INT4OID));
             w->shared->sleep = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "sleep", false, INT8OID));
@@ -138,7 +183,7 @@ static void conf_check(void) {
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "schema", false, TEXTOID)), w->shared->schema, sizeof(w->shared->schema));
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false, TEXTOID)), w->shared->table, sizeof(w->shared->table));
             text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false, TEXTOID)), w->shared->user, sizeof(w->shared->user));
-            elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, sleep = %li, reset = %li, run = %i, hash = %i, spi = %s, limit = %i", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset, w->shared->run, w->shared->hash, w->shared->spi ? "true" : "false", w->shared->limit);
+            elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, sleep = %li, reset = %li, run = %i, hash = %i, spi = %s, limit = %i, spawn = %s", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset, w->shared->run, w->shared->hash, w->shared->spi ? "true" : "false", w->shared->limit, w->spawn ? "true" : "false");
             dlist_push_tail(&head, &w->node);
             SPI_freetuple(val);
         }
@@ -146,7 +191,11 @@ static void conf_check(void) {
     SPI_cursor_close_my(portal);
     SPI_finish_my();
     set_ps_display_my("idle");
-    dlist_foreach_modify(iter, &head) conf_work(dlist_container(Work, node, iter.cur));
+    conf_reconcile();
+    dlist_foreach_modify(iter, &head) {
+        Work *w = dlist_container(Work, node, iter.cur);
+        if (w->spawn) conf_work(w); else conf_free(w);
+    }
 }
 
 static void conf_reload(void) {
@@ -162,6 +211,7 @@ static void conf_latch(void) {
 }
 
 void conf_main(Datum main_arg) {
+    dlist_init(&reg_head);
     before_shmem_exit(conf_exit, main_arg);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     BackgroundWorkerUnblockSignals();

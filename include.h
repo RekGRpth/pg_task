@@ -71,6 +71,7 @@ typedef struct Shared {
 } Shared;
 
 typedef struct Work {
+    bool spawn;
     char *schema_table;
     char *schema_type;
     const char *data;
