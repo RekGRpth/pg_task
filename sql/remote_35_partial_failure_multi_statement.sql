@@ -2,10 +2,11 @@ DELETE FROM task WHERE "group" = 'partial_failure';
 SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
 INSERT INTO task ("group", input, remote) VALUES ('partial_failure', 'BEGIN; SELECT 1 AS a', 'dbname=' || :'DBNAME');
-DO $body$ BEGIN
+DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..15 LOOP
-        IF (SELECT count(*) FROM task WHERE "group" = 'partial_failure' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        IF (SELECT count(*) FROM task WHERE "group" = 'partial_failure' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 15 x pg_sleep(1) waiting for task group ''partial_failure'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT output, error, state FROM task WHERE "group" = 'partial_failure' AND plan > :ct::timestamp;

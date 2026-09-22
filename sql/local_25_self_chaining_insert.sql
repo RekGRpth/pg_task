@@ -2,11 +2,12 @@ DELETE FROM task WHERE "group" = 'self_chaining_insert';
 SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
 INSERT INTO task ("group", input) VALUES ('self_chaining_insert', 'INSERT INTO task ("group", input) VALUES (''self_chaining_insert'', ''SELECT 1 AS a'')');
-DO $body$ BEGIN
-    FOR i IN 1..120 LOOP
-        IF (SELECT count(*) FROM task WHERE "group" = 'self_chaining_insert') >= 2 AND (SELECT count(*) FROM task WHERE "group" = 'self_chaining_insert' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..30 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'self_chaining_insert') >= 2 AND (SELECT count(*) FROM task WHERE "group" = 'self_chaining_insert' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 30 x pg_sleep(1) waiting for self-chained task to insert its follow-up row and both to finish'; END IF;
 END;$body$ LANGUAGE plpgsql;
 WITH g AS (
     SELECT id, parent, input, state FROM task WHERE "group" = 'self_chaining_insert' AND plan > :ct::timestamp

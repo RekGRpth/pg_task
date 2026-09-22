@@ -2,10 +2,11 @@ DELETE FROM task WHERE "group" = 'returning_insert';
 SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
 INSERT INTO task ("group", input) VALUES ('returning_insert', 'INSERT INTO returning_probe (val) VALUES (100) RETURNING id');
-DO $body$ BEGIN
+DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..15 LOOP
-        IF (SELECT count(*) FROM task WHERE "group" = 'returning_insert' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+        IF (SELECT count(*) FROM task WHERE "group" = 'returning_insert' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 15 x pg_sleep(1) waiting for task group ''returning_insert'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", output, error, state FROM task WHERE "group" = 'returning_insert' AND plan > :ct::timestamp;

@@ -8,10 +8,11 @@ SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' |
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
-DO $body$ BEGIN
-    FOR i IN 1..120 LOOP
-        IF to_regclass('task_make_test_schema.task_make_test') IS NOT NULL THEN EXIT; END IF;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..30 LOOP
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'task_make_test_schema' AND c.relname = 'task_make_test') THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 30 x pg_sleep(1) waiting for table task_make_test_schema.task_make_test to be created by the pg_work worker'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT to_regclass('task_make_test_schema.task_make_test') IS NOT NULL AS table_created;

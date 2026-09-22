@@ -6,10 +6,11 @@ SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' |
 \gset
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
-DO $body$ BEGIN
-    FOR i IN 1..120 LOOP
-        IF (SELECT count(*) FROM pg_catalog.pg_attribute WHERE attrelid = 'task_column_drift_test_schema.task_column_drift_test'::regclass AND attname = 'delimiter' AND NOT attisdropped) = 1 THEN EXIT; END IF;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..30 LOOP
+        IF (SELECT count(*) FROM pg_catalog.pg_attribute WHERE attrelid = 'task_column_drift_test_schema.task_column_drift_test'::regclass AND attname = 'delimiter' AND NOT attisdropped) = 1 THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 30 x pg_sleep(1) waiting for column ''delimiter'' on task_column_drift_test_schema.task_column_drift_test to be healed back to a single non-dropped column'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT count(*) = 1 AS column_healed FROM pg_catalog.pg_attribute WHERE attrelid = 'task_column_drift_test_schema.task_column_drift_test'::regclass AND attname = 'delimiter' AND NOT attisdropped;

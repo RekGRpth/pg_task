@@ -5,11 +5,12 @@ CREATE SCHEMA sp_probe_schema;
 CREATE FUNCTION sp_probe_schema.search_path_probe() RETURNS text LANGUAGE sql AS $$ SELECT 'found'::text $$;
 DO $$ BEGIN EXECUTE format('ALTER DATABASE %I SET search_path = sp_probe_schema, public', current_database()); END $$;
 INSERT INTO task ("group", input) VALUES ('search_path', 'SELECT search_path_probe() AS a');
-DO $body$ BEGIN
-    FOR i IN 1..120 LOOP
-        IF (SELECT count(*) FROM task WHERE "group" = 'search_path' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN EXIT; END IF;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..30 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'search_path' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 30 x pg_sleep(1) waiting for task group ''search_path'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = 'search_path' AND plan > :ct::timestamp;
 DO $$ BEGIN EXECUTE format('ALTER DATABASE %I RESET search_path', current_database()); END $$;

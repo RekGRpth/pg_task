@@ -2,11 +2,12 @@ DELETE FROM task WHERE "group" = 'worker_crash_recovery';
 SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
 INSERT INTO task ("group", input) VALUES ('worker_crash_recovery', 'SELECT pg_sleep(10) AS a');
-DO $body$ BEGIN
+DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..15 LOOP
-        IF (SELECT state FROM task WHERE "group" = 'worker_crash_recovery') = 'WORK' THEN EXIT; END IF;
+        IF (SELECT state FROM task WHERE "group" = 'worker_crash_recovery') = 'WORK' THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 15 x pg_sleep(1) waiting for task in group ''worker_crash_recovery'' to reach WORK state'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT pid AS orig_pid FROM task WHERE "group" = 'worker_crash_recovery'
 \gset
@@ -23,11 +24,12 @@ SELECT pg_reload_conf();
  t
 (1 row)
 
-DO $body$ BEGIN
-    FOR i IN 1..120 LOOP
-        IF (SELECT state FROM task WHERE "group" = 'worker_crash_recovery') = 'DONE' THEN EXIT; END IF;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..30 LOOP
+        IF (SELECT state FROM task WHERE "group" = 'worker_crash_recovery') = 'DONE' THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 30 x pg_sleep(1) waiting for task in group ''worker_crash_recovery'' to reach DONE state'; END IF;
 END;$body$ LANGUAGE plpgsql;
 ALTER SYSTEM RESET pg_task.reset;
 SELECT pg_reload_conf();

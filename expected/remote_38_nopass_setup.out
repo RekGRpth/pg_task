@@ -16,11 +16,12 @@ SELECT pg_reload_conf();
  t
 (1 row)
 
-DO $body$ BEGIN
-    FOR i IN 1..120 LOOP
-        IF to_regclass('remote_nopass_test_schema.task') IS NOT NULL THEN EXIT; END IF;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..30 LOOP
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'remote_nopass_test_schema' AND c.relname = 'task') THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(1);
     END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 30 x pg_sleep(1) waiting for table remote_nopass_test_schema.task to be created by the pg_work worker'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT (SELECT count(*) FROM pg_catalog.pg_settings WHERE name = 'gp_role') > 0 AS is_gp
 \gset
