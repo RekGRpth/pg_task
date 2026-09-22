@@ -43,6 +43,18 @@ static void conf_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
 }
 
+#if PG_VERSION_NUM < 90500
+static BgwHandleStatus WaitForBackgroundWorkerShutdown(BackgroundWorkerHandle *handle) {
+    BgwHandleStatus status;
+    pid_t pid;
+    while ((status = GetBackgroundWorkerPid(handle, &pid)) != BGWH_STOPPED) {
+        CHECK_FOR_INTERRUPTS();
+        pg_usleep(10000L);
+    }
+    return status;
+}
+#endif
+
 static void conf_reconcile(void) {
     dlist_mutable_iter iter;
     dlist_foreach_modify(iter, &reg_head) {
