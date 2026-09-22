@@ -35,6 +35,44 @@
 #include <utils/rel.h>
 #endif
 
+static void make_ddl(const char *src, int res) {
+    ResourceOwner oldowner = CurrentResourceOwner;
+    MemoryContext oldcontext = CurrentMemoryContext;
+    bool ok = false;
+    SPI_connect_my(src);
+    SetConfigOption("lock_timeout", "2000", PGC_USERSET, PGC_S_SESSION);
+    for (int attempt = 1; !ok && attempt <= 5; attempt++) {
+        BeginInternalSubTransaction(NULL);
+        MemoryContextSwitchTo(oldcontext);
+        PG_TRY();
+            SPI_execute_with_args_my(src, 0, NULL, NULL, NULL, res);
+            ReleaseCurrentSubTransaction();
+            MemoryContextSwitchTo(oldcontext);
+            CurrentResourceOwner = oldowner;
+            ok = true;
+        PG_CATCH();
+            {
+                ErrorData *edata;
+                MemoryContextSwitchTo(oldcontext);
+                edata = CopyErrorData();
+                FlushErrorState();
+                RollbackAndReleaseCurrentSubTransaction();
+                MemoryContextSwitchTo(oldcontext);
+                CurrentResourceOwner = oldowner;
+#if PG_VERSION_NUM < 100000
+                SPI_restore_connection();
+#endif
+                if (edata->sqlerrcode != ERRCODE_LOCK_NOT_AVAILABLE || attempt == 5) ReThrowError(edata);
+                elog(DEBUG1, "lock not available, attempt = %i, src = %s", attempt, src);
+                FreeErrorData(edata);
+                pg_usleep(200000L);
+            }
+        PG_END_TRY();
+    }
+    SetConfigOption("lock_timeout", "0", PGC_USERSET, PGC_S_SESSION);
+    SPI_finish_my();
+}
+
 static Oid make_oid(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
     Oid oid;
     SPI_connect_my(src);
@@ -69,9 +107,7 @@ void make_schema(const Work *w) {
         appendStringInfo(&src, SQL(
             CREATE SCHEMA %s;
         ), w->schema);
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
+        make_ddl(src.data, SPI_OK_UTILITY);
     }
     pfree(src.data);
     pfree((void *)values[0]);
@@ -90,9 +126,7 @@ static void make_default(const Work *w, const char *name, const char *value) {
             ALTER TABLE %1$s ALTER COLUMN "%2$s" SET DEFAULT %3$s;
             UPDATE %1$s SET "%2$s" = DEFAULT WHERE "%2$s" IS NULL;
         ), w->schema_table, name, value);
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UPDATE);
-        SPI_finish_my();
+        make_ddl(src.data, SPI_OK_UPDATE);
     }
     pfree(src.data);
 }
@@ -108,9 +142,7 @@ static void make_constraint(const Work *w, const char *name, const char *value, 
         appendStringInfo(&src, SQL(
             ALTER TABLE %1$s ADD CHECK ("%2$s" %3$s%4$s);
         ), w->schema_table, name, value, type ? type : "");
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
+        make_ddl(src.data, SPI_OK_UTILITY);
     }
     pfree(src.data);
 }
@@ -129,9 +161,7 @@ static void make_function(const Work *w, const char *name, const char *source, b
         appendStringInfo(&src, SQL(
             CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp %4$s AS $function$%3$s$function$ LANGUAGE plpgsql;
         ), w->schema, quote, source, security_definer ? "SECURITY DEFINER" : "SECURITY INVOKER");
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
+        make_ddl(src.data, SPI_OK_UTILITY);
         if (quote != name) pfree((void *)quote);
     }
     pfree(src.data);
@@ -154,9 +184,7 @@ static void make_trigger(const Work *w, const char *name, const char *when, cons
         appendStringInfo(&src, SQL(
             CREATE TRIGGER %1$s %2$s ON %3$s FOR EACH %4$s EXECUTE PROCEDURE %5$s.%1$s();
         ), quote, when, w->schema_table, each, w->schema);
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
+        make_ddl(src.data, SPI_OK_UTILITY);
         if (quote != name) pfree((void *)quote);
     }
     pfree(src.data);
@@ -328,9 +356,7 @@ static void make_column(const Work *w, const char *name, const char *schema_type
         appendStringInfo(&src, SQL(
             ALTER TABLE %1$s %2$s COLUMN "%3$s" %4$s;
         ), w->schema_table, schema_type ? "ADD" : "DROP", name, schema_type ? schema_type : "");
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
+        make_ddl(src.data, SPI_OK_UTILITY);
     }
     pfree(src.data);
 }
@@ -346,9 +372,7 @@ static void make_not_null(const Work *w, const char *name, bool not_null) {
         appendStringInfo(&src, SQL(
             ALTER TABLE %1$s ALTER COLUMN "%2$s" %3$s NOT NULL;
         ), w->schema_table, name, not_null ? "SET" : "DROP");
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
+        make_ddl(src.data, SPI_OK_UTILITY);
     }
     pfree(src.data);
 }
@@ -364,9 +388,7 @@ static void make_index(const Work *w, const char *name) {
         appendStringInfo(&src, SQL(
             CREATE INDEX ON %1$s USING btree ("%2$s");
         ), w->schema_table, name);
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
+        make_ddl(src.data, SPI_OK_UTILITY);
     }
     pfree(src.data);
 }
@@ -382,9 +404,7 @@ static void make_hash(const Work *w, const char *value) {
         appendStringInfo(&src, SQL(
             CREATE INDEX ON %1$s USING btree (%2$s);
         ), w->schema_table, value);
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
+        make_ddl(src.data, SPI_OK_UTILITY);
     }
     pfree(src.data);
 }
@@ -403,9 +423,7 @@ static void make_table_comment(const Work *w, const char *value) {
         appendStringInfo(&src, SQL(
             COMMENT ON TABLE %1$s IS %2$s;
         ), w->schema_table, quote_value);
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
+        make_ddl(src.data, SPI_OK_UTILITY);
         if (quote_value != value) pfree((void *)quote_value);
     }
     pfree(src.data);
@@ -427,9 +445,7 @@ static void make_comment(const Work *w, const char *name, const char *value) {
         appendStringInfo(&src, SQL(
             COMMENT ON COLUMN %1$s.%2$s IS %3$s;
         ), w->schema_table, quote_name, quote_value);
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
+        make_ddl(src.data, SPI_OK_UTILITY);
         if (quote_name != name) pfree((void *)quote_name);
         if (quote_value != value) pfree((void *)quote_value);
     }
@@ -483,9 +499,7 @@ void make_table(const Work *w) {
                 "user" pg_catalog.name
             );
         ), w->schema_table, w->schema_type);
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
+        make_ddl(src.data, SPI_OK_UTILITY);
     }
     resetStringInfo(&src);
     appendStringInfo(&src, SQL(
@@ -661,9 +675,7 @@ static void make_enum(const Work *w, const char *name) {
             ALTER TYPE %1$s ADD VALUE '%2$s';
         ), w->schema_type, name);
 #if PG_VERSION_NUM >= 120000
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
+        make_ddl(src.data, SPI_OK_UTILITY);
 #else
         if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);
         SetCurrentStatementStartTimestamp();
@@ -689,9 +701,7 @@ void make_type(const Work *w) {
         appendStringInfo(&src, SQL(
             CREATE TYPE %s AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');
         ), w->schema_type);
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
+        make_ddl(src.data, SPI_OK_UTILITY);
     }
     pfree(src.data);
     pfree((void *)values[0]);
@@ -719,9 +729,7 @@ void make_user(const Work *w) {
         appendStringInfo(&src, SQL(
             CREATE ROLE %s WITH LOGIN;
         ), w->user);
-        SPI_connect_my(src.data);
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-        SPI_finish_my();
+        make_ddl(src.data, SPI_OK_UTILITY);
     }
     pfree(src.data);
     pfree((void *)values[0]);
