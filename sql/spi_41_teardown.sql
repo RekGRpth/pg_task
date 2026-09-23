@@ -9,6 +9,7 @@ SELECT set_config('pg_task_test.base_json_added', value, false) AS ignored FROM 
 DROP TABLE pg_task_test_state;
 DELETE FROM task WHERE plan > :ct::timestamp; -- catch-all: remove anything this run inserted that an earlier per-group DELETE missed
 ALTER SYSTEM RESET pg_work.restart;
+ALTER SYSTEM RESET pg_task.sleep;
 ALTER SYSTEM SET pg_task.json = :'base_json';
 SELECT pg_reload_conf();
 DO $body$ DECLARE ok boolean := false; BEGIN
