@@ -3,9 +3,9 @@ SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
 ALTER DATABASE :DBNAME SET pg_task.run = 1;
 SELECT pg_reload_conf();
-INSERT INTO task ("group", input, remote) VALUES ('run_db_a', 'SELECT pg_sleep(5) AS a', 'dbname=' || :'DBNAME');
-INSERT INTO task ("group", input, remote) VALUES ('run_db_b', 'SELECT pg_sleep(5) AS a', 'dbname=' || :'DBNAME');
-INSERT INTO task ("group", input, remote) VALUES ('run_db_c', 'SELECT pg_sleep(5) AS a', 'dbname=' || :'DBNAME');
+INSERT INTO task ("group", input, remote) VALUES ('run_db_a', 'SELECT pg_sleep(1) AS a', 'dbname=' || :'DBNAME');
+INSERT INTO task ("group", input, remote) VALUES ('run_db_b', 'SELECT pg_sleep(1) AS a', 'dbname=' || :'DBNAME');
+INSERT INTO task ("group", input, remote) VALUES ('run_db_c', 'SELECT pg_sleep(1) AS a', 'dbname=' || :'DBNAME');
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         IF (SELECT count(*) FILTER (WHERE state != 'PLAN') FROM task WHERE "group" IN ('run_db_a', 'run_db_b', 'run_db_c')) >= 1 THEN ok := true; EXIT; END IF;

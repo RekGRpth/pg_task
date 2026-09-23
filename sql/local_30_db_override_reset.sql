@@ -1,7 +1,7 @@
 DELETE FROM task WHERE "group" = 'db_override_reset';
 SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
-INSERT INTO task ("group", input) VALUES ('db_override_reset', 'SELECT pg_sleep(10) AS a');
+INSERT INTO task ("group", input) VALUES ('db_override_reset', 'SELECT pg_sleep(3) AS a');
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..150 LOOP
         IF (SELECT state FROM task WHERE "group" = 'db_override_reset') = 'WORK' THEN ok := true; EXIT; END IF;

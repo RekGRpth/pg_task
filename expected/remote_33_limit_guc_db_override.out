@@ -8,9 +8,9 @@ SELECT pg_reload_conf();
  t
 (1 row)
 
-INSERT INTO task ("group", input, remote) VALUES ('limit_db_a', 'SELECT pg_sleep(5) AS a', 'dbname=' || :'DBNAME');
-INSERT INTO task ("group", input, remote) VALUES ('limit_db_b', 'SELECT pg_sleep(5) AS a', 'dbname=' || :'DBNAME');
-INSERT INTO task ("group", input, remote) VALUES ('limit_db_c', 'SELECT pg_sleep(5) AS a', 'dbname=' || :'DBNAME');
+INSERT INTO task ("group", input, remote) VALUES ('limit_db_a', 'SELECT pg_sleep(1) AS a', 'dbname=' || :'DBNAME');
+INSERT INTO task ("group", input, remote) VALUES ('limit_db_b', 'SELECT pg_sleep(1) AS a', 'dbname=' || :'DBNAME');
+INSERT INTO task ("group", input, remote) VALUES ('limit_db_c', 'SELECT pg_sleep(1) AS a', 'dbname=' || :'DBNAME');
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         IF (SELECT count(*) FILTER (WHERE state != 'PLAN') FROM task WHERE "group" IN ('limit_db_a', 'limit_db_b', 'limit_db_c')) >= 1 THEN ok := true; EXIT; END IF;

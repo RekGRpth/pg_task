@@ -3,9 +3,9 @@ SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
 ALTER SYSTEM SET pg_task."limit" = 1;
 SELECT pg_reload_conf();
-INSERT INTO task ("group", input) VALUES ('limit_sys_a', 'SELECT pg_sleep(5) AS a');
-INSERT INTO task ("group", input) VALUES ('limit_sys_b', 'SELECT pg_sleep(5) AS a');
-INSERT INTO task ("group", input) VALUES ('limit_sys_c', 'SELECT pg_sleep(5) AS a');
+INSERT INTO task ("group", input) VALUES ('limit_sys_a', 'SELECT pg_sleep(1) AS a');
+INSERT INTO task ("group", input) VALUES ('limit_sys_b', 'SELECT pg_sleep(1) AS a');
+INSERT INTO task ("group", input) VALUES ('limit_sys_c', 'SELECT pg_sleep(1) AS a');
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         IF (SELECT count(*) FILTER (WHERE state != 'PLAN') FROM task WHERE "group" IN ('limit_sys_a', 'limit_sys_b', 'limit_sys_c')) >= 1 THEN ok := true; EXIT; END IF;
