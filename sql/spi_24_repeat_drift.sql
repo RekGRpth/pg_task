@@ -1,7 +1,7 @@
 DELETE FROM task WHERE "group" = 'repeat_drift';
 SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
-INSERT INTO task ("group", input, repeat, drift) VALUES ('repeat_drift', 'SELECT pg_sleep(1) AS a', '3 sec', true);
+INSERT INTO task ("group", input, repeat, drift) VALUES ('repeat_drift', 'SELECT pg_sleep(0.2) AS a', '1 sec', true);
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..900 LOOP
         IF (SELECT count(*) FILTER (WHERE state = 'DONE') >= 3 FROM task WHERE "group" = 'repeat_drift') THEN ok := true; EXIT; END IF;
@@ -31,5 +31,5 @@ WITH g AS (
 )
 SELECT count(*) >= 3 AS repeated_enough,
     bool_and(parent IS NOT DISTINCT FROM prev_id) AS parent_chain_ok,
-    bool_and(gap IS NULL OR gap BETWEEN interval '2900 ms' AND interval '3500 ms') AS drift_from_stop_ok
+    bool_and(gap IS NULL OR gap BETWEEN interval '900 ms' AND interval '1500 ms') AS drift_from_stop_ok
 FROM g;
