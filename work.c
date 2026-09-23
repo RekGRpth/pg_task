@@ -87,6 +87,7 @@ static void work_result(Task *t);
 static void work_stop(const Work *w);
 
 #define work_error(...) do { \
+    bool work_error_remote = t->remote != NULL; \
     PG_TRY(); \
         ereport(ERROR, __VA_ARGS__); \
     PG_CATCH(); \
@@ -95,7 +96,7 @@ static void work_stop(const Work *w);
         FlushErrorState(); \
     PG_END_TRY(); \
     task_done(t, false); \
-    t->remote != NULL ? work_finish(t) : work_free(t); \
+    work_error_remote ? work_finish(t) : work_free(t); \
 } while(0)
 
 static
