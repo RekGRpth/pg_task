@@ -13,10 +13,10 @@ RESET pg_task.delimiter;
 RESET pg_task."null";
 RESET pg_task.quote;
 DO $body$ DECLARE ok boolean := false; BEGIN
-    FOR i IN 1..15 LOOP
+    FOR i IN 1..150 LOOP
         IF (SELECT count(*) FROM task WHERE "group" = 'output_format_guc' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
-        PERFORM pg_sleep(1);
+        PERFORM pg_sleep(0.1);
     END LOOP;
-    IF NOT ok THEN RAISE EXCEPTION 'timed out after 15 x pg_sleep(1) waiting for task group ''output_format_guc'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 150 x pg_sleep(0.1) waiting for task group ''output_format_guc'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT output = '"1","text",<NULL>' AS format_ok FROM task WHERE "group" = 'output_format_guc' AND plan > :ct::timestamp;

@@ -8,10 +8,10 @@ SET ROLE task_owner_test_b;
 INSERT INTO task ("group", input, header) VALUES ('role_two_distinct_owners', 'SELECT current_user OPERATOR(pg_catalog.=) ''task_owner_test_b'' AS a', false);
 RESET ROLE;
 DO $body$ DECLARE ok boolean := false; BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..300 LOOP
         IF (SELECT count(*) FROM task WHERE "group" = 'role_two_distinct_owners' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
-        PERFORM pg_sleep(1);
+        PERFORM pg_sleep(0.1);
     END LOOP;
-    IF NOT ok THEN RAISE EXCEPTION 'timed out after 30 x pg_sleep(1) waiting for task group ''role_two_distinct_owners'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''role_two_distinct_owners'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT bool_and(output = 't') AS each_task_saw_its_own_identity, count(DISTINCT "user") = 2 AS two_distinct_owners FROM task WHERE "group" = 'role_two_distinct_owners' AND plan > :ct::timestamp;

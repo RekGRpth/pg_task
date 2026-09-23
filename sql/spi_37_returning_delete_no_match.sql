@@ -3,10 +3,10 @@ SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
 INSERT INTO task ("group", input) VALUES ('returning_delete_no_match', 'DELETE FROM returning_probe WHERE val = 99 RETURNING id');
 DO $body$ DECLARE ok boolean := false; BEGIN
-    FOR i IN 1..15 LOOP
+    FOR i IN 1..150 LOOP
         IF (SELECT count(*) FROM task WHERE "group" = 'returning_delete_no_match' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
-        PERFORM pg_sleep(1);
+        PERFORM pg_sleep(0.1);
     END LOOP;
-    IF NOT ok THEN RAISE EXCEPTION 'timed out after 15 x pg_sleep(1) waiting for task group ''returning_delete_no_match'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 150 x pg_sleep(0.1) waiting for task group ''returning_delete_no_match'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", output, error, state FROM task WHERE "group" = 'returning_delete_no_match' AND plan > :ct::timestamp;

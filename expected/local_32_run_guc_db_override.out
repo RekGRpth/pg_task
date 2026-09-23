@@ -12,11 +12,11 @@ INSERT INTO task ("group", input) VALUES ('run_db_a', 'SELECT pg_sleep(5) AS a')
 INSERT INTO task ("group", input) VALUES ('run_db_b', 'SELECT pg_sleep(5) AS a');
 INSERT INTO task ("group", input) VALUES ('run_db_c', 'SELECT pg_sleep(5) AS a');
 DO $body$ DECLARE ok boolean := false; BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..300 LOOP
         IF (SELECT count(*) FILTER (WHERE state != 'PLAN') FROM task WHERE "group" IN ('run_db_a', 'run_db_b', 'run_db_c')) >= 1 THEN ok := true; EXIT; END IF;
-        PERFORM pg_sleep(1);
+        PERFORM pg_sleep(0.1);
     END LOOP;
-    IF NOT ok THEN RAISE EXCEPTION 'timed out after 30 x pg_sleep(1) waiting for at least one task in groups ''run_db_a'', ''run_db_b'', ''run_db_c'' to leave PLAN state'; END IF;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for at least one task in groups ''run_db_a'', ''run_db_b'', ''run_db_c'' to leave PLAN state'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT count(*) FILTER (WHERE state != 'PLAN') >= 1 AS some_dispatched_run_db_override, count(*) FILTER (WHERE state = 'PLAN') >= 1 AS some_capped_run_db_override FROM task WHERE "group" IN ('run_db_a', 'run_db_b', 'run_db_c') AND plan > :ct::timestamp;
  some_dispatched_run_db_override | some_capped_run_db_override 
@@ -32,9 +32,9 @@ SELECT pg_reload_conf();
 (1 row)
 
 DO $body$ DECLARE ok boolean := false; BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..300 LOOP
         IF (SELECT count(*) FROM task WHERE "group" IN ('run_db_a', 'run_db_b', 'run_db_c') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
-        PERFORM pg_sleep(1);
+        PERFORM pg_sleep(0.1);
     END LOOP;
-    IF NOT ok THEN RAISE EXCEPTION 'timed out after 30 x pg_sleep(1) waiting for task groups ''run_db_a'', ''run_db_b'', ''run_db_c'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''run_db_a'', ''run_db_b'', ''run_db_c'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;

@@ -3,10 +3,10 @@ SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
 INSERT INTO task ("group", input, remote) VALUES ('application_name', 'SELECT 1', 'application_name');
 DO $body$ DECLARE ok boolean := false; BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..300 LOOP
         IF (SELECT count(*) FROM task WHERE "group" = 'application_name' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
-        PERFORM pg_sleep(1);
+        PERFORM pg_sleep(0.1);
     END LOOP;
-    IF NOT ok THEN RAISE EXCEPTION 'timed out after 30 x pg_sleep(1) waiting for task group ''application_name'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''application_name'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = 'application_name' AND plan > :ct::timestamp;

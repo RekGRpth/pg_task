@@ -4,11 +4,11 @@ SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, count, remote) SELECT 'max1_vs_max2', 'SELECT pg_sleep(1) AS a', 1, 6, 'dbname=' || :'DBNAME' FROM s;
 INSERT INTO task ("group", input, max, count, remote) VALUES ('max1_vs_max2', 'SELECT pg_sleep(1) AS a', 2, 6, 'dbname=' || :'DBNAME');
 DO $body$ DECLARE ok boolean := false; BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..300 LOOP
         IF (SELECT count(*) FROM task WHERE "group" = 'max1_vs_max2' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
-        PERFORM pg_sleep(1);
+        PERFORM pg_sleep(0.1);
     END LOOP;
-    IF NOT ok THEN RAISE EXCEPTION 'timed out after 30 x pg_sleep(1) waiting for task group ''max1_vs_max2'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''max1_vs_max2'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT
     (SELECT count(*) FROM task WHERE "group" = 'max1_vs_max2' AND max = 2 AND plan > :ct::timestamp AND state = 'DONE') = 1 AS max2_task_done,

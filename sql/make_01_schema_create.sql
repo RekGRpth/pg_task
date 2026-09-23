@@ -9,10 +9,11 @@ SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' |
 ALTER SYSTEM SET pg_task.json = :'json_val';
 SELECT pg_reload_conf();
 DO $body$ DECLARE ok boolean := false; BEGIN
-    FOR i IN 1..30 LOOP
-        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'task_make_test_schema' AND c.relname = 'task_make_test') THEN ok := true; EXIT; END IF;
-        PERFORM pg_sleep(1);
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'task_make_test_schema' AND c.relname = 'task_make_test') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work task_make_test_schema task_make_test %' AND datname = current_database() AND state = 'idle') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
     END LOOP;
-    IF NOT ok THEN RAISE EXCEPTION 'timed out after 30 x pg_sleep(1) waiting for table task_make_test_schema.task_make_test to be created by the pg_work worker'; END IF;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for table task_make_test_schema.task_make_test to be created by the pg_work worker'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT to_regclass('task_make_test_schema.task_make_test') IS NOT NULL AS table_created;

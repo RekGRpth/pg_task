@@ -8,11 +8,11 @@ SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
 INSERT INTO task ("group", input) VALUES ('error_query_location', 'SELECT local_query_location_probe()');
 DO $body$ DECLARE ok boolean := false; BEGIN
-    FOR i IN 1..15 LOOP
+    FOR i IN 1..150 LOOP
         IF (SELECT count(*) FROM task WHERE "group" = 'error_query_location' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
-        PERFORM pg_sleep(1);
+        PERFORM pg_sleep(0.1);
     END LOOP;
-    IF NOT ok THEN RAISE EXCEPTION 'timed out after 15 x pg_sleep(1) waiting for task group ''error_query_location'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 150 x pg_sleep(0.1) waiting for task group ''error_query_location'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT error LIKE '%QUERY:  SELECT SELEKT 1%' AS query_field_ok, error LIKE '%LOCATION:  %, %:%' AS location_field_ok, state FROM task WHERE "group" = 'error_query_location' AND plan > :ct::timestamp;
 DROP FUNCTION local_query_location_probe();

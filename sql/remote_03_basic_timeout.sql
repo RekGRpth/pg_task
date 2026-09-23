@@ -3,10 +3,10 @@ SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
 INSERT INTO task ("group", input, timeout, remote) VALUES ('basic_timeout', 'SELECT pg_sleep(2) AS a', '1 sec', 'dbname=' || :'DBNAME');
 DO $body$ DECLARE ok boolean := false; BEGIN
-    FOR i IN 1..30 LOOP
+    FOR i IN 1..300 LOOP
         IF (SELECT count(*) FROM task WHERE "group" = 'basic_timeout' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
-        PERFORM pg_sleep(1);
+        PERFORM pg_sleep(0.1);
     END LOOP;
-    IF NOT ok THEN RAISE EXCEPTION 'timed out after 30 x pg_sleep(1) waiting for task group ''basic_timeout'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''basic_timeout'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = 'basic_timeout' AND plan > :ct::timestamp;

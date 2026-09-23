@@ -8,11 +8,11 @@ SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 INSERT INTO task ("group", input) VALUES ('deadlock_a', 'UPDATE deadlock_probe SET val = 1 WHERE id = 1; SELECT pg_sleep(2); UPDATE deadlock_probe SET val = 1 WHERE id = 2');
 INSERT INTO task ("group", input) VALUES ('deadlock_b', 'UPDATE deadlock_probe SET val = 1 WHERE id = 2; SELECT pg_sleep(2); UPDATE deadlock_probe SET val = 1 WHERE id = 1');
 DO $body$ DECLARE ok boolean := false; BEGIN
-    FOR i IN 1..15 LOOP
+    FOR i IN 1..150 LOOP
         IF (SELECT count(*) FROM task WHERE "group" IN ('deadlock_a', 'deadlock_b') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
-        PERFORM pg_sleep(1);
+        PERFORM pg_sleep(0.1);
     END LOOP;
-    IF NOT ok THEN RAISE EXCEPTION 'timed out after 15 x pg_sleep(1) waiting for task groups ''deadlock_a'', ''deadlock_b'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 150 x pg_sleep(0.1) waiting for task groups ''deadlock_a'', ''deadlock_b'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT count(*) FILTER (WHERE state = 'FAIL' AND error LIKE '%deadlock detected%' AND error ~ 'Process \d+: ') = 1 AS deadlock_log_detail_ok, count(*) FILTER (WHERE state = 'DONE') = 1 AS other_committed FROM task WHERE "group" IN ('deadlock_a', 'deadlock_b') AND plan > :ct::timestamp;
 ALTER SYSTEM RESET deadlock_timeout;
