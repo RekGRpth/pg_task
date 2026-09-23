@@ -29,7 +29,14 @@ SELECT pg_reload_conf();
  t
 (1 row)
 
-DO $$ BEGIN PERFORM pg_sleep(5); END $$;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE datname = 'task_make_data_test') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for backend(s) connected to database ''task_make_data_test'' to disconnect'; END IF;
+END;$body$ LANGUAGE plpgsql;
 DROP DATABASE task_make_data_test;
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
