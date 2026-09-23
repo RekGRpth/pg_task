@@ -555,7 +555,7 @@ static void work_stop(const Work *w) {
 }
 
 static bool work_superuser(const char *user) {
-    Datum values[] = {CStringGetTextDatum(user)};
+    Datum values[] = {CStringGetTextDatumMy(user)};
     static Oid argtypes[] = {TEXTOID};
     bool result;
     StringInfoData src;
