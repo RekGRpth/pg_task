@@ -18,7 +18,8 @@ SELECT pg_reload_conf();
 
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
-        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'remote_nopass_test_schema' AND c.relname = 'task') THEN ok := true; EXIT; END IF;
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'remote_nopass_test_schema' AND c.relname = 'task') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work remote_nopass_test_schema task %' AND datname = current_database() AND state = 'idle') THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(0.1);
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for table remote_nopass_test_schema.task to be created by the pg_work worker'; END IF;
