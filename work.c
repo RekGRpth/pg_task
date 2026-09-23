@@ -536,18 +536,23 @@ static void work_stop(const Work *w) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            SELECT "id" FROM %1$s WHERE "remote" IS NOT NULL AND "state" OPERATOR(pg_catalog.=) 'STOP'
-        ), w->schema_table);
+            SELECT "id", "state" OPERATOR(pg_catalog.=) 'STOP' AS "stop" FROM %1$s WHERE "remote" IS NOT NULL AND "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK', 'STOP']::%2$s[])
+        ), w->schema_table, w->schema_type);
     }
     SPI_connect_my(src.data);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(src.data, plan, NULL, NULL, SPI_OK_SELECT);
-    for (uint64 row = 0; row < SPI_processed; row++) {
-        int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false, INT8OID));
-        dlist_foreach_modify(iter, &remote) {
-            Task *t = dlist_container(Task, node, iter.cur);
-            if (t->shared->id == id) { work_cancel(t); break; }
+    dlist_foreach_modify(iter, &remote) {
+        Task *t = dlist_container(Task, node, iter.cur);
+        bool found = false;
+        bool stop = false;
+        for (uint64 row = 0; row < SPI_processed; row++) {
+            if (t->shared->id != DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false, INT8OID))) continue;
+            found = true;
+            stop = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "stop", false, BOOLOID));
+            break;
         }
+        if (!found || stop) { elog(DEBUG1, "id = %li, found = %s, stop = %s", t->shared->id, found ? "true" : "false", stop ? "true" : "false"); work_cancel(t); }
     }
     SPI_finish_my();
     set_ps_display_my("idle");
