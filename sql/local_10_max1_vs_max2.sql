@@ -1,8 +1,8 @@
 DELETE FROM task WHERE "group" = 'max1_vs_max2';
 SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
-WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, count) SELECT 'max1_vs_max2', 'SELECT pg_sleep(1) AS a', 1, 6 FROM s;
-INSERT INTO task ("group", input, max, count) VALUES ('max1_vs_max2', 'SELECT pg_sleep(1) AS a', 2, 6);
+WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, count) SELECT 'max1_vs_max2', 'SELECT pg_sleep(0.3) AS a', 1, 6 FROM s;
+INSERT INTO task ("group", input, max, count) VALUES ('max1_vs_max2', 'SELECT pg_sleep(0.3) AS a', 2, 6);
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         IF (SELECT count(*) FROM task WHERE "group" = 'max1_vs_max2' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
