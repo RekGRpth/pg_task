@@ -2,7 +2,7 @@ SELECT value AS ct FROM pg_task_test_state WHERE key = 'start_ct'
 \gset
 SELECT value AS base_json FROM pg_task_test_state WHERE key = 'base_json'
 \gset
-SELECT set_config('pg_task_test.base_json_added', value, false) AS ignored FROM pg_task_test_state WHERE key = 'base_json_added'
+SELECT set_config('pg_task_test.base_json_added', (SELECT value FROM pg_task_test_state WHERE key = 'base_json_added'), false) AS ignored
 \gset
 DROP TABLE pg_task_test_state;
 DELETE FROM task WHERE plan > :ct::timestamp; -- catch-all: remove anything this run inserted that an earlier per-group DELETE missed
