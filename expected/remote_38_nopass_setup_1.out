@@ -1,0 +1,50 @@
+SET client_min_messages = warning;
+CREATE ROLE task_remote_nopass_test LOGIN;
+RESET client_min_messages;
+GRANT CREATE ON DATABASE :"DBNAME" TO task_remote_nopass_test;
+ALTER ROLE task_remote_nopass_test SET pg_task.schema = 'remote_nopass_test_schema';
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+DELETE FROM pg_task_test_state WHERE key = 'json_baseline';
+INSERT INTO pg_task_test_state VALUES ('json_baseline', :'json_baseline');
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"task_remote_nopass_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'remote_nopass_test_schema' AND c.relname = 'task') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work remote_nopass_test_schema task %' AND datname = current_database() AND state = 'idle') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for table remote_nopass_test_schema.task to be created by the pg_work worker'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT (SELECT count(*) FROM pg_catalog.pg_settings WHERE name = 'gp_role') > 0 AS is_gp
+\gset
+SELECT '/tmp/pg_task_gp_policy_' || pg_backend_pid() || '.sql' AS gp_policy_file
+\gset
+\pset tuples_only on
+\pset format unaligned
+\o :gp_policy_file
+SELECT CASE WHEN :'is_gp' = 't' THEN 'SELECT NOT EXISTS (SELECT 1 FROM gp_dist_random(' || chr(39) || 'pg_class' || chr(39) || ') WHERE oid = ' || chr(39) || 'remote_nopass_test_schema.task' || chr(39) || '::regclass) AS need_gp_utility' ELSE 'SELECT false AS need_gp_utility' END;
+SELECT '\gset';
+\o
+\i :gp_policy_file
+SELECT NOT EXISTS (SELECT 1 FROM gp_dist_random('pg_class') WHERE oid = 'remote_nopass_test_schema.task'::regclass) AS need_gp_utility
+\gset
+SELECT '/tmp/pg_task_gp_utility_' || pg_backend_pid() || '.sql' AS gp_utility_file
+\gset
+\o :gp_utility_file
+SELECT CASE WHEN :'need_gp_utility' = 't' THEN '\connect "dbname=' || :'DBNAME' || ' options=' || chr(39) || '-c gp_session_role=utility' || chr(39) || '"' ELSE '' END;
+\o
+\i :gp_utility_file
+\pset tuples_only off
+\pset format aligned
+GRANT INSERT ON remote_nopass_test_schema.task TO task_remote_nopass_test;
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE remote_nopass_test_schema.task_id_seq TO task_remote_nopass_test;
+\connect :DBNAME
