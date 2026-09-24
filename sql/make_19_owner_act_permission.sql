@@ -22,19 +22,22 @@ DO $body$ DECLARE ok boolean := false; BEGIN
 END;$body$ LANGUAGE plpgsql;
 INSERT INTO task_act_schema.task ("group", input, "user") VALUES ('stranger', 'SELECT current_user', 'task_act_stranger');
 INSERT INTO task_act_schema.task ("group", input, "user", repeat) VALUES ('member', 'SELECT current_user', 'task_act_member', '1 sec');
+-- remote tasks don't need pg_task.user to be a member of their author, whose repeats pg_task.user still inserts; the first run fails for want of a password, which doesn't matter here
+INSERT INTO task_act_schema.task ("group", input, "user", repeat, remote) VALUES ('stranger_remote', 'SELECT current_user', 'task_act_stranger', '1 sec', 'dbname=' || :'DBNAME');
 DO $body$ BEGIN
     FOR i IN 1..100 LOOP
-        EXIT WHEN (SELECT state FROM task_act_schema.task WHERE "group" = 'stranger')::text NOT IN ('PLAN', 'TAKE', 'WORK') AND (SELECT count(*) FROM task_act_schema.task WHERE "group" = 'member' AND state::text = 'DONE') >= 2;
+        EXIT WHEN (SELECT state FROM task_act_schema.task WHERE "group" = 'stranger')::text NOT IN ('PLAN', 'TAKE', 'WORK') AND (SELECT count(*) FROM task_act_schema.task WHERE "group" = 'member' AND state::text = 'DONE') >= 2 AND (SELECT count(*) FROM task_act_schema.task WHERE "group" = 'stranger_remote') >= 2;
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
 SELECT "user", state, error LIKE '%permission denied to run task as role "task_act_stranger"%' AS refused FROM task_act_schema.task WHERE "group" = 'stranger';
 -- the repeat is inserted as pg_task.user, and must still run as the author, not as pg_task.user
 SELECT "user", output, state FROM task_act_schema.task WHERE "group" = 'member' AND state::text = 'DONE' ORDER BY id LIMIT 2;
+SELECT "user" FROM task_act_schema.task WHERE "group" = 'stranger_remote' ORDER BY id LIMIT 2;
 DO $body$ BEGIN
     FOR i IN 1..100 LOOP
-        UPDATE task_act_schema.task SET state = 'STOP' WHERE "group" = 'member' AND state::text = 'PLAN';
-        EXIT WHEN (SELECT count(*) FROM task_act_schema.task WHERE "group" = 'member' AND state::text IN ('PLAN', 'TAKE', 'WORK')) = 0;
+        UPDATE task_act_schema.task SET state = 'STOP' WHERE "group" IN ('member', 'stranger_remote') AND state::text = 'PLAN';
+        EXIT WHEN (SELECT count(*) FROM task_act_schema.task WHERE "group" IN ('member', 'stranger_remote') AND state::text IN ('PLAN', 'TAKE', 'WORK')) = 0;
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;

@@ -256,6 +256,7 @@ static void make_stop(const Work *w) {
     pfree(source.data);
 }
 
+// the table owner (pg_task.user) keeps the user it inserts, for the repeats it copies: it isn't bound by this trigger anyway, being able to change its own table's triggers, and pg_work checks it may act as the user before running a local task
 static void make_user_immutable(const Work *w) {
     StringInfoData name;
     StringInfoData source;
@@ -266,7 +267,7 @@ static void make_user_immutable(const Work *w) {
         BEGIN
             IF TG_OP OPERATOR(pg_catalog.=) 'INSERT' THEN
                 BEGIN
-                    IF NOT pg_catalog.pg_has_role(current_user, NEW."user", 'MEMBER') THEN NEW."user" := current_user; END IF;
+                    IF NOT pg_catalog.pg_has_role(current_user, NEW."user", 'MEMBER') AND NOT pg_catalog.pg_has_role(current_user, (SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) TG_RELID), 'MEMBER') THEN NEW."user" := current_user; END IF;
                 EXCEPTION WHEN undefined_object THEN NEW."user" := current_user;
                 END;
             ELSIF NEW."user" IS DISTINCT FROM OLD."user" THEN RAISE EXCEPTION 'user column is immutable';
