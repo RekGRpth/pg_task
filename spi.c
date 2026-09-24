@@ -1,6 +1,7 @@
 #include "include.h"
 
 #include <executor/spi_priv.h>
+#include <miscadmin.h>
 #include <pgstat.h>
 #include <storage/proc.h>
 #include <tcop/utility.h>
