@@ -14,7 +14,7 @@ SELECT pg_reload_conf();
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         PERFORM pg_stat_clear_snapshot();
-        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'task_long_name_schema' AND c.relname = 'task_long_name_4567890123456789012345678901234567890123456789') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work task_long_name_schema %' AND datname = current_database() AND state = 'idle' AND (current_setting('server_version_num')::int < 100000 OR to_jsonb(a) ->> 'wait_event_type' = 'Extension')) THEN ok := true; EXIT; END IF;
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'task_long_name_schema' AND c.relname = 'task_long_name_4567890123456789012345678901234567890123456789') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work task_long_name_schema %' AND datname = current_database() AND state = 'idle' AND (current_setting('server_version_num')::int < 100000 OR to_json(a) ->> 'wait_event_type' = 'Extension')) THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(0.1);
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of the long-named table to become idle'; END IF;
@@ -38,7 +38,7 @@ SELECT pg_terminate_backend(:long_name_pid) AS terminated;
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         PERFORM pg_stat_clear_snapshot();
-        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work task_long_name_schema %' AND datname = current_database() AND pid <> current_setting('pg_task_test.long_name_pid')::int AND state = 'idle' AND (current_setting('server_version_num')::int < 100000 OR to_jsonb(a) ->> 'wait_event_type' = 'Extension')) THEN ok := true; EXIT; END IF;
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work task_long_name_schema %' AND datname = current_database() AND pid <> current_setting('pg_task_test.long_name_pid')::int AND state = 'idle' AND (current_setting('server_version_num')::int < 100000 OR to_json(a) ->> 'wait_event_type' = 'Extension')) THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(0.1);
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the restarted pg_work worker of the long-named table to become idle'; END IF;
