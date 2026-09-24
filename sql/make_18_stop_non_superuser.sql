@@ -1,0 +1,74 @@
+SET client_min_messages = warning;
+CREATE ROLE task_stop_svc LOGIN;
+RESET client_min_messages;
+GRANT CREATE ON DATABASE :"DBNAME" TO task_stop_svc;
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+-- a pg_task.user that is not a superuser
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"task_stop_svc","schema":"task_stop_schema"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'task_stop_schema' AND c.relname = 'task') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work task_stop_schema task %' AND datname = current_database() AND state = 'idle' AND (current_setting('server_version_num')::int < 100000 OR to_json(a) ->> 'wait_event_type' = 'Extension')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of task_stop_schema.task to become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- the task runs as its author, here the test superuser, whose backend pg_task.user may not signal from SQL
+INSERT INTO task_stop_schema.task (input) VALUES ('SELECT pg_sleep(30) AS a');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_stat_activity WHERE query = 'SELECT pg_sleep(30) AS a' AND state = 'active') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task running SELECT pg_sleep(30) AS a to appear in pg_stat_activity'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT set_config('pg_task_test.stop_at', clock_timestamp()::text, false) AS ignored
+\gset
+UPDATE task_stop_schema.task SET state = 'STOP';
+DO $body$ BEGIN
+    FOR i IN 1..100 LOOP
+        EXIT WHEN (SELECT error FROM task_stop_schema.task) IS NOT NULL;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, error LIKE '%canceling statement due to user request%' AS cancelled, clock_timestamp() - current_setting('pg_task_test.stop_at')::timestamptz < '10 sec' AS cancelled_promptly FROM task_stop_schema.task;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE usename = 'task_stop_svc' OR query = 'SELECT pg_sleep(30) AS a') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task_stop_svc sessions and the task to go away'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT (SELECT count(*) FROM pg_catalog.pg_settings WHERE name = 'gp_role') > 0 AS is_gp
+\gset
+SELECT '/tmp/pg_task_gp_policy_' || pg_backend_pid() || '.sql' AS gp_policy_file
+\gset
+\pset tuples_only on
+\pset format unaligned
+\o :gp_policy_file
+SELECT CASE WHEN :'is_gp' = 't' THEN 'SELECT NOT EXISTS (SELECT 1 FROM gp_dist_random(' || chr(39) || 'pg_class' || chr(39) || ') WHERE oid = ' || chr(39) || 'task_stop_schema.task' || chr(39) || '::regclass) AS need_gp_utility' ELSE 'SELECT false AS need_gp_utility' END;
+SELECT '\gset';
+\o
+\i :gp_policy_file
+SELECT '/tmp/pg_task_gp_utility_' || pg_backend_pid() || '.sql' AS gp_utility_file
+\gset
+\o :gp_utility_file
+SELECT CASE WHEN :'need_gp_utility' = 't' THEN '\connect "dbname=' || :'DBNAME' || ' options=' || chr(39) || '-c gp_session_role=utility' || chr(39) || '"' ELSE '' END;
+\o
+\i :gp_utility_file
+\pset tuples_only off
+\pset format aligned
+SET client_min_messages TO WARNING;
+DROP SCHEMA task_stop_schema CASCADE;
+RESET client_min_messages;
+\connect :DBNAME
+REVOKE CREATE ON DATABASE :"DBNAME" FROM task_stop_svc;
+DROP ROLE task_stop_svc;

@@ -232,6 +232,7 @@ static void make_wake_up(const Work *w) {
     pfree(source.data);
 }
 
+// only wakes pg_work up, which then cancels the task (work_stop), local or remote alike: a local task runs as its author, whose backend pg_task.user may not signal from SQL, and a single canceller never signals a task twice
 static void make_stop(const Work *w) {
     StringInfoData name;
     StringInfoData source;
@@ -242,11 +243,7 @@ static void make_stop(const Work *w) {
         BEGIN
             IF OLD."state" OPERATOR(pg_catalog.=) 'WORK' AND NEW."state" OPERATOR(pg_catalog.=) 'STOP' THEN
                 BEGIN
-                    IF NEW."remote" IS NULL THEN
-                        PERFORM pg_catalog.pg_cancel_backend(NEW."pid");
-                    ELSE
-                        PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %1$i;
-                    END IF;
+                    PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %1$i;
                 EXCEPTION WHEN insufficient_privilege THEN NULL;
                 END;
             END IF;

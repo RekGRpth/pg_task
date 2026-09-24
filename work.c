@@ -1,5 +1,6 @@
 #include "include.h"
 
+#include <signal.h>
 #include <catalog/namespace.h>
 #include <catalog/pg_collation.h>
 #include <libpq/libpq-be.h>
@@ -527,10 +528,13 @@ static void work_shmem_exit(int code, Datum arg) {
 static void work_stop(const Work *w) {
     dlist_mutable_iter iter;
     instr_time now;
+    int64 *current;
+    static int64 *cancelled = NULL; // ids already cancelled, so that a task gets a single cancel, not another one while it's already done with its query and recording its result
     static instr_time last;
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    if (dlist_is_empty(&remote)) return;
+    static uint64 ncancelled = 0;
+    uint64 processed;
     INSTR_TIME_SET_CURRENT(now);
     if (!INSTR_TIME_IS_ZERO(last)) {
         instr_time diff = now;
@@ -542,19 +546,39 @@ static void work_stop(const Work *w) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            SELECT "id" FROM %1$s WHERE "remote" IS NOT NULL AND "state" OPERATOR(pg_catalog.=) 'STOP'
-        ), w->schema_table);
+            SELECT "id", l."pid" FROM %1$s AS t JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$i AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.<<) 32 OPERATOR(pg_catalog.>>) 32)
+            WHERE "state" OPERATOR(pg_catalog.=) 'STOP'
+        ), w->schema_table, w->shared->oid);
     }
     SPI_connect_my(src.data, InvalidOid);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(src.data, plan, NULL, NULL, SPI_OK_SELECT);
-    for (uint64 row = 0; row < SPI_processed; row++) {
+    processed = SPI_processed;
+    current = processed ? MemoryContextAlloc(TopMemoryContext, processed * sizeof(*current)) : NULL;
+    for (uint64 row = 0; row < processed; row++) { // only STOP tasks still running, i.e. whose lock is held: by us for a remote one, by its task worker for a local one
+        bool again = false;
         int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false, INT8OID));
-        dlist_foreach_modify(iter, &remote) {
-            Task *t = dlist_container(Task, node, iter.cur);
-            if (t->shared->id == id) { work_cancel(t); break; }
-        }
+        int pid = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "pid", false, INT4OID));
+        current[row] = id;
+        for (uint64 i = 0; i < ncancelled; i++) if (cancelled[i] == id) { again = true; break; }
+        if (again) continue;
+        if (pid == MyProcPid) {
+            dlist_foreach_modify(iter, &remote) {
+                Task *t = dlist_container(Task, node, iter.cur);
+                if (t->shared->id == id) { work_cancel(t); break; }
+            }
+        } else if ( // the same cancel pg_cancel_backend() sends, but not subject to its role checks: the task worker runs as the task author, whom pg_task.user may not signal from SQL; it's a pid holding the lock of this very task, so no other backend can be hit
+#ifdef HAVE_SETSID
+            kill(-pid, SIGINT)
+#else
+            kill(pid, SIGINT)
+#endif
+        ) ereport(WARNING, (errmsg("id = %li, could not send signal to process %i: %m", id, pid)));
+        else ereport(WARNING, (errmsg("cancel id = %li, pid = %i", id, pid)));
     }
+    if (cancelled) pfree(cancelled);
+    cancelled = current; // forget the tasks no longer running
+    ncancelled = processed;
     SPI_finish_my();
     set_ps_display_my("idle");
 }
