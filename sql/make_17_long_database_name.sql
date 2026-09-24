@@ -1,0 +1,44 @@
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT current_user AS test_user, current_database() AS regress_db
+\gset
+-- longer than NAMEDATALEN: the database gets created as its first 63 bytes, like PostgreSQL itself truncates identifiers
+SELECT left(:'json_baseline', -1) || ',{"data":"task_make_long_data_67890123456789012345678901234567890123456789012345","user":"' || :'test_user' || '"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE datname = 'task_make_long_data_6789012345678901234567890123456789012345678' AND application_name LIKE 'pg_work public task %' AND state = 'idle' AND (current_setting('server_version_num')::int < 100000 OR to_json(a) ->> 'wait_event_type' = 'Extension')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of the long-named database to become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT set_config('pg_task_test.long_data_pid', pid::text, false) AS ignored FROM pg_catalog.pg_stat_activity WHERE datname = 'task_make_long_data_6789012345678901234567890123456789012345678' AND application_name LIKE 'pg_work public task %'
+\gset
+-- any reload makes pg_work recheck its own entry, which must still match the truncated database name
+SELECT pg_reload_conf();
+SELECT pg_sleep(1);
+SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE pid = current_setting('pg_task_test.long_data_pid')::int) AS pg_work_survived_reload, (SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname = 'task_make_long_data_6789012345678901234567890123456789012345678' AND application_name LIKE 'pg_work public task %') AS pg_work_count;
+\connect task_make_long_data_6789012345678901234567890123456789012345678
+INSERT INTO task (input) VALUES ('SELECT 42 AS a');
+DO $body$ BEGIN
+    FOR i IN 1..50 LOOP
+        EXIT WHEN (SELECT count(*) FROM task WHERE state IN ('PLAN', 'TAKE', 'WORK')) = 0;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, output FROM task;
+\connect :regress_db
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE datname = 'task_make_long_data_6789012345678901234567890123456789012345678') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for backend(s) connected to the long-named database to disconnect'; END IF;
+END;$body$ LANGUAGE plpgsql;
+DROP DATABASE task_make_long_data_6789012345678901234567890123456789012345678;

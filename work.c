@@ -140,7 +140,7 @@ static void work_check(const Work *w) {
                     WITH s AS (
                         SELECT "setdatabase", "setrole", ARRAY[pg_catalog.split_part("kv", '=', 1), pg_catalog.substr("kv", pg_catalog.length(pg_catalog.split_part("kv", '=', 1)) OPERATOR(pg_catalog.+) 2)] AS "setconfig" FROM "pg_catalog"."pg_db_role_setting", pg_catalog.unnest("setconfig") AS "kv"
                     ) SELECT "setdatabase", "setrole", pg_catalog.%s(pg_catalog.array_agg("setconfig"[1]), pg_catalog.array_agg("setconfig"[2])) AS "setconfig" FROM s GROUP BY 1, 2
-                ) SELECT    COALESCE(COALESCE("data", "user"), pg_catalog.current_setting('pg_task.data')) AS "data",
+                ) SELECT    COALESCE(COALESCE("data", "user"), pg_catalog.current_setting('pg_task.data')::pg_catalog.name) AS "data",
                             (EXTRACT(epoch FROM COALESCE("reset", (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, pg_catalog.current_setting('pg_task.reset')::pg_catalog.interval))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int8 AS "reset",
                             COALESCE("run", (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.run')::pg_catalog.int4, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.run')::pg_catalog.int4, pg_catalog.current_setting('pg_task.run')::pg_catalog.int4)::pg_catalog.int4 AS "run",
                             COALESCE("schema", pg_catalog.current_setting('pg_task.schema'))::pg_catalog.text AS "schema",
@@ -148,10 +148,10 @@ static void work_check(const Work *w) {
                             COALESCE("sleep", (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep')::pg_catalog.int8, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep')::pg_catalog.int8, pg_catalog.current_setting('pg_task.sleep')::pg_catalog.int8)::pg_catalog.int8 AS "sleep",
                             COALESCE("spi", (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.spi')::pg_catalog.bool, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.spi')::pg_catalog.bool, pg_catalog.current_setting('pg_task.spi')::pg_catalog.bool)::pg_catalog.bool AS "spi",
                             COALESCE((u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.limit')::pg_catalog.int4, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.limit')::pg_catalog.int4, pg_catalog.current_setting('pg_task.limit')::pg_catalog.int4)::pg_catalog.int4 AS "limit",
-                            COALESCE(COALESCE("user", "data"), pg_catalog.current_setting('pg_task.user')) AS "user"
-                FROM        pg_catalog.jsonb_to_recordset(pg_catalog.current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" text, "reset" interval, "run" int4, "schema" text, "table" text, "sleep" int8, "spi" bool, "user" text)
-                LEFT JOIN   s AS d on d."setdatabase" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) COALESCE("data", "user", pg_catalog.current_setting('pg_task.data')))
-                LEFT JOIN   s AS u on u."setrole" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) COALESCE("user", "data", pg_catalog.current_setting('pg_task.user')))
+                            COALESCE(COALESCE("user", "data"), pg_catalog.current_setting('pg_task.user')::pg_catalog.name) AS "user"
+                FROM        pg_catalog.jsonb_to_recordset(pg_catalog.current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" pg_catalog.name, "reset" interval, "run" int4, "schema" text, "table" text, "sleep" int8, "spi" bool, "user" pg_catalog.name)
+                LEFT JOIN   s AS d on d."setdatabase" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) COALESCE("data", "user", pg_catalog.current_setting('pg_task.data')::pg_catalog.name))
+                LEFT JOIN   s AS u on u."setrole" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) COALESCE("user", "data", pg_catalog.current_setting('pg_task.user')::pg_catalog.name))
             ) SELECT    DISTINCT j.* FROM j WHERE "user" OPERATOR(pg_catalog.=) current_user AND "data" OPERATOR(pg_catalog.=) current_catalog AND pg_catalog.hashtext(pg_catalog.concat_ws('.', "schema", "table"))::pg_catalog.int4 OPERATOR(pg_catalog.=) %i
         ),
 #if PG_VERSION_NUM >= 90500
