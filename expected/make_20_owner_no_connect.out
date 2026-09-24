@@ -1,0 +1,29 @@
+SET client_min_messages = warning;
+CREATE ROLE task_noconnect_author LOGIN;
+RESET client_min_messages;
+-- CONNECT is granted to PUBLIC by default: take it away for the duration of this test, then give it back
+REVOKE CONNECT ON DATABASE :"DBNAME" FROM PUBLIC;
+DELETE FROM task WHERE "group" = 'owner_no_connect';
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+-- both fail up front with a proper error; the first one's failure must not take the second into TAKE and leave it there
+BEGIN;
+INSERT INTO task ("group", input, "user", max, count) VALUES ('owner_no_connect', 'SELECT 1 AS a', 'task_noconnect_author', 0, 5);
+INSERT INTO task ("group", input, "user", max, count) VALUES ('owner_no_connect', 'SELECT 2 AS a', 'task_noconnect_author', 0, 5);
+COMMIT;
+DO $body$ BEGIN
+    FOR i IN 1..100 LOOP
+        EXIT WHEN (SELECT count(*) FROM task WHERE "group" = 'owner_no_connect' AND state IN ('PLAN', 'TAKE', 'WORK')) = 0;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT input, state, split_part(error, E'\n', 1) LIKE 'ERROR:  permission denied for database %' AS no_connect, split_part(error, E'\n', 2) AS detail FROM task WHERE "group" = 'owner_no_connect' AND plan > :ct::timestamp ORDER BY id;
+     input     | state | no_connect |                                 detail                                 
+---------------+-------+------------+------------------------------------------------------------------------
+ SELECT 1 AS a | FAIL  | t          | DETAIL:  User "task_noconnect_author" does not have CONNECT privilege.
+ SELECT 2 AS a | FAIL  | t          | DETAIL:  User "task_noconnect_author" does not have CONNECT privilege.
+(2 rows)
+
+DELETE FROM task WHERE "group" = 'owner_no_connect';
+GRANT CONNECT ON DATABASE :"DBNAME" TO PUBLIC;
+DROP ROLE task_noconnect_author;
