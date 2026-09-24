@@ -13,7 +13,6 @@ SELECT "group", output, error, state FROM task WHERE "group" = 'returning_insert
             group             | output |                                                  error                                                   | state 
 ------------------------------+--------+----------------------------------------------------------------------------------------------------------+-------
  returning_insert_on_conflict |        | ERROR:  syntax error at or near "ON" at character 53                                                    +| FAIL
-                              |        | QUERY:  INSERT INTO returning_probe (id, val) VALUES (1, 1) ON CONFLICT (id) DO NOTHING RETURNING id    +| 
                               |        | STATEMENT:  INSERT INTO returning_probe (id, val) VALUES (1, 1) ON CONFLICT (id) DO NOTHING RETURNING id | 
 (1 row)
 
