@@ -88,6 +88,7 @@ static void work_stop(const Work *w);
 static bool work_superuser(const char *user);
 
 #define work_error(...) do { \
+    bool work_error_exit PG_USED_FOR_ASSERTS_ONLY; \
     bool work_error_remote = t->remote != NULL; \
     PG_TRY(); \
         ereport(ERROR, __VA_ARGS__); \
@@ -96,7 +97,8 @@ static bool work_superuser(const char *user);
         EmitErrorReport(); \
         FlushErrorState(); \
     PG_END_TRY(); \
-    task_done(t, false); \
+    work_error_exit = task_done(t, false); /* with live = false nothing new is taken into t, so it can be dropped */ \
+    Assert(work_error_exit); \
     work_error_remote ? work_finish(t) : work_free(t); \
 } while(0)
 
