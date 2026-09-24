@@ -1,0 +1,65 @@
+DELETE FROM task WHERE "group" IN ('stop_cancels_running', 'terminate_cancels_running');
+-- STOP of a running remote task makes pg_work cancel the query on the remote side
+INSERT INTO task ("group", input, remote) VALUES ('stop_cancels_running', 'SELECT pg_sleep(30) AS a', 'dbname=' || :'DBNAME');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_stat_activity WHERE query = 'SELECT pg_sleep(30) AS a' AND state = 'active') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for remote backend running SELECT pg_sleep(30) AS a to appear in pg_stat_activity'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT set_config('pg_task_test.remote_pid', pid::text, false) AS ignored, set_config('pg_task_test.stop_at', clock_timestamp()::text, false) AS ignored FROM task WHERE "group" = 'stop_cancels_running'
+\gset
+UPDATE task SET state = 'STOP' WHERE "group" = 'stop_cancels_running';
+DO $body$ BEGIN
+    FOR i IN 1..100 LOOP
+        EXIT WHEN (SELECT error FROM task WHERE "group" = 'stop_cancels_running') IS NOT NULL;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, error LIKE '%canceling statement due to user request%' AS cancelled, clock_timestamp() - current_setting('pg_task_test.stop_at')::timestamptz < '10 sec' AS cancelled_promptly FROM task WHERE "group" = 'stop_cancels_running';
+SELECT NOT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pid = current_setting('pg_task_test.remote_pid')::int AND query = 'SELECT pg_sleep(30) AS a' AND state = 'active') AS remote_query_gone;
+-- a pg_work that goes away cancels the queries of its remote tasks on the way out
+INSERT INTO task ("group", input, remote) VALUES ('terminate_cancels_running', 'SELECT pg_sleep(30) AS b', 'dbname=' || :'DBNAME');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_stat_activity WHERE query = 'SELECT pg_sleep(30) AS b' AND state = 'active') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for remote backend running SELECT pg_sleep(30) AS b to appear in pg_stat_activity'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT set_config('pg_task_test.remote_pid', pid::text, false) AS ignored FROM task WHERE "group" = 'terminate_cancels_running'
+\gset
+-- found by the userlock it holds, since running a remote task renames its application_name to the task's
+SELECT count(pg_terminate_backend(pid)) = 1 AS pg_work_terminated FROM pg_locks WHERE locktype = 'userlock' AND mode = 'AccessExclusiveLock' AND granted AND objsubid = 3 AND database = (SELECT oid FROM pg_database WHERE datname = current_database());
+DO $body$ BEGIN
+    FOR i IN 1..100 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        EXIT WHEN NOT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pid = current_setting('pg_task_test.remote_pid')::int AND query = 'SELECT pg_sleep(30) AS b' AND state = 'active');
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT NOT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pid = current_setting('pg_task_test.remote_pid')::int AND query = 'SELECT pg_sleep(30) AS b' AND state = 'active') AS remote_query_cancelled;
+-- keep the reset of the restarted pg_work from running it again: reset leaves STOP alone; TAKE may not go to STOP, so only catch it in PLAN or WORK
+DO $body$ BEGIN
+    FOR i IN 1..300 LOOP
+        UPDATE task SET state = 'STOP' WHERE "group" = 'terminate_cancels_running' AND state IN ('PLAN', 'WORK');
+        EXIT WHEN (SELECT state FROM task WHERE "group" = 'terminate_cancels_running') = 'STOP';
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT state FROM task WHERE "group" = 'terminate_cancels_running';
+-- instead of waiting out the restart interval pg_work was registered with (the default minute in the suite), a reload makes pg_conf reap the stopped pg_work and register it anew; repeat it until pg_conf sees it stopped
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF i % 10 = 1 THEN PERFORM pg_reload_conf(); END IF;
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work public task %' AND datname = current_database() AND state = 'idle' AND (current_setting('server_version_num')::int < 100000 OR to_json(a) ->> 'wait_event_type' = 'Extension')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_conf to register pg_work anew and for it to become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT state FROM task WHERE "group" = 'terminate_cancels_running';
+DELETE FROM task WHERE "group" IN ('stop_cancels_running', 'terminate_cancels_running');
