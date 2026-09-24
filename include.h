@@ -114,6 +114,7 @@ typedef struct Task {
 } Task;
 
 bool dest_timeout(void);
+bool init_free_work(int slot, const char *data, const char *user, int hash);
 bool init_oid_is_string(Oid oid);
 bool is_log_level_output(int elevel, int log_min_level);
 bool lock_data_user_hash(Oid data, Oid user, int hash);

@@ -351,6 +351,15 @@ void init_free(int slot) {
     LWLockRelease(BackgroundWorkerLock);
 }
 
+// free the slot of a stopped pg_work only if it still holds that pg_work: a clean exit has already freed it itself, and by now it may belong to someone else (a task worker has a non-zero id)
+bool init_free_work(int slot, const char *data, const char *user, int hash) {
+    bool freed;
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    if ((freed = shared[slot].in_use && !shared[slot].id && shared[slot].hash == hash && !strcmp(shared[slot].data, data) && !strcmp(shared[slot].user, user))) MemSet(&shared[slot], 0, sizeof(Shared));
+    LWLockRelease(BackgroundWorkerLock);
+    return freed;
+}
+
 Shared *init_shared(Datum main_arg) {
     int slot = DatumGetInt32(main_arg);
     LWLockAcquire(BackgroundWorkerLock, LW_SHARED);

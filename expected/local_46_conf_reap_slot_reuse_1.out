@@ -1,0 +1,94 @@
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT current_user AS test_user
+\gset
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || :'test_user' || '","schema":"task_reap_test_schema","table":"task_reap_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'task_reap_test_schema' AND c.relname = 'task_reap_test') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work task_reap_test_schema task_reap_test %' AND datname = current_database() AND state = 'idle' AND (current_setting('server_version_num')::int < 100000 OR to_jsonb(a) ->> 'wait_event_type' = 'Extension')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for table task_reap_test_schema.task_reap_test to be created by the pg_work worker'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- the removed entry's pg_work frees its own slot on the way out
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work task_reap_test_schema %') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work worker(s) matching ''pg_work task_reap_test_schema %%'' to stop'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- a task worker takes the lowest free slot, i.e. the one just freed
+DELETE FROM task WHERE "group" = 'reap_slot_reuse';
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+INSERT INTO task ("group", input) VALUES ('reap_slot_reuse', 'SELECT pg_sleep(1) AS a');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..150 LOOP
+        IF (SELECT state FROM task WHERE "group" = 'reap_slot_reuse') = 'WORK' THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 150 x pg_sleep(0.1) waiting for task in group ''reap_slot_reuse'' to reach WORK state'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- the next reload makes pg_conf reap the stopped worker, which must not touch the slot the running task now owns
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ BEGIN
+    FOR i IN 1..100 LOOP
+        EXIT WHEN (SELECT state FROM task WHERE "group" = 'reap_slot_reuse') NOT IN ('PLAN', 'TAKE', 'WORK');
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, output FROM task WHERE "group" = 'reap_slot_reuse' AND plan > :ct::timestamp;
+ state | output 
+-------+--------
+ DONE  | 
+(1 row)
+
+DELETE FROM task WHERE "group" = 'reap_slot_reuse';
+SELECT (SELECT count(*) FROM pg_catalog.pg_settings WHERE name = 'gp_role') > 0 AS is_gp
+\gset
+SELECT '/tmp/pg_task_gp_policy_' || pg_backend_pid() || '.sql' AS gp_policy_file
+\gset
+\pset tuples_only on
+\pset format unaligned
+\o :gp_policy_file
+SELECT CASE WHEN :'is_gp' = 't' THEN 'SELECT NOT EXISTS (SELECT 1 FROM gp_dist_random(' || chr(39) || 'pg_class' || chr(39) || ') WHERE oid = ' || chr(39) || 'task_reap_test_schema.task_reap_test' || chr(39) || '::regclass) AS need_gp_utility' ELSE 'SELECT false AS need_gp_utility' END;
+SELECT '\gset';
+\o
+\i :gp_policy_file
+SELECT NOT EXISTS (SELECT 1 FROM gp_dist_random('pg_class') WHERE oid = 'task_reap_test_schema.task_reap_test'::regclass) AS need_gp_utility
+\gset
+SELECT '/tmp/pg_task_gp_utility_' || pg_backend_pid() || '.sql' AS gp_utility_file
+\gset
+\o :gp_utility_file
+SELECT CASE WHEN :'need_gp_utility' = 't' THEN '\connect "dbname=' || :'DBNAME' || ' options=' || chr(39) || '-c gp_session_role=utility' || chr(39) || '"' ELSE '' END;
+\o
+\i :gp_utility_file
+\pset tuples_only off
+\pset format aligned
+SET client_min_messages TO WARNING;
+DROP SCHEMA task_reap_test_schema CASCADE;
+RESET client_min_messages;
+\connect :DBNAME
