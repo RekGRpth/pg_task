@@ -1,0 +1,28 @@
+DELETE FROM task WHERE "group" IN ('bad_conninfo', 'connection_refused');
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+-- a connection string that doesn't even parse, and one to a port nobody listens on
+INSERT INTO task ("group", input, remote) VALUES ('bad_conninfo', 'SELECT 1 AS a', 'invalid');
+INSERT INTO task ("group", input, remote) VALUES ('connection_refused', 'SELECT 1 AS a', 'host=localhost port=1 dbname=' || :'DBNAME');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" IN ('bad_conninfo', 'connection_refused') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''bad_conninfo'' and ''connection_refused'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- only the first line of the error: its details come from libpq and differ between versions and platforms
+SELECT "group", state, split_part(error, E'\n', 1) ~ '^ERROR:  (PQconninfoParse failed|PQconnectPoll failed|PQstatus == CONNECTION_BAD)$' AS connection_error FROM task WHERE "group" IN ('bad_conninfo', 'connection_refused') AND plan > :ct::timestamp ORDER BY "group";
+       group        | state | connection_error 
+--------------------+-------+------------------
+ bad_conninfo       | FAIL  | t
+ connection_refused | FAIL  | t
+(2 rows)
+
+SELECT split_part(error, E'\n', 1) AS error FROM task WHERE "group" = 'bad_conninfo' AND plan > :ct::timestamp;
+             error              
+--------------------------------
+ ERROR:  PQconninfoParse failed
+(1 row)
+
+DELETE FROM task WHERE "group" IN ('bad_conninfo', 'connection_refused');
