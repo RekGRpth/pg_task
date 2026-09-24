@@ -1,10 +1,12 @@
 #include "include.h"
 
+#include <access/xact.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
 #include <storage/proc.h>
 #include <tcop/utility.h>
+#include <utils/acl.h>
 #include <utils/builtins.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
@@ -21,10 +23,11 @@
 #endif
 
 static const char *search_path;
+static Oid userid = InvalidOid; // pg_task.user, whose rights the task table bookkeeping needs, while the session itself belongs to the task owner
 
 static bool task_live(const Task *t) {
-    Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start)};
-    static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID};
+    Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start), CStringGetTextDatumMy(t->shared->owner)};
+    static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID, TEXTOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     elog(DEBUG1, "id = %li, hash = %i, max = %i, count = %i, start = %s", t->shared->id, t->shared->hash, t->shared->max, t->count, timestamptz_to_str(t->start));
@@ -32,7 +35,7 @@ static bool task_live(const Task *t) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" OPERATOR(pg_catalog.<=) %3$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%4$s')) OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.>=) $2 AND ("plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.>) %3$s OR "repeat" OPERATOR(pg_catalog.>) '0 sec' OR "max" OPERATOR(pg_catalog.<) 0) AND CASE
+            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" OPERATOR(pg_catalog.<=) %3$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%4$s')) OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.>=) $2 AND ("user")::pg_catalog.text OPERATOR(pg_catalog.=) $5 AND ("plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.>) %3$s OR "repeat" OPERATOR(pg_catalog.>) '0 sec' OR "max" OPERATOR(pg_catalog.<) 0) AND CASE
                 WHEN "count" OPERATOR(pg_catalog.>) 0 AND "live" OPERATOR(pg_catalog.>) '0 sec' THEN "count" OPERATOR(pg_catalog.>) $3 AND $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) %3$s ELSE "count" OPERATOR(pg_catalog.>) $3 OR $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) %3$s
             END ORDER BY "max" DESC, "id" LIMIT 1 FOR NO KEY UPDATE OF t %2$s) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id
         ), t->work->schema_table,
@@ -43,12 +46,13 @@ static bool task_live(const Task *t) {
 #endif
         init_plan(), "");
     }
-    SPI_connect_my(src.data);
+    SPI_connect_my(src.data, userid);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     t->shared->id = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)) : 0;
     elog(DEBUG1, "id = %li", t->shared->id);
     SPI_finish_my();
+    pfree((void *)values[4]);
     set_ps_display_my("idle");
     return ShutdownRequestPending || !t->shared->id;
 }
@@ -158,7 +162,7 @@ bool task_done(Task *t, bool exit) {
             RETURNING "delete" AND "output" IS NULL AND "error" IS NULL AS "delete", "repeat" OPERATOR(pg_catalog.>) '0 sec' AND t."state" OPERATOR(pg_catalog.<>) 'STOP' AS "insert", "max" OPERATOR(pg_catalog.>=) 0 AND ("count" OPERATOR(pg_catalog.>) 0 OR "live" OPERATOR(pg_catalog.>) '0 sec') AS "live", "max" OPERATOR(pg_catalog.<) 0 AS "update"
         ), t->work->schema_table, t->work->schema_type, init_plan());
     }
-    SPI_connect_my(src.data);
+    SPI_connect_my(src.data, userid);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) { ereport(WARNING, (errmsg("id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed))); exit = true; } else {
@@ -207,7 +211,7 @@ bool task_work(Task *t) {
             RETURNING "group", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) AS "hash", "input", (EXTRACT(epoch FROM "timeout")::pg_catalog.int4 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int4 AS "timeout", "header", "string", "null", "delimiter", "quote", "escape", "remote", "save", ("user")::pg_catalog.text AS "user"
         ), t->work->schema_table, init_plan(), "");
     }
-    SPI_connect_my(src.data);
+    SPI_connect_my(src.data, userid);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) {
@@ -356,7 +360,15 @@ void task_main(Datum main_arg) {
     task->work->schema = quote_identifier(task->shared->schema);
     task->work->table = quote_identifier(task->shared->table);
     task->work->user = quote_identifier(task->shared->user);
-    BackgroundWorkerInitializeConnectionMy(task->shared->data, task->shared->user);
+    // connect as the task owner itself, not as pg_task.user with SET ROLE on top, otherwise the task could RESET ROLE (or SET SESSION AUTHORIZATION) back to pg_task.user
+#if PG_VERSION_NUM >= 170000
+    BackgroundWorkerInitializeConnection(task->shared->data, task->shared->owner, BGWORKER_BYPASS_ROLELOGINCHECK); // NOLOGIN group roles could own tasks with SET ROLE before
+#else
+    BackgroundWorkerInitializeConnectionMy(task->shared->data, task->shared->owner);
+#endif
+    StartTransactionCommand();
+    userid = get_role_oid(task->shared->user, false);
+    CommitTransactionCommand();
     search_path = GetConfigOption("search_path", false, false);
     search_path = search_path ? pstrdup(search_path) : "";
     SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);

@@ -1,0 +1,36 @@
+SET client_min_messages = warning;
+CREATE ROLE task_spi_owner_test LOGIN;
+RESET client_min_messages;
+DELETE FROM task WHERE "group" IN ('spi_reset_role_escape', 'spi_session_authorization_escape');
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+INSERT INTO task ("group", input, header, "user") VALUES ('spi_reset_role_escape', 'RESET ROLE; SELECT current_user, session_user, (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)', false, 'task_spi_owner_test');
+INSERT INTO task ("group", input, header, "user") VALUES ('spi_session_authorization_escape', 'SET SESSION AUTHORIZATION ' || quote_ident(:'USER'), false, 'task_spi_owner_test');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" IN ('spi_reset_role_escape', 'spi_session_authorization_escape') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''spi_reset_role_escape'' and ''spi_session_authorization_escape'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT "user" = 'task_spi_owner_test' AS owner_recorded, replace(replace(output, E'\n', ' | '), E'\t', ' ') AS output, state FROM task WHERE "group" = 'spi_reset_role_escape' AND plan > :ct::timestamp;
+ owner_recorded |                       output                        | state 
+----------------+-----------------------------------------------------+-------
+ t              | UTILITY | task_spi_owner_test task_spi_owner_test f | DONE
+(1 row)
+
+SELECT error LIKE '%permission denied to set session authorization%' AS session_authorization_denied, state FROM task WHERE "group" = 'spi_session_authorization_escape' AND plan > :ct::timestamp;
+ session_authorization_denied | state 
+------------------------------+-------
+ t                            | FAIL
+(1 row)
+
+DELETE FROM task WHERE "group" IN ('spi_reset_role_escape', 'spi_session_authorization_escape');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_stat_activity WHERE usename = 'task_spi_owner_test') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task_spi_owner_test sessions to exit'; END IF;
+END;$body$ LANGUAGE plpgsql;
+DROP ROLE task_spi_owner_test;

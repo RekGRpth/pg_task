@@ -57,6 +57,7 @@ typedef struct Shared {
     bool in_use;
     bool spi;
     char data[NAMEDATALEN];
+    char owner[NAMEDATALEN];
     char schema[NAMEDATALEN];
     char table[NAMEDATALEN];
     char user[NAMEDATALEN];
@@ -153,7 +154,7 @@ void exec_simple_query_my(const char *query_string);
 void initStringInfoMy(StringInfo buf);
 void _PG_init(void);
 void init_free(int slot);
-void SPI_connect_my(const char *src);
+void SPI_connect_my(const char *src, Oid userid);
 void SPI_cursor_close_my(Portal portal);
 void SPI_cursor_fetch_my(const char *src, Portal portal, bool forward, long count);
 void SPI_execute_plan_my(const char *src, SPIPlanPtr plan, Datum *values, const char *nulls, int res);

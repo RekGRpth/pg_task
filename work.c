@@ -158,7 +158,7 @@ static void work_check(const Work *w) {
 #endif
         , w->shared->hash);
     }
-    SPI_connect_my(src.data);
+    SPI_connect_my(src.data, InvalidOid);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(src.data, plan, NULL, NULL, SPI_OK_SELECT);
     if (!SPI_processed) ShutdownRequestPending = true; else {
@@ -303,7 +303,7 @@ static void work_reset(const Work *w) {
 #endif
         );
     }
-    SPI_connect_my(src.data);
+    SPI_connect_my(src.data, InvalidOid);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     portal = SPI_cursor_open_my(src.data, plan, NULL, NULL, false);
     do {
@@ -338,7 +338,7 @@ static long work_timeout(const Work *w) {
            )))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000), -1)::pg_catalog.int8 as "min"
         ), w->schema_table, w->shared->oid, w->schema_type, init_plan());
     }
-    SPI_connect_my(src.data);
+    SPI_connect_my(src.data, InvalidOid);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_SELECT);
     timeout = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "min", false, INT8OID)) : -1;
@@ -540,7 +540,7 @@ static void work_stop(const Work *w) {
             SELECT "id" FROM %1$s WHERE "remote" IS NOT NULL AND "state" OPERATOR(pg_catalog.=) 'STOP'
         ), w->schema_table);
     }
-    SPI_connect_my(src.data);
+    SPI_connect_my(src.data, InvalidOid);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     SPI_execute_plan_my(src.data, plan, NULL, NULL, SPI_OK_SELECT);
     for (uint64 row = 0; row < SPI_processed; row++) {
@@ -563,7 +563,7 @@ static bool work_superuser(const char *user) {
     appendStringInfoString(&src, SQL(
         SELECT COALESCE((SELECT "rolsuper" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) $1), false) AS "test"
     ));
-    SPI_connect_my(src.data);
+    SPI_connect_my(src.data, InvalidOid);
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
     result = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "test", false, BOOLOID));
     SPI_finish_my();
@@ -645,11 +645,41 @@ static void work_remote(Task *t) {
     PQconninfoFree(opts);
 }
 
+// the task worker connects as the task owner, so fail the task here with a proper error instead of letting its connection die with FATAL and the task hang in TAKE until reset
+static bool work_owner(Task *t) {
+    bool login = false, connect = false;
+    Datum values[] = {CStringGetTextDatumMy(t->user)};
+    static Oid argtypes[] = {TEXTOID};
+    uint64 processed;
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfoString(&src, SQL(
+        SELECT "rolcanlogin" AS "login", pg_catalog.has_database_privilege("oid", (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog), 'CONNECT') AS "connect" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) $1
+    ));
+    SPI_connect_my(src.data, InvalidOid);
+    SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
+    if ((processed = SPI_processed) == 1) {
+        login = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "login", false, BOOLOID));
+        connect = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "connect", false, BOOLOID));
+    }
+    SPI_finish_my();
+    pfree(src.data);
+    pfree((void *)values[0]);
+#if PG_VERSION_NUM >= 170000
+    login = true; // BGWORKER_BYPASS_ROLELOGINCHECK
+#endif
+    if (processed != 1) { work_error((errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("role \"%s\" does not exist", t->user))); return false; }
+    if (!login) { work_error((errcode(ERRCODE_INVALID_AUTHORIZATION_SPECIFICATION), errmsg("role \"%s\" is not permitted to log in", t->user))); return false; }
+    if (!connect) { work_error((errcode(ERRCODE_INSUFFICIENT_PRIVILEGE), errmsg("permission denied for database \"%s\"", t->shared->data), errdetail("User \"%s\" does not have CONNECT privilege.", t->user))); return false; }
+    return true;
+}
+
 static void work_task(Task *t) {
     BackgroundWorkerHandle *handle = NULL;
     BackgroundWorker worker = {0};
     size_t len;
     elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", t->shared->id, t->group, t->shared->max, t->shared->oid);
+    if (!work_owner(t)) return;
     if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) { work_error((errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name)))); return; }
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) { work_error((errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name)))); return; }
     if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", t->shared->user, t->shared->data, t->shared->schema, t->shared->table, t->group)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1))); // do not error when group is to long
@@ -702,7 +732,7 @@ static void work_sleep(Work *w) {
                 UPDATE %1$s SET "state" = 'GONE', "start" = %2$s, "stop" = %2$s, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) %2$s AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0
             ), w->schema_table, init_plan());
         }
-        SPI_connect_my(gp_src.data);
+        SPI_connect_my(gp_src.data, InvalidOid);
         if (!gp_plan) gp_plan = SPI_prepare_my(gp_src.data, 0, NULL);
         SPI_execute_plan_my(gp_src.data, gp_plan, NULL, NULL, SPI_OK_UPDATE);
         SPI_finish_my();
@@ -743,7 +773,7 @@ static void work_sleep(Work *w) {
 #endif
         init_plan(), "");
     }
-    SPI_connect_my(src.data);
+    SPI_connect_my(src.data, InvalidOid);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL, false);
     do {
@@ -761,6 +791,7 @@ static void work_sleep(Work *w) {
             t->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
             t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false, INT8OID));
             t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false, INT4OID));
+            strlcpy(t->shared->owner, t->user, sizeof(t->shared->owner));
             elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : init_null(), t->shared->max);
             dlist_push_tail(&head, &t->node);
             SPI_freetuple(val);

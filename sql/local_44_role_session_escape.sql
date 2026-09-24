@@ -1,0 +1,23 @@
+DELETE FROM task WHERE "group" IN ('role_reset_role_escape', 'role_session_authorization_escape', 'role_owner_reuse');
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+SET ROLE task_owner_test;
+INSERT INTO task ("group", input, header) VALUES ('role_reset_role_escape', 'RESET ROLE; SELECT current_user, session_user, (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)', false);
+INSERT INTO task ("group", input, header) VALUES ('role_session_authorization_escape', 'SET SESSION AUTHORIZATION ' || quote_ident(:'USER'), false);
+INSERT INTO task ("group", input, header, max, count) VALUES ('role_owner_reuse', 'SELECT current_user', false, 0, 10);
+RESET ROLE;
+SET ROLE task_owner_test_b;
+INSERT INTO task ("group", input, header, max, count) VALUES ('role_owner_reuse', 'SELECT current_user', false, 0, 10);
+RESET ROLE;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" IN ('role_reset_role_escape', 'role_session_authorization_escape', 'role_owner_reuse') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''role_reset_role_escape'', ''role_session_authorization_escape'' and ''role_owner_reuse'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT output = E'RESET\ntask_owner_test\ttask_owner_test\tf' AS reset_role_stays_owner, state FROM task WHERE "group" = 'role_reset_role_escape' AND plan > :ct::timestamp;
+SELECT error LIKE '%permission denied to set session authorization%' AS session_authorization_denied, state FROM task WHERE "group" = 'role_session_authorization_escape' AND plan > :ct::timestamp;
+SELECT "user", output = "user" AS ran_as_own_owner, state FROM task WHERE "group" = 'role_owner_reuse' AND plan > :ct::timestamp ORDER BY "user";
+SELECT count(DISTINCT pid) = 2 AS owners_not_sharing_worker FROM task WHERE "group" = 'role_owner_reuse' AND plan > :ct::timestamp;
+DELETE FROM task WHERE "group" IN ('role_reset_role_escape', 'role_session_authorization_escape', 'role_owner_reuse');

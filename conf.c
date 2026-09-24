@@ -163,7 +163,7 @@ static void conf_check(void) {
 #endif
         );
     }
-    SPI_connect_my(src.data);
+    SPI_connect_my(src.data, InvalidOid);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
     portal = SPI_cursor_open_my(src.data, plan, NULL, NULL, false);
     do {

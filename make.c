@@ -39,7 +39,7 @@ static void make_ddl(const char *src, int res) {
     ResourceOwner oldowner = CurrentResourceOwner;
     MemoryContext oldcontext = CurrentMemoryContext;
     bool ok = false;
-    SPI_connect_my(src);
+    SPI_connect_my(src, InvalidOid);
     SetConfigOption("lock_timeout", "2000", PGC_USERSET, PGC_S_SESSION);
     for (int attempt = 1; !ok && attempt <= 5; attempt++) {
         BeginInternalSubTransaction(NULL);
@@ -75,7 +75,7 @@ static void make_ddl(const char *src, int res) {
 
 static Oid make_oid(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
     Oid oid;
-    SPI_connect_my(src);
+    SPI_connect_my(src, InvalidOid);
     SPI_execute_with_args_my(src, nargs, argtypes, values, nulls, SPI_OK_SELECT);
     if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed %lu != 1", (long)SPI_processed)));
     oid = DatumGetObjectId(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "oid", false, OIDOID));
@@ -85,7 +85,7 @@ static Oid make_oid(const char *src, int nargs, Oid *argtypes, Datum *values, co
 
 static bool make_test(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
     bool test;
-    SPI_connect_my(src);
+    SPI_connect_my(src, InvalidOid);
     SPI_execute_with_args_my(src, nargs, argtypes, values, nulls, SPI_OK_SELECT);
     if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed %lu != 1", (long)SPI_processed)));
     test = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "test", false, BOOLOID));

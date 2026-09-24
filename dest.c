@@ -287,28 +287,6 @@ static void dest_catch(void) {
     }
 }
 
-static void dest_role(const char *role, bool reset) {
-    if (task.shared->spi) SetConfigOption("role", reset ? "none" : role, PGC_USERSET, PGC_S_SESSION); else {
-        Shared *shared = task.shared;
-        StringInfoData src;
-        task.shared = NULL; // disable dest receiver and command tags while switching role
-        initStringInfoMy(&src);
-        if (reset) appendStringInfoString(&src, SQL(RESET ROLE;)); else {
-            const char *quote = quote_identifier(role);
-            appendStringInfo(&src, SQL(SET ROLE %s;), quote);
-            if (quote != role) pfree((void *)quote);
-        }
-        PG_TRY();
-            exec_simple_query_my(src.data);
-        PG_CATCH();
-            task.shared = shared; // restore before any error handling dereferences it
-            PG_RE_THROW();
-        PG_END_TRY();
-        pfree(src.data);
-        task.shared = shared;
-    }
-}
-
 static void dest_discard(void) {
     Shared *shared = task.shared;
     static const char *src = SQL(SET SESSION AUTHORIZATION DEFAULT; RESET ALL; DEALLOCATE ALL; CLOSE ALL; UNLISTEN *; DISCARD PLANS; DISCARD TEMP; DISCARD SEQUENCES;);
@@ -316,7 +294,7 @@ static void dest_discard(void) {
     task.shared = NULL; // disable dest receiver and command tags during cleanup
     PG_TRY();
         if (shared->spi) {
-            SPI_connect_my(src);
+            SPI_connect_my(src, InvalidOid);
             SPI_execute_with_args_my(src, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
             SPI_finish_my();
         } else exec_simple_query_my(src);
@@ -342,14 +320,12 @@ bool dest_timeout(void) {
     set_ps_display_my("timeout");
     StatementTimeout = task.timeout;
     if (task.shared->spi) {
-        SPI_connect_my(task.input);
+        SPI_connect_my(task.input, InvalidOid);
         BeginInternalSubTransaction(NULL);
     }
     PG_TRY();
         SetConfigOption("search_path", task_search_path(), PGC_USERSET, PGC_S_SESSION);
-        dest_role(task.user, false);
         dest_execute();
-        dest_role(NULL, true);
         SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
         if (task.shared->spi) ReleaseCurrentSubTransaction();
     PG_CATCH();
@@ -362,7 +338,6 @@ bool dest_timeout(void) {
             SPI_restore_connection();
 #endif
         }
-        dest_role(NULL, true);
     PG_END_TRY();
     if (task.shared->spi) SPI_finish_my();
     StatementTimeout = StatementTimeoutMy;

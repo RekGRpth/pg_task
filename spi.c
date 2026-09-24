@@ -23,6 +23,9 @@ typedef enum STMT_TYPE {
 } STMT_TYPE;
 
 static bool was_logged;
+static bool switched;
+static int save_sec_context;
+static Oid save_userid;
 
 static const char *stmt_type(STMT_TYPE stmt) {
     switch (stmt) {
@@ -124,12 +127,17 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     return plan;
 }
 
-void SPI_connect_my(const char *src) {
+// a valid userid runs the whole transaction as that user, like a security definer function does: switched only after the transaction started, so that an abort restores it by itself, and restored before the commit, since no transaction may start with a security context set
+void SPI_connect_my(const char *src, Oid userid) {
     int rc;
     debug_query_string = src;
     pgstat_report_activity(STATE_RUNNING, src);
     SetCurrentStatementStartTimestamp();
     StartTransactionCommand();
+    if ((switched = OidIsValid(userid))) {
+        GetUserIdAndSecContext(&save_userid, &save_sec_context);
+        SetUserIdAndSecContext(userid, save_sec_context | SECURITY_LOCAL_USERID_CHANGE);
+    }
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
     PushActiveSnapshot(GetTransactionSnapshot());
     StatementTimeout > 0 ? enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout) : disable_timeout(STATEMENT_TIMEOUT, false);
@@ -171,6 +179,8 @@ void SPI_finish_my(void) {
 #if PG_VERSION_NUM < 150000
     ProcessCompletedNotifies();
 #endif
+    if (switched) SetUserIdAndSecContext(save_userid, save_sec_context); // only when switched: an unswitched SPI task with save = true may legitimately keep its own SET ROLE
+    switched = false;
     CommitTransactionCommand();
     was_logged = false;
     pgstat_report_stat(false);
