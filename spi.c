@@ -109,15 +109,6 @@ Portal SPI_cursor_open_my(const char *src, SPIPlanPtr plan, Datum *values, const
     return portal;
 }
 
-Portal SPI_cursor_open_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, bool read_only) {
-    Portal portal;
-    SPI_freetuptable(SPI_tuptable);
-    check_log_statement_my(STMT_BIND, src, nargs, argtypes, values, nulls, false);
-    if (!(portal = SPI_cursor_open_with_args(NULL, src, nargs, argtypes, values, nulls, read_only, 0))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_cursor_open_with_args failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
-    check_log_duration_my(STMT_BIND, src, nargs, argtypes, values, nulls);
-    return portal;
-}
-
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     int rc;
     SPIPlanPtr plan;
