@@ -119,7 +119,7 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     return plan;
 }
 
-// a valid userid runs the whole transaction as that user, like a security definer function does: switched only after the transaction started, so that an abort restores it by itself, and restored before the commit, since no transaction may start with a security context set
+// a valid userid runs the whole transaction as that user, like a security definer function does, and as a security-restricted operation, as PostgreSQL does when running code as a more privileged user within someone else's session: switched only after the transaction started, so that an abort restores it by itself, and restored before the commit, since no transaction may start with a security context set
 void SPI_connect_my(const char *src, Oid userid) {
     int rc;
     debug_query_string = src;
@@ -128,7 +128,7 @@ void SPI_connect_my(const char *src, Oid userid) {
     StartTransactionCommand();
     if ((switched = OidIsValid(userid))) {
         GetUserIdAndSecContext(&save_userid, &save_sec_context);
-        SetUserIdAndSecContext(userid, save_sec_context | SECURITY_LOCAL_USERID_CHANGE);
+        SetUserIdAndSecContext(userid, save_sec_context | SECURITY_LOCAL_USERID_CHANGE | SECURITY_RESTRICTED_OPERATION);
     }
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
     PushActiveSnapshot(GetTransactionSnapshot());
