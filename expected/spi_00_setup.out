@@ -18,7 +18,7 @@ SELECT pg_reload_conf();
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..1200 LOOP
         PERFORM pg_stat_clear_snapshot();
-        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'task') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database() AND state = 'idle') THEN ok := true; EXIT; END IF;
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'task') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work public task %' AND datname = current_database() AND state = 'idle' AND (current_setting('server_version_num')::int < 100000 OR to_jsonb(a) ->> 'wait_event_type' = 'Extension')) THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(0.1);
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 1200 x pg_sleep(0.1) waiting for pg_task extension to create public.task and its pg_work worker to become idle'; END IF;
