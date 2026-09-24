@@ -85,6 +85,7 @@ static void work_discard(Task *t);
 static void work_query(Task *t);
 static void work_result(Task *t);
 static void work_stop(const Work *w);
+static bool work_superuser(const char *user);
 
 #define work_error(...) do { \
     bool work_error_remote = t->remote != NULL; \
@@ -490,6 +491,8 @@ static void work_connect(Task *t) {
         case PGRES_POLLING_WRITING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_WRITING", t->shared->id); t->event = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
+        // only now does libpq know whether the server actually asked for the password, and it's the task author who must not be able to connect without one
+        if (!work_superuser(t->user) && !PQconnectionUsedPassword(t->conn)) { work_error((errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superuser cannot connect if the server does not request a password."), errhint("Target server's authentication method must be changed."))); return; }
         if (!(pid = PQbackendPID(t->conn))) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQbackendPID failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
         if (!lock_table_pid_hash(t->shared->oid, pid, t->shared->hash)) { work_error((errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", t->shared->oid, pid, t->shared->hash))); return; }
         t->pid = pid;
@@ -637,7 +640,6 @@ static void work_remote(Task *t) {
     }
     else if (PQstatus(t->conn) == CONNECTION_BAD) work_error((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), work_errdetail(PQerrorMessage(t->conn))));
     else if (!PQisnonblocking(t->conn) && PQsetnonblocking(t->conn, true) == -1) work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetnonblocking failed"), work_errdetail(PQerrorMessage(t->conn))));
-    else if (!superuser() && !PQconnectionUsedPassword(t->conn)) work_error((errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superuser cannot connect if the server does not request a password."), errhint("Target server's authentication method must be changed.")));
     pfree(name.data);
     pfree(value.data);
     pfree(keywords);

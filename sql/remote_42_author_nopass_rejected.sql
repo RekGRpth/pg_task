@@ -1,15 +1,17 @@
-DELETE FROM task WHERE "group" = 'author_nopass';
+DELETE FROM task WHERE "group" IN ('author_nopass', 'author_bogus_password');
 SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
 SET ROLE task_remote_author_nopass_test;
 INSERT INTO task ("group", input, remote) VALUES ('author_nopass', 'SELECT 1 AS a', 'dbname=' || :'DBNAME');
+INSERT INTO task ("group", input, remote) VALUES ('author_bogus_password', 'SELECT 1 AS a', 'password=bogus dbname=' || :'DBNAME');
 RESET ROLE;
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..150 LOOP
-        IF (SELECT count(*) FROM task WHERE "group" = 'author_nopass' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        IF (SELECT count(*) FROM task WHERE "group" IN ('author_nopass', 'author_bogus_password') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(0.1);
     END LOOP;
-    IF NOT ok THEN RAISE EXCEPTION 'timed out after 150 x pg_sleep(0.1) waiting for task group ''author_nopass'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 150 x pg_sleep(0.1) waiting for task groups ''author_nopass'' and ''author_bogus_password'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT state = 'FAIL' AS rejected_without_password_for_unprivileged_author, error LIKE '%password is required%' AS password_error_ok FROM task WHERE "group" = 'author_nopass' AND plan > :ct::timestamp;
-DELETE FROM task WHERE "group" = 'author_nopass';
+SELECT state = 'FAIL' AS rejected_with_unrequested_password_for_unprivileged_author, error LIKE '%password is required%' AS password_error_ok FROM task WHERE "group" = 'author_bogus_password' AND plan > :ct::timestamp;
+DELETE FROM task WHERE "group" IN ('author_nopass', 'author_bogus_password');
