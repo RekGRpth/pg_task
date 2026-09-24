@@ -1,0 +1,22 @@
+DELETE FROM task WHERE "group" = 'error_no_chain';
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+-- both can only fail; the first one's failure must not take the second one into TAKE and then drop it
+BEGIN;
+INSERT INTO task ("group", input, max, count, remote) VALUES ('error_no_chain', 'SELECT 1 AS a', 0, 5, 'host=/nonexistent dbname=' || :'DBNAME');
+INSERT INTO task ("group", input, max, count, remote) VALUES ('error_no_chain', 'SELECT 2 AS a', 0, 5, 'host=/nonexistent dbname=' || :'DBNAME');
+COMMIT;
+DO $body$ BEGIN
+    FOR i IN 1..100 LOOP
+        EXIT WHEN (SELECT count(*) FROM task WHERE "group" = 'error_no_chain' AND state IN ('PLAN', 'TAKE', 'WORK')) = 0;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT input, state, error IS NOT NULL AS has_error FROM task WHERE "group" = 'error_no_chain' AND plan > :ct::timestamp ORDER BY id;
+     input     | state | has_error 
+---------------+-------+-----------
+ SELECT 1 AS a | FAIL  | t
+ SELECT 2 AS a | FAIL  | t
+(2 rows)
+
+DELETE FROM task WHERE "group" = 'error_no_chain';
