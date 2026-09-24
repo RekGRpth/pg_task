@@ -673,20 +673,27 @@ static void work_remote(Task *t) {
     PQconninfoFree(opts);
 }
 
-// the task worker connects as the task owner, so fail the task here with a proper error instead of letting its connection die with FATAL and the task hang in TAKE until reset
+// the task worker connects as the task owner: check here that pg_task.user may act as that role at all, the same as SET ROLE to it would require (the user column alone isn't enough, since its trigger doesn't bind the table owner), and fail the task with a proper error instead of letting its connection die with FATAL and the task hang in TAKE until reset
 static bool work_owner(Task *t) {
-    bool login = false, connect = false;
+    bool act = false, login = false, connect = false;
     Datum values[] = {CStringGetTextDatumMy(t->user)};
     static Oid argtypes[] = {TEXTOID};
     uint64 processed;
     StringInfoData src;
     initStringInfoMy(&src);
-    appendStringInfoString(&src, SQL(
-        SELECT "rolcanlogin" AS "login", pg_catalog.has_database_privilege("oid", (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog), 'CONNECT') AS "connect" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) $1
-    ));
+    appendStringInfo(&src, SQL(
+        SELECT pg_catalog.pg_has_role(current_user, "oid", '%s') AS "act", "rolcanlogin" AS "login", pg_catalog.has_database_privilege("oid", (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog), 'CONNECT') AS "connect" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) $1
+    ),
+#if PG_VERSION_NUM >= 160000
+        "SET"
+#else
+        "MEMBER"
+#endif
+    );
     SPI_connect_my(src.data, InvalidOid);
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
     if ((processed = SPI_processed) == 1) {
+        act = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "act", false, BOOLOID));
         login = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "login", false, BOOLOID));
         connect = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "connect", false, BOOLOID));
     }
@@ -697,6 +704,7 @@ static bool work_owner(Task *t) {
     login = true; // BGWORKER_BYPASS_ROLELOGINCHECK
 #endif
     if (processed != 1) { work_error((errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("role \"%s\" does not exist", t->user))); return false; }
+    if (!act) { work_error((errcode(ERRCODE_INSUFFICIENT_PRIVILEGE), errmsg("permission denied to run task as role \"%s\"", t->user), errdetail("pg_task.user \"%s\" must be a superuser or be able to SET ROLE to it.", t->shared->user))); return false; }
     if (!login) { work_error((errcode(ERRCODE_INVALID_AUTHORIZATION_SPECIFICATION), errmsg("role \"%s\" is not permitted to log in", t->user))); return false; }
     if (!connect) { work_error((errcode(ERRCODE_INSUFFICIENT_PRIVILEGE), errmsg("permission denied for database \"%s\"", t->shared->data), errdetail("User \"%s\" does not have CONNECT privilege.", t->user))); return false; }
     return true;

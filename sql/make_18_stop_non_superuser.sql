@@ -1,7 +1,9 @@
 SET client_min_messages = warning;
 CREATE ROLE task_stop_svc LOGIN;
+CREATE ROLE task_stop_author LOGIN;
 RESET client_min_messages;
 GRANT CREATE ON DATABASE :"DBNAME" TO task_stop_svc;
+GRANT task_stop_author TO task_stop_svc;
 SELECT current_setting('pg_task.json') AS json_baseline
 \gset
 -- a pg_task.user that is not a superuser
@@ -17,8 +19,8 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of task_stop_schema.task to become idle'; END IF;
 END;$body$ LANGUAGE plpgsql;
--- the task runs as its author, here the test superuser, whose backend pg_task.user may not signal from SQL
-INSERT INTO task_stop_schema.task (input) VALUES ('SELECT pg_sleep(30) AS a');
+-- the task runs as its author, whose backend it is pg_work that cancels, not the trigger
+INSERT INTO task_stop_schema.task (input, "user") VALUES ('SELECT pg_sleep(30) AS a', 'task_stop_author');
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         PERFORM pg_stat_clear_snapshot();
@@ -42,7 +44,7 @@ SELECT pg_reload_conf();
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         PERFORM pg_stat_clear_snapshot();
-        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE usename = 'task_stop_svc' OR query = 'SELECT pg_sleep(30) AS a') THEN ok := true; EXIT; END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE usename IN ('task_stop_svc', 'task_stop_author') OR query = 'SELECT pg_sleep(30) AS a') THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(0.1);
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task_stop_svc sessions and the task to go away'; END IF;
@@ -72,3 +74,4 @@ RESET client_min_messages;
 \connect :DBNAME
 REVOKE CREATE ON DATABASE :"DBNAME" FROM task_stop_svc;
 DROP ROLE task_stop_svc;
+DROP ROLE task_stop_author;
