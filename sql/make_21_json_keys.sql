@@ -1,0 +1,88 @@
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT current_user AS test_user
+\gset
+-- every per-entry key, each checked by what it does
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || :'test_user' || '","schema":"task_json_schema","sleep":50,"reset":"1 sec","run":1,"spi":true}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'task_json_schema' AND c.relname = 'task') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work task_json_schema task %' AND datname = current_database() AND state = 'idle' AND (current_setting('server_version_num')::int < 100000 OR to_json(a) ->> 'wait_event_type' = 'Extension')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of task_json_schema.task to become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- sleep: pg_work names itself after it
+SELECT application_name FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work task_json_schema task %' AND datname = current_database();
+-- spi: transaction control is refused in spi mode only
+INSERT INTO task_json_schema.task ("group", input) VALUES ('json_spi', 'COMMIT');
+-- run: tasks of different groups, which could otherwise run at the same time, run one at a time
+BEGIN;
+INSERT INTO task_json_schema.task ("group", input) VALUES ('json_run_a', 'SELECT pg_sleep(0.5)');
+INSERT INTO task_json_schema.task ("group", input) VALUES ('json_run_b', 'SELECT pg_sleep(0.5)');
+COMMIT;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task_json_schema.task WHERE "group" IN ('json_spi', 'json_run_a', 'json_run_b') AND state::text NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''json_spi'', ''json_run_a'' and ''json_run_b'' to finish'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, split_part(error, E'\n', 1) AS error FROM task_json_schema.task WHERE "group" = 'json_spi';
+SELECT (SELECT min(stop) FROM task_json_schema.task WHERE "group" IN ('json_run_a', 'json_run_b')) <= (SELECT max(start) FROM task_json_schema.task WHERE "group" IN ('json_run_a', 'json_run_b')) AS one_at_a_time;
+-- reset: the task of a killed worker gets back to PLAN and runs again within a second, not an hour
+INSERT INTO task_json_schema.task ("group", input) VALUES ('json_reset', 'SELECT pg_sleep(0.5) AS a');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_stat_activity WHERE query = 'SELECT pg_sleep(0.5) AS a' AND state = 'active') AND (SELECT state::text FROM task_json_schema.task WHERE "group" = 'json_reset') = 'WORK' THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.05);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out waiting for task group ''json_reset'' to run'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT set_config('pg_task_test.reset_pid', pid::text, false) AS ignored FROM task_json_schema.task WHERE "group" = 'json_reset'
+\gset
+SELECT pg_terminate_backend(pid) AS worker_killed FROM task_json_schema.task WHERE "group" = 'json_reset';
+DO $body$ BEGIN
+    FOR i IN 1..100 LOOP
+        EXIT WHEN (SELECT state::text FROM task_json_schema.task WHERE "group" = 'json_reset') = 'DONE';
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, pid <> current_setting('pg_task_test.reset_pid')::int AS ran_again FROM task_json_schema.task WHERE "group" = 'json_reset';
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work task_json_schema %' OR application_name LIKE 'pg_task task_json_schema %') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the workers of task_json_schema.task to stop'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT (SELECT count(*) FROM pg_catalog.pg_settings WHERE name = 'gp_role') > 0 AS is_gp
+\gset
+SELECT '/tmp/pg_task_gp_policy_' || pg_backend_pid() || '.sql' AS gp_policy_file
+\gset
+\pset tuples_only on
+\pset format unaligned
+\o :gp_policy_file
+SELECT CASE WHEN :'is_gp' = 't' THEN 'SELECT NOT EXISTS (SELECT 1 FROM gp_dist_random(' || chr(39) || 'pg_class' || chr(39) || ') WHERE oid = ' || chr(39) || 'task_json_schema.task' || chr(39) || '::regclass) AS need_gp_utility' ELSE 'SELECT false AS need_gp_utility' END;
+SELECT '\gset';
+\o
+\i :gp_policy_file
+SELECT '/tmp/pg_task_gp_utility_' || pg_backend_pid() || '.sql' AS gp_utility_file
+\gset
+\o :gp_utility_file
+SELECT CASE WHEN :'need_gp_utility' = 't' THEN '\connect "dbname=' || :'DBNAME' || ' options=' || chr(39) || '-c gp_session_role=utility' || chr(39) || '"' ELSE '' END;
+\o
+\i :gp_utility_file
+\pset tuples_only off
+\pset format aligned
+SET client_min_messages TO WARNING;
+DROP SCHEMA task_json_schema CASCADE;
+RESET client_min_messages;
+\connect :DBNAME

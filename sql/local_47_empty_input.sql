@@ -1,14 +1,20 @@
-DELETE FROM task WHERE "group" = 'empty_input';
+DELETE FROM task WHERE "group" IN ('empty_input', 'empty_input_kept', 'empty_input_deleted');
 SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
 -- no statement at all: nothing to run, so no output
 INSERT INTO task ("group", input, "delete") VALUES ('empty_input', ';', false), ('empty_input', '', false);
+-- no output and no error: kept when pg_task.delete, the default of the delete column, is off, deleted when it's on (the default)
+SET pg_task.delete = false;
+INSERT INTO task ("group", input) VALUES ('empty_input_kept', ';');
+RESET pg_task.delete;
+INSERT INTO task ("group", input) VALUES ('empty_input_deleted', ';');
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
-        IF (SELECT count(*) FROM task WHERE "group" = 'empty_input' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        IF (SELECT count(*) FROM task WHERE "group" IN ('empty_input', 'empty_input_kept', 'empty_input_deleted') AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(0.1);
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''empty_input'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT quote_literal(input) AS input, output, error, state FROM task WHERE "group" = 'empty_input' AND plan > :ct::timestamp ORDER BY id;
-DELETE FROM task WHERE "group" = 'empty_input';
+SELECT "group", "delete", state FROM task WHERE "group" IN ('empty_input_kept', 'empty_input_deleted') AND plan > :ct::timestamp ORDER BY "group";
+DELETE FROM task WHERE "group" IN ('empty_input', 'empty_input_kept', 'empty_input_deleted');
