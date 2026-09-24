@@ -231,11 +231,12 @@ static void dest_execute(void) {
             if (IsTransactionState()) ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION), errmsg("still active sql transaction")));
         }
     } else {
+        List *parsetree_list = pg_parse_query(task.input);
+        if (!parsetree_list) return; // no statement at all: nothing to run and no output, as NullCommand in local mode, rather than SPI_execute()'s SPI_OK_REWRITTEN tag
 #if PG_VERSION_NUM >= 100000
         // RawStmt.stmt_location lets us slice task.input into the text of each individual
         // statement and run them through SPI one by one, the same way exec_simple_query and
         // the remote libpq path already report a result per statement instead of just the last.
-        List *parsetree_list = pg_parse_query(task.input);
         if (list_length(parsetree_list) <= 1) dest_execute_spi(task.input); else {
             ListCell *cell;
             int prev_start = -1;
