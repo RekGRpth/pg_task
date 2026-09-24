@@ -4,6 +4,7 @@
 #include <catalog/namespace.h>
 #include <catalog/pg_collation.h>
 #include <libpq/libpq-be.h>
+#include <mb/pg_wchar.h>
 #include <parser/parse_type.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
@@ -191,11 +192,18 @@ static void make_trigger(const Work *w, const char *name, const char *when, cons
     pfree((void *)values[0]);
 }
 
+// trigger and function names are <table>_<suffix>, which PostgreSQL would silently truncate to NAMEDATALEN - 1, making different suffixes collide and the existence checks never find what they created: when that doesn't fit, clip the table part and keep it unique with the table's hash
+static void make_name(const Work *w, StringInfo name, const char *suffix) {
+    int len = strlen(w->shared->table);
+    if (len + 1 + strlen(suffix) <= NAMEDATALEN - 1) appendStringInfo(name, "%s_%s", w->shared->table, suffix);
+    else appendStringInfo(name, "%.*s_%08x_%s", pg_mbcliplen(w->shared->table, len, NAMEDATALEN - 1 - (int)strlen("_12345678_") - (int)strlen(suffix)), w->shared->table, (uint32)w->shared->hash, suffix);
+}
+
 static void make_wake_up(const Work *w) {
     StringInfoData name;
     StringInfoData source;
     initStringInfoMy(&name);
-    appendStringInfo(&name, "%s_wake_up", w->shared->table);
+    make_name(w, &name, "wake_up");
     initStringInfoMy(&source);
     appendStringInfo(&source, SQL(
         BEGIN
@@ -228,7 +236,7 @@ static void make_stop(const Work *w) {
     StringInfoData name;
     StringInfoData source;
     initStringInfoMy(&name);
-    appendStringInfo(&name, "%s_stop", w->shared->table);
+    make_name(w, &name, "stop");
     initStringInfoMy(&source);
     appendStringInfo(&source, SQL(
         BEGIN
@@ -255,7 +263,7 @@ static void make_user_immutable(const Work *w) {
     StringInfoData name;
     StringInfoData source;
     initStringInfoMy(&name);
-    appendStringInfo(&name, "%s_user", w->shared->table);
+    make_name(w, &name, "user");
     initStringInfoMy(&source);
     appendStringInfo(&source, SQL(
         BEGIN
@@ -279,7 +287,7 @@ static void make_state_machine(const Work *w) {
     StringInfoData name;
     StringInfoData source;
     initStringInfoMy(&name);
-    appendStringInfo(&name, "%s_state", w->shared->table);
+    make_name(w, &name, "state");
     initStringInfoMy(&source);
     appendStringInfo(&source, SQL(
         BEGIN
@@ -304,7 +312,7 @@ static void make_immutable(const Work *w, const char *column) {
     StringInfoData when;
     StringInfoData source;
     initStringInfoMy(&name);
-    appendStringInfo(&name, "%s_%s", w->shared->table, column);
+    make_name(w, &name, column);
     initStringInfoMy(&source);
     appendStringInfo(&source, SQL(
         BEGIN
@@ -327,7 +335,7 @@ static void make_conditional_immutable(const Work *w, const char *column) {
     StringInfoData when;
     StringInfoData source;
     initStringInfoMy(&name);
-    appendStringInfo(&name, "%s_%s", w->shared->table, column);
+    make_name(w, &name, column);
     initStringInfoMy(&source);
     appendStringInfo(&source, SQL(
         BEGIN

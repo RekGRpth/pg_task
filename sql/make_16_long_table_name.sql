@@ -1,0 +1,64 @@
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT current_user AS test_user
+\gset
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || :'test_user' || '","schema":"task_long_name_schema","table":"task_long_name_4567890123456789012345678901234567890123456789"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'task_long_name_schema' AND c.relname = 'task_long_name_4567890123456789012345678901234567890123456789') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work task_long_name_schema %' AND datname = current_database() AND state = 'idle' AND (current_setting('server_version_num')::int < 100000 OR to_jsonb(a) ->> 'wait_event_type' = 'Extension')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of the long-named table to become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- names longer than NAMEDATALEN must neither collide nor be looked up untruncated
+SELECT count(*) AS triggers, count(DISTINCT t.tgfoid) AS functions, bool_and(t.tgname = p.proname) AS trigger_calls_its_own_function, max(length(t.tgname)) < 64 AS names_fit FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_proc p ON p.oid = t.tgfoid WHERE t.tgrelid = 'task_long_name_schema.task_long_name_4567890123456789012345678901234567890123456789'::regclass AND NOT t.tgisinternal;
+SELECT pid AS long_name_pid, set_config('pg_task_test.long_name_pid', pid::text, false) AS ignored FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work task_long_name_schema %' AND datname = current_database()
+\gset
+-- a restarted pg_work goes through make_table() again and must find everything already in place
+SELECT pg_terminate_backend(:long_name_pid) AS terminated;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work task_long_name_schema %' AND datname = current_database() AND pid <> current_setting('pg_task_test.long_name_pid')::int AND state = 'idle' AND (current_setting('server_version_num')::int < 100000 OR to_jsonb(a) ->> 'wait_event_type' = 'Extension')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the restarted pg_work worker of the long-named table to become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT count(*) AS triggers_after_restart FROM pg_catalog.pg_trigger WHERE tgrelid = 'task_long_name_schema.task_long_name_4567890123456789012345678901234567890123456789'::regclass AND NOT tgisinternal;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work task_long_name_schema %') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work worker(s) matching ''pg_work task_long_name_schema %%'' to stop'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT (SELECT count(*) FROM pg_catalog.pg_settings WHERE name = 'gp_role') > 0 AS is_gp
+\gset
+SELECT '/tmp/pg_task_gp_policy_' || pg_backend_pid() || '.sql' AS gp_policy_file
+\gset
+\pset tuples_only on
+\pset format unaligned
+\o :gp_policy_file
+SELECT CASE WHEN :'is_gp' = 't' THEN 'SELECT NOT EXISTS (SELECT 1 FROM gp_dist_random(' || chr(39) || 'pg_class' || chr(39) || ') WHERE oid = ' || chr(39) || 'task_long_name_schema.task_long_name_4567890123456789012345678901234567890123456789' || chr(39) || '::regclass) AS need_gp_utility' ELSE 'SELECT false AS need_gp_utility' END;
+SELECT '\gset';
+\o
+\i :gp_policy_file
+SELECT '/tmp/pg_task_gp_utility_' || pg_backend_pid() || '.sql' AS gp_utility_file
+\gset
+\o :gp_utility_file
+SELECT CASE WHEN :'need_gp_utility' = 't' THEN '\connect "dbname=' || :'DBNAME' || ' options=' || chr(39) || '-c gp_session_role=utility' || chr(39) || '"' ELSE '' END;
+\o
+\i :gp_utility_file
+\pset tuples_only off
+\pset format aligned
+SET client_min_messages TO WARNING;
+DROP SCHEMA task_long_name_schema CASCADE;
+RESET client_min_messages;
+\connect :DBNAME
