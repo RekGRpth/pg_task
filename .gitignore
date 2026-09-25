@@ -15,3 +15,6 @@ exec.c
 latch.c
 latch.h
 latch_my.h
+libpq_my.a
+libpq_my.sym
+test.conf

@@ -6,7 +6,13 @@
 
 #include <postgres.h>
 #include <executor/spi.h>
+// libpq is always linked as the frontend library, so see its api the frontend way too: Greengage's PQconninfoOption has the extra connofs field for the backend only
+#ifdef LIBPQ_FE_H
+#error "libpq-fe.h must not be included before include.h"
+#endif
+#define FRONTEND
 #include <libpq-fe.h>
+#undef FRONTEND
 
 #if PG_VERSION_NUM < 90500
 #include <lib/stringinfo.h>

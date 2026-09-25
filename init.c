@@ -1,5 +1,8 @@
 #include "include.h"
 
+#ifndef WIN32
+#include <dlfcn.h>
+#endif
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
@@ -206,10 +209,19 @@ void initStringInfoMy(StringInfo buf) {
     MemoryContextSwitchTo(oldMemoryContext);
 }
 
+static void init_libpq(void) {
+#ifndef WIN32
+    Dl_info backend, libpq;
+    // Greengage's postgres executable carries its own backend build of libpq, which speaks the internal protocol that pg_hba.conf lets through unchecked, so the remote tasks must never end up there
+    if (dladdr((void *)palloc, &backend) && dladdr((void *)PQconnectStartParams, &libpq) && backend.dli_fbase == libpq.dli_fbase) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("libpq is resolved into the postgres executable"), errdetail("Remote tasks would connect with the backend build of libpq, which bypasses pg_hba.conf."), errhint("Rebuild pg_task so that it links the frontend libpq privately.")));
+#endif
+}
+
 void _PG_init(void) {
     BackgroundWorker worker = {0};
     size_t len;
     if (!process_shared_preload_libraries_in_progress) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("This module can only be loaded via shared_preload_libraries")));
+    init_libpq();
     DefineCustomBoolVariable("pg_task.delete", "pg_task delete", "Auto delete task when both output and error are nulls", &init.task.delete, true, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.drift", "pg_task drift", "Compute next repeat time by stop time instead by plan time", &init.task.drift, false, PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomBoolVariable("pg_task.header", "pg_task header", "Show columns headers in output", &init.task.header, true, PGC_USERSET, 0, NULL, NULL, NULL);

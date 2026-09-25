@@ -617,6 +617,8 @@ static void work_remote(Task *t) {
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
         elog(DEBUG1, "%s = %s", opt->keyword, opt->val);
+        // Greengage's libpq turns the connection into an internal one with it, which pg_hba.conf lets through unchecked
+        if (!strcmp(opt->keyword, "gpconntype")) { work_error((errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("connection option \"%s\" is not allowed", opt->keyword), errdetail("It makes the connection an internal one, which bypasses pg_hba.conf."))); PQconninfoFree(opts); return; }
         if (!strcmp(opt->keyword, "password")) password = true;
         if (!strcmp(opt->keyword, "fallback_application_name")) continue;
         if (!strcmp(opt->keyword, "application_name")) continue;
