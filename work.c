@@ -73,6 +73,14 @@
 #include <storage/fd.h>
 #endif
 
+typedef struct Local {
+    BackgroundWorkerHandle *handle;
+    dlist_node node;
+    int hash;
+    int pid;
+} Local;
+
+static dlist_head local; // started task workers whose slot we hold too, until they exit: see work_local()
 static dlist_head remote;
 static volatile uint64 idle_count = 0;
 static Work work = {0};
@@ -264,7 +272,13 @@ static void work_free(Task *t) {
     work_appname(w);
 }
 
+static void work_unreserve(Task *t) {
+    if (t->reserve && !unlock_table_id_hash(t->shared->oid, t->shared->id, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_id_hash(%i, %li, %i)", t->shared->oid, t->shared->id, t->shared->hash)));
+    t->reserve = false;
+}
+
 static void work_finish(Task *t) {
+    if (!proc_exit_inprogress) work_unreserve(t);
     if (t->conn) {
         PQfinish(t->conn);
 #if PG_VERSION_NUM >= 130000
@@ -499,6 +513,7 @@ static void work_connect(Task *t) {
         if (!(pid = PQbackendPID(t->conn))) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQbackendPID failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
         if (!lock_table_pid_hash(t->shared->oid, pid, t->shared->hash)) { work_error((errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", t->shared->oid, pid, t->shared->hash))); return; }
         t->pid = pid;
+        work_unreserve(t); // the slot is now held by the lock of the connection's pid
         work_query(t);
     }
 }
@@ -613,6 +628,8 @@ static void work_remote(Task *t) {
     elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : init_null(), t->shared->max, t->shared->oid);
     dlist_delete(&t->node);
     dlist_push_tail(&remote, &t->node);
+    // hold the slot of the group from now on, not only once connected, or the next work_sleep() doesn't count it and takes another task of the group over its max
+    if (!(t->reserve = lock_table_id_hash(t->shared->oid, t->shared->id, t->shared->hash))) ereport(WARNING, (errmsg("!lock_table_id_hash(%i, %li, %i)", t->shared->oid, t->shared->id, t->shared->hash)));
     if (!opts) { work_error((errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), work_errdetail(err))); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
@@ -712,9 +729,35 @@ static bool work_owner(Task *t) {
     return true;
 }
 
+// the task worker takes the slot of its group only once connected (task_main), and a work_sleep() before that doesn't count it and takes another task of the group over its max: hold that very slot for it from its start until it exits (work_reap), its pid counted once
+static void work_local(const Task *t, BackgroundWorkerHandle *handle) {
+    Local *l;
+    if (!lock_table_pid_hash(t->shared->oid, t->pid, t->shared->hash)) { ereport(WARNING, (errmsg("!lock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->pid, t->shared->hash))); pfree(handle); return; }
+    l = MemoryContextAllocZero(TopMemoryContext, sizeof(*l));
+    l->handle = handle;
+    l->hash = t->shared->hash;
+    l->pid = t->pid;
+    dlist_push_tail(&local, &l->node);
+}
+
+static void work_reap(const Work *w) {
+    dlist_mutable_iter iter;
+    dlist_foreach_modify(iter, &local) {
+        Local *l = dlist_container(Local, node, iter.cur);
+        pid_t pid;
+        if (GetBackgroundWorkerPid(l->handle, &pid) == BGWH_STARTED) continue;
+        if (!unlock_table_pid_hash(w->shared->oid, l->pid, l->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", w->shared->oid, l->pid, l->hash)));
+        dlist_delete(&l->node);
+        pfree(l->handle);
+        pfree(l);
+    }
+}
+
 static void work_task(Task *t) {
     BackgroundWorkerHandle *handle = NULL;
     BackgroundWorker worker = {0};
+    bool registered;
+    MemoryContext oldMemoryContext;
     size_t len;
     elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", t->shared->id, t->group, t->shared->max, t->shared->oid);
     if (!work_owner(t)) return;
@@ -729,12 +772,15 @@ static void work_task(Task *t) {
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) {
+    oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext); // the handle outlives this call, see work_local()
+    registered = RegisterDynamicBackgroundWorker(&worker, &handle);
+    MemoryContextSwitchTo(oldMemoryContext);
+    if (!registered) {
         init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
     } else switch (WaitForBackgroundWorkerStartup(handle, &t->pid)) {
         case BGWH_NOT_YET_STARTED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
         case BGWH_POSTMASTER_DIED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
-        case BGWH_STARTED: elog(DEBUG1, "started id = %li", t->shared->id); work_free(t); break;
+        case BGWH_STARTED: elog(DEBUG1, "started id = %li", t->shared->id); work_local(t, handle); handle = NULL; work_free(t); break;
         case BGWH_STOPPED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     if (handle) pfree(handle);
@@ -759,6 +805,7 @@ static void work_sleep(Work *w) {
     static StringInfoData src = {0};
     elog(DEBUG1, "idle_count = %lu", idle_count);
     set_ps_display_my("sleep");
+    work_reap(w);
     dlist_init(&head);
 #ifdef GP_VERSION_NUM
     if (true) {
@@ -786,9 +833,10 @@ static void work_sleep(Work *w) {
             ),
         ), w->schema_table, init_plan());
 #endif
+        // the slots taken in each group: one per pid holding the slot lock (a task worker and we for it hold the same one), plus one per remote task not yet connected
         appendStringInfo(&src, SQL(
             l AS (
-                SELECT pg_catalog.count("classid") AS "classid", "objid" FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessShareLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 5 AND "database" OPERATOR(pg_catalog.=) %2$i GROUP BY "objid"
+                SELECT pg_catalog.count(DISTINCT CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 5 THEN "classid" END) OPERATOR(pg_catalog.+) pg_catalog.count(CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 7 THEN "classid" END) AS "classid", "objid" FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessShareLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) ANY(ARRAY[5, 7]) AND "database" OPERATOR(pg_catalog.=) %2$i GROUP BY "objid"
             ), s AS (
                 SELECT "id", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) AS "hash", CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" OPERATOR(pg_catalog.=) pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s'))
                 WHERE "plan" OPERATOR(pg_catalog.<=) %5$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) OPERATOR(pg_catalog.>=) 0
@@ -900,6 +948,7 @@ void work_main(Datum main_arg) {
     appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);
     work.schema_table = schema_table.data;
     if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.shared->hash)) { ereport(WARNING, (errmsg("!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.shared->hash))); ShutdownRequestPending = true; return; } // exit without error to disable restart, then not start conf
+    dlist_init(&local);
     dlist_init(&remote);
     initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work.schema);

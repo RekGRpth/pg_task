@@ -93,6 +93,7 @@ typedef struct Work {
 typedef struct Task {
     bool header;
     bool lock;
+    bool reserve;
     bool save;
     bool string;
     char delimiter;
@@ -126,12 +127,14 @@ bool is_log_level_output(int elevel, int log_min_level);
 bool lock_data_user_hash(Oid data, Oid user, int hash);
 bool lock_data_user(Oid data, Oid user);
 bool lock_table_id(Oid table, int64 id);
+bool lock_table_id_hash(Oid table, int64 id, int hash);
 bool lock_table_pid_hash(Oid table, int pid, int hash);
 bool task_done(Task *t, bool live);
 bool task_work(Task *t);
 bool unlock_data_user_hash(Oid data, Oid user, int hash);
 bool unlock_data_user(Oid data, Oid user);
 bool unlock_table_id(Oid table, int64 id);
+bool unlock_table_id_hash(Oid table, int64 id, int hash);
 bool unlock_table_pid_hash(Oid table, int pid, int hash);
 char *TextDatumGetCStringMy(Datum datum);
 const char *error_severity(int elevel);

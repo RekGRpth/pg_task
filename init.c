@@ -119,10 +119,18 @@ bool lock_table_id(Oid table, int64 id) {
     return LockAcquire(&tag, AccessExclusiveLock, true, true) == LOCKACQUIRE_OK;
 }
 
+// the slot of the group hash a task runs in: taken by its task worker and, while that runs, by pg_work too (work_local), or by pg_work for its remote connection; so already held is fine, it's counted by distinct pid
 bool lock_table_pid_hash(Oid table, int pid, int hash) {
     LOCKTAG tag = {table, (uint32)pid, (uint32)hash, 5, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
     elog(DEBUG1, "table = %i, pid = %i, hash = %i", table, pid, hash);
-    return LockAcquire(&tag, AccessShareLock, true, true) == LOCKACQUIRE_OK;
+    return LockAcquire(&tag, AccessShareLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
+}
+
+// the slot of the group hash a remote task takes before its connection has a pid to lock with lock_table_pid_hash(); only the low half of the id, so already held is fine
+bool lock_table_id_hash(Oid table, int64 id, int hash) {
+    LOCKTAG tag = {table, (uint32)id, (uint32)hash, 7, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "table = %i, id = %li, hash = %i", table, id, hash);
+    return LockAcquire(&tag, AccessShareLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
 }
 
 bool unlock_data_user_hash(Oid data, Oid user, int hash) {
@@ -141,6 +149,12 @@ bool unlock_table_id(Oid table, int64 id) {
     LOCKTAG tag = {table, (uint32)(id >> 32), (uint32)id, 4, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
     elog(DEBUG1, "table = %i, id = %li", table, id);
     return LockRelease(&tag, AccessExclusiveLock, true);
+}
+
+bool unlock_table_id_hash(Oid table, int64 id, int hash) {
+    LOCKTAG tag = {table, (uint32)id, (uint32)hash, 7, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "table = %i, id = %li, hash = %i", table, id, hash);
+    return LockRelease(&tag, AccessShareLock, true);
 }
 
 bool unlock_table_pid_hash(Oid table, int pid, int hash) {
