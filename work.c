@@ -77,6 +77,7 @@ typedef struct Local {
     BackgroundWorkerHandle *handle;
     dlist_node node;
     int hash;
+    int64 id;
     int pid;
 } Local;
 
@@ -92,6 +93,7 @@ Work *get_work(void) {
 static void work_appname(const Work *w);
 static void work_discard(Task *t);
 static void work_query(Task *t);
+static void work_reap(const Work *w);
 static void work_result(Task *t);
 static void work_stop(const Work *w);
 static bool work_superuser(const char *user);
@@ -301,17 +303,29 @@ static int work_nevents(void) {
     return nevents;
 }
 
+// a task isn't abandoned only for not being locked by task_work() yet: skip the ones we are still starting, a remote one connecting or between tasks of its connection, a local one whose task worker is starting, or they'd be taken again while we still run them
 static void work_reset(const Work *w) {
+    Datum values[1];
+    dlist_iter iter;
     Portal portal;
+    StringInfoData ids;
+    static Oid argtypes[] = {TEXTOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     set_ps_display_my("reset");
+    work_reap(w);
+    initStringInfoMy(&ids);
+    appendStringInfoChar(&ids, '{');
+    dlist_foreach(iter, &local) appendStringInfo(&ids, "%s%li", ids.len > 1 ? "," : "", dlist_container(Local, node, iter.cur)->id);
+    dlist_foreach(iter, &remote) appendStringInfo(&ids, "%s%li", ids.len > 1 ? "," : "", dlist_container(Task, node, iter.cur)->shared->id);
+    appendStringInfoChar(&ids, '}');
+    values[0] = CStringGetTextDatumMy(ids.data);
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT "id" FROM %1$s AS t LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$i AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.<<) 32 OPERATOR(pg_catalog.>>) 32)
-                WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND l.pid IS NULL FOR NO KEY UPDATE OF t %4$s
+                WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND "id" OPERATOR(pg_catalog.<>) ALL(($1)::pg_catalog.int8[]) AND l.pid IS NULL FOR NO KEY UPDATE OF t %4$s
             ) UPDATE %1$s AS t SET "state" = 'PLAN', "start" = NULL, "stop" = NULL, "pid" = NULL FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id
         ), w->schema_table, w->shared->oid, w->schema_type,
 #if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
@@ -322,8 +336,8 @@ static void work_reset(const Work *w) {
         );
     }
     SPI_connect_my(src.data, InvalidOid);
-    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
-    portal = SPI_cursor_open_my(src.data, plan, NULL, NULL, false);
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    portal = SPI_cursor_open_my(src.data, plan, values, NULL, false);
     do {
         SPI_cursor_fetch_my(src.data, portal, true, init_work_fetch());
         for (uint64 row = 0; row < SPI_processed; row++) {
@@ -334,6 +348,8 @@ static void work_reset(const Work *w) {
     } while (SPI_processed);
     SPI_cursor_close_my(portal);
     SPI_finish_my();
+    pfree((void *)values[0]);
+    pfree(ids.data);
     set_ps_display_my("idle");
 }
 
@@ -736,6 +752,7 @@ static void work_local(const Task *t, BackgroundWorkerHandle *handle) {
     l = MemoryContextAllocZero(TopMemoryContext, sizeof(*l));
     l->handle = handle;
     l->hash = t->shared->hash;
+    l->id = t->shared->id;
     l->pid = t->pid;
     dlist_push_tail(&local, &l->node);
 }
