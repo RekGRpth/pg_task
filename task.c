@@ -147,11 +147,12 @@ static void task_update(const Task *t) {
 }
 
 // live: whether the caller can go on with the next task of the same group, which task_live() then takes into TAKE; a caller that is about to drop t (work_error) must pass false, or that next task is left in TAKE until reset
+// without the lock of task_work(), i.e. failing before the task ran (work_error), the task is only still ours in TAKE: work_reset may have taken it back to PLAN, where PLAN -> FAIL would be an invalid state transition, or even have given it to another run
 bool task_done(Task *t, bool live) {
     bool delete = false, exit = true, insert = false, update = false;
-    char nulls[] = {' ', t->output.data ? ' ' : 'n', t->error.data ? ' ' : 'n'};
-    Datum values[] = {Int64GetDatum(t->shared->id), CStringGetTextDatumMy(t->output.data), CStringGetTextDatumMy(t->error.data)};
-    static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID};
+    char nulls[] = {' ', t->output.data ? ' ' : 'n', t->error.data ? ' ' : 'n', ' '};
+    Datum values[] = {Int64GetDatum(t->shared->id), CStringGetTextDatumMy(t->output.data), CStringGetTextDatumMy(t->error.data), BoolGetDatum(t->lock)};
+    static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID, BOOLOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     elog(DEBUG1, "id = %li, output = %s, error = %s", t->shared->id, t->output.data ? t->output.data : init_null(), t->error.data ? t->error.data : init_null());
@@ -159,7 +160,7 @@ bool task_done(Task *t, bool live) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            UPDATE %1$s AS t SET "state" = CASE WHEN t."state" OPERATOR(pg_catalog.=) 'STOP' THEN 'STOP' WHEN $3 IS NULL THEN 'DONE' ELSE 'FAIL' END::%2$s, "stop" = %3$s, "output" = $2, "error" = $3 WHERE "id" OPERATOR(pg_catalog.=) $1
+            UPDATE %1$s AS t SET "state" = CASE WHEN t."state" OPERATOR(pg_catalog.=) 'STOP' THEN 'STOP' WHEN $3 IS NULL THEN 'DONE' ELSE 'FAIL' END::%2$s, "stop" = %3$s, "output" = $2, "error" = $3 WHERE "id" OPERATOR(pg_catalog.=) $1 AND ($4 OR t."state" OPERATOR(pg_catalog.=) 'TAKE')
             RETURNING "delete" AND "output" IS NULL AND "error" IS NULL AS "delete", "repeat" OPERATOR(pg_catalog.>) '0 sec' AND t."state" OPERATOR(pg_catalog.<>) 'STOP' AS "insert", "max" OPERATOR(pg_catalog.>=) 0 AND ("count" OPERATOR(pg_catalog.>) 0 OR "live" OPERATOR(pg_catalog.>) '0 sec') AS "live", "max" OPERATOR(pg_catalog.<) 0 AS "update"
         ), t->work->schema_table, t->work->schema_type, init_plan());
     }
@@ -205,10 +206,11 @@ bool task_work(Task *t) {
         SetConfigOption("pg_task.id", id.data, PGC_USERSET, PGC_S_SESSION);
         pfree(id.data);
     }
+    // only from TAKE: until the lock above, work_reset may have taken the task back to PLAN (a remote connection or a local worker still starting has no lock yet), and PLAN -> WORK is an invalid state transition, whose error takes pg_work down with every remote task it runs
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            UPDATE %1$s AS t SET "state" = 'WORK', "start" = %2$s, "pid" = $2 WHERE "id" OPERATOR(pg_catalog.=) $1
+            UPDATE %1$s AS t SET "state" = 'WORK', "start" = %2$s, "pid" = $2 WHERE "id" OPERATOR(pg_catalog.=) $1 AND "state" OPERATOR(pg_catalog.=) 'TAKE'
             RETURNING "group", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) AS "hash", "input", (EXTRACT(epoch FROM "timeout")::pg_catalog.int4 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int4 AS "timeout", "header", "string", "null", "delimiter", "quote", "escape", "remote", "save", ("user")::pg_catalog.text AS "user"
         ), t->work->schema_table, init_plan(), "");
     }
