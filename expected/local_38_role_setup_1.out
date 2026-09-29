@@ -23,9 +23,9 @@ SELECT CASE WHEN :'need_gp_utility' = 't' THEN '\connect "dbname=' || :'DBNAME' 
 \i :gp_utility_file
 \pset tuples_only off
 \pset format aligned
-GRANT INSERT ON task TO task_owner_test;
+GRANT SELECT, INSERT, UPDATE, DELETE ON task TO task_owner_test;
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq TO task_owner_test;
-GRANT INSERT ON task TO task_owner_test_b;
+GRANT SELECT, INSERT, UPDATE, DELETE ON task TO task_owner_test_b;
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq TO task_owner_test_b;
 \connect :DBNAME
 DELETE FROM task WHERE "group" IN ('role_owner_recorded', 'role_forged_owner_rejected', 'role_owner_immutable', 'role_owner_preserved_repeat', 'role_two_distinct_owners');

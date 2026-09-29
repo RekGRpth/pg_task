@@ -15,3 +15,17 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''role_two_distinct_owners'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT bool_and(output = 't') AS each_task_saw_its_own_identity, count(DISTINCT "user") = 2 AS two_distinct_owners FROM task WHERE "group" = 'role_two_distinct_owners' AND plan > :ct::timestamp;
+-- row level security: a role neither sees nor changes the tasks of another one, so it can't rewrite someone else's queued input to have it run as them
+SET ROLE task_owner_test_b;
+INSERT INTO task ("group", plan, input) VALUES ('role_two_distinct_owners', now() + '1 hour', 'SELECT 1 AS a');
+RESET ROLE;
+SET ROLE task_owner_test;
+SELECT count(*) AS visible, bool_and("user" = current_user) AS only_own_visible FROM task WHERE "group" = 'role_two_distinct_owners';
+WITH u AS (UPDATE task SET input = 'SELECT 2 AS a' WHERE "group" = 'role_two_distinct_owners' AND state = 'PLAN' RETURNING 1) SELECT count(*) AS foreign_updated FROM u;
+WITH d AS (DELETE FROM task WHERE "group" = 'role_two_distinct_owners' AND state = 'PLAN' RETURNING 1) SELECT count(*) AS foreign_deleted FROM d;
+RESET ROLE;
+SET ROLE task_owner_test_b;
+WITH u AS (UPDATE task SET input = 'SELECT 3 AS a' WHERE "group" = 'role_two_distinct_owners' AND state = 'PLAN' RETURNING 1) SELECT count(*) AS own_updated FROM u;
+RESET ROLE;
+SELECT input FROM task WHERE "group" = 'role_two_distinct_owners' AND state = 'PLAN';
+DELETE FROM task WHERE "group" = 'role_two_distinct_owners' AND state = 'PLAN';

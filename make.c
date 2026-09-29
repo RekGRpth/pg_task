@@ -351,6 +351,47 @@ static void make_conditional_immutable(const Work *w, const char *column) {
     pfree(source.data);
 }
 
+#if PG_VERSION_NUM >= 90500
+// a role only sees and changes the tasks it may act as, the same way the user column's trigger lets it insert them: otherwise anyone with UPDATE on the table could rewrite the input of someone else's queued task and have it run as that someone; the table owner (pg_task.user) isn't bound by it, so pg_work and the task's bookkeeping still see every task, and a dropped role's tasks are just hidden rather than erroring out the whole query as pg_has_role by name would
+static void make_policy(const Work *w) {
+    Datum values[2];
+    static Oid argtypes[] = {TEXTOID, OIDOID};
+    StringInfoData name;
+    StringInfoData src;
+    initStringInfoMy(&name);
+    make_name(w, &name, "user");
+    values[0] = CStringGetTextDatum(name.data);
+    values[1] = ObjectIdGetDatum(w->shared->oid);
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_policy WHERE polname OPERATOR(pg_catalog.=) $1 AND polrelid OPERATOR(pg_catalog.=) $2) AS "test"
+    ));
+    if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+        const char *quote = quote_identifier(name.data);
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            CREATE POLICY %1$s ON %2$s USING (%3$s) WITH CHECK (%3$s);
+        ), quote, w->schema_table, "\"user\" OPERATOR(pg_catalog.=) CURRENT_USER OR pg_catalog.pg_has_role((SELECT \"oid\" FROM \"pg_catalog\".\"pg_roles\" WHERE \"rolname\" OPERATOR(pg_catalog.=) \"user\"), 'MEMBER')");
+        make_ddl(src.data, SPI_OK_UTILITY);
+        if (quote != name.data) pfree((void *)quote);
+    }
+    resetStringInfo(&src);
+    appendStringInfo(&src, SQL(
+        SELECT relrowsecurity AS "test" FROM pg_catalog.pg_class WHERE oid OPERATOR(pg_catalog.=) %1$i
+    ), w->shared->oid);
+    if (!make_test(src.data, 0, NULL, NULL, NULL)) {
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            ALTER TABLE %1$s ENABLE ROW LEVEL SECURITY;
+        ), w->schema_table);
+        make_ddl(src.data, SPI_OK_UTILITY);
+    }
+    pfree(name.data);
+    pfree(src.data);
+    pfree((void *)values[0]);
+}
+#endif
+
 static void make_column(const Work *w, const char *name, const char *schema_type) {
     StringInfoData src;
     initStringInfoMy(&src);
@@ -664,6 +705,9 @@ void make_table(const Work *w) {
     make_conditional_immutable(w, "input");
     make_conditional_immutable(w, "null");
     make_conditional_immutable(w, "data");
+#if PG_VERSION_NUM >= 90500
+    make_policy(w);
+#endif
     set_ps_display_my("idle");
 }
 

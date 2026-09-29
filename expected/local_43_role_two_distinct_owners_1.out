@@ -28,19 +28,19 @@ SET ROLE task_owner_test;
 SELECT count(*) AS visible, bool_and("user" = current_user) AS only_own_visible FROM task WHERE "group" = 'role_two_distinct_owners';
  visible | only_own_visible 
 ---------+------------------
-       1 | t
+       3 | f
 (1 row)
 
 WITH u AS (UPDATE task SET input = 'SELECT 2 AS a' WHERE "group" = 'role_two_distinct_owners' AND state = 'PLAN' RETURNING 1) SELECT count(*) AS foreign_updated FROM u;
  foreign_updated 
 -----------------
-               0
+               1
 (1 row)
 
 WITH d AS (DELETE FROM task WHERE "group" = 'role_two_distinct_owners' AND state = 'PLAN' RETURNING 1) SELECT count(*) AS foreign_deleted FROM d;
  foreign_deleted 
 -----------------
-               0
+               1
 (1 row)
 
 RESET ROLE;
@@ -48,14 +48,13 @@ SET ROLE task_owner_test_b;
 WITH u AS (UPDATE task SET input = 'SELECT 3 AS a' WHERE "group" = 'role_two_distinct_owners' AND state = 'PLAN' RETURNING 1) SELECT count(*) AS own_updated FROM u;
  own_updated 
 -------------
-           1
+           0
 (1 row)
 
 RESET ROLE;
 SELECT input FROM task WHERE "group" = 'role_two_distinct_owners' AND state = 'PLAN';
-     input     
----------------
- SELECT 3 AS a
-(1 row)
+ input 
+-------
+(0 rows)
 
 DELETE FROM task WHERE "group" = 'role_two_distinct_owners' AND state = 'PLAN';
