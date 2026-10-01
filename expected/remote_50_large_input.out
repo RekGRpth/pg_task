@@ -1,6 +1,9 @@
 -- an input longer than the socket takes at once is sent in parts, as the socket becomes writable again, rather than left in libpq's buffer with the server waiting for the rest of it
 DELETE FROM task WHERE "group" = 'large_input';
-INSERT INTO task ("group", input, remote) VALUES ('large_input', 'SELECT length(''' || repeat('x', 600000) || ''')', 'dbname=' || :'DBNAME');
+-- as long as the input still fits the index on it: lz4 packs a run of one letter much tighter than pglz, which takes about 2.4 kB of the 2.7 kB an index entry may have for 220000 of them
+SELECT CASE WHEN (SELECT setting FROM pg_catalog.pg_settings WHERE name = 'default_toast_compression') = 'lz4' THEN 600000 ELSE 220000 END AS input_length
+\gset
+INSERT INTO task ("group", input, remote) VALUES ('large_input', 'SELECT length(''' || repeat('x', :input_length) || ''')', 'dbname=' || :'DBNAME');
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         IF (SELECT count(*) FROM task WHERE "group" = 'large_input' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
@@ -8,10 +11,10 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''large_input'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT state, output, error FROM task WHERE "group" = 'large_input';
- state | output | error 
--------+--------+-------
- DONE  | 600000 | 
+SELECT state, output = :'input_length' AS output_ok, error FROM task WHERE "group" = 'large_input';
+ state | output_ok | error 
+-------+-----------+-------
+ DONE  | t         | 
 (1 row)
 
 DELETE FROM task WHERE "group" = 'large_input';
