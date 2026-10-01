@@ -139,6 +139,8 @@ work_errdetail(const char *err) {
 }
 
 static void work_check(const Work *w) {
+    bool ok = true;
+    MemoryContext oldMemoryContext = CurrentMemoryContext;
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return;
@@ -173,21 +175,31 @@ static void work_check(const Work *w) {
 #endif
         , w->shared->hash);
     }
-    SPI_connect_my(src.data, InvalidOid);
-    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
-    SPI_execute_plan_my(src.data, plan, NULL, NULL, SPI_OK_SELECT);
-    if (!SPI_processed) ShutdownRequestPending = true; else {
-        HeapTuple val = SPI_tuptable->vals[0];
-        TupleDesc tupdesc = SPI_tuptable->tupdesc;
-        w->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false, INT8OID));
-        w->shared->run = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "run", false, INT4OID));
-        w->shared->sleep = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "sleep", false, INT8OID));
-        w->shared->spi = DatumGetBool(SPI_getbinval_my(val, tupdesc, "spi", false, BOOLOID));
-        w->shared->limit = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "limit", false, INT4OID));
-        elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, run = %i, spi = %s, limit = %i, SPI_processed = %lu", w->shared->sleep, w->shared->reset, w->shared->schema, w->shared->table, w->shared->run, w->shared->spi ? "true" : "false", w->shared->limit, (long)SPI_processed);
-        SPI_freetuple(val);
-    }
-    SPI_finish_my();
+    // as pg_conf does, keep running with the settings as they are rather than exit over a pg_task.json that doesn't parse or fit the types of its keys
+    PG_TRY();
+        SPI_connect_my(src.data, InvalidOid);
+        if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
+        SPI_execute_plan_my(src.data, plan, NULL, NULL, SPI_OK_SELECT);
+        if (!SPI_processed) ShutdownRequestPending = true; else {
+            HeapTuple val = SPI_tuptable->vals[0];
+            TupleDesc tupdesc = SPI_tuptable->tupdesc;
+            w->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false, INT8OID));
+            w->shared->run = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "run", false, INT4OID));
+            w->shared->sleep = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "sleep", false, INT8OID));
+            w->shared->spi = DatumGetBool(SPI_getbinval_my(val, tupdesc, "spi", false, BOOLOID));
+            w->shared->limit = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "limit", false, INT4OID));
+            elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, run = %i, spi = %s, limit = %i, SPI_processed = %lu", w->shared->sleep, w->shared->reset, w->shared->schema, w->shared->table, w->shared->run, w->shared->spi ? "true" : "false", w->shared->limit, (long)SPI_processed);
+            SPI_freetuple(val);
+        }
+        SPI_finish_my();
+    PG_CATCH();
+        MemoryContextSwitchTo(oldMemoryContext);
+        EmitErrorReport();
+        FlushErrorState();
+        SPI_abort_my();
+        ok = false;
+    PG_END_TRY();
+    if (!ok) ereport(WARNING, (errmsg("pg_task.json not applied, keeping the previous settings")));
     set_ps_display_my("idle");
 }
 

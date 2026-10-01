@@ -123,7 +123,9 @@ static void conf_work(Work *w) {
 }
 
 static void conf_check(void) {
+    bool ok = true;
     dlist_mutable_iter iter;
+    MemoryContext oldMemoryContext = CurrentMemoryContext;
     Portal portal;
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
@@ -178,36 +180,50 @@ static void conf_check(void) {
 #endif
         );
     }
-    SPI_connect_my(src.data, InvalidOid);
-    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
-    portal = SPI_cursor_open_my(src.data, plan, NULL, NULL, false);
-    do {
-        SPI_cursor_fetch_my(src.data, portal, true, init_conf_fetch());
-        for (uint64 row = 0; row < SPI_processed; row++) {
-            HeapTuple val = SPI_tuptable->vals[row];
-            TupleDesc tupdesc = SPI_tuptable->tupdesc;
-            Work *w = MemoryContextAllocZero(TopMemoryContext, sizeof(Work));
-            set_ps_display_my("row");
-            w->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(Shared));
-            w->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
-            w->spawn = DatumGetBool(SPI_getbinval_my(val, tupdesc, "new", false, BOOLOID));
-            w->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false, INT8OID));
-            w->shared->run = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "run", false, INT4OID));
-            w->shared->sleep = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "sleep", false, INT8OID));
-            w->shared->spi = DatumGetBool(SPI_getbinval_my(val, tupdesc, "spi", false, BOOLOID));
-            w->shared->limit = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "limit", false, INT4OID));
-            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "data", false, TEXTOID)), w->shared->data, sizeof(w->shared->data));
-            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "schema", false, TEXTOID)), w->shared->schema, sizeof(w->shared->schema));
-            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false, TEXTOID)), w->shared->table, sizeof(w->shared->table));
-            text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false, TEXTOID)), w->shared->user, sizeof(w->shared->user));
-            elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, sleep = %li, reset = %li, run = %i, hash = %i, spi = %s, limit = %i, spawn = %s", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset, w->shared->run, w->shared->hash, w->shared->spi ? "true" : "false", w->shared->limit, w->spawn ? "true" : "false");
-            dlist_push_tail(&head, &w->node);
-            SPI_freetuple(val);
-        }
-    } while (SPI_processed);
-    SPI_cursor_close_my(portal);
-    SPI_finish_my();
+    // a pg_task.json that doesn't parse or fit the types of its keys must not take pg_conf down, to be restarted into the same error over and over: keep the workers as they are until it's fixed
+    PG_TRY();
+        SPI_connect_my(src.data, InvalidOid);
+        if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
+        portal = SPI_cursor_open_my(src.data, plan, NULL, NULL, false);
+        do {
+            SPI_cursor_fetch_my(src.data, portal, true, init_conf_fetch());
+            for (uint64 row = 0; row < SPI_processed; row++) {
+                HeapTuple val = SPI_tuptable->vals[row];
+                TupleDesc tupdesc = SPI_tuptable->tupdesc;
+                Work *w = MemoryContextAllocZero(TopMemoryContext, sizeof(Work));
+                set_ps_display_my("row");
+                w->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(Shared));
+                w->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
+                w->spawn = DatumGetBool(SPI_getbinval_my(val, tupdesc, "new", false, BOOLOID));
+                w->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false, INT8OID));
+                w->shared->run = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "run", false, INT4OID));
+                w->shared->sleep = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "sleep", false, INT8OID));
+                w->shared->spi = DatumGetBool(SPI_getbinval_my(val, tupdesc, "spi", false, BOOLOID));
+                w->shared->limit = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "limit", false, INT4OID));
+                text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "data", false, TEXTOID)), w->shared->data, sizeof(w->shared->data));
+                text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "schema", false, TEXTOID)), w->shared->schema, sizeof(w->shared->schema));
+                text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false, TEXTOID)), w->shared->table, sizeof(w->shared->table));
+                text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false, TEXTOID)), w->shared->user, sizeof(w->shared->user));
+                elog(DEBUG1, "row = %lu, user = %s, data = %s, schema = %s, table = %s, sleep = %li, reset = %li, run = %i, hash = %i, spi = %s, limit = %i, spawn = %s", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset, w->shared->run, w->shared->hash, w->shared->spi ? "true" : "false", w->shared->limit, w->spawn ? "true" : "false");
+                dlist_push_tail(&head, &w->node);
+                SPI_freetuple(val);
+            }
+        } while (SPI_processed);
+        SPI_cursor_close_my(portal);
+        SPI_finish_my();
+    PG_CATCH();
+        MemoryContextSwitchTo(oldMemoryContext);
+        EmitErrorReport();
+        FlushErrorState();
+        SPI_abort_my();
+        ok = false;
+    PG_END_TRY();
     set_ps_display_my("idle");
+    if (!ok) {
+        ereport(WARNING, (errmsg("pg_task.json not applied, keeping the previous configuration")));
+        dlist_foreach_modify(iter, &head) conf_free(dlist_container(Work, node, iter.cur));
+        return;
+    }
     conf_reconcile();
     dlist_foreach_modify(iter, &head) {
         Work *w = dlist_container(Work, node, iter.cur);

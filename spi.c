@@ -163,6 +163,16 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
     check_log_duration_my(STMT_STATEMENT, src, nargs, argtypes, values, nulls);
 }
 
+// undoes SPI_connect_my() after an error its caller catches to carry on: aborting the transaction also ends SPI, pops the snapshot and takes back a switched userid
+void SPI_abort_my(void) {
+    disable_timeout(STATEMENT_TIMEOUT, false);
+    AbortCurrentTransaction();
+    switched = false;
+    was_logged = false;
+    debug_query_string = NULL;
+    pgstat_report_activity(STATE_IDLE, NULL);
+}
+
 void SPI_finish_my(void) {
     int rc;
     disable_timeout(STATEMENT_TIMEOUT, false);
