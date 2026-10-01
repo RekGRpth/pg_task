@@ -1,0 +1,76 @@
+-- pg_conf runs in the database postgres, whose settings its session gets on connecting: they are that database's, not the server's, and must not apply to the tables of other databases
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+ALTER DATABASE postgres SET pg_task.sleep = 777;
+SELECT pid AS conf_pid FROM pg_catalog.pg_stat_activity WHERE application_name = 'pg_conf'
+\gset
+SELECT set_config('pg_task_test.conf_pid', :'conf_pid', false) IS NOT NULL AS conf_pid_saved;
+ conf_pid_saved 
+----------------
+ t
+(1 row)
+
+SELECT pg_terminate_backend(:conf_pid) AS conf_terminated;
+ conf_terminated 
+-----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..1200 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name = 'pg_conf' AND pid <> current_setting('pg_task_test.conf_pid')::int AND state = 'idle') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 1200 x pg_sleep(0.1) waiting for pg_conf to be restarted'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT left(:'json_baseline', -1) || ',{"data":"conf_own_settings_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE datname = 'conf_own_settings_test' AND application_name LIKE 'pg_work %') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work in database ''conf_own_settings_test'' to start'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- before 9.5 there is no pg_file_settings to fall back to
+SELECT split_part(application_name, ' ', 4) <> '777' OR current_setting('server_version_num')::int < 90500 AS sleep_not_from_postgres_database FROM pg_catalog.pg_stat_activity WHERE datname = 'conf_own_settings_test' AND application_name LIKE 'pg_work %';
+ sleep_not_from_postgres_database 
+----------------------------------
+ t
+(1 row)
+
+ALTER DATABASE postgres RESET pg_task.sleep;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE datname = 'conf_own_settings_test') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for backend(s) connected to database ''conf_own_settings_test'' to disconnect'; END IF;
+END;$body$ LANGUAGE plpgsql;
+DROP DATABASE conf_own_settings_test;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE usename = 'conf_own_settings_test') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for backend(s) connected as role ''conf_own_settings_test'' to disconnect'; END IF;
+END;$body$ LANGUAGE plpgsql;
+DROP ROLE conf_own_settings_test;
