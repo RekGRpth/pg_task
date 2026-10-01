@@ -1000,6 +1000,7 @@ void work_main(Datum main_arg) {
         int nevents = work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(WaitEvent));
         WaitEventSet *set = CreateWaitEventSetMy(nevents);
+        long timeout;
         work_events(set);
         if (current_reset <= 0) {
             INSTR_TIME_SET_CURRENT(start_time_reset);
@@ -1009,7 +1010,10 @@ void work_main(Datum main_arg) {
             INSTR_TIME_SET_CURRENT(start_time_sleep);
             current_sleep = work.shared->sleep;
         }
-        nevents = WaitEventSetWaitMy(set, idle_count >= (uint64)init_work_idle() ? work_timeout(&work) : Min(current_reset, current_sleep), events, nevents);
+        timeout = idle_count >= (uint64)init_work_idle() ? work_timeout(&work) : Min(current_reset, current_sleep);
+        // the next task planned in more than about 24.8 days (repeat = '1 month', say), or as long a reset, is more than the wait takes: it asserts and passes the int it gets to epoll, which would make it wait forever instead, so wake up in time to compute the timeout again
+        if (timeout > INT_MAX) timeout = INT_MAX;
+        nevents = WaitEventSetWaitMy(set, timeout, events, nevents);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
