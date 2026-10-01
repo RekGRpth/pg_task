@@ -435,9 +435,9 @@ static void work_done(Task *t) {
         t->skip++;
         return;
     }
-    if (task_done(t, true) || PQstatus(t->conn) != CONNECTION_OK) { work_finish(t); return; }
+    if (task_done(t, PQstatus(t->conn) == CONNECTION_OK) || PQstatus(t->conn) != CONNECTION_OK) { work_finish(t); return; } // take the next task of the group only for a connection to run it on
     if (t->save) { work_query(t); return; }
-    if (!PQsendQuery(t->conn, SQL(DISCARD ALL;))) { ereport(WARNING, (errmsg("id = %li, PQsendQuery failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); work_finish(t); return; }
+    if (!PQsendQuery(t->conn, SQL(DISCARD ALL;))) { ereport(WARNING, (errmsg("id = %li, PQsendQuery failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); task_untake(t); work_finish(t); return; }
     t->socket = work_discard;
     t->event = WL_SOCKET_READABLE;
 }
@@ -448,11 +448,11 @@ static void work_discard(Task *t) {
         if (!(result = PQgetResult(t->conn))) break;
         switch (PQresultStatus(result)) {
             case PGRES_COMMAND_OK: elog(DEBUG1, "id = %li, %s", t->shared->id, PQcmdStatus(result)); break;
-            case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); PQclear(result); work_finish(t); return; // closes the connection, whatever else it was to read
+            case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); PQclear(result); task_untake(t); work_finish(t); return; // closes the connection, whatever else it was to read
             default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
         }
     }
-    PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
+    if (PQstatus(t->conn) != CONNECTION_OK) { task_untake(t); work_finish(t); } else work_query(t); // the next task, which task_done() took already, has nothing to run on
 }
 
 static void work_headers(Task *t, const PGresult *result) {

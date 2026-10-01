@@ -173,6 +173,7 @@ void SPI_finish_my(void);
 void stmt_timeout_active_my(bool value);
 void task_error(Task *t);
 void task_free(Task *t);
+void task_untake(Task *t);
 void xact_started_my(bool value);
 Work *get_work(void);
 void make_schema(const Work *w);

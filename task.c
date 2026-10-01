@@ -148,6 +148,25 @@ static void task_update(const Task *t) {
 
 // live: whether the caller can go on with the next task of the same group, which task_live() then takes into TAKE; a caller that is about to drop t (work_error) must pass false, or that next task is left in TAKE until reset
 // without the lock of task_work(), i.e. failing before the task ran (work_error), the task is only still ours in TAKE: work_reset may have taken it back to PLAN, where PLAN -> FAIL would be an invalid state transition, or even have given it to another run
+// gives back a task task_live() took that pg_work then can't run on the connection, rather than leave it in TAKE, counted against the max of its group, until the next reset
+void task_untake(Task *t) {
+    Datum values[] = {Int64GetDatum(t->shared->id)};
+    static Oid argtypes[] = {INT8OID};
+    static SPIPlanPtr plan = NULL;
+    static StringInfoData src = {0};
+    elog(DEBUG1, "id = %li", t->shared->id);
+    if (!src.data) {
+        initStringInfoMy(&src);
+        appendStringInfo(&src, SQL(
+            UPDATE %1$s SET "state" = 'PLAN' WHERE "id" OPERATOR(pg_catalog.=) $1 AND "state" OPERATOR(pg_catalog.=) 'TAKE'
+        ), t->work->schema_table);
+    }
+    SPI_connect_my(src.data, userid);
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_UPDATE);
+    SPI_finish_my();
+}
+
 bool task_done(Task *t, bool live) {
     bool delete = false, exit = true, insert = false, update = false;
     char nulls[] = {' ', t->output.data ? ' ' : 'n', t->error.data ? ' ' : 'n', ' '};
