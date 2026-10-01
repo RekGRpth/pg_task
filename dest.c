@@ -317,6 +317,7 @@ bool dest_timeout(void) {
     bool exit;
     int StatementTimeoutMy = StatementTimeout;
     if (task_work(&task)) return true;
+    task.skip = 0; // or a task failed before in this worker would hide the command tag of the next one, and with nothing else to output have it deleted
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
     StatementTimeout = task.timeout;
