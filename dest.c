@@ -331,7 +331,6 @@ bool dest_timeout(void) {
         SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
         if (task.shared->spi) ReleaseCurrentSubTransaction();
     PG_CATCH();
-        SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
         task_error(&task);
         dest_catch();
         if (task.shared->spi) {
@@ -340,6 +339,8 @@ bool dest_timeout(void) {
             SPI_restore_connection();
 #endif
         }
+        // only once the failed (sub)transaction is gone, whose abort would take it back to the author's search_path, for the task's bookkeeping to run with
+        SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     PG_END_TRY();
     if (task.shared->spi) SPI_finish_my();
     StatementTimeout = StatementTimeoutMy;
