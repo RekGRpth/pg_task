@@ -298,6 +298,12 @@ static int work_nevents(void) {
         Task *t = dlist_container(Task, node, iter.cur);
         if (PQstatus(t->conn) == CONNECTION_BAD) { work_error((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), work_errdetail(PQerrorMessage(t->conn)))); continue; }
         if (PQsocket(t->conn) == PGINVALID_SOCKET) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsocket == PGINVALID_SOCKET"), work_errdetail(PQerrorMessage(t->conn)))); continue; }
+        // a nonblocking connection sends only what the socket takes and keeps the rest of a long query or input, which the server waits for: send more of it whenever the socket is writable again, reading what the server answers meanwhile
+        if (PQstatus(t->conn) == CONNECTION_OK) switch (PQflush(t->conn)) {
+            case -1: work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQflush failed"), work_errdetail(PQerrorMessage(t->conn)))); continue;
+            case 0: t->event &= ~WL_SOCKET_WRITEABLE; break;
+            default: t->event |= WL_SOCKET_WRITEABLE; break;
+        }
         nevents++;
     }
     return nevents;
@@ -932,6 +938,7 @@ static void work_sleep(Work *w) {
 }
 
 static void work_writeable(Task *t) {
+    if (PQstatus(t->conn) == CONNECTION_OK && t->socket != work_connect) return; // sending the rest of a query, which work_nevents() does
     t->socket(t);
 }
 

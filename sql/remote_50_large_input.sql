@@ -1,0 +1,12 @@
+-- an input longer than the socket takes at once is sent in parts, as the socket becomes writable again, rather than left in libpq's buffer with the server waiting for the rest of it
+DELETE FROM task WHERE "group" = 'large_input';
+INSERT INTO task ("group", input, remote) VALUES ('large_input', 'SELECT length(''' || repeat('x', 600000) || ''')', 'dbname=' || :'DBNAME');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'large_input' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''large_input'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, output, error FROM task WHERE "group" = 'large_input';
+DELETE FROM task WHERE "group" = 'large_input';
