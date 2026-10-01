@@ -400,6 +400,14 @@ static void work_readable(Task *t) {
     t->socket(t);
 }
 
+// PQgetResult waits for a result until all of it has arrived, holding up pg_work and every other task with it (as the first of several statements would, once its result fills the server's send buffer): until then, wait for the socket to read the rest, and come back to socket
+static bool work_busy(Task *t, void (*socket) (Task *t)) {
+    if (!PQisBusy(t->conn)) return false;
+    t->event = WL_SOCKET_READABLE;
+    t->socket = socket;
+    return true;
+}
+
 static void work_done(Task *t) {
     if (PQstatus(t->conn) == CONNECTION_OK && PQtransactionStatus(t->conn) != PQTRANS_IDLE) {
         if (!PQsendQuery(t->conn, SQL(COMMIT))) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
@@ -416,13 +424,16 @@ static void work_done(Task *t) {
 }
 
 static void work_discard(Task *t) {
-    bool fail = false;
-    for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK && (result = PQgetResult(t->conn)); PQclear(result)) switch (PQresultStatus(result)) {
-        case PGRES_COMMAND_OK: elog(DEBUG1, "id = %li, %s", t->shared->id, PQcmdStatus(result)); break;
-        case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); fail = true; break;
-        default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
+    for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK; PQclear(result)) {
+        if (work_busy(t, work_discard)) return;
+        if (!(result = PQgetResult(t->conn))) break;
+        switch (PQresultStatus(result)) {
+            case PGRES_COMMAND_OK: elog(DEBUG1, "id = %li, %s", t->shared->id, PQcmdStatus(result)); break;
+            case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); PQclear(result); work_finish(t); return; // closes the connection, whatever else it was to read
+            default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
+        }
     }
-    fail || PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
+    PQstatus(t->conn) != CONNECTION_OK ? work_finish(t) : work_query(t);
 }
 
 static void work_headers(Task *t, const PGresult *result) {
@@ -457,23 +468,31 @@ static void work_copy(Task *t) {
 }
 
 static void work_result(Task *t) {
-    for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK && (result = PQgetResult(t->conn)); PQclear(result)) switch (PQresultStatus(result)) {
-        case PGRES_COMMAND_OK: work_command(t, result); break;
-        case PGRES_COPY_BOTH: if (PQputCopyEnd(t->conn, "COPY BOTH is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
-        case PGRES_COPY_IN: if (PQputCopyEnd(t->conn, "COPY FROM STDIN is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
-        case PGRES_COPY_OUT: PQclear(result); work_copy(t); return;
-        case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
-        case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) work_success(t, result, row); break;
-        default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
+    for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK; PQclear(result)) {
+        if (work_busy(t, work_result)) return;
+        if (!(result = PQgetResult(t->conn))) break;
+        switch (PQresultStatus(result)) {
+            case PGRES_COMMAND_OK: work_command(t, result); break;
+            case PGRES_COPY_BOTH: if (PQputCopyEnd(t->conn, "COPY BOTH is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
+            case PGRES_COPY_IN: if (PQputCopyEnd(t->conn, "COPY FROM STDIN is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
+            case PGRES_COPY_OUT: PQclear(result); work_copy(t); return;
+            case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
+            case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) work_success(t, result, row); break;
+            default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
+        }
     }
     work_done(t);
 }
 
 static void work_input(Task *t) {
-    for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK && (result = PQgetResult(t->conn)); PQclear(result)) switch (PQresultStatus(result)) {
-        case PGRES_COMMAND_OK: elog(DEBUG1, "id = %li, %s", t->shared->id, PQcmdStatus(result)); break;
-        case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
-        default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
+    for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK; PQclear(result)) {
+        if (work_busy(t, work_input)) return;
+        if (!(result = PQgetResult(t->conn))) break;
+        switch (PQresultStatus(result)) {
+            case PGRES_COMMAND_OK: elog(DEBUG1, "id = %li, %s", t->shared->id, PQcmdStatus(result)); break;
+            case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
+            default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
+        }
     }
     if (t->error.data) { work_done(t); return; }
     if (!PQsendQuery(t->conn, t->input)) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
