@@ -1,6 +1,8 @@
 SET client_min_messages = warning;
 CREATE ROLE task_owner_test LOGIN;
 CREATE ROLE task_owner_test_b LOGIN;
+CREATE ROLE task_owner_test_c LOGIN NOINHERIT;
+DO $body$ BEGIN EXECUTE format('GRANT %I TO task_owner_test_c', (SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'task'::regclass)); END;$body$ LANGUAGE plpgsql;
 RESET client_min_messages;
 SELECT (SELECT count(*) FROM pg_catalog.pg_settings WHERE name = 'gp_role') > 0 AS is_gp
 \gset
@@ -25,5 +27,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON task TO task_owner_test;
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq TO task_owner_test;
 GRANT SELECT, INSERT, UPDATE, DELETE ON task TO task_owner_test_b;
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq TO task_owner_test_b;
+GRANT SELECT, INSERT, UPDATE, DELETE ON task TO task_owner_test_c;
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq TO task_owner_test_c;
 \connect :DBNAME
 DELETE FROM task WHERE "group" IN ('role_owner_recorded', 'role_forged_owner_rejected', 'role_owner_immutable', 'role_owner_preserved_repeat', 'role_two_distinct_owners');

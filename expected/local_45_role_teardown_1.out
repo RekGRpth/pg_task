@@ -20,8 +20,9 @@ SELECT CASE WHEN :'need_gp_utility' = 't' THEN '\connect "dbname=' || :'DBNAME' 
 \i :gp_utility_file
 \pset tuples_only off
 \pset format aligned
-REVOKE SELECT, INSERT, UPDATE, DELETE ON task FROM task_owner_test, task_owner_test_b;
-REVOKE USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq FROM task_owner_test, task_owner_test_b;
+REVOKE SELECT, INSERT, UPDATE, DELETE ON task FROM task_owner_test, task_owner_test_b, task_owner_test_c;
+REVOKE USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq FROM task_owner_test, task_owner_test_b, task_owner_test_c;
 \connect :DBNAME
 DROP ROLE task_owner_test;
 DROP ROLE task_owner_test_b;
+DROP ROLE task_owner_test_c;

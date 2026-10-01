@@ -352,28 +352,56 @@ static void make_conditional_immutable(const Work *w, const char *column) {
 }
 
 #if PG_VERSION_NUM >= 90500
-// a role only sees and changes the tasks it may act as, the same way the user column's trigger lets it insert them: otherwise anyone with UPDATE on the table could rewrite the input of someone else's queued task and have it run as that someone; the table owner (pg_task.user) isn't bound by it, so pg_work and the task's bookkeeping still see every task, and a dropped role's tasks are just hidden rather than erroring out the whole query as pg_has_role by name would
+// a role only sees and changes the tasks it may act as, the same way the user column's trigger lets it insert them, a member of the table owner (even without inheriting its rights, which would exempt it from the policy altogether) included: otherwise anyone with UPDATE on the table could rewrite the input of someone else's queued task and have it run as that someone; the table owner (pg_task.user) isn't bound by it, so pg_work and the task's bookkeeping still see every task, and a dropped role's tasks are just hidden rather than erroring out the whole query as pg_has_role by name would; pg_get_expr deparses the policy differently across versions and search paths, so the policy's comment keeps the expression it was made with, and a policy whose comment differs is brought up to date
 static void make_policy(const Work *w) {
-    Datum values[2];
-    static Oid argtypes[] = {TEXTOID, OIDOID};
+    Datum values[3];
+    static Oid argtypes[] = {TEXTOID, OIDOID, TEXTOID};
+    StringInfoData expr;
     StringInfoData name;
     StringInfoData src;
+    initStringInfoMy(&expr);
+    {
+        const char *quote_table = quote_literal_cstr(w->schema_table);
+        appendStringInfo(&expr, "\"user\" OPERATOR(pg_catalog.=) CURRENT_USER OR pg_catalog.pg_has_role((SELECT \"oid\" FROM \"pg_catalog\".\"pg_roles\" WHERE \"rolname\" OPERATOR(pg_catalog.=) \"user\"), 'MEMBER') OR pg_catalog.pg_has_role((SELECT \"relowner\" FROM \"pg_catalog\".\"pg_class\" WHERE \"oid\" OPERATOR(pg_catalog.=) %s::pg_catalog.regclass), 'MEMBER')", quote_table);
+        pfree((void *)quote_table);
+    }
     initStringInfoMy(&name);
     make_name(w, &name, "user");
     values[0] = CStringGetTextDatum(name.data);
     values[1] = ObjectIdGetDatum(w->shared->oid);
+    values[2] = CStringGetTextDatum(expr.data);
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_policy WHERE polname OPERATOR(pg_catalog.=) $1 AND polrelid OPERATOR(pg_catalog.=) $2) AS "test"
     ));
-    if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+    if (!make_test(src.data, 2, argtypes, values, NULL)) {
         const char *quote = quote_identifier(name.data);
+        const char *quote_expr = quote_literal_cstr(expr.data);
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             CREATE POLICY %1$s ON %2$s USING (%3$s) WITH CHECK (%3$s);
-        ), quote, w->schema_table, "\"user\" OPERATOR(pg_catalog.=) CURRENT_USER OR pg_catalog.pg_has_role((SELECT \"oid\" FROM \"pg_catalog\".\"pg_roles\" WHERE \"rolname\" OPERATOR(pg_catalog.=) \"user\"), 'MEMBER')");
+            COMMENT ON POLICY %1$s ON %2$s IS %4$s;
+        ), quote, w->schema_table, expr.data, quote_expr);
         make_ddl(src.data, SPI_OK_UTILITY);
         if (quote != name.data) pfree((void *)quote);
+        pfree((void *)quote_expr);
+    } else {
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            SELECT (SELECT "description" FROM pg_catalog.pg_policy JOIN pg_catalog.pg_description ON objoid OPERATOR(pg_catalog.=) pg_catalog.pg_policy.oid WHERE classoid OPERATOR(pg_catalog.=) 'pg_catalog.pg_policy'::pg_catalog.regclass AND objsubid OPERATOR(pg_catalog.=) 0 AND polname OPERATOR(pg_catalog.=) $1 AND polrelid OPERATOR(pg_catalog.=) $2) IS NOT DISTINCT FROM $3 AS "test"
+        ));
+        if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+            const char *quote = quote_identifier(name.data);
+            const char *quote_expr = quote_literal_cstr(expr.data);
+            resetStringInfo(&src);
+            appendStringInfo(&src, SQL(
+                ALTER POLICY %1$s ON %2$s USING (%3$s) WITH CHECK (%3$s);
+                COMMENT ON POLICY %1$s ON %2$s IS %4$s;
+            ), quote, w->schema_table, expr.data, quote_expr);
+            make_ddl(src.data, SPI_OK_UTILITY);
+            if (quote != name.data) pfree((void *)quote);
+            pfree((void *)quote_expr);
+        }
     }
     resetStringInfo(&src);
     appendStringInfo(&src, SQL(
@@ -386,9 +414,11 @@ static void make_policy(const Work *w) {
         ), w->schema_table);
         make_ddl(src.data, SPI_OK_UTILITY);
     }
+    pfree(expr.data);
     pfree(name.data);
     pfree(src.data);
     pfree((void *)values[0]);
+    pfree((void *)values[2]);
 }
 #endif
 

@@ -28,4 +28,8 @@ SET ROLE task_owner_test_b;
 WITH u AS (UPDATE task SET input = 'SELECT 3 AS a' WHERE "group" = 'role_two_distinct_owners' AND state = 'PLAN' RETURNING 1) SELECT count(*) AS own_updated FROM u;
 RESET ROLE;
 SELECT input FROM task WHERE "group" = 'role_two_distinct_owners' AND state = 'PLAN';
+-- a member of the table owner may insert a task as another role, as the user trigger lets it, even when it doesn't inherit the owner's rights and so is bound by the policy
+SET ROLE task_owner_test_c;
+INSERT INTO task ("group", plan, input, "user") VALUES ('role_two_distinct_owners', now() + '1 hour', 'SELECT 1 AS a', 'task_owner_test_b') RETURNING "user";
+RESET ROLE;
 DELETE FROM task WHERE "group" = 'role_two_distinct_owners' AND state = 'PLAN';
