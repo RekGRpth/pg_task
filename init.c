@@ -280,7 +280,7 @@ void _PG_init(void) {
 #if PG_VERSION_NUM >= 150000
     prev_shmem_request_hook = shmem_request_hook;
     shmem_request_hook = init_shmem_request_hook;
-#elif PG_VERSION_NUM >= 90600
+#else
     RequestAddinShmemSpace(init_shared_memsize());
 #endif
     if ((len = strlcpy(worker.bgw_function_name, "conf_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
