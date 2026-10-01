@@ -1,0 +1,12 @@
+-- a task's NOTIFY is sent once its transaction commits, and takes neither its own worker down nor the next task's (before 13 sending it within the bookkeeping's transaction was an error)
+DELETE FROM task WHERE "group" = 'notify';
+INSERT INTO task ("group", max, count, input) VALUES ('notify', 0, 10, 'NOTIFY pg_task_test, ''notify'''), ('notify', 0, 10, 'SELECT 1 AS a');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'notify' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''notify'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT input, state, output, error FROM task WHERE "group" = 'notify' ORDER BY id;
+DELETE FROM task WHERE "group" = 'notify';

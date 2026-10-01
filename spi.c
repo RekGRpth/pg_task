@@ -178,12 +178,12 @@ void SPI_finish_my(void) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     PopActiveSnapshot();
     if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_finish failed"), errdetail("%s", SPI_result_code_string(rc))));
-#if PG_VERSION_NUM < 150000
-    ProcessCompletedNotifies();
-#endif
     if (switched) SetUserIdAndSecContext(save_userid, save_sec_context); // only when switched: an unswitched SPI task with save = true may legitimately keep its own SET ROLE
     switched = false;
     CommitTransactionCommand();
+#if PG_VERSION_NUM < 150000
+    ProcessCompletedNotifies(); // only now, out of the transaction, as PostgresMain() calls it: before 13 it starts a transaction of its own to signal the listeners of what this one (or a task's input before) notified, which within this one is an error
+#endif
     was_logged = false;
     pgstat_report_stat(false);
     debug_query_string = NULL;
