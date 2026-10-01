@@ -3,6 +3,7 @@
 #include <access/xact.h>
 #include <catalog/namespace.h>
 #include <catalog/pg_collation.h>
+#include <catalog/pg_trigger.h>
 #include <libpq/libpq-be.h>
 #include <mb/pg_wchar.h>
 #include <parser/parse_type.h>
@@ -148,13 +149,14 @@ static void make_constraint(const Work *w, const char *name, const char *value, 
     pfree(src.data);
 }
 
+// not only the body: security definer and search_path may change without it, and a function created otherwise by an earlier version would be kept
 static void make_function(const Work *w, const char *name, const char *source, bool security_definer) {
-    Datum values[] = {CStringGetTextDatum(name), CStringGetTextDatum(w->shared->schema), CStringGetTextDatum(source)};
-    static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID};
+    Datum values[] = {CStringGetTextDatum(name), CStringGetTextDatum(w->shared->schema), CStringGetTextDatum(source), BoolGetDatum(security_definer)};
+    static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID, BOOLOID};
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT (SELECT prosrc FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) $1 AND nspname OPERATOR(pg_catalog.=) $2) IS NOT DISTINCT FROM $3 AS "test"
+        SELECT COALESCE((SELECT prosrc OPERATOR(pg_catalog.=) $3 AND prosecdef OPERATOR(pg_catalog.=) $4 AND proconfig OPERATOR(pg_catalog.=) ARRAY['search_path=pg_catalog, pg_temp']::pg_catalog.text[] FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) $1 AND nspname OPERATOR(pg_catalog.=) $2), false) AS "test"
     ));
     if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         const char *quote = quote_identifier(name);
@@ -171,25 +173,38 @@ static void make_function(const Work *w, const char *name, const char *source, b
     pfree((void *)values[2]);
 }
 
-static void make_trigger(const Work *w, const char *name, const char *when, const char *each) {
-    Datum values[] = {CStringGetTextDatum(name), ObjectIdGetDatum(w->shared->oid)};
-    static Oid argtypes[] = {TEXTOID, OIDOID};
+// type is made of the TRIGGER_TYPE_* bits, and column is the one of UPDATE OF, if any: both are checked against the trigger by that name, which is re-created when it fires otherwise, as one made by an earlier version may
+static void make_trigger(const Work *w, const char *name, int16 type, const char *column) {
+    Datum values[] = {CStringGetTextDatum(name), ObjectIdGetDatum(w->shared->oid), Int16GetDatum(type), column ? CStringGetTextDatum(column) : (Datum)0};
+    char nulls[] = {' ', ' ', ' ', column ? ' ' : 'n'};
+    static Oid argtypes[] = {TEXTOID, OIDOID, INT2OID, TEXTOID};
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT EXISTS (SELECT * FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) $1 AND tgrelid OPERATOR(pg_catalog.=) $2) AS "test"
+        SELECT COALESCE((SELECT tgtype OPERATOR(pg_catalog.=) $3 AND tgattr::pg_catalog.text OPERATOR(pg_catalog.=) pg_catalog.array_to_string(ARRAY(SELECT attnum FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) $2 AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) $4), ' ') FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) $1 AND tgrelid OPERATOR(pg_catalog.=) $2), false) AS "test"
     ));
-    if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+    if (!make_test(src.data, countof(argtypes), argtypes, values, nulls)) {
         const char *quote = quote_identifier(name);
+        const char *sep = " ";
+        StringInfoData when;
+        initStringInfoMy(&when);
+        appendStringInfoString(&when, TRIGGER_FOR_BEFORE(type) ? "BEFORE" : "AFTER");
+        if (TRIGGER_FOR_INSERT(type)) { appendStringInfo(&when, "%sINSERT", sep); sep = " OR "; }
+        if (TRIGGER_FOR_DELETE(type)) { appendStringInfo(&when, "%sDELETE", sep); sep = " OR "; }
+        if (TRIGGER_FOR_UPDATE(type)) appendStringInfo(&when, "%sUPDATE", sep);
+        if (column) appendStringInfo(&when, " OF \"%s\"", column);
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
+            DROP TRIGGER IF EXISTS %1$s ON %3$s;
             CREATE TRIGGER %1$s %2$s ON %3$s FOR EACH %4$s EXECUTE PROCEDURE %5$s.%1$s();
-        ), quote, when, w->schema_table, each, w->schema);
+        ), quote, when.data, w->schema_table, TRIGGER_FOR_ROW(type) ? "ROW" : "STATEMENT", w->schema);
         make_ddl(src.data, SPI_OK_UTILITY);
         if (quote != name) pfree((void *)quote);
+        pfree(when.data);
     }
     pfree(src.data);
     pfree((void *)values[0]);
+    if (column) pfree((void *)values[3]);
 }
 
 // trigger and function names are <table>_<suffix>, which PostgreSQL would silently truncate to NAMEDATALEN - 1, making different suffixes collide and the existence checks never find what they created: when that doesn't fit, clip the table part and keep it unique with the table's hash
@@ -221,13 +236,11 @@ static void make_wake_up(const Work *w) {
 #endif
     );
     make_function(w, name.data, source.data, true);
-    make_trigger(w, name.data, "AFTER INSERT OR DELETE OR UPDATE OF plan",
+    make_trigger(w, name.data, TRIGGER_TYPE_AFTER | TRIGGER_TYPE_INSERT | TRIGGER_TYPE_DELETE | TRIGGER_TYPE_UPDATE
 #ifdef GP_VERSION_NUM
-        "ROW"
-#else
-        "STATEMENT"
+        | TRIGGER_TYPE_ROW
 #endif
-    );
+    , "plan");
     pfree(name.data);
     pfree(source.data);
 }
@@ -251,7 +264,7 @@ static void make_stop(const Work *w) {
         END;
     ), w->shared->hash);
     make_function(w, name.data, source.data, true);
-    make_trigger(w, name.data, "AFTER UPDATE OF \"state\"", "ROW");
+    make_trigger(w, name.data, TRIGGER_TYPE_AFTER | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, "state");
     pfree(name.data);
     pfree(source.data);
 }
@@ -276,7 +289,7 @@ static void make_user_immutable(const Work *w) {
         END;
     ));
     make_function(w, name.data, source.data, false);
-    make_trigger(w, name.data, "BEFORE INSERT OR UPDATE OF \"user\"", "ROW");
+    make_trigger(w, name.data, TRIGGER_TYPE_BEFORE | TRIGGER_TYPE_INSERT | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, "user");
     pfree(name.data);
     pfree(source.data);
 }
@@ -300,14 +313,13 @@ static void make_state_machine(const Work *w) {
         END;
     ), w->schema_type);
     make_function(w, name.data, source.data, false);
-    make_trigger(w, name.data, "BEFORE UPDATE OF \"state\"", "ROW");
+    make_trigger(w, name.data, TRIGGER_TYPE_BEFORE | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, "state");
     pfree(name.data);
     pfree(source.data);
 }
 
 static void make_immutable(const Work *w, const char *column) {
     StringInfoData name;
-    StringInfoData when;
     StringInfoData source;
     initStringInfoMy(&name);
     make_name(w, &name, column);
@@ -320,17 +332,13 @@ static void make_immutable(const Work *w, const char *column) {
         END;
     ), column);
     make_function(w, name.data, source.data, false);
-    initStringInfoMy(&when);
-    appendStringInfo(&when, "BEFORE UPDATE OF \"%s\"", column);
-    make_trigger(w, name.data, when.data, "ROW");
+    make_trigger(w, name.data, TRIGGER_TYPE_BEFORE | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, column);
     pfree(name.data);
-    pfree(when.data);
     pfree(source.data);
 }
 
 static void make_conditional_immutable(const Work *w, const char *column) {
     StringInfoData name;
-    StringInfoData when;
     StringInfoData source;
     initStringInfoMy(&name);
     make_name(w, &name, column);
@@ -343,11 +351,8 @@ static void make_conditional_immutable(const Work *w, const char *column) {
         END;
     ), column, w->schema_type);
     make_function(w, name.data, source.data, false);
-    initStringInfoMy(&when);
-    appendStringInfo(&when, "BEFORE UPDATE OF \"%s\"", column);
-    make_trigger(w, name.data, when.data, "ROW");
+    make_trigger(w, name.data, TRIGGER_TYPE_BEFORE | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, column);
     pfree(name.data);
-    pfree(when.data);
     pfree(source.data);
 }
 
