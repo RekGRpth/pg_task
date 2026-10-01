@@ -224,6 +224,10 @@ bool task_work(Task *t) {
         t->lock = false;
     } else {
         StringInfoData application_name;
+        // a remote task comes with these from work_sleep(), which it connected by, while a local one had them freed by task_free() after the task before
+        if (t->group) pfree(t->group);
+        if (t->remote) pfree(t->remote);
+        if (t->user) pfree(t->user);
         t->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false, CHAROID));
         t->escape = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "escape", false, CHAROID));
         t->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "group", false, TEXTOID));
