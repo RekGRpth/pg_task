@@ -75,4 +75,9 @@ void exec_simple_query_my(const char *query_string) {
 void xact_started_my(bool value) {
     xact_started = value;
 }
+void stmt_timeout_active_my(bool value) {
+#if PG_VERSION_NUM >= 110000 && PG_VERSION_NUM < 130000
+    stmt_timeout_active = value;
+#endif
+}
 EOF

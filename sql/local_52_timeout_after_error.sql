@@ -1,0 +1,13 @@
+-- a worker that keeps its session between tasks (save) still arms the statement timeout for the next task after a failed one (before 13 the failed statement's timeout, disarmed by the error, was taken for still armed)
+DELETE FROM task WHERE "group" = 'timeout_after_error';
+INSERT INTO task ("group", max, count, save, timeout, input) VALUES ('timeout_after_error', 0, 10, true, '1 sec', 'SELECT 1/0'), ('timeout_after_error', 0, 10, true, '1 sec', 'SELECT pg_sleep(4)');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'timeout_after_error' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''timeout_after_error'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT count(DISTINCT pid) = 1 AS one_worker FROM task WHERE "group" = 'timeout_after_error';
+SELECT input, state, error LIKE '%canceling statement due to statement timeout%' AS timed_out FROM task WHERE "group" = 'timeout_after_error' ORDER BY id;
+DELETE FROM task WHERE "group" = 'timeout_after_error';

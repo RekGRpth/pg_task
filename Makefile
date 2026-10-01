@@ -3,7 +3,7 @@ EXTRA_CLEAN = postgres.c exec.c latch.c latch.h latch.o latch_my.h
 PG_CONFIG = pg_config
 postgres.c:
 	./postgres.sh >$@
-exec.c: postgres.c
+exec.c: postgres.c exec.sh
 	./exec.sh >$@
 PG9495 = $(shell $(PG_CONFIG) --version | grep -E " 9\.4| 9\.5" > /dev/null && echo yes || echo no)
 ifeq ($(PG9495),yes)

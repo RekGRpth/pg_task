@@ -261,6 +261,7 @@ static void dest_catch(void) {
     if (!task.shared->spi) {
         HOLD_INTERRUPTS();
         disable_all_timeouts(false);
+        stmt_timeout_active_my(false); // as PostgresMain() does, or before 13 the next task's statements would take the statement timeout for still armed and never arm it
         QueryCancelPending = false;
     }
     EmitErrorReport();
