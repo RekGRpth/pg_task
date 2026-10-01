@@ -1,0 +1,86 @@
+-- a pg_work restarted after a crash, once its entry is gone from pg_task.json and pg_conf has been restarted meanwhile (so no longer knows to cancel that restart), checks the configuration and exits rather than serve the removed entry
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT current_user AS test_user
+\gset
+ALTER SYSTEM SET pg_work.restart = 5;
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || :'test_user' || '","schema":"removed_entry_test_schema","table":"removed_entry_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'removed_entry_test_schema' AND c.relname = 'removed_entry_test') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work removed_entry_test_schema removed_entry_test %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for table removed_entry_test_schema.removed_entry_test to be created by the pg_work worker'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pid AS conf_pid FROM pg_catalog.pg_stat_activity WHERE application_name = 'pg_conf'
+\gset
+SELECT set_config('pg_task_test.conf_pid', :'conf_pid', false) IS NOT NULL AS conf_pid_saved;
+ conf_pid_saved 
+----------------
+ t
+(1 row)
+
+SELECT pg_terminate_backend(pid) AS work_terminated FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work removed_entry_test_schema removed_entry_test %' AND datname = current_database();
+ work_terminated 
+-----------------
+ t
+(1 row)
+
+SELECT pg_terminate_backend(:conf_pid) AS conf_terminated;
+ conf_terminated 
+-----------------
+ t
+(1 row)
+
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+SELECT pg_sleep(8);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+SELECT pg_stat_clear_snapshot();
+ pg_stat_clear_snapshot 
+------------------------
+ 
+(1 row)
+
+SELECT NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work removed_entry_test_schema %') AS removed_entry_not_served;
+ removed_entry_not_served 
+--------------------------
+ t
+(1 row)
+
+ALTER SYSTEM RESET pg_work.restart;
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..1200 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name = 'pg_conf' AND pid <> current_setting('pg_task_test.conf_pid')::int AND state = 'idle') AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work removed_entry_test_schema %') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 1200 x pg_sleep(0.1) waiting for pg_conf to be restarted and the removed entry''s pg_work to be gone'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SET client_min_messages TO WARNING;
+DROP SCHEMA IF EXISTS removed_entry_test_schema CASCADE;
+RESET client_min_messages;

@@ -1004,6 +1004,9 @@ void work_main(Datum main_arg) {
     appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);
     work.schema_table = schema_table.data;
     if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.shared->hash)) { ereport(WARNING, (errmsg("!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.shared->hash))); ShutdownRequestPending = true; return; } // exit without error to disable restart, then not start conf
+    // restarted after a crash, it may serve what pg_task.json no longer has, and no pg_conf that has been restarted meanwhile knows to cancel that restart: check before taking any task, and exit without error, so as not to be restarted again
+    work_check(&work);
+    if (ShutdownRequestPending) return;
     dlist_init(&local);
     dlist_init(&remote);
     initStringInfoMy(&schema_type);
