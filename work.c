@@ -79,6 +79,7 @@ typedef struct Local {
     int hash;
     int64 id;
     int pid;
+    int slot;
 } Local;
 
 static dlist_head local; // started task workers whose slot we hold too, until they exit: see work_local()
@@ -636,14 +637,16 @@ static void work_stop(const Work *w) {
                 Task *t = dlist_container(Task, node, iter.cur);
                 if (t->shared->id == id) { work_cancel(t); break; }
             }
-        } else if ( // the same cancel pg_cancel_backend() sends, but not subject to its role checks: the task worker runs as the task author, whom pg_task.user may not signal from SQL; it's a pid holding the lock of this very task, so no other backend can be hit
-#ifdef HAVE_SETSID
-            kill(-pid, SIGINT)
-#else
-            kill(pid, SIGINT)
-#endif
-        ) ereport(WARNING, (errmsg("id = %li, could not send signal to process %i: %m", id, pid)));
-        else ereport(WARNING, (errmsg("cancel id = %li, pid = %i", id, pid)));
+        } else { // a task worker of ours held the lock of this task just now, but may be done with it by now: mark the task in its slot, for it to cancel only that one (see dest_cancel()), with no role checks of pg_cancel_backend() to pass either, as the worker runs as the task author, whom pg_task.user may not signal from SQL
+            Local *l = NULL;
+            dlist_foreach_modify(iter, &local) {
+                Local *c = dlist_container(Local, node, iter.cur);
+                if (c->pid == pid) { l = c; break; }
+            }
+            if (!l || !init_stop(l->slot, id)) ereport(WARNING, (errmsg("id = %li, no task worker of ours with pid %i", id, pid)));
+            else if (kill(pid, SIGUSR2)) ereport(WARNING, (errmsg("id = %li, could not send signal to process %i: %m", id, pid)));
+            else ereport(WARNING, (errmsg("cancel id = %li, pid = %i", id, pid)));
+        }
     }
     if (cancelled) pfree(cancelled);
     cancelled = current; // forget the tasks no longer running
@@ -784,7 +787,7 @@ static bool work_owner(Task *t) {
 }
 
 // the task worker takes the slot of its group only once connected (task_main), and a work_sleep() before that doesn't count it and takes another task of the group over its max: hold that very slot for it from its start until it exits (work_reap), its pid counted once
-static void work_local(const Task *t, BackgroundWorkerHandle *handle) {
+static void work_local(const Task *t, BackgroundWorkerHandle *handle, int slot) {
     Local *l;
     if (!lock_table_pid_hash(t->shared->oid, t->pid, t->shared->hash)) { ereport(WARNING, (errmsg("!lock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->pid, t->shared->hash))); pfree(handle); return; }
     l = MemoryContextAllocZero(TopMemoryContext, sizeof(*l));
@@ -792,6 +795,7 @@ static void work_local(const Task *t, BackgroundWorkerHandle *handle) {
     l->hash = t->shared->hash;
     l->id = t->shared->id;
     l->pid = t->pid;
+    l->slot = slot;
     dlist_push_tail(&local, &l->node);
 }
 
@@ -835,7 +839,7 @@ static void work_task(Task *t) {
     } else switch (WaitForBackgroundWorkerStartup(handle, &t->pid)) {
         case BGWH_NOT_YET_STARTED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
         case BGWH_POSTMASTER_DIED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
-        case BGWH_STARTED: elog(DEBUG1, "started id = %li", t->shared->id); work_local(t, handle); handle = NULL; work_free(t); break;
+        case BGWH_STARTED: elog(DEBUG1, "started id = %li", t->shared->id); work_local(t, handle, DatumGetInt32(worker.bgw_main_arg)); handle = NULL; work_free(t); break;
         case BGWH_STOPPED: init_free_task(DatumGetInt32(worker.bgw_main_arg), t->shared->data, t->shared->oid, t->shared->id); work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     if (handle) pfree(handle);

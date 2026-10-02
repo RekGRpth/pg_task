@@ -4,6 +4,7 @@
 #include <miscadmin.h>
 #include <pgstat.h>
 #include <replication/slot.h>
+#include <storage/ipc.h>
 #include <storage/proc.h>
 #include <tcop/tcopprot.h>
 #include <unistd.h>
@@ -314,6 +315,19 @@ static void dest_discard(void) {
     pfree(oid.data);
 }
 
+static volatile sig_atomic_t running = false; // the task's input, rather than its bookkeeping, which a cancel must not fail
+
+// work_stop()'s cancel of a task in STOP, sent as SIGUSR2 rather than the SIGINT of pg_cancel_backend(), which stays as it is: it's for the task work_stop() saw this worker hold the lock of, which this worker may be done with by now and running the next one or recording the result, so cancel the query as StatementCancelHandler() does only while running the input of that very task
+void dest_cancel(SIGNAL_ARGS) {
+    int save_errno = errno;
+    if (running && !proc_exit_inprogress && task.shared && task.shared->stop && task.shared->stop == task.shared->id) {
+        InterruptPending = true;
+        QueryCancelPending = true;
+    }
+    SetLatch(MyLatch);
+    errno = save_errno;
+}
+
 bool dest_timeout(void) {
     bool exit;
     int StatementTimeoutMy = StatementTimeout;
@@ -328,10 +342,13 @@ bool dest_timeout(void) {
     }
     PG_TRY();
         SetConfigOption("search_path", task_search_path(), PGC_USERSET, PGC_S_SESSION);
+        running = true;
         dest_execute();
+        running = false;
         SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
         if (task.shared->spi) ReleaseCurrentSubTransaction();
     PG_CATCH();
+        running = false;
         task_error(&task);
         dest_catch();
         if (task.shared->spi) {
