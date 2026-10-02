@@ -386,6 +386,15 @@ bool init_free_work(int slot, const char *data, const char *user, int hash) {
     return freed;
 }
 
+// the same for the slot of a task worker that stopped before pg_work saw it start: one that ran and exited meanwhile has freed it itself, and by now it may belong to someone else
+bool init_free_task(int slot, const char *data, Oid oid, int64 id) {
+    bool freed;
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    if ((freed = shared[slot].in_use && shared[slot].id == id && shared[slot].oid == oid && !strcmp(shared[slot].data, data))) MemSet(&shared[slot], 0, sizeof(Shared));
+    LWLockRelease(BackgroundWorkerLock);
+    return freed;
+}
+
 Shared *init_shared(Datum main_arg) {
     int slot = DatumGetInt32(main_arg);
     LWLockAcquire(BackgroundWorkerLock, LW_SHARED);

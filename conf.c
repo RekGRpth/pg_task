@@ -117,7 +117,7 @@ static void conf_work(Work *w) {
             conf_free(w);
             break;
         }
-        case BGWH_STOPPED: init_free(slot); ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
+        case BGWH_STOPPED: init_free_work(slot, w->shared->data, w->shared->user, w->shared->hash); ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     if (handle) pfree(handle);
 }
