@@ -1,0 +1,86 @@
+-- STOP cancels a local task whose worker an earlier pg_work started, before it was restarted: pg_work finds the worker's slot by the task, not among the workers it started itself
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT current_user AS test_user
+\gset
+ALTER SYSTEM SET pg_work.restart = 2;
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || :'test_user' || '","schema":"stop_after_restart_test_schema","table":"stop_after_restart_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'stop_after_restart_test_schema' AND c.relname = 'stop_after_restart_test') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work stop_after_restart_test_schema stop_after_restart_test %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for table stop_after_restart_test_schema.stop_after_restart_test to be created by the pg_work worker'; END IF;
+END;$body$ LANGUAGE plpgsql;
+INSERT INTO stop_after_restart_test_schema.stop_after_restart_test (input) VALUES ('SELECT pg_sleep(30)');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM stop_after_restart_test_schema.stop_after_restart_test WHERE state = 'WORK') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task to start'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pid AS work_pid FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work stop_after_restart_test_schema stop_after_restart_test %' AND datname = current_database()
+\gset
+SELECT set_config('pg_task_test.work_pid', :'work_pid', false) IS NOT NULL AS work_pid_saved;
+ work_pid_saved 
+----------------
+ t
+(1 row)
+
+SELECT pg_terminate_backend(:work_pid) AS work_terminated;
+ work_terminated 
+-----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work stop_after_restart_test_schema stop_after_restart_test %' AND datname = current_database() AND pid <> current_setting('pg_task_test.work_pid')::int) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work to be restarted'; END IF;
+END;$body$ LANGUAGE plpgsql;
+UPDATE stop_after_restart_test_schema.stop_after_restart_test SET state = 'STOP';
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..150 LOOP
+        IF EXISTS (SELECT 1 FROM stop_after_restart_test_schema.stop_after_restart_test WHERE stop IS NOT NULL) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 150 x pg_sleep(0.1) waiting for the task in STOP to be cancelled'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, error LIKE '%canceling statement due to user request%' AS cancelled FROM stop_after_restart_test_schema.stop_after_restart_test;
+ state | cancelled 
+-------+-----------
+ STOP  | t
+(1 row)
+
+ALTER SYSTEM RESET pg_work.restart;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work stop_after_restart_test_schema %') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work worker(s) matching ''pg_work stop_after_restart_test_schema %%'' to stop'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SET client_min_messages TO WARNING;
+DROP SCHEMA IF EXISTS stop_after_restart_test_schema CASCADE;
+RESET client_min_messages;
