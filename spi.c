@@ -24,6 +24,7 @@ typedef enum STMT_TYPE {
 } STMT_TYPE;
 
 static bool was_logged;
+static bool held;
 static bool switched;
 static int save_sec_context;
 static Oid save_userid;
@@ -122,6 +123,10 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
 // a valid userid runs the whole transaction as that user, like a security definer function does, and as a security-restricted operation, as PostgreSQL does when running code as a more privileged user within someone else's session: switched only after the transaction started, so that an abort restores it by itself, and restored before the commit, since no transaction may start with a security context set
 void SPI_connect_my(const char *src, Oid userid) {
     int rc;
+#ifdef HOLD_CANCEL_INTERRUPTS
+    // a task worker's bookkeeping, outside any PG_TRY(), which a cancel coming meanwhile (pg_cancel_backend(), a timeout), up to the end of its commit, would fail, taking the worker and the task's result down: hold it off, for no task, as a backend between statements does
+    if ((held = OidIsValid(userid))) HOLD_CANCEL_INTERRUPTS();
+#endif
     debug_query_string = src;
     pgstat_report_activity(STATE_RUNNING, src);
     SetCurrentStatementStartTimestamp();
@@ -167,6 +172,10 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_abort_my(void) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     AbortCurrentTransaction();
+#ifdef HOLD_CANCEL_INTERRUPTS
+    if (held) RESUME_CANCEL_INTERRUPTS();
+    held = false;
+#endif
     switched = false;
     was_logged = false;
     debug_query_string = NULL;
@@ -183,6 +192,10 @@ void SPI_finish_my(void) {
     CommitTransactionCommand();
 #if PG_VERSION_NUM < 150000
     ProcessCompletedNotifies(); // only now, out of the transaction, as PostgresMain() calls it: before 13 it starts a transaction of its own to signal the listeners of what this one (or a task's input before) notified, which within this one is an error
+#endif
+#ifdef HOLD_CANCEL_INTERRUPTS
+    if (held) RESUME_CANCEL_INTERRUPTS();
+    held = false;
 #endif
     was_logged = false;
     pgstat_report_stat(false);

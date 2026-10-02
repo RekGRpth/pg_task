@@ -315,6 +315,9 @@ static void dest_discard(void) {
     static const char *src = SQL(SET SESSION AUTHORIZATION DEFAULT; RESET ALL; DEALLOCATE ALL; CLOSE ALL; UNLISTEN *; DISCARD PLANS; DISCARD TEMP; DISCARD SEQUENCES;);
     StringInfoData oid;
     task.shared = NULL; // disable dest receiver and command tags during cleanup
+#ifdef HOLD_CANCEL_INTERRUPTS
+    HOLD_CANCEL_INTERRUPTS(); // as the bookkeeping does, see SPI_connect_my(): a cancel coming meanwhile is for no task
+#endif
     PG_TRY();
         if (shared->spi) {
             SPI_connect_my(src, InvalidOid);
@@ -323,8 +326,14 @@ static void dest_discard(void) {
         } else exec_simple_query_my(src);
     PG_CATCH();
         task.shared = shared; // restore before any error handling dereferences it
+#ifdef HOLD_CANCEL_INTERRUPTS
+        RESUME_CANCEL_INTERRUPTS();
+#endif
         PG_RE_THROW();
     PG_END_TRY();
+#ifdef HOLD_CANCEL_INTERRUPTS
+    RESUME_CANCEL_INTERRUPTS();
+#endif
     task.shared = shared;
     SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("pg_task.schema", task.shared->schema, PGC_USERSET, PGC_S_SESSION);
@@ -362,9 +371,11 @@ bool dest_timeout(void) {
     }
     PG_TRY();
         SetConfigOption("search_path", task_search_path(), PGC_USERSET, PGC_S_SESSION);
+        QueryCancelPending = false; // a cancel that came in between tasks, held off meanwhile, is for no task, as one coming to an idle backend
         running = true;
         dest_execute();
         running = false;
+        QueryCancelPending = false; // a cancel that came too late for the input, after its last CHECK_FOR_INTERRUPTS(), isn't meant for the bookkeeping, outside any PG_TRY()
         SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
         if (task.shared->spi) ReleaseCurrentSubTransaction();
     PG_CATCH();

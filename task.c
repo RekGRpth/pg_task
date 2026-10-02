@@ -371,6 +371,7 @@ static void task_reload(void) {
 
 static void task_latch(void) {
     ResetLatch(MyLatch);
+    QueryCancelPending = false; // in between tasks a cancel is for no task, as one coming to an idle backend: only a termination counts here
     CHECK_FOR_INTERRUPTS();
     if (ConfigReloadPending) task_reload();
 }
