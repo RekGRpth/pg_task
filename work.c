@@ -9,6 +9,7 @@
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
 #include <storage/proc.h>
+#include <tcop/tcopprot.h>
 #include <tcop/utility.h>
 #include <utils/acl.h>
 #include <utils/builtins.h>
@@ -980,6 +981,7 @@ void work_main(Datum main_arg) {
     before_shmem_exit(work_shmem_exit, main_arg);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGINT, work_idle);
+    pqsignal(SIGTERM, die); // terminate at the next CHECK_FOR_INTERRUPTS(), as a backend does, rather than in the default handler of background workers, whose FATAL right there can come in the middle of a commit
     BackgroundWorkerUnblockSignals();
 #if PG_VERSION_NUM < 90600
     InitializeLatchSupportMy();

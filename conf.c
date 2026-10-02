@@ -4,6 +4,7 @@
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
 #include <storage/proc.h>
+#include <tcop/tcopprot.h>
 #include <tcop/utility.h>
 #include <utils/acl.h>
 #include <utils/builtins.h>
@@ -247,6 +248,7 @@ void conf_main(Datum main_arg) {
     dlist_init(&reg_head);
     before_shmem_exit(conf_exit, main_arg);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
+    pqsignal(SIGTERM, die); // terminate at the next CHECK_FOR_INTERRUPTS(), as a backend does, rather than in the default handler of background workers, whose FATAL right there can come in the middle of a commit
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL);
     SetConfigOption("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION);

@@ -5,6 +5,7 @@
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
 #include <storage/proc.h>
+#include <tcop/tcopprot.h>
 #include <tcop/utility.h>
 #include <utils/acl.h>
 #include <utils/builtins.h>
@@ -382,6 +383,7 @@ void task_main(Datum main_arg) {
     if (!task->shared->in_use) { ereport(LOG, (errmsg("shared slot not in use, waiting for pg_work to reinitialize"))); return; }
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGUSR2, dest_cancel);
+    pqsignal(SIGTERM, die); // terminate at the next CHECK_FOR_INTERRUPTS(), as a backend does, rather than in the default handler of background workers, whose FATAL right there can come in the middle of a commit
     BackgroundWorkerUnblockSignals();
     task->work->data = quote_identifier(task->shared->data);
     task->work->schema = quote_identifier(task->shared->schema);
