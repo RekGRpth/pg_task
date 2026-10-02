@@ -62,9 +62,17 @@ static char *task_columns(const Task *t) {
     char *columns = NULL;
     Datum values[] = {ObjectIdGetDatum(t->shared->oid)};
     static Oid argtypes[] = {OIDOID};
+    // nor the generated and identity columns, which take no value to insert or should get a new one, as id does
     static const char *src = SQL(
-        SELECT pg_catalog.string_agg(pg_catalog.quote_ident(attname), ', ') AS columns FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) $1 AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.<>) ALL(ARRAY['id', 'plan', 'parent', 'start', 'stop', 'pid', 'state', 'error', 'output'])
-    );
+        SELECT pg_catalog.string_agg(pg_catalog.quote_ident(attname), ', ' ORDER BY attnum) AS columns FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) $1 AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.<>) ALL(ARRAY['id', 'plan', 'parent', 'start', 'stop', 'pid', 'state', 'error', 'output'])
+    )
+#if PG_VERSION_NUM >= 120000
+    " AND attgenerated OPERATOR(pg_catalog.=) ''"
+#endif
+#if PG_VERSION_NUM >= 100000
+    " AND attidentity OPERATOR(pg_catalog.=) ''"
+#endif
+    ;
     SPI_execute_with_args_my(src, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
     if (SPI_processed != 1) ereport(WARNING, (errmsg("columns id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed))); else {
         columns = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "columns", false, TEXTOID));
@@ -94,22 +102,26 @@ static void task_delete(const Task *t) {
 }
 
 static void task_insert(const Task *t) {
+    char *columns;
     Datum values[] = {Int64GetDatum(t->shared->id)};
+    static char *cached = NULL; // the columns the plan copies
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     elog(DEBUG1, "id = %li", t->shared->id);
     set_ps_display_my("insert");
-    if (!src.data) {
-        char *columns = task_columns(t);
-        if (!columns) return;
-        initStringInfoMy(&src);
+    if (!(columns = task_columns(t))) return;
+    // the columns are looked up for every repeat, as the user may have added or dropped one since: a column added would not be copied, and one dropped would fail the plan
+    if (cached && !strcmp(cached, columns)) pfree(columns); else {
+        if (plan) { SPI_freeplan(plan); plan = NULL; }
+        if (cached) pfree(cached);
+        cached = columns;
+        if (src.data) resetStringInfo(&src); else initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             INSERT INTO %1$s ("parent", "plan", %2$s) SELECT "id", CASE
                 WHEN "drift" THEN %3$s OPERATOR(pg_catalog.+) "repeat" ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p OPERATOR(pg_catalog.+) "repeat" FROM r WHERE p OPERATOR(pg_catalog.<=) %3$s) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
             END AS "plan", %2$s FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 AND "repeat" OPERATOR(pg_catalog.>) '0 sec' FOR NO KEY UPDATE OF t LIMIT 1 RETURNING id
-        ), t->work->schema_table, columns, init_plan());
-        pfree(columns);
+        ), t->work->schema_table, cached, init_plan());
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_INSERT_RETURNING);
