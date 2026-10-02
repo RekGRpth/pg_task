@@ -352,6 +352,9 @@ void dest_cancel(SIGNAL_ARGS) {
     if (running && !proc_exit_inprogress && task.shared && task.shared->stop && task.shared->stop == task.shared->id) {
         InterruptPending = true;
         QueryCancelPending = true;
+#ifdef HAVE_SETSID
+        (void)kill(-MyProcPid, SIGINT); // and then, as pg_cancel_backend() does, the whole process group of this worker too, for the processes the input started (COPY ... PROGRAM) not to keep it waiting for them to end by themselves: its own SIGINT only cancels the query once more, and one coming too late for the input is dropped, see dest_timeout()
+#endif
     }
     SetLatch(MyLatch);
     errno = save_errno;
