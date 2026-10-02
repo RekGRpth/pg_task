@@ -40,7 +40,7 @@ static void headers(TupleDesc tupdesc) {
     if (task.output.len) appendStringInfoString(&task.output, "\n");
     for (int col = 1; col <= tupdesc->natts; col++) {
         char *fname = SPI_fname(tupdesc, col);
-        if (col > 1) appendStringInfoChar(&task.output, task.delimiter);
+        if (col > 1 && task.delimiter) appendStringInfoChar(&task.output, task.delimiter); // none for an empty one, as for quote and escape, rather than a NUL ending the output there
         appendBinaryStringInfoEscapeQuote(&task.output, fname, strlen(fname), false, task.escape, task.quote);
         pfree(fname);
     }
@@ -65,7 +65,7 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     if (task.output.len) appendStringInfoString(&task.output, "\n");
     for (int col = 1; col <= tupdesc->natts; col++) {
         char *value = SPI_getvalue_my(slot, tupdesc, col);
-        if (col > 1) appendStringInfoChar(&task.output, task.delimiter);
+        if (col > 1 && task.delimiter) appendStringInfoChar(&task.output, task.delimiter); // none for an empty one, as for quote and escape, rather than a NUL ending the output there
         if (!value) appendStringInfoString(&task.output, task.null); else {
             appendBinaryStringInfoEscapeQuote(&task.output, value, strlen(value), !init_oid_is_string(SPI_gettypeid(tupdesc, col)) && task.string, task.escape, task.quote);
             pfree(value);
@@ -209,7 +209,7 @@ static void dest_execute_spi(const char *src, Node *stmt) {
         if (task.output.len) appendStringInfoString(&task.output, "\n");
         for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
             char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
-            if (col > 1) appendStringInfoChar(&task.output, task.delimiter);
+            if (col > 1 && task.delimiter) appendStringInfoChar(&task.output, task.delimiter); // none for an empty one, as for quote and escape, rather than a NUL ending the output there
             if (!value) appendStringInfoString(&task.output, task.null); else {
                 appendBinaryStringInfoEscapeQuote(&task.output, value, strlen(value), !init_oid_is_string(SPI_gettypeid(SPI_tuptable->tupdesc, col)) && task.string, task.escape, task.quote);
                 pfree(value);

@@ -460,7 +460,7 @@ static void work_discard(Task *t) {
 static void work_headers(Task *t, const PGresult *result) {
     if (t->output.len) appendStringInfoString(&t->output, "\n");
     for (int col = 0; col < PQnfields(result); col++) {
-        if (col > 0) appendStringInfoChar(&t->output, t->delimiter);
+        if (col > 0 && t->delimiter) appendStringInfoChar(&t->output, t->delimiter); // none for an empty one, as for quote and escape, rather than a NUL ending the output there
         appendBinaryStringInfoEscapeQuote(&t->output, PQfname(result, col), strlen(PQfname(result, col)), false, t->escape, t->quote);
     }
 }
@@ -470,7 +470,7 @@ static void work_success(Task *t, const PGresult *result, int row) {
     if (t->header && !row && PQnfields(result) > 1) work_headers(t, result);
     if (t->output.len) appendStringInfoString(&t->output, "\n");
     for (int col = 0; col < PQnfields(result); col++) {
-        if (col > 0) appendStringInfoChar(&t->output, t->delimiter);
+        if (col > 0 && t->delimiter) appendStringInfoChar(&t->output, t->delimiter); // none for an empty one, as for quote and escape, rather than a NUL ending the output there
         if (PQgetisnull(result, row, col)) appendStringInfoString(&t->output, t->null);
         else appendBinaryStringInfoEscapeQuote(&t->output, PQgetvalue(result, row, col), PQgetlength(result, row, col), !init_oid_is_string(PQftype(result, col)) && t->string, t->escape, t->quote);
     }
