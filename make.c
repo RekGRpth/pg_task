@@ -294,6 +294,7 @@ static void make_user_immutable(const Work *w) {
     pfree(source.data);
 }
 
+// the table owner (pg_task.user), whose bookkeeping drives a task through its states, and its members may make every transition of the state machine; anyone else, a task author, only the one to STOP, of a task still queued or running
 static void make_state_machine(const Work *w) {
     StringInfoData name;
     StringInfoData source;
@@ -302,12 +303,12 @@ static void make_state_machine(const Work *w) {
     initStringInfoMy(&source);
     appendStringInfo(&source, SQL(
         BEGIN
-            IF NEW."state" OPERATOR(pg_catalog.<>) OLD."state" AND NEW."state" OPERATOR(pg_catalog.<>) ALL (CASE OLD."state"
+            IF NEW."state" OPERATOR(pg_catalog.<>) OLD."state" AND NEW."state" OPERATOR(pg_catalog.<>) ALL (CASE WHEN pg_catalog.pg_has_role(current_user, (SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) TG_RELID), 'MEMBER') THEN CASE OLD."state"
                 WHEN 'PLAN'::%1$s THEN ARRAY['TAKE', 'GONE', 'STOP']::%1$s[]
                 WHEN 'TAKE'::%1$s THEN ARRAY['WORK', 'PLAN', 'DONE', 'FAIL']::%1$s[]
                 WHEN 'WORK'::%1$s THEN ARRAY['DONE', 'FAIL', 'PLAN', 'STOP']::%1$s[]
                 ELSE ARRAY[]::%1$s[]
-            END) THEN RAISE EXCEPTION 'invalid state transition';
+            END WHEN OLD."state" OPERATOR(pg_catalog.=) ANY(ARRAY['PLAN', 'WORK']::%1$s[]) THEN ARRAY['STOP']::%1$s[] ELSE ARRAY[]::%1$s[] END) THEN RAISE EXCEPTION 'invalid state transition';
             END IF;
             RETURN NEW;
         END;
