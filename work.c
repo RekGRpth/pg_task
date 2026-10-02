@@ -84,6 +84,20 @@ typedef struct Local {
 
 static dlist_head local; // started task workers whose slot we hold too, until they exit: see work_local()
 static dlist_head remote;
+
+#ifdef LIBPQ_HAS_ASYNC_CANCEL
+// a cancel request in flight, sent asynchronously, as PQcancel() would block pg_work and every task it runs until it gets through, for as long as the TCP timeout to a server that doesn't answer
+typedef struct Cancel {
+    dlist_node node;
+    int event;
+    int64 id;
+    PGcancelConn *conn;
+    TimestampTz deadline;
+} Cancel;
+
+static dlist_head cancels;
+#define WORK_CANCEL_TIMEOUT 10000 // milliseconds a cancel request, a single packet, may take to get through
+#endif
 static volatile uint64 idle_count = 0;
 static Work work = {0};
 
@@ -94,6 +108,9 @@ Work *get_work(void) {
 static void work_appname(const Work *w);
 static void work_discard(Task *t);
 static void work_query(Task *t);
+#ifdef LIBPQ_HAS_ASYNC_CANCEL
+static void work_cancel_free(Cancel *c);
+#endif
 static void work_reap(const Work *w);
 static void work_result(Task *t);
 static void work_stop(const Work *w);
@@ -210,14 +227,24 @@ static void work_command(Task *t, PGresult *result) {
     appendStringInfo(&t->output, "%s%s", t->output.len ? "\n" : "", PQcmdStatus(result));
 }
 
-static void work_events(WaitEventSet *set) {
+// returns the position of the first cancel request among the events, after those of the remote tasks
+static int work_events(WaitEventSet *set) {
     dlist_mutable_iter iter;
+    int pos = 2;
     AddWaitEventToSet(set, WL_LATCH_SET, PGINVALID_SOCKET, MyLatch, NULL);
     AddWaitEventToSet(set, WL_POSTMASTER_DEATH, PGINVALID_SOCKET, NULL, NULL);
     dlist_foreach_modify(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
         AddWaitEventToSet(set, t->event, PQsocket(t->conn), NULL, t);
+        pos++;
     }
+#ifdef LIBPQ_HAS_ASYNC_CANCEL
+    dlist_foreach_modify(iter, &cancels) {
+        Cancel *c = dlist_container(Cancel, node, iter.cur);
+        AddWaitEventToSet(set, c->event, PQcancelSocket(c->conn), NULL, c);
+    }
+#endif
+    return pos;
 }
 
 static char *work_severity(const PGresult *result) {
@@ -320,7 +347,51 @@ static int work_nevents(void) {
         }
         nevents++;
     }
+#ifdef LIBPQ_HAS_ASYNC_CANCEL
+    dlist_foreach_modify(iter, &cancels) {
+        Cancel *c = dlist_container(Cancel, node, iter.cur);
+        if (PQcancelStatus(c->conn) == CONNECTION_BAD || PQcancelSocket(c->conn) == PGINVALID_SOCKET) { ereport(WARNING, (errmsg("id = %li, cancel failed", c->id), work_errdetail(PQcancelErrorMessage(c->conn)))); work_cancel_free(c); continue; }
+        nevents++;
+    }
+#endif
     return nevents;
+}
+
+// milliseconds until the soonest deadline of a remote task connecting or of a cancel request, -1 for none
+static long work_deadline(void) {
+    dlist_iter iter;
+    long secs;
+    int usecs;
+    TimestampTz soonest = 0;
+    dlist_foreach(iter, &remote) {
+        Task *t = dlist_container(Task, node, iter.cur);
+        if (t->deadline && (!soonest || t->deadline < soonest)) soonest = t->deadline;
+    }
+#ifdef LIBPQ_HAS_ASYNC_CANCEL
+    dlist_foreach(iter, &cancels) {
+        Cancel *c = dlist_container(Cancel, node, iter.cur);
+        if (!soonest || c->deadline < soonest) soonest = c->deadline;
+    }
+#endif
+    if (!soonest) return -1;
+    TimestampDifference(GetCurrentTimestamp(), soonest, &secs, &usecs);
+    return secs * 1000 + (usecs + 999) / 1000; // rounded up, so as not to wake up just before
+}
+
+// a remote task still connecting past the connect_timeout of its connection string fails, as a synchronous connection would; a cancel request still not through past its time is given up
+static void work_expire(void) {
+    dlist_mutable_iter iter;
+    TimestampTz now = GetCurrentTimestamp();
+    dlist_foreach_modify(iter, &remote) {
+        Task *t = dlist_container(Task, node, iter.cur);
+        if (t->deadline && t->deadline <= now) work_error((errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("timeout expired"), errdetail("Connecting to the remote server took longer than the connect_timeout of its connection string.")));
+    }
+#ifdef LIBPQ_HAS_ASYNC_CANCEL
+    dlist_foreach_modify(iter, &cancels) {
+        Cancel *c = dlist_container(Cancel, node, iter.cur);
+        if (c->deadline <= now) { ereport(WARNING, (errmsg("id = %li, cancel request timed out", c->id))); work_cancel_free(c); }
+    }
+#endif
 }
 
 // a task isn't abandoned only for not being locked by task_work() yet: skip the ones we are still starting, a remote one connecting or between tasks of its connection, a local one whose task worker is starting, or they'd be taken again while we still run them
@@ -564,6 +635,7 @@ static void work_connect(Task *t) {
         case PGRES_POLLING_WRITING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_WRITING", t->shared->id); t->event = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
+        t->deadline = 0;
         // only now does libpq know whether the server actually asked for the password, and it's the task author who must not be able to connect without one
         if (!work_superuser(t->user) && !PQconnectionUsedPassword(t->conn)) { work_error((errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superuser cannot connect if the server does not request a password."), errhint("Target server's authentication method must be changed."))); return; }
         if (!(pid = PQbackendPID(t->conn))) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQbackendPID failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
@@ -574,14 +646,64 @@ static void work_connect(Task *t) {
     }
 }
 
+#ifdef LIBPQ_HAS_ASYNC_CANCEL
+static void work_cancel_free(Cancel *c) {
+    dlist_delete(&c->node);
+    PQcancelFinish(c->conn);
+    pfree(c);
+}
+
+static void work_cancel_poll(Cancel *c) {
+    switch (PQcancelPoll(c->conn)) {
+        case PGRES_POLLING_READING: c->event = WL_SOCKET_READABLE; return;
+        case PGRES_POLLING_WRITING: c->event = WL_SOCKET_WRITEABLE; return;
+        case PGRES_POLLING_FAILED: ereport(WARNING, (errmsg("id = %li, PQcancelPoll failed", c->id), work_errdetail(PQcancelErrorMessage(c->conn)))); break;
+        default: elog(DEBUG1, "id = %li, cancel sent", c->id); break;
+    }
+    work_cancel_free(c);
+}
+
+// on exit there's no loop left to get the cancel requests through: wait for them here, for no longer than timeout milliseconds all together
+static void work_cancel_drain(long timeout) {
+    dlist_mutable_iter iter;
+    TimestampTz end = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), timeout);
+    while (!dlist_is_empty(&cancels)) {
+        Cancel *c = dlist_head_element(Cancel, node, &cancels);
+        long secs;
+        int usecs;
+        TimestampDifference(GetCurrentTimestamp(), end, &secs, &usecs);
+        if (!secs && !usecs) break;
+        if (WaitLatchOrSocket(NULL, c->event | WL_TIMEOUT | WL_POSTMASTER_DEATH, PQcancelSocket(c->conn), secs * 1000 + usecs / 1000, PG_WAIT_EXTENSION) & (WL_TIMEOUT | WL_POSTMASTER_DEATH)) break;
+        work_cancel_poll(c);
+    }
+    dlist_foreach_modify(iter, &cancels) work_cancel_free(dlist_container(Cancel, node, iter.cur));
+}
+#endif
+
 static bool work_cancel(Task *t) {
+#ifdef LIBPQ_HAS_ASYNC_CANCEL
+    Cancel *c;
+    PGcancelConn *conn;
+#else
     char errbuf[256];
     PGcancel *cancel;
+#endif
     if (PQstatus(t->conn) != CONNECTION_OK) return false;
+#ifdef LIBPQ_HAS_ASYNC_CANCEL
+    if (!(conn = PQcancelCreate(t->conn))) { ereport(WARNING, (errmsg("PQcancelCreate failed"))); return false; }
+    if (!PQcancelStart(conn)) { ereport(WARNING, (errmsg("PQcancelStart failed"), work_errdetail(PQcancelErrorMessage(conn)))); PQcancelFinish(conn); return false; }
+    c = MemoryContextAllocZero(TopMemoryContext, sizeof(*c));
+    c->conn = conn;
+    c->deadline = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), WORK_CANCEL_TIMEOUT);
+    c->event = WL_SOCKET_WRITEABLE;
+    c->id = t->shared->id;
+    dlist_push_tail(&cancels, &c->node);
+#else
     if (!(cancel = PQgetCancel(t->conn))) { ereport(WARNING, (errmsg("PQgetCancel failed"), work_errdetail(PQerrorMessage(t->conn)))); return false; }
     if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { ereport(WARNING, (errmsg("PQcancel failed"), errdetail("%s", errbuf))); PQfreeCancel(cancel); return false; }
-    ereport(WARNING, (errmsg("cancel id = %li", t->shared->id)));
     PQfreeCancel(cancel);
+#endif
+    ereport(WARNING, (errmsg("cancel id = %li", t->shared->id)));
     return true;
 }
 
@@ -594,6 +716,9 @@ static void work_shmem_exit(int code, Datum arg) {
         work_cancel(t);
         work_finish(t);
     }
+#ifdef LIBPQ_HAS_ASYNC_CANCEL
+    work_cancel_drain(1000);
+#endif
 }
 
 static void work_stop(const Work *w) {
@@ -671,6 +796,7 @@ static bool work_superuser(const char *user) {
 
 static void work_remote(Task *t) {
     bool password = false;
+    int connect_timeout = 0;
     char *err;
     char *options = NULL;
     const char **keywords;
@@ -690,6 +816,7 @@ static void work_remote(Task *t) {
         // Greengage's libpq turns the connection into an internal one with it, which pg_hba.conf lets through unchecked
         if (!strcmp(opt->keyword, "gpconntype")) { work_error((errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("connection option \"%s\" is not allowed", opt->keyword), errdetail("It makes the connection an internal one, which bypasses pg_hba.conf."))); PQconninfoFree(opts); return; }
         if (!strcmp(opt->keyword, "password")) password = true;
+        if (!strcmp(opt->keyword, "connect_timeout")) connect_timeout = atoi(opt->val);
         if (!strcmp(opt->keyword, "fallback_application_name")) continue;
         if (!strcmp(opt->keyword, "application_name")) continue;
         if (!strcmp(opt->keyword, "options")) { options = opt->val; continue; }
@@ -727,6 +854,7 @@ static void work_remote(Task *t) {
     t->event = WL_SOCKET_MASK;
     t->socket = work_connect;
     t->start = GetCurrentTimestamp();
+    if (connect_timeout > 0) t->deadline = TimestampTzPlusMilliseconds(t->start, Max(connect_timeout, 2) * 1000L); // as libpq takes it, 2 seconds at least
 #if PG_VERSION_NUM >= 130000
     if (!AcquireExternalFD()) work_error((errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("could not establish connection"), errdetail("There are too many open files on the local server."), errhint("Raise the server's max_files_per_process and/or \"ulimit -n\" limits."))); else
 #endif
@@ -1012,6 +1140,9 @@ void work_main(Datum main_arg) {
     if (ShutdownRequestPending) return;
     dlist_init(&local);
     dlist_init(&remote);
+#ifdef LIBPQ_HAS_ASYNC_CANCEL
+    dlist_init(&cancels);
+#endif
     initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work.schema);
     work.schema_type = schema_type.data;
@@ -1045,8 +1176,13 @@ void work_main(Datum main_arg) {
         int nevents = work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(WaitEvent));
         WaitEventSet *set = CreateWaitEventSetMy(nevents);
+        long deadline;
         long timeout;
+#ifdef LIBPQ_HAS_ASYNC_CANCEL
+        int cancel_pos = work_events(set);
+#else
         work_events(set);
+#endif
         if (current_reset <= 0) {
             INSTR_TIME_SET_CURRENT(start_time_reset);
             current_reset = work.shared->reset;
@@ -1056,15 +1192,20 @@ void work_main(Datum main_arg) {
             current_sleep = work.shared->sleep;
         }
         timeout = idle_count >= (uint64)init_work_idle() ? work_timeout(&work, current_reset) : Min(current_reset, current_sleep);
+        if ((deadline = work_deadline()) >= 0 && (timeout < 0 || deadline < timeout)) timeout = deadline;
         // the next task planned in more than about 24.8 days (repeat = '1 month', say), or as long a reset, is more than the wait takes: it asserts and passes the int it gets to epoll, which would make it wait forever instead, so wake up in time to compute the timeout again
         if (timeout > INT_MAX) timeout = INT_MAX;
         nevents = WaitEventSetWaitMy(set, timeout, events, nevents);
         for (int i = 0; i < nevents; i++) {
             WaitEvent *event = &events[i];
             if (event->events & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
+#ifdef LIBPQ_HAS_ASYNC_CANCEL
+            if (event->pos >= cancel_pos) { if (event->events & WL_SOCKET_MASK) work_cancel_poll(event->user_data); continue; }
+#endif
             if (event->events & WL_SOCKET_READABLE) work_readable(event->user_data);
             else if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
+        work_expire();
         work_latch(&work);
         INSTR_TIME_SET_CURRENT(current_time_reset);
         INSTR_TIME_SUBTRACT(current_time_reset, start_time_reset);
