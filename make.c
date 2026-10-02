@@ -448,6 +448,42 @@ static void make_policy(const Work *w) {
 }
 #endif
 
+// the hash column of earlier versions, which the index on the hash replaced: an int4 one, generated from 12 on and filled by the <table>_hash_generate trigger before; drop it along with that trigger, but leave a hash column of the user's own alone
+static void make_legacy_hash(const Work *w) {
+    Datum values[1];
+    static Oid argtypes[] = {TEXTOID};
+    StringInfoData name;
+    StringInfoData src;
+    initStringInfoMy(&name);
+    appendStringInfo(&name, "%s_hash_generate", w->shared->table);
+    if (name.len >= NAMEDATALEN) name.data[name.len = pg_mbcliplen(name.data, name.len, NAMEDATALEN - 1)] = '\0'; // as PostgreSQL truncated it on creating the trigger
+    values[0] = CStringGetTextDatum(name.data);
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'hash' AND atttypid OPERATOR(pg_catalog.=) 'pg_catalog.int4'::pg_catalog.regtype AND (%2$s OR EXISTS (SELECT * FROM pg_catalog.pg_trigger WHERE tgrelid OPERATOR(pg_catalog.=) %1$i AND tgname OPERATOR(pg_catalog.=) $1))) AS "test"
+    ), w->shared->oid,
+#if PG_VERSION_NUM >= 120000
+        "attgenerated OPERATOR(pg_catalog.=) 's'"
+#else
+        "false"
+#endif
+    );
+    if (make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+        const char *quote = quote_identifier(name.data);
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            DROP TRIGGER IF EXISTS %1$s ON %2$s;
+            DROP FUNCTION IF EXISTS %3$s.%1$s();
+            ALTER TABLE %2$s DROP COLUMN "hash";
+        ), quote, w->schema_table, w->schema);
+        make_ddl(src.data, SPI_OK_UTILITY);
+        if (quote != name.data) pfree((void *)quote);
+    }
+    pfree(name.data);
+    pfree(src.data);
+    pfree((void *)values[0]);
+}
+
 static void make_column(const Work *w, const char *name, const char *schema_type) {
     StringInfoData src;
     initStringInfoMy(&src);
@@ -612,7 +648,7 @@ void make_table(const Work *w) {
     pfree(src.data);
     pfree((void *)values[0]);
     pfree((void *)values[1]);
-    make_column(w, "hash", NULL);
+    make_legacy_hash(w);
     make_column(w, "parent", "pg_catalog.int8");
     make_column(w, "plan", "pg_catalog.timestamptz");
     make_column(w, "start", "pg_catalog.timestamptz");
