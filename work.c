@@ -373,8 +373,9 @@ static void work_reset(const Work *w) {
     set_ps_display_my("idle");
 }
 
-static long work_timeout(const Work *w) {
-    Datum values[] = {Int64GetDatum(w->shared->reset)};
+// reset is how long until the next work_reset(), the one to put a task orphaned in TAKE or WORK (its lock held by no one) back to PLAN: waking up for one any sooner only finds it still there, again and again
+static long work_timeout(const Work *w, long reset) {
+    Datum values[] = {Int64GetDatum(reset)};
     long timeout;
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
@@ -383,11 +384,11 @@ static long work_timeout(const Work *w) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-           SELECT COALESCE(LEAST(EXTRACT(epoch FROM ((
-                SELECT GREATEST("plan" OPERATOR(pg_catalog.+) (($1)::pg_catalog.text OPERATOR(pg_catalog.||) ' ms')::pg_catalog.interval OPERATOR(pg_catalog.-) %4$s, '0 sec'::pg_catalog.interval) AS "plan" FROM %1$s AS t
+           SELECT COALESCE(LEAST((
+                SELECT $1 FROM %1$s AS t
                 LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$i AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.<<) 32 OPERATOR(pg_catalog.>>) 32)
-                WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND l.pid IS NULL ORDER BY 1 LIMIT 1
-           )))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000, EXTRACT(epoch FROM ((
+                WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND l.pid IS NULL LIMIT 1
+           ), EXTRACT(epoch FROM ((
                 SELECT "plan" OPERATOR(pg_catalog.-) %4$s AS "plan" FROM %1$s WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.>=) %4$s ORDER BY 1 LIMIT 1
            )))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000), -1)::pg_catalog.int8 as "min"
         ), w->schema_table, w->shared->oid, w->schema_type, init_plan());
@@ -1051,7 +1052,7 @@ void work_main(Datum main_arg) {
             INSTR_TIME_SET_CURRENT(start_time_sleep);
             current_sleep = work.shared->sleep;
         }
-        timeout = idle_count >= (uint64)init_work_idle() ? work_timeout(&work) : Min(current_reset, current_sleep);
+        timeout = idle_count >= (uint64)init_work_idle() ? work_timeout(&work, current_reset) : Min(current_reset, current_sleep);
         // the next task planned in more than about 24.8 days (repeat = '1 month', say), or as long a reset, is more than the wait takes: it asserts and passes the int it gets to epoll, which would make it wait forever instead, so wake up in time to compute the timeout again
         if (timeout > INT_MAX) timeout = INT_MAX;
         nevents = WaitEventSetWaitMy(set, timeout, events, nevents);
