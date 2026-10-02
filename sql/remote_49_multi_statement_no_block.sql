@@ -4,7 +4,7 @@ INSERT INTO task ("group", input, remote) VALUES ('no_block_remote', 'SELECT rep
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         PERFORM pg_stat_clear_snapshot();
-        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE a.query LIKE 'SELECT repeat(''x'', 500000); SELECT pg_sleep(6)' AND a.state = 'active' AND CASE WHEN current_setting('server_version_num')::int < 90600 THEN clock_timestamp() - a.query_start > '1 second' ELSE to_json(a) ->> 'wait_event' = 'PgSleep' END) THEN ok := true; EXIT; END IF;
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE a.query LIKE 'SELECT repeat(''x'', 500000); SELECT pg_sleep(6)' AND a.state = 'active' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN clock_timestamp() - a.query_start > '1 second' ELSE to_json(a) ->> 'wait_event' = 'PgSleep' END) THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(0.1);
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the remote task to reach its second statement'; END IF;
