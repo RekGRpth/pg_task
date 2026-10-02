@@ -128,7 +128,7 @@ static void task_update(const Task *t) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            UPDATE %1$s AS t SET "plan" = CASE WHEN "drift" THEN %2$s OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) "max")::pg_catalog.text, 'msec')::pg_catalog.interval ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p OPERATOR(pg_catalog.+) pg_catalog.concat_ws(' ', (OPERATOR(pg_catalog.-) "max")::pg_catalog.text, 'msec')::pg_catalog.interval FROM r WHERE p OPERATOR(pg_catalog.<=) %2$s) SELECT * FROM r ORDER BY 1 DESC LIMIT 1) END
+            UPDATE %1$s AS t SET "plan" = CASE WHEN "drift" THEN %2$s OPERATOR(pg_catalog.+) ((OPERATOR(pg_catalog.-) "max"::pg_catalog.float8) OPERATOR(pg_catalog.*) '1 msec'::pg_catalog.interval) ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p OPERATOR(pg_catalog.+) ((OPERATOR(pg_catalog.-) "max"::pg_catalog.float8) OPERATOR(pg_catalog.*) '1 msec'::pg_catalog.interval) FROM r WHERE p OPERATOR(pg_catalog.<=) %2$s) SELECT * FROM r ORDER BY 1 DESC LIMIT 1) END
             WHERE "plan" OPERATOR(pg_catalog.<=) %2$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.<) 0 RETURNING t.id
         ), t->work->schema_table, init_plan(), "");
     }
@@ -230,7 +230,7 @@ bool task_work(Task *t) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             UPDATE %1$s AS t SET "state" = 'WORK', "start" = %2$s, "pid" = $2 WHERE "id" OPERATOR(pg_catalog.=) $1 AND "state" OPERATOR(pg_catalog.=) 'TAKE'
-            RETURNING "group", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) AS "hash", "input", (EXTRACT(epoch FROM "timeout")::pg_catalog.int4 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int4 AS "timeout", "header", "string", "null", "delimiter", "quote", "escape", "remote", "save", ("user")::pg_catalog.text AS "user"
+            RETURNING "group", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) AS "hash", "input", LEAST(EXTRACT(epoch FROM "timeout") OPERATOR(pg_catalog.*) 1000, 2147483647)::pg_catalog.int4 AS "timeout", "header", "string", "null", "delimiter", "quote", "escape", "remote", "save", ("user")::pg_catalog.text AS "user"
         ), t->work->schema_table, init_plan(), "");
     }
     SPI_connect_my(src.data, userid);

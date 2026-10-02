@@ -318,6 +318,25 @@ static void make_state_machine(const Work *w) {
     pfree(source.data);
 }
 
+// pg_work adds up plan, active, live, repeat and timeout, and on values out of range that fails, taking down every task it runs: have the author's own insert or update fail on them instead
+static void make_valid(const Work *w) {
+    StringInfoData name;
+    StringInfoData source;
+    initStringInfoMy(&name);
+    make_name(w, &name, "valid");
+    initStringInfoMy(&source);
+    appendStringInfo(&source, SQL(
+        BEGIN
+            PERFORM NEW."plan" OPERATOR(pg_catalog.+) (NEW."active" OPERATOR(pg_catalog.+) NEW."live" OPERATOR(pg_catalog.+) NEW."repeat" OPERATOR(pg_catalog.+) NEW."timeout"), pg_catalog.statement_timestamp() OPERATOR(pg_catalog.+) (NEW."active" OPERATOR(pg_catalog.+) NEW."live" OPERATOR(pg_catalog.+) NEW."repeat" OPERATOR(pg_catalog.+) NEW."timeout");
+            RETURN NEW;
+        END;
+    ));
+    make_function(w, name.data, source.data, false);
+    make_trigger(w, name.data, TRIGGER_TYPE_BEFORE | TRIGGER_TYPE_INSERT | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, NULL);
+    pfree(name.data);
+    pfree(source.data);
+}
+
 static void make_immutable(const Work *w, const char *column) {
     StringInfoData name;
     StringInfoData source;
@@ -675,7 +694,13 @@ void make_table(const Work *w) {
     make_default(w, "quote", "(current_setting('pg_task.quote'::text))::\"char\"");
     make_default(w, "group", "current_setting('pg_task.group'::text)");
     make_default(w, "null", "current_setting('pg_task.null'::text)");
-    make_default(w, "user", "CURRENT_USER");
+    make_default(w, "user", // as pg_get_expr() deparses it, or before 10 the check never matches and each start redoes the default, waiting for every lock on the table
+#if PG_VERSION_NUM >= 100000
+        "CURRENT_USER"
+#else
+        "\"current_user\"()"
+#endif
+    );
     make_not_null(w, "id", true);
     make_not_null(w, "parent", false);
     make_not_null(w, "plan", true);
@@ -719,6 +744,7 @@ void make_table(const Work *w) {
     make_stop(w);
     make_user_immutable(w);
     make_state_machine(w);
+    make_valid(w);
     make_immutable(w, "group");
     make_immutable(w, "remote");
     make_immutable(w, "parent");
