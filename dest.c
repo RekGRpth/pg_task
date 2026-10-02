@@ -335,7 +335,7 @@ bool dest_timeout(void) {
     task.skip = 0; // or a task failed before in this worker would hide the command tag of the next one, and with nothing else to output have it deleted
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
-    StatementTimeout = task.timeout;
+    StatementTimeout = task.timeout ? task.timeout : StatementTimeoutMy; // a task without a timeout of its own still runs under the server's statement_timeout, as a remote one does, and as a timeout of its own is capped by it
     if (task.shared->spi) {
         SPI_connect_my(task.input, InvalidOid);
         BeginInternalSubTransaction(NULL);

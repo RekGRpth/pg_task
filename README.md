@@ -167,7 +167,7 @@ This diagram is enforced, not just documented: a `BEFORE UPDATE OF "state"` trig
 
 `WORK → DONE/FAIL` is a single `UPDATE ... RETURNING` that, in the same round trip, decides whether to delete the row (`delete`, when both `output` and `error` are null), whether to insert the next `repeat` occurrence (computed from the original `plan` or from the actual finish time, depending on `drift`), whether the same worker process may pick up another task of the group without exiting (within `count`/`live`), and whether to reschedule the rest of the group (negative `max`).
 
-`timeout` bounds how long `input` itself may run — locally via a timeout event in the `pg_task` worker's loop, remotely via `SET SESSION statement_timeout` sent ahead of `input`. `live`/`count` instead bound the executor *process*, not the task: how many tasks in a row, or how long, one `pg_task` worker lives before being recycled.
+`timeout` bounds how long `input` itself may run — locally via a timeout event in the `pg_task` worker's loop, remotely via `SET SESSION statement_timeout` sent ahead of `input`; a local task's `timeout` is capped by the server's `statement_timeout`, and `0` leaves that one in effect (remotely, the remote server's). `live`/`count` instead bound the executor *process*, not the task: how many tasks in a row, or how long, one `pg_task` worker lives before being recycled.
 
 ### Wake-up and crash recovery
 

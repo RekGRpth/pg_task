@@ -1,0 +1,33 @@
+-- a task without a timeout of its own (timeout = 0) still runs under the server's statement_timeout, as a remote one does, rather than without any limit at all
+DELETE FROM task WHERE "group" = 'zero_timeout_server_limit';
+ALTER SYSTEM SET statement_timeout = '500ms';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+SET statement_timeout = 0;
+INSERT INTO task ("group", timeout, input) VALUES ('zero_timeout_server_limit', '0 sec', 'SELECT pg_sleep(3)');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'zero_timeout_server_limit' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''zero_timeout_server_limit'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+ALTER SYSTEM RESET statement_timeout;
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+RESET statement_timeout;
+SELECT state, error LIKE '%canceling statement due to statement timeout%' AS server_limit_applied FROM task WHERE "group" = 'zero_timeout_server_limit';
+ state | server_limit_applied 
+-------+----------------------
+ FAIL  | t
+(1 row)
+
+DELETE FROM task WHERE "group" = 'zero_timeout_server_limit';
