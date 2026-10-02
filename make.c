@@ -133,11 +133,12 @@ static void make_default(const Work *w, const char *name, const char *value) {
     pfree(src.data);
 }
 
+// whether the column has a check of ours, not just any: one of the user's own on the column too must neither break the lookup nor pass for ours
 static void make_constraint(const Work *w, const char *name, const char *value, const char *type) {
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT (SELECT pg_catalog.pg_get_expr(conbin, conrelid) FROM pg_catalog.pg_constraint JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) conrelid WHERE attnum OPERATOR(pg_catalog.=) conkey[1] AND attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s' AND conbin IS NOT NULL) IS NOT DISTINCT FROM $$(%2$s %3$s)$$ AS "test"
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_constraint JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) conrelid WHERE attnum OPERATOR(pg_catalog.=) conkey[1] AND attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s' AND conbin IS NOT NULL AND pg_catalog.pg_get_expr(conbin, conrelid) OPERATOR(pg_catalog.=) $$(%2$s %3$s)$$) AS "test"
     ), w->shared->oid, name, value);
     if (!make_test(src.data, 0, NULL, NULL, NULL)) {
         resetStringInfo(&src);
