@@ -1,7 +1,7 @@
 DELETE FROM task WHERE "group" = 'returning_insert_on_conflict';
 SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
-INSERT INTO task ("group", input) VALUES ('returning_insert_on_conflict', 'INSERT INTO returning_probe (id, val) VALUES (1, 1) ON CONFLICT (id) DO NOTHING RETURNING id');
+INSERT INTO task ("group", input, "delete") VALUES ('returning_insert_on_conflict', 'INSERT INTO returning_probe (id, val) VALUES (1, 1) ON CONFLICT (id) DO NOTHING RETURNING id', false);
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..150 LOOP
         IF (SELECT count(*) FROM task WHERE "group" = 'returning_insert_on_conflict' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;

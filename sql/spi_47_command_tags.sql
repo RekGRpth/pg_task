@@ -1,0 +1,51 @@
+-- every mode reports a statement the same way: the rows if it returns any, else its command tag with the row count where PostgreSQL itself reports one, and nothing for RETURNING without rows (spi mode used to tell utility statements apart only as UTILITY, and to tag RETURNING without rows); one statement per task, as spi mode before 10 reports only the last of several
+DELETE FROM task WHERE "group" = 'command_tags';
+SET client_min_messages = warning;
+DROP TABLE IF EXISTS ct_m, ct_t, ct_c, ct_s, ct_n CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS ct_v;
+RESET client_min_messages;
+CREATE TABLE ct_m (id int PRIMARY KEY, v int);
+INSERT INTO ct_m VALUES (1, 1);
+\set remote NULL
+INSERT INTO task ("group", max, "delete", remote, input) VALUES
+    ('command_tags', 0, false, :remote, 'SELECT 1 AS a'),
+    ('command_tags', 0, false, :remote, 'SELECT 1 AS a WHERE false'),
+    ('command_tags', 0, false, :remote, 'SELECT 1 AS a, 2 AS b'),
+    ('command_tags', 0, false, :remote, 'VALUES (1), (2)'),
+    ('command_tags', 0, false, :remote, 'SELECT pg_sleep(0)'),
+    ('command_tags', 0, false, :remote, 'INSERT INTO ct_m VALUES (10, 1)'),
+    ('command_tags', 0, false, :remote, 'INSERT INTO ct_m VALUES (11, 1) RETURNING id'),
+    ('command_tags', 0, false, :remote, 'UPDATE ct_m SET v = 5 WHERE id = 10'),
+    ('command_tags', 0, false, :remote, 'UPDATE ct_m SET v = 5 WHERE id = 10 RETURNING v'),
+    ('command_tags', 0, false, :remote, 'UPDATE ct_m SET v = 5 WHERE false RETURNING v'),
+    ('command_tags', 0, false, :remote, 'DELETE FROM ct_m WHERE false'),
+    ('command_tags', 0, false, :remote, 'DELETE FROM ct_m WHERE id = 11 RETURNING id'),
+    ('command_tags', 0, false, :remote, 'DELETE FROM ct_m WHERE false RETURNING id'),
+    ('command_tags', 0, false, :remote, 'CREATE TABLE ct_t (a int)'),
+    ('command_tags', 0, false, :remote, 'TRUNCATE ct_t'),
+    ('command_tags', 0, false, :remote, 'DROP TABLE ct_t'),
+    ('command_tags', 0, false, :remote, 'SET search_path = public'),
+    ('command_tags', 0, false, :remote, 'NOTIFY ct'),
+    ('command_tags', 0, false, :remote, 'DO $$BEGIN END$$'),
+    ('command_tags', 0, false, :remote, 'CREATE TABLE ct_c AS SELECT 1 AS a UNION ALL SELECT 2'),
+    ('command_tags', 0, false, :remote, 'SELECT 1 AS a INTO ct_s'),
+    ('command_tags', 0, false, :remote, 'CREATE TABLE ct_n AS SELECT 1 AS a WITH NO DATA'),
+    ('command_tags', 0, false, :remote, 'CREATE MATERIALIZED VIEW ct_v AS SELECT 1 AS a UNION ALL SELECT 2'),
+    ('command_tags', 0, false, :remote, 'COPY (SELECT 1 UNION ALL SELECT 2) TO ''/dev/null'''),
+    ('command_tags', 0, false, :remote, 'COMMENT ON TABLE ct_m IS ''x'''),
+    ('command_tags', 0, false, :remote, 'CREATE INDEX ON ct_m (v)'),
+    ('command_tags', 0, false, :remote, 'ANALYZE ct_m'),
+    ('command_tags', 0, false, :remote, 'PREPARE ct_p AS SELECT 1');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..600 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'command_tags' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 600 x pg_sleep(0.1) waiting for task group ''command_tags'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT input, state, output, error FROM task WHERE "group" = 'command_tags' ORDER BY id;
+DELETE FROM task WHERE "group" = 'command_tags';
+SET client_min_messages = warning;
+DROP TABLE IF EXISTS ct_m, ct_t, ct_c, ct_s, ct_n CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS ct_v;
+RESET client_min_messages;

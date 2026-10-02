@@ -9,10 +9,10 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''notify'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT input, state, output, error FROM task WHERE "group" = 'notify' ORDER BY id;
-             input             | state | output  | error 
--------------------------------+-------+---------+-------
- NOTIFY pg_task_test, 'notify' | DONE  | UTILITY | 
- SELECT 1 AS a                 | DONE  | 1       | 
+             input             | state | output | error 
+-------------------------------+-------+--------+-------
+ NOTIFY pg_task_test, 'notify' | DONE  | NOTIFY | 
+ SELECT 1 AS a                 | DONE  | 1      | 
 (2 rows)
 
 DELETE FROM task WHERE "group" = 'notify';

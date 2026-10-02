@@ -7,6 +7,7 @@
 #include <storage/ipc.h>
 #include <storage/proc.h>
 #include <tcop/tcopprot.h>
+#include <tcop/utility.h>
 #include <unistd.h>
 #include <utils/builtins.h>
 #include <utils/lsyscache.h>
@@ -164,24 +165,41 @@ void EndCommandMy(const char *commandTag, CommandDest dest) {
 }
 #endif
 
-static void dest_execute_spi(const char *src) {
+// stmt is the parse tree of src, whose command tag is the one local mode and remote mode report, rather than SPI's own result code (UTILITY for any utility statement, say)
+static void dest_execute_spi(const char *src, Node *stmt) {
     bool count = false;
     bool insert = false;
     char completionTag[COMPLETION_TAG_BUFSIZE];
     int rc = SPI_execute(src, false, 0);
-    const char *tagname = SPI_result_code_string(rc) + (rc >= 0 ? sizeof("SPI_OK_") - 1 : sizeof("SPI_ERROR_") - 1);
+#if PG_VERSION_NUM >= 130000
+    const char *tagname = GetCommandTagName(CreateCommandTag(stmt));
+#else
+    const char *tagname = CreateCommandTag(stmt);
+#endif
     switch (rc) {
         case SPI_ERROR_ARGUMENT: ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("invalid arguments"))); break;
         case SPI_ERROR_COPY: ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("COPY is not supported"))); break;
         case SPI_ERROR_OPUNKNOWN: ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("unrecognized command type"))); break;
         case SPI_ERROR_TRANSACTION: ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("transaction control statement is not supported"))); break;
+        // with RETURNING, as for SELECT, only the rows, if any, as local mode and remote mode report
         case SPI_OK_DELETE: count = true; break;
-        case SPI_OK_DELETE_RETURNING: count = true; break;
+        case SPI_OK_DELETE_RETURNING: task.skip = 1; break;
         case SPI_OK_INSERT: count = true; insert = true; break;
-        case SPI_OK_INSERT_RETURNING: count = true; insert = true; break;
-        case SPI_OK_SELECT: count = true; task.skip = 1; break;
+        case SPI_OK_INSERT_RETURNING: task.skip = 1; break;
+#ifdef SPI_OK_MERGE
+        case SPI_OK_MERGE: count = true; break;
+#endif
+#ifdef SPI_OK_MERGE_RETURNING
+        case SPI_OK_MERGE_RETURNING: task.skip = 1; break;
+#endif
+        case SPI_OK_SELECT: task.skip = 1; break;
+        case SPI_OK_SELINTO: tagname = "SELECT"; count = true; break; // CREATE TABLE AS and SELECT INTO report the rows they stored, as SELECT n
+        case SPI_OK_UTILITY: // COPY to or from a file reports its rows too, and so does CREATE TABLE AS with data, as SELECT n
+            if (IsA(stmt, CopyStmt)) count = true;
+            else if (IsA(stmt, CreateTableAsStmt) && !((CreateTableAsStmt *)stmt)->into->skipData) { tagname = "SELECT"; count = true; }
+            break;
         case SPI_OK_UPDATE: count = true; break;
-        case SPI_OK_UPDATE_RETURNING: count = true; break;
+        case SPI_OK_UPDATE_RETURNING: task.skip = 1; break;
     }
     elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, tagname);
     if (SPI_tuptable) for (uint64 row = 0; row < SPI_processed; row++) {
@@ -238,22 +256,24 @@ static void dest_execute(void) {
         // RawStmt.stmt_location lets us slice task.input into the text of each individual
         // statement and run them through SPI one by one, the same way exec_simple_query and
         // the remote libpq path already report a result per statement instead of just the last.
-        if (list_length(parsetree_list) <= 1) dest_execute_spi(task.input); else {
+        if (list_length(parsetree_list) <= 1) dest_execute_spi(task.input, linitial_node(RawStmt, parsetree_list)->stmt); else {
             ListCell *cell;
             int prev_start = -1;
+            Node *prev_stmt = NULL;
             foreach(cell, parsetree_list) {
                 int start = lfirst_node(RawStmt, cell)->stmt_location;
                 if (prev_start >= 0) {
                     char *stmt = pnstrdup(task.input + prev_start, start - prev_start);
-                    dest_execute_spi(stmt);
+                    dest_execute_spi(stmt, prev_stmt);
                     pfree(stmt);
                 }
                 prev_start = start;
+                prev_stmt = lfirst_node(RawStmt, cell)->stmt;
             }
-            dest_execute_spi(task.input + prev_start);
+            dest_execute_spi(task.input + prev_start, prev_stmt);
         }
 #else
-        dest_execute_spi(task.input);
+        dest_execute_spi(task.input, (Node *)llast(parsetree_list)); // SPI_execute() reports the last statement only
 #endif
     }
 }

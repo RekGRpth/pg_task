@@ -1,7 +1,7 @@
 DELETE FROM task WHERE "group" = 'returning_delete_no_match';
 SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
-INSERT INTO task ("group", input) VALUES ('returning_delete_no_match', 'DELETE FROM returning_probe WHERE val = 99 RETURNING id');
+INSERT INTO task ("group", input, "delete") VALUES ('returning_delete_no_match', 'DELETE FROM returning_probe WHERE val = 99 RETURNING id', false);
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..150 LOOP
         IF (SELECT count(*) FROM task WHERE "group" = 'returning_delete_no_match' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
