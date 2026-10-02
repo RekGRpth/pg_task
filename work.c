@@ -987,15 +987,18 @@ void work_main(Datum main_arg) {
 #if PG_VERSION_NUM < 90600
     InitializeLatchSupportMy();
 #endif
-    work.data = quote_identifier(work.shared->data);
-    work.schema = quote_identifier(work.shared->schema);
-    work.table = quote_identifier(work.shared->table);
-    work.user = quote_identifier(work.shared->user);
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user);
     initStringInfoMy(&application_name);
     appendStringInfo(&application_name, "pg_work %s %s %li", work.shared->schema, work.shared->table, work.shared->sleep);
     SetConfigOption("application_name", application_name.data, PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
+    // make_*() compare what pg_get_expr() deparses with the expressions they make, which these two change, from the server's configuration or the role's and database's settings, and so does quote_identifier() with the names below: once connected, as no GUC can be set before
+    SetConfigOption("IntervalStyle", "postgres", PGC_USERSET, PGC_S_SESSION);
+    SetConfigOption("quote_all_identifiers", "off", PGC_USERSET, PGC_S_SESSION);
+    work.data = quote_identifier(work.shared->data);
+    work.schema = quote_identifier(work.shared->schema);
+    work.table = quote_identifier(work.shared->table);
+    work.user = quote_identifier(work.shared->user);
     pgstat_report_appname(application_name.data);
     pfree(application_name.data);
     set_ps_display_my("main");
