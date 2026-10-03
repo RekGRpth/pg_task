@@ -2,6 +2,7 @@
 
 #include <signal.h>
 #include <catalog/namespace.h>
+#include <catalog/pg_authid.h>
 #include <catalog/pg_collation.h>
 #include <libpq/libpq-be.h>
 #include <parser/parse_type.h>
@@ -171,31 +172,50 @@ static void work_check(const Work *w) {
                     WITH s AS (
                         SELECT "setdatabase", "setrole", ARRAY[pg_catalog.split_part("kv", '=', 1), pg_catalog.substr("kv", pg_catalog.length(pg_catalog.split_part("kv", '=', 1)) OPERATOR(pg_catalog.+) 2)] AS "setconfig" FROM "pg_catalog"."pg_db_role_setting", pg_catalog.unnest("setconfig") AS "kv"
                     ) SELECT "setdatabase", "setrole", pg_catalog.%s(pg_catalog.array_agg("setconfig"[1]), pg_catalog.array_agg("setconfig"[2])) AS "setconfig" FROM s GROUP BY 1, 2
+                ), g AS (
+                    %s
                 ) SELECT    COALESCE(COALESCE("data", "user"), pg_catalog.current_setting('pg_task.data')::pg_catalog.name) AS "data",
-                            (EXTRACT(epoch FROM COALESCE("reset", (r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, pg_catalog.current_setting('pg_task.reset')::pg_catalog.interval))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int8 AS "reset",
-                            COALESCE("run", (r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.run')::pg_catalog.int4, (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.run')::pg_catalog.int4, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.run')::pg_catalog.int4, pg_catalog.current_setting('pg_task.run')::pg_catalog.int4)::pg_catalog.int4 AS "run",
-                            COALESCE("schema", pg_catalog.current_setting('pg_task.schema'))::pg_catalog.text AS "schema",
-                            COALESCE("table", pg_catalog.current_setting('pg_task.table'))::pg_catalog.text AS "table",
-                            COALESCE("sleep", (r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep')::pg_catalog.int8, (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep')::pg_catalog.int8, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep')::pg_catalog.int8, pg_catalog.current_setting('pg_task.sleep')::pg_catalog.int8)::pg_catalog.int8 AS "sleep",
-                            COALESCE("spi", (r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.spi')::pg_catalog.bool, (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.spi')::pg_catalog.bool, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.spi')::pg_catalog.bool, pg_catalog.current_setting('pg_task.spi')::pg_catalog.bool)::pg_catalog.bool AS "spi",
-                            COALESCE((r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.limit')::pg_catalog.int4, (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.limit')::pg_catalog.int4, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.limit')::pg_catalog.int4, pg_catalog.current_setting('pg_task.limit')::pg_catalog.int4)::pg_catalog.int4 AS "limit",
+                            (EXTRACT(epoch FROM COALESCE("reset", (r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, (g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int8 AS "reset",
+                            COALESCE("run", (r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.run')::pg_catalog.int4, (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.run')::pg_catalog.int4, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.run')::pg_catalog.int4, (g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.run')::pg_catalog.int4)::pg_catalog.int4 AS "run",
+                            COALESCE("schema", r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.schema', u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.schema', d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.schema', (g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.schema'))::pg_catalog.text AS "schema",
+                            COALESCE("table", r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.table', u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.table', d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.table', (g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.table'))::pg_catalog.text AS "table",
+                            COALESCE("sleep", (r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep')::pg_catalog.int8, (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep')::pg_catalog.int8, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep')::pg_catalog.int8, (g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep')::pg_catalog.int8)::pg_catalog.int8 AS "sleep",
+                            COALESCE("spi", (r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.spi')::pg_catalog.bool, (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.spi')::pg_catalog.bool, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.spi')::pg_catalog.bool, (g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.spi')::pg_catalog.bool)::pg_catalog.bool AS "spi",
+                            COALESCE((r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.limit')::pg_catalog.int4, (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.limit')::pg_catalog.int4, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.limit')::pg_catalog.int4, (g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.limit')::pg_catalog.int4)::pg_catalog.int4 AS "limit",
                             COALESCE(COALESCE("user", "data"), pg_catalog.current_setting('pg_task.user')::pg_catalog.name) AS "user"
                 FROM        pg_catalog.jsonb_to_recordset(pg_catalog.current_setting('pg_task.json')::pg_catalog.jsonb) AS j ("data" pg_catalog.name, "reset" interval, "run" int4, "schema" text, "table" text, "sleep" int8, "spi" bool, "user" pg_catalog.name)
+                CROSS JOIN  g
                 LEFT JOIN   s AS d on d."setdatabase" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) COALESCE("data", "user", pg_catalog.current_setting('pg_task.data')::pg_catalog.name)) AND d."setrole" OPERATOR(pg_catalog.=) 0::pg_catalog.oid
                 LEFT JOIN   s AS u on u."setrole" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) COALESCE("user", "data", pg_catalog.current_setting('pg_task.user')::pg_catalog.name)) AND u."setdatabase" OPERATOR(pg_catalog.=) 0::pg_catalog.oid
                 LEFT JOIN   s AS r on r."setdatabase" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) COALESCE("data", "user", pg_catalog.current_setting('pg_task.data')::pg_catalog.name)) AND r."setrole" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) COALESCE("user", "data", pg_catalog.current_setting('pg_task.user')::pg_catalog.name))
-            ) SELECT    DISTINCT j.* FROM j WHERE "user" OPERATOR(pg_catalog.=) current_user AND "data" OPERATOR(pg_catalog.=) current_catalog AND pg_catalog.hashtext(pg_catalog.concat_ws('.', "schema", "table"))::pg_catalog.int4 OPERATOR(pg_catalog.=) %i
+            ) SELECT    DISTINCT j.* FROM j WHERE "user" OPERATOR(pg_catalog.=) session_user AND "data" OPERATOR(pg_catalog.=) current_catalog AND pg_catalog.hashtext(pg_catalog.concat_ws('.', "schema", "table"))::pg_catalog.int4 OPERATOR(pg_catalog.=) %i
         ),
 #if PG_VERSION_NUM >= 90500
-        "jsonb_object"
+        "jsonb_object",
+        // as pg_conf does, see conf_check(): the session of pg_work got the settings of its database and role on connecting, which stay in it once reset there, as a reload doesn't override them, so for a setting from there fall back to the one of the server's configuration files instead, or else to the default
+        SQL(
+            SELECT pg_catalog.jsonb_object(pg_catalog.array_agg("name"), pg_catalog.array_agg("setting")) AS "setconfig" FROM (
+                SELECT "name", CASE WHEN "source" OPERATOR(pg_catalog.=) ANY(ARRAY['database', 'user', 'database user']) THEN COALESCE((SELECT f."setting" FROM "pg_catalog"."pg_file_settings" AS f WHERE f."name" OPERATOR(pg_catalog.=) p."name" AND f."error" IS NULL ORDER BY f."seqno" DESC LIMIT 1), "boot_val") ELSE "setting" END AS "setting" FROM "pg_catalog"."pg_settings" AS p WHERE "name" OPERATOR(pg_catalog.~~) 'pg_task.%'
+            ) AS p
+        )
 #else
-        "json_object"
+        "json_object",
+        // no pg_file_settings yet to tell the server's configuration files apart from the settings of pg_work's own database and role
+        SQL(
+            SELECT pg_catalog.json_object(pg_catalog.array_agg("name"), pg_catalog.array_agg("setting")) AS "setconfig" FROM "pg_catalog"."pg_settings" WHERE "name" OPERATOR(pg_catalog.~~) 'pg_task.%'
+        )
 #endif
         , w->shared->hash);
     }
     // as pg_conf does, keep running with the settings as they are rather than exit over a pg_task.json that doesn't parse or fit the types of its keys
     PG_TRY();
-        SPI_connect_my(src.data, InvalidOid);
+        SPI_connect_my(src.data,
+#if PG_VERSION_NUM >= 90500
+            BOOTSTRAP_SUPERUSERID // pg_file_settings is for superusers only, while pg_task.user may be none: as pg_conf, which runs as one, reads it too; the query is pg_task's own, reading the catalogs only, and the one it serves is the session user
+#else
+            InvalidOid
+#endif
+        );
         if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
         SPI_execute_plan_my(src.data, plan, NULL, NULL, SPI_OK_SELECT);
         if (!SPI_processed) ShutdownRequestPending = true; else {
