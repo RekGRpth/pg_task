@@ -520,6 +520,27 @@ static bool work_busy(Task *t, void (*socket) (Task *t)) {
     return true;
 }
 
+// the results came in the client_encoding of the connection, which is that of this database (see work_remote()) unless the input set another one, which, as servers from 14 on tell of it only once the input is through, if at all, can't be told by result: store them only if they are text of this database at least, or else fail the task, with neither stored, as inserting them would
+static bool work_encoding(Task *t) {
+    StringInfoData bad = {0};
+    if (t->output.data && !pg_verifymbstr(t->output.data, t->output.len, true)) { bad = t->output; t->output.data = NULL; t->output.len = 0; }
+    else if (t->error.data && !pg_verifymbstr(t->error.data, t->error.len, true)) { bad = t->error; t->error.data = NULL; t->error.len = 0; }
+    if (!bad.data) return true;
+    if (t->output.data) { pfree(t->output.data); t->output.data = NULL; t->output.len = 0; }
+    if (t->error.data) { pfree(t->error.data); t->error.data = NULL; t->error.len = 0; }
+    PG_TRY();
+        (void)pg_verifymbstr(bad.data, bad.len, false);
+    PG_CATCH();
+        task_error(t);
+        EmitErrorReport();
+        FlushErrorState();
+    PG_END_TRY();
+    pfree(bad.data);
+    (void)task_done(t, false); // with live = false nothing new is taken into t, so it can be dropped
+    work_finish(t); // and the session with the client_encoding it set
+    return false;
+}
+
 static void work_done(Task *t) {
     if (PQstatus(t->conn) == CONNECTION_OK && PQtransactionStatus(t->conn) != PQTRANS_IDLE) {
         if (!PQsendQuery(t->conn, SQL(COMMIT))) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
@@ -528,6 +549,7 @@ static void work_done(Task *t) {
         t->skip++;
         return;
     }
+    if (!work_encoding(t)) return;
     if (task_done(t, PQstatus(t->conn) == CONNECTION_OK) || PQstatus(t->conn) != CONNECTION_OK) { work_finish(t); return; } // take the next task of the group only for a connection to run it on
     if (t->save) { work_query(t); return; }
     if (!PQsendQuery(t->conn, SQL(DISCARD ALL;))) { ereport(WARNING, (errmsg("id = %li, PQsendQuery failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); task_untake(t); work_finish(t); return; }
@@ -839,6 +861,7 @@ static void work_remote(Task *t) {
         if (!strcmp(opt->keyword, "connect_timeout")) connect_timeout = atoi(opt->val);
         if (!strcmp(opt->keyword, "fallback_application_name")) continue;
         if (!strcmp(opt->keyword, "application_name")) continue;
+        if (!strcmp(opt->keyword, "client_encoding")) continue; // the results go into the task's text columns as they come, so in the encoding of this database only: see below
         if (!strcmp(opt->keyword, "options")) { options = opt->val; continue; }
         arg++;
     }
@@ -857,12 +880,13 @@ static void work_remote(Task *t) {
     keywords[arg] = "options";
     values[arg] = value.data;
     arg++;
-    keywords[arg] = "client_encoding";
+    keywords[arg] = "client_encoding"; // a startup parameter, which a -c client_encoding in options doesn't override, as those come first
     values[arg] = GetDatabaseEncodingName();
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
         if (!strcmp(opt->keyword, "fallback_application_name")) continue;
         if (!strcmp(opt->keyword, "application_name")) continue;
+        if (!strcmp(opt->keyword, "client_encoding")) continue;
         if (!strcmp(opt->keyword, "options")) continue;
         arg++;
         keywords[arg] = opt->keyword;
