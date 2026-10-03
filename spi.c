@@ -173,8 +173,7 @@ void SPI_abort_my(void) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     AbortCurrentTransaction();
 #ifdef HOLD_CANCEL_INTERRUPTS
-    if (held) RESUME_CANCEL_INTERRUPTS();
-    held = false;
+    held = false; // nothing to resume: called only once an error was caught, whose errfinish() let cancels through again by itself
 #endif
     switched = false;
     was_logged = false;

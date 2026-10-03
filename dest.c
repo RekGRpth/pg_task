@@ -325,10 +325,7 @@ static void dest_discard(void) {
             SPI_finish_my();
         } else exec_simple_query_my(src);
     PG_CATCH();
-        task.shared = shared; // restore before any error handling dereferences it
-#ifdef HOLD_CANCEL_INTERRUPTS
-        RESUME_CANCEL_INTERRUPTS();
-#endif
+        task.shared = shared; // restore before any error handling dereferences it, and nothing to resume: the error's errfinish() let cancels through again by itself
         PG_RE_THROW();
     PG_END_TRY();
 #ifdef HOLD_CANCEL_INTERRUPTS
