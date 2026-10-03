@@ -1,0 +1,41 @@
+-- spi mode reports the rarer statements the same as local mode and remote mode do too: CREATE TABLE IF NOT EXISTS ... AS of a table that exists (9.5+), a DO INSTEAD rule with no query of the statement's command, and EXECUTE of a prepared statement (one of several statements in spi mode 10+ only, as before that it reports only the last of them, and alone, with the statement prepared by a task before in the same session, in any)
+DELETE FROM task WHERE "group" LIKE 'rare_command_tags%';
+SET client_min_messages = warning;
+DROP VIEW IF EXISTS rct_v, rct_w;
+DROP TABLE IF EXISTS rct_t, rct_u, rct_ctas;
+RESET client_min_messages;
+CREATE TABLE rct_t (i int);
+CREATE TABLE rct_u (i int);
+CREATE TABLE rct_ctas (i int);
+CREATE VIEW rct_v AS SELECT i FROM rct_t;
+CREATE RULE rct_v_insert AS ON INSERT TO rct_v DO INSTEAD UPDATE rct_t SET i = NEW.i;
+CREATE VIEW rct_w AS SELECT i FROM rct_t;
+CREATE RULE rct_w_insert AS ON INSERT TO rct_w DO INSTEAD NOTHING;
+\set remote NULL
+\set old_spi false
+CREATE TEMP TABLE rct_case (n int, input text, state text, output text, error text, applies boolean, save boolean DEFAULT false);
+INSERT INTO rct_case VALUES
+    (1, 'CREATE TABLE IF NOT EXISTS rct_ctas AS SELECT 1 AS i', 'DONE', 'CREATE TABLE AS', NULL, current_setting('server_version_num')::int >= 90500, false),
+    (2, 'INSERT INTO rct_v VALUES (5)', 'DONE', 'INSERT 0 0', NULL, true, false),
+    (3, 'INSERT INTO rct_w VALUES (5)', 'DONE', 'INSERT 0 0', NULL, true, false),
+    (4, 'PREPARE rct_p AS INSERT INTO rct_u VALUES (7); EXECUTE rct_p', 'DONE', E'PREPARE\nINSERT 0 1', NULL, NOT :old_spi, false),
+    (5, 'PREPARE rct_q(int) AS SELECT 10 / $1 AS a; EXECUTE rct_q(2)', 'DONE', E'PREPARE\n5', NULL, NOT :old_spi, false),
+    (6, 'INSERT INTO rct_u VALUES (9); PREPARE rct_c AS SELECT count(*) AS a FROM rct_u WHERE i = 9; EXECUTE rct_c', 'DONE', E'INSERT 0 1\nPREPARE\n1', NULL, NOT :old_spi, false),
+    (7, 'PREPARE rct_e(int) AS SELECT 1 / $1 AS a; EXECUTE rct_e(0)', 'FAIL', NULL, 'ERROR:  division by zero', true, false),
+    (8, 'PREPARE rct_s AS INSERT INTO rct_u VALUES (11)', 'DONE', 'PREPARE', NULL, true, true),
+    (9, 'EXECUTE rct_s', 'DONE', 'INSERT 0 1', NULL, true, true);
+INSERT INTO task ("group", max, "delete", remote, input, save, count) SELECT CASE WHEN save THEN 'rare_command_tags_save' ELSE 'rare_command_tags' END, 0, false, :remote, input, save, CASE WHEN save THEN 2 ELSE 0 END FROM rct_case ORDER BY n;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..600 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" LIKE 'rare_command_tags%' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 600 x pg_sleep(0.1) waiting for task group ''rare_command_tags'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT c.n, NOT c.applies OR (t.state::text = c.state AND (c.output IS NULL OR t.output = c.output) AND (c.error IS NULL OR t.error LIKE c.error || '%')) AS as_expected FROM rct_case AS c JOIN task AS t ON t.input = c.input AND t."group" LIKE 'rare_command_tags%' ORDER BY c.n;
+DELETE FROM task WHERE "group" LIKE 'rare_command_tags%';
+DROP TABLE rct_case;
+SET client_min_messages = warning;
+DROP VIEW rct_v, rct_w;
+DROP TABLE rct_t, rct_u, rct_ctas;
+RESET client_min_messages;

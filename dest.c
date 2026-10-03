@@ -1,6 +1,8 @@
 #include "include.h"
 
 #include <access/xact.h>
+#include <catalog/namespace.h>
+#include <commands/prepare.h>
 #include <miscadmin.h>
 #include <pgstat.h>
 #include <replication/slot.h>
@@ -166,16 +168,50 @@ void EndCommandMy(const char *commandTag, CommandDest dest) {
 #endif
 
 // stmt is the parse tree of src, whose command tag is the one local mode and remote mode report, rather than SPI's own result code (UTILITY for any utility statement, say)
-static void dest_execute_spi(const char *src, Node *stmt) {
+// SPI tells of EXECUTE neither the command tag nor the row count of the prepared statement it runs, only UTILITY: run that one as exec_simple_query() does, into the receiver and with the completion of local mode, with a snapshot of its own, as SPI_execute() takes for each statement
+static void dest_execute_prepared(const char *src, ExecuteStmt *stmt) {
+#if PG_VERSION_NUM >= 130000
+    QueryCompletion qc;
+    ParseState *pstate = make_parsestate(NULL);
+    pstate->p_sourcetext = src;
+    InitializeQueryCompletion(&qc);
+#else
+    char completionTag[COMPLETION_TAG_BUFSIZE] = "";
+#endif
+    CommandCounterIncrement();
+    PushActiveSnapshot(GetTransactionSnapshot());
+#if PG_VERSION_NUM >= 130000
+    ExecuteQuery(pstate, stmt, NULL, NULL, CreateDestReceiverMy(DestDebug), &qc);
+#else
+    ExecuteQuery(stmt, NULL, src, NULL, CreateDestReceiverMy(DestDebug), completionTag);
+#endif
+    PopActiveSnapshot();
+    CommandCounterIncrement();
+#if PG_VERSION_NUM >= 130000
+    free_parsestate(pstate);
+    EndCommandMy(&qc, DestDebug, false);
+#else
+    EndCommandMy(completionTag, DestDebug);
+#endif
+}
+
+// alone: src is stmt only, rather than the whole input of several statements, which spi mode before 10 runs at once
+static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     bool count = false;
-    bool insert = false;
+    bool exists = false;
     char completionTag[COMPLETION_TAG_BUFSIZE];
-    int rc = SPI_execute(src, false, 0);
+    int rc;
 #if PG_VERSION_NUM >= 130000
     const char *tagname = GetCommandTagName(CreateCommandTag(stmt));
 #else
     const char *tagname = CreateCommandTag(stmt);
 #endif
+    if (alone && IsA(stmt, ExecuteStmt)) { dest_execute_prepared(src, (ExecuteStmt *)stmt); return; }
+#if PG_VERSION_NUM >= 90500
+    // CREATE TABLE AS with IF NOT EXISTS of a table that exists does nothing, which SPI tells only as no rows stored
+    if (IsA(stmt, CreateTableAsStmt) && ((CreateTableAsStmt *)stmt)->if_not_exists) exists = OidIsValid(RangeVarGetRelid(((CreateTableAsStmt *)stmt)->into->rel, NoLock, true));
+#endif
+    rc = SPI_execute(src, false, 0);
     switch (rc) {
         case SPI_ERROR_ARGUMENT: ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("invalid arguments"))); break;
         case SPI_ERROR_COPY: ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("COPY is not supported"))); break;
@@ -184,7 +220,7 @@ static void dest_execute_spi(const char *src, Node *stmt) {
         // with RETURNING, as for SELECT, only the rows, if any, as local mode and remote mode report
         case SPI_OK_DELETE: count = true; break;
         case SPI_OK_DELETE_RETURNING: task.skip = 1; break;
-        case SPI_OK_INSERT: count = true; insert = true; break;
+        case SPI_OK_INSERT: count = true; break;
         case SPI_OK_INSERT_RETURNING: task.skip = 1; break;
 #ifdef SPI_OK_MERGE
         case SPI_OK_MERGE: count = true; break;
@@ -192,11 +228,13 @@ static void dest_execute_spi(const char *src, Node *stmt) {
 #ifdef SPI_OK_MERGE_RETURNING
         case SPI_OK_MERGE_RETURNING: task.skip = 1; break;
 #endif
+        // a DO INSTEAD rule with no query of the same command as the statement: no rows, which PostgreSQL itself reports with the count of the statement's command at 0
+        case SPI_OK_REWRITTEN: count = !strcmp(tagname, "INSERT") || !strcmp(tagname, "UPDATE") || !strcmp(tagname, "DELETE"); break;
         case SPI_OK_SELECT: task.skip = 1; break;
         case SPI_OK_SELINTO: tagname = "SELECT"; count = true; break; // CREATE TABLE AS and SELECT INTO report the rows they stored, as SELECT n
         case SPI_OK_UTILITY: // COPY to or from a file reports its rows too, and so does CREATE TABLE AS with data, as SELECT n
             if (IsA(stmt, CopyStmt)) count = true;
-            else if (IsA(stmt, CreateTableAsStmt) && !((CreateTableAsStmt *)stmt)->into->skipData) { tagname = "SELECT"; count = true; }
+            else if (IsA(stmt, CreateTableAsStmt) && !((CreateTableAsStmt *)stmt)->into->skipData && !exists) { tagname = "SELECT"; count = true; }
             break;
         case SPI_OK_UPDATE: count = true; break;
         case SPI_OK_UPDATE_RETURNING: task.skip = 1; break;
@@ -216,7 +254,7 @@ static void dest_execute_spi(const char *src, Node *stmt) {
             }
         }
     }
-    if (count) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, insert ? "%s 0 %lu" : "%s %lu", tagname, (unsigned long)SPI_processed);
+    if (count) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, !strcmp(tagname, "INSERT") ? "%s 0 %lu" : "%s %lu", tagname, (unsigned long)SPI_processed);
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
     elog(DEBUG1, "id = %li, completionTag = %s", task.shared->id, completionTag);
     if (task.skip) task.skip = 0; else {
@@ -256,7 +294,7 @@ static void dest_execute(void) {
         // RawStmt.stmt_location lets us slice task.input into the text of each individual
         // statement and run them through SPI one by one, the same way exec_simple_query and
         // the remote libpq path already report a result per statement instead of just the last.
-        if (list_length(parsetree_list) <= 1) dest_execute_spi(task.input, linitial_node(RawStmt, parsetree_list)->stmt); else {
+        if (list_length(parsetree_list) <= 1) dest_execute_spi(task.input, linitial_node(RawStmt, parsetree_list)->stmt, true); else {
             ListCell *cell;
             int prev_start = -1;
             Node *prev_stmt = NULL;
@@ -264,16 +302,16 @@ static void dest_execute(void) {
                 int start = lfirst_node(RawStmt, cell)->stmt_location;
                 if (prev_start >= 0) {
                     char *stmt = pnstrdup(task.input + prev_start, start - prev_start);
-                    dest_execute_spi(stmt, prev_stmt);
+                    dest_execute_spi(stmt, prev_stmt, true);
                     pfree(stmt);
                 }
                 prev_start = start;
                 prev_stmt = lfirst_node(RawStmt, cell)->stmt;
             }
-            dest_execute_spi(task.input + prev_start, prev_stmt);
+            dest_execute_spi(task.input + prev_start, prev_stmt, true);
         }
 #else
-        dest_execute_spi(task.input, (Node *)llast(parsetree_list)); // SPI_execute() reports the last statement only
+        dest_execute_spi(task.input, (Node *)llast(parsetree_list), list_length(parsetree_list) == 1); // SPI_execute() reports the last statement only
 #endif
     }
 }
