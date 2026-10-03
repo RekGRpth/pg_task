@@ -418,6 +418,7 @@ bool dest_timeout(void) {
         if (task.shared->spi) ReleaseCurrentSubTransaction();
     PG_CATCH();
         running = false;
+        QueryCancelPending = false; // a cancel of the input that failed otherwise first, its program killed by the SIGINT dest_cancel() sends with it, say, is for no task any more: rather than fail its bookkeeping, outside any PG_TRY()
         task_error(&task);
         dest_catch();
         if (task.shared->spi) {
