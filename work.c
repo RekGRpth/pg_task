@@ -481,9 +481,9 @@ static long work_timeout(const Work *w, long reset) {
                 SELECT $1 FROM %1$s AS t
                 LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$i AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
                 WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND l.pid IS NULL LIMIT 1
-           ), EXTRACT(epoch FROM ((
+           ), pg_catalog.ceil(EXTRACT(epoch FROM ((
                 SELECT "plan" OPERATOR(pg_catalog.-) %4$s AS "plan" FROM %1$s WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.>=) %4$s ORDER BY 1 LIMIT 1
-           )))::pg_catalog.int8 OPERATOR(pg_catalog.*) 1000), -1)::pg_catalog.int8 as "min"
+           )))::pg_catalog.float8 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int8), -1)::pg_catalog.int8 as "min"
         ), w->schema_table, w->shared->oid, w->schema_type, init_plan());
     }
     SPI_connect_my(src.data, InvalidOid);
@@ -1244,7 +1244,9 @@ void work_main(Datum main_arg) {
             INSTR_TIME_SET_CURRENT(start_time_sleep);
             current_sleep = work.shared->sleep;
         }
-        timeout = idle_count >= (uint64)init_work_idle() ? work_timeout(&work, current_reset) : Min(current_reset, current_sleep);
+        if (idle_count < (uint64)init_work_idle()) timeout = Min(current_reset, current_sleep);
+        // idle: till the next task is planned, in milliseconds rounded up, not to wake before it, and not before the pass it takes is due either, or once its plan is past, which work_timeout() leaves out, as it does the tasks that wait for a slot of their group, there'd be no pass and no end to the wait
+        else if ((timeout = work_timeout(&work, current_reset)) >= 0 && timeout < current_sleep) timeout = current_sleep;
         if ((deadline = work_deadline()) >= 0 && (timeout < 0 || deadline < timeout)) timeout = deadline;
         // the next task planned in more than about 24.8 days (repeat = '1 month', say), or as long a reset, is more than the wait takes: it asserts and passes the int it gets to epoll, which would make it wait forever instead, so wake up in time to compute the timeout again
         if (timeout > INT_MAX) timeout = INT_MAX;
