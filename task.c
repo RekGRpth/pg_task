@@ -130,20 +130,26 @@ static void task_insert(const Task *t) {
     set_ps_display_my("idle");
 }
 
-static void task_update(const Task *t) {
-    Datum values[] = {Int32GetDatum(t->shared->hash)};
+// the pause of a negative max holds every task of the group planned within it, not only those already due: with drift until |max| after now, as of the end of the task just done; without, as repeat does, until the first time after now that is a multiple of |max| after the plan of that task, so that the group keeps its pace
+static void task_update(const Task *t, TimestampTz done) {
+    Datum values[] = {Int32GetDatum(t->shared->hash), TimestampTzGetDatum(done)};
     Portal portal;
-    static Oid argtypes[] = {INT4OID};
+    static Oid argtypes[] = {INT4OID, TIMESTAMPTZOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     elog(DEBUG1, "hash = %i", t->shared->hash);
     set_ps_display_my("update");
     if (!src.data) {
+        char *until = psprintf(SQL(
+            CASE WHEN "drift" THEN %1$s OPERATOR(pg_catalog.+) ((OPERATOR(pg_catalog.-) "max"::pg_catalog.float8) OPERATOR(pg_catalog.*) '1 msec'::pg_catalog.interval)
+            ELSE $2 OPERATOR(pg_catalog.+) ((pg_catalog.floor(EXTRACT(epoch FROM %1$s OPERATOR(pg_catalog.-) $2)::pg_catalog.float8 OPERATOR(pg_catalog.*) 1000 OPERATOR(pg_catalog./) (OPERATOR(pg_catalog.-) "max"::pg_catalog.float8)) OPERATOR(pg_catalog.+) 1) OPERATOR(pg_catalog.*) (OPERATOR(pg_catalog.-) "max"::pg_catalog.float8) OPERATOR(pg_catalog.*) '1 msec'::pg_catalog.interval) END
+        ), init_plan());
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            UPDATE %1$s AS t SET "plan" = CASE WHEN "drift" THEN %2$s OPERATOR(pg_catalog.+) ((OPERATOR(pg_catalog.-) "max"::pg_catalog.float8) OPERATOR(pg_catalog.*) '1 msec'::pg_catalog.interval) ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p OPERATOR(pg_catalog.+) ((OPERATOR(pg_catalog.-) "max"::pg_catalog.float8) OPERATOR(pg_catalog.*) '1 msec'::pg_catalog.interval) FROM r WHERE p OPERATOR(pg_catalog.<=) %2$s) SELECT * FROM r ORDER BY 1 DESC LIMIT 1) END
-            WHERE "plan" OPERATOR(pg_catalog.<=) %2$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.<) 0 RETURNING t.id
-        ), t->work->schema_table, init_plan(), "");
+            UPDATE %1$s AS t SET "plan" = %2$s
+            WHERE "plan" OPERATOR(pg_catalog.<) %2$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.<) 0 RETURNING t.id
+        ), t->work->schema_table, until, "");
+        pfree(until);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL, false);
@@ -182,6 +188,7 @@ void task_untake(Task *t) {
 
 bool task_done(Task *t, bool live) {
     bool delete = false, exit = true, insert = false, update = false;
+    TimestampTz done = 0;
     char nulls[] = {' ', t->output.data ? ' ' : 'n', t->error.data ? ' ' : 'n', ' '};
     Datum values[] = {Int64GetDatum(t->shared->id), CStringGetTextDatumMy(t->output.data), CStringGetTextDatumMy(t->error.data), BoolGetDatum(t->lock)};
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID, BOOLOID};
@@ -193,7 +200,7 @@ bool task_done(Task *t, bool live) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             UPDATE %1$s AS t SET "state" = CASE WHEN t."state" OPERATOR(pg_catalog.=) 'STOP' THEN 'STOP' WHEN $3 IS NULL THEN 'DONE' ELSE 'FAIL' END::%2$s, "stop" = %3$s, "output" = $2, "error" = $3 WHERE "id" OPERATOR(pg_catalog.=) $1 AND (t."state" OPERATOR(pg_catalog.=) 'TAKE' OR ($4 AND t."state" OPERATOR(pg_catalog.=) ANY(ARRAY['WORK', 'STOP']::%2$s[])))
-            RETURNING "delete" AND "output" IS NULL AND "error" IS NULL AS "delete", "repeat" OPERATOR(pg_catalog.>) '0 sec' AND t."state" OPERATOR(pg_catalog.<>) 'STOP' AS "insert", "max" OPERATOR(pg_catalog.>=) 0 AND ("count" OPERATOR(pg_catalog.>) 0 OR "live" OPERATOR(pg_catalog.>) '0 sec') AS "live", "max" OPERATOR(pg_catalog.<) 0 AS "update"
+            RETURNING "delete" AND "output" IS NULL AND "error" IS NULL AS "delete", "repeat" OPERATOR(pg_catalog.>) '0 sec' AND t."state" OPERATOR(pg_catalog.<>) 'STOP' AS "insert", "max" OPERATOR(pg_catalog.>=) 0 AND ("count" OPERATOR(pg_catalog.>) 0 OR "live" OPERATOR(pg_catalog.>) '0 sec') AS "live", "max" OPERATOR(pg_catalog.<) 0 AS "update", "plan"
         ), t->work->schema_table, t->work->schema_type, init_plan());
     }
     SPI_connect_my(src.data, userid);
@@ -204,13 +211,14 @@ bool task_done(Task *t, bool live) {
         exit = !live || !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false, BOOLOID));
         insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false, BOOLOID));
         update = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "update", false, BOOLOID));
+        done = DatumGetTimestampTz(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "plan", false, TIMESTAMPTZOID));
         elog(DEBUG1, "delete = %s, exit = %s, insert = %s, update = %s", delete ? "true" : "false", exit ? "true" : "false", insert ? "true" : "false", update ? "true" : "false");
     }
     if (values[1]) pfree((void *)values[1]);
     if (values[2]) pfree((void *)values[2]);
     if (insert) task_insert(t);
     if (delete) task_delete(t);
-    if (update) task_update(t);
+    if (update) task_update(t, done);
     if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) { ereport(WARNING, (errmsg("!unlock_table_id(%i, %li)", t->shared->oid, t->shared->id))); exit = true; }
     t->lock = false;
     SPI_finish_my();
