@@ -1,0 +1,85 @@
+-- the locks of tasks are matched by the low 32 bits of their ids unsigned, so that ids from 2^31 on, whose low bits would come out negative, don't take pg_work down with "OID out of range": a task runs to DONE and another one is stopped, while pg_work resets every second, with no restart
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || current_user || '","schema":"large_id_schema","reset":"1 sec"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'large_id_schema' AND c.relname = 'task') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work large_id_schema task %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of large_id_schema.task to become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT setval(pg_get_serial_sequence('large_id_schema.task', 'id'), 2147483647) IS NOT NULL AS ids_from_2_31;
+ ids_from_2_31 
+---------------
+ t
+(1 row)
+
+SELECT set_config('pg_task_test.large_id_pid', (SELECT pid::text FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work large_id_schema task %'), false) IS NOT NULL AS pid_saved;
+ pid_saved 
+-----------
+ t
+(1 row)
+
+INSERT INTO large_id_schema.task ("group", input) VALUES ('run', 'SELECT pg_sleep(3)'), ('stop', 'SELECT pg_sleep(60)');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM large_id_schema.task WHERE "group" = 'stop' AND state = 'WORK') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task of group ''stop'' to run'; END IF;
+END;$body$ LANGUAGE plpgsql;
+UPDATE large_id_schema.task SET state = 'STOP' WHERE "group" = 'stop';
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT state FROM large_id_schema.task WHERE "group" = 'run') = 'DONE' AND (SELECT error FROM large_id_schema.task WHERE "group" = 'stop') IS NOT NULL THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task of group ''run'' to be done and the one of group ''stop'' to be stopped'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pg_stat_clear_snapshot();
+ pg_stat_clear_snapshot 
+------------------------
+ 
+(1 row)
+
+SELECT "group", id > 2147483647 AS large_id, state FROM large_id_schema.task ORDER BY "group";
+ group | large_id | state 
+-------+----------+-------
+ run   | t        | DONE
+ stop  | t        | STOP
+(2 rows)
+
+SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE pid = current_setting('pg_task_test.large_id_pid')::int AND application_name LIKE 'pg_work large_id_schema task %') AS same_pg_work;
+ same_pg_work 
+--------------
+ t
+(1 row)
+
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work large_id_schema task %' OR application_name LIKE 'pg_task large_id_schema task %') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the workers of large_id_schema.task to go away'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SET client_min_messages TO WARNING;
+DROP SCHEMA large_id_schema CASCADE;
+RESET client_min_messages;
