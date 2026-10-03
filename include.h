@@ -80,6 +80,7 @@ typedef struct Shared {
 
 typedef struct Work {
     bool spawn;
+    int restart;
     char *schema_table;
     char *schema_type;
     const char *data;
@@ -152,7 +153,6 @@ int init_conf_fetch(void);
 int init_task_fetch(void);
 int init_work_idle(void);
 int init_work_fetch(void);
-int init_work_restart(void);
 int severity_error(const char *error);
 PGDLLEXPORT void conf_main(Datum main_arg);
 PGDLLEXPORT void task_main(Datum main_arg);

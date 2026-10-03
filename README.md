@@ -76,7 +76,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | pg_task.sleep | int | 1000 | config, database, user | Check tasks every sleep milliseconds |
 | pg_work.fetch | int | 100 | config, database, superuser | Fetch work rows at once |
 | pg_work.idle | int | 60 | config, database, user | Idle work count |
-| pg_work.restart | int | 60 | config, database, superuser | Restart work interval, seconds |
+| pg_work.restart | int | 60 | config, database, user | Restart pg_work after it crashed in that many seconds (that of the role and database of its entry, read when pg_conf starts it) |
 | pg_task.active | interval | 1 hour | config, database, user, session | Positive period after plan time, when task is active for executing |
 | pg_task.data | text | postgres | config | Database name for tasks table |
 | pg_task.delimiter | char | \t | config, database, user, session | Results columns delimiter, nothing between them if empty |
@@ -142,7 +142,7 @@ pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"
 ```
 `pg_task` creates whichever of the referenced database, user, schema or table don't already exist — you don't need to provision them by hand first.
 
-Each of an entry's scheduler settings — `sleep`, `reset`, `run`, `spi`, `limit`, `schema` and `table` — comes from the first of: its key in the entry's `pg_task.json` object, `ALTER ROLE <user> IN DATABASE <data> SET pg_task.…`, `ALTER ROLE <user> SET pg_task.…`, `ALTER DATABASE <data> SET pg_task.…`, and the server's configuration (`postgresql.conf`, `ALTER SYSTEM`) — the order PostgreSQL itself applies them in to a session of that role in that database. Settings of other roles in that database don't apply to it, and neither, on PostgreSQL 9.5+, do those of the database and role `pg_conf` itself runs in (`postgres` and the bootstrap superuser). `pg_conf` and the entry's `pg_work` read them again on every reload (`SIGHUP`), so an `ALTER ROLE`/`ALTER DATABASE ... SET` or `RESET` of one takes effect without a restart — except, before 9.5, a `RESET` on the role or database `pg_work` itself runs in, whose session keeps the value it got on connecting until it restarts.
+Each of an entry's scheduler settings — `sleep`, `reset`, `run`, `spi`, `limit`, `schema` and `table`, and `pg_work.restart` (which has no key in `pg_task.json`) — comes from the first of: its key in the entry's `pg_task.json` object, `ALTER ROLE <user> IN DATABASE <data> SET pg_task.…`, `ALTER ROLE <user> SET pg_task.…`, `ALTER DATABASE <data> SET pg_task.…`, and the server's configuration (`postgresql.conf`, `ALTER SYSTEM`) — the order PostgreSQL itself applies them in to a session of that role in that database. Settings of other roles in that database don't apply to it, and neither, on PostgreSQL 9.5+, do those of the database and role `pg_conf` itself runs in (`postgres` and the bootstrap superuser). `pg_conf` and the entry's `pg_work` read them again on every reload (`SIGHUP`), so an `ALTER ROLE`/`ALTER DATABASE ... SET` or `RESET` of one takes effect without a restart — except, before 9.5, a `RESET` on the role or database `pg_work` itself runs in, whose session keeps the value it got on connecting until it restarts.
 
 A `pg_task.json` that doesn't parse, or whose values don't fit the types of their keys, is logged and left unapplied: `pg_conf` and the running `pg_work` workers carry on with the configuration they have until it's fixed.
 

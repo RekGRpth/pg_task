@@ -80,7 +80,6 @@ int init_conf_fetch(void) { return init.conf.fetch; }
 int init_task_fetch(void) { return init.task.fetch; }
 int init_work_fetch(void) { return init.work.fetch; }
 int init_work_idle(void) { return init.work.idle; }
-int init_work_restart(void) { return init.work.restart; }
 
 bool init_oid_is_string(Oid oid) {
     switch (oid) {

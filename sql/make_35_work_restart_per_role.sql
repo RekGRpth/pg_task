@@ -1,0 +1,39 @@
+-- pg_work.restart is that of the role and database of an entry, as its other settings are, rather than that of pg_conf's own session: here the role's hour keeps its terminated pg_work from coming back a second after, as the server's pg_work.restart = 1 would
+SET client_min_messages = warning;
+CREATE ROLE task_work_restart SUPERUSER LOGIN;
+RESET client_min_messages;
+ALTER ROLE task_work_restart SET pg_work.restart = 3600;
+ALTER SYSTEM SET pg_work.restart = 1;
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"task_work_restart","schema":"work_restart_schema"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'work_restart_schema' AND c.relname = 'task') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work work_restart_schema task %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of work_restart_schema.task to become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pg_terminate_backend(pid) AS work_terminated FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work work_restart_schema task %';
+SELECT pg_sleep(3);
+SELECT pg_stat_clear_snapshot();
+SELECT NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work work_restart_schema task %') AS not_back_yet;
+ALTER SYSTEM RESET pg_work.restart;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE usename = 'task_work_restart') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for backend(s) connected as role ''task_work_restart'' to disconnect'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SET client_min_messages TO WARNING;
+DROP SCHEMA work_restart_schema CASCADE;
+RESET client_min_messages;
+DROP ROLE task_work_restart;
