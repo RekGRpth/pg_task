@@ -1,0 +1,52 @@
+-- the tasks of a group are cut to the slots it has left before the limit of a pass (run, pg_task.limit), not after it: here ten due tasks of a group with one slot and run = 3 don't keep the task of another group waiting for the next pass, sleep later
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || current_user || '","schema":"take_limit_schema","run":3,"sleep":10000}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'take_limit_schema' AND c.relname = 'task') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work take_limit_schema task %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of take_limit_schema.task to become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+INSERT INTO take_limit_schema.task ("group", input, max) SELECT g, i, 0 FROM (SELECT 'tail', 'SELECT pg_sleep(3)' FROM generate_series(1, 10) UNION ALL SELECT 'other', 'SELECT 1') AS v (g, i);
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..600 LOOP
+        IF (SELECT count(*) FROM take_limit_schema.task WHERE "group" = 'other' AND state IN ('DONE', 'FAIL')) = 1 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 600 x pg_sleep(0.1) waiting for the task of group ''other'' to finish'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT (SELECT start FROM take_limit_schema.task WHERE "group" = 'other') - (SELECT min(start) FROM take_limit_schema.task WHERE "group" = 'tail') < interval '1500 ms' AS other_not_held_up;
+ other_not_held_up 
+-------------------
+ t
+(1 row)
+
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work take_limit_schema task %' OR application_name LIKE 'pg_task take_limit_schema task %') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the workers of take_limit_schema.task to go away'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SET client_min_messages TO WARNING;
+DROP SCHEMA take_limit_schema CASCADE;
+RESET client_min_messages;
