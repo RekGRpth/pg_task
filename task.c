@@ -26,9 +26,11 @@
 static const char *search_path;
 static Oid userid = InvalidOid; // pg_task.user, whose rights the task table bookkeeping needs, while the session itself belongs to the task owner
 
+// the next task of the very group and remote of the task just done, not only of their hash, which "group" || "remote" of others may give too, and which this worker would then run as if it were of its own: a remote one locally, a local one or one of another server on its connection
 static bool task_live(const Task *t) {
-    Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start), CStringGetTextDatumMy(t->shared->owner)};
-    static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID, TEXTOID};
+    char nulls[] = {' ', ' ', ' ', ' ', ' ', ' ', t->remote ? ' ' : 'n'};
+    Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start), CStringGetTextDatumMy(t->shared->owner), CStringGetTextDatumMy(t->group), CStringGetTextDatumMy(t->remote)};
+    static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID, TEXTOID, TEXTOID, TEXTOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     elog(DEBUG1, "id = %li, hash = %i, max = %i, count = %i, start = %s", t->shared->id, t->shared->hash, t->shared->max, t->count, timestamptz_to_str(t->start));
@@ -36,7 +38,7 @@ static bool task_live(const Task *t) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" OPERATOR(pg_catalog.<=) %3$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%4$s')) OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.>=) $2 AND ("user")::pg_catalog.text OPERATOR(pg_catalog.=) $5 AND ("plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.>) %3$s OR "repeat" OPERATOR(pg_catalog.>) '0 sec' OR "max" OPERATOR(pg_catalog.<) 0) AND CASE
+            WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" OPERATOR(pg_catalog.<=) %3$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%4$s')) OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.>=) $2 AND ("user")::pg_catalog.text OPERATOR(pg_catalog.=) $5 AND "group" OPERATOR(pg_catalog.=) $6 AND ("remote" OPERATOR(pg_catalog.=) $7 OR ("remote" IS NULL AND $7 IS NULL)) AND ("plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.>) %3$s OR "repeat" OPERATOR(pg_catalog.>) '0 sec' OR "max" OPERATOR(pg_catalog.<) 0) AND CASE
                 WHEN "count" OPERATOR(pg_catalog.>) 0 AND "live" OPERATOR(pg_catalog.>) '0 sec' THEN "count" OPERATOR(pg_catalog.>) $3 AND $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) %3$s ELSE "count" OPERATOR(pg_catalog.>) $3 OR $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) %3$s
             END ORDER BY "max" DESC, "id" LIMIT 1 FOR NO KEY UPDATE OF t %2$s) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id
         ), t->work->schema_table,
@@ -49,11 +51,13 @@ static bool task_live(const Task *t) {
     }
     SPI_connect_my(src.data, userid);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_UPDATE_RETURNING);
+    SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
     t->shared->id = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)) : 0;
     elog(DEBUG1, "id = %li", t->shared->id);
     SPI_finish_my();
     pfree((void *)values[4]);
+    pfree((void *)values[5]);
+    if (values[6]) pfree((void *)values[6]);
     set_ps_display_my("idle");
     return ShutdownRequestPending || !t->shared->id;
 }
@@ -132,9 +136,10 @@ static void task_insert(const Task *t) {
 
 // the pause of a negative max holds every task of the group planned within it, not only those already due: with drift until |max| after now, as of the end of the task just done; without, as repeat does, until the first time after now that is a multiple of |max| after the plan of that task, so that the group keeps its pace
 static void task_update(const Task *t, TimestampTz done) {
-    Datum values[] = {Int32GetDatum(t->shared->hash), TimestampTzGetDatum(done)};
+    char nulls[] = {' ', ' ', ' ', t->remote ? ' ' : 'n'};
+    Datum values[] = {Int32GetDatum(t->shared->hash), TimestampTzGetDatum(done), CStringGetTextDatumMy(t->group), CStringGetTextDatumMy(t->remote)};
     Portal portal;
-    static Oid argtypes[] = {INT4OID, TIMESTAMPTZOID};
+    static Oid argtypes[] = {INT4OID, TIMESTAMPTZOID, TEXTOID, TEXTOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     elog(DEBUG1, "hash = %i", t->shared->hash);
@@ -147,12 +152,12 @@ static void task_update(const Task *t, TimestampTz done) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             UPDATE %1$s AS t SET "plan" = %2$s
-            WHERE "plan" OPERATOR(pg_catalog.<) %2$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.<) 0 RETURNING t.id
+            WHERE "plan" OPERATOR(pg_catalog.<) %2$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) OPERATOR(pg_catalog.=) $1 AND "group" OPERATOR(pg_catalog.=) $3 AND ("remote" OPERATOR(pg_catalog.=) $4 OR ("remote" IS NULL AND $4 IS NULL)) AND "max" OPERATOR(pg_catalog.<) 0 RETURNING t.id
         ), t->work->schema_table, until, "");
         pfree(until);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    portal = SPI_cursor_open_my(src.data, plan, values, NULL, false);
+    portal = SPI_cursor_open_my(src.data, plan, values, nulls, false);
     do {
         SPI_cursor_fetch_my(src.data, portal, true, init_task_fetch());
         for (uint64 row = 0; row < SPI_processed; row++) {
@@ -162,6 +167,8 @@ static void task_update(const Task *t, TimestampTz done) {
         }
     } while (SPI_processed);
     SPI_cursor_close_my(portal);
+    pfree((void *)values[2]);
+    if (values[3]) pfree((void *)values[3]);
     set_ps_display_my("idle");
 }
 
@@ -222,9 +229,10 @@ bool task_done(Task *t, bool live) {
     if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) { ereport(WARNING, (errmsg("!unlock_table_id(%i, %li)", t->shared->oid, t->shared->id))); exit = true; }
     t->lock = false;
     SPI_finish_my();
-    task_free(t);
     set_ps_display_my("idle");
-    return ShutdownRequestPending || exit || task_live(t);
+    exit = ShutdownRequestPending || exit || task_live(t); // with the group and remote of the task just done still there to match the next one by
+    task_free(t);
+    return exit;
 }
 
 bool task_work(Task *t) {

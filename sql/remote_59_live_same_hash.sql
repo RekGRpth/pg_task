@@ -1,0 +1,14 @@
+-- the worker of a task goes on only with the next task of the very same group and remote, not with one of another that only hashes the same, "group" || "remote" being the same string: a local task of group 'live_hash' || R and a remote one of group 'live_hash' on R each run by their own, so with different pids
+DELETE FROM task WHERE "group" IN ('live_hash', 'live_hash' || 'dbname=' || :'DBNAME');
+SELECT quote_literal('dbname=' || :'DBNAME') AS r
+\gset
+INSERT INTO task ("group", remote, input, count, plan) VALUES ('live_hash', :r, 'SELECT pg_sleep(1)', 2, clock_timestamp()), ('live_hash' || 'dbname=' || :'DBNAME', NULL, 'SELECT 1', 2, clock_timestamp() + interval '100 ms');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" IN ('live_hash', 'live_hash' || 'dbname=' || current_database()) AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''live_hash'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT count(*) AS tasks, bool_and(state = 'DONE') AS done, count(DISTINCT pid) = 2 AS each_by_its_own FROM task WHERE "group" IN ('live_hash', 'live_hash' || 'dbname=' || :'DBNAME');
+DELETE FROM task WHERE "group" IN ('live_hash', 'live_hash' || 'dbname=' || :'DBNAME');
