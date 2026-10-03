@@ -24,7 +24,9 @@ typedef enum STMT_TYPE {
 } STMT_TYPE;
 
 static bool was_logged;
+static bool bookkeeping;
 static bool held;
+static int save_lock_timeout;
 static bool switched;
 static int save_sec_context;
 static Oid save_userid;
@@ -131,13 +133,24 @@ void SPI_connect_my(const char *src, Oid userid) {
     pgstat_report_activity(STATE_RUNNING, src);
     SetCurrentStatementStartTimestamp();
     StartTransactionCommand();
+    // the bookkeeping of a task, in its author's session, must not go by the transaction characteristics or the timeouts of that session, which the task's input or the author's role may have set (default_transaction_read_only = on would fail the bookkeeping, and the task run again on reset): read write and read committed, before any snapshot, and no timeouts, as for the scheduler's own queries in pg_work
+    if ((bookkeeping = OidIsValid(userid))) {
+        XactReadOnly = false;
+        XactIsoLevel = XACT_READ_COMMITTED;
+        XactDeferrable = false;
+        save_lock_timeout = LockTimeout;
+        LockTimeout = 0;
+#if PG_VERSION_NUM >= 170000
+        disable_timeout(TRANSACTION_TIMEOUT, false);
+#endif
+    }
     if ((switched = OidIsValid(userid))) {
         GetUserIdAndSecContext(&save_userid, &save_sec_context);
         SetUserIdAndSecContext(userid, save_sec_context | SECURITY_LOCAL_USERID_CHANGE | SECURITY_RESTRICTED_OPERATION);
     }
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
     PushActiveSnapshot(GetTransactionSnapshot());
-    StatementTimeout > 0 ? enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout) : disable_timeout(STATEMENT_TIMEOUT, false);
+    !bookkeeping && StatementTimeout > 0 ? enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout) : disable_timeout(STATEMENT_TIMEOUT, false);
 }
 
 void SPI_cursor_close_my(Portal portal) {
@@ -172,6 +185,8 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_abort_my(void) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     AbortCurrentTransaction();
+    if (bookkeeping) LockTimeout = save_lock_timeout;
+    bookkeeping = false;
 #ifdef HOLD_CANCEL_INTERRUPTS
     held = false; // nothing to resume: called only once an error was caught, whose errfinish() let cancels through again by itself
 #endif
@@ -189,6 +204,8 @@ void SPI_finish_my(void) {
     if (switched) SetUserIdAndSecContext(save_userid, save_sec_context); // only when switched: an unswitched SPI task with save = true may legitimately keep its own SET ROLE
     switched = false;
     CommitTransactionCommand();
+    if (bookkeeping) LockTimeout = save_lock_timeout;
+    bookkeeping = false;
 #if PG_VERSION_NUM < 150000
     ProcessCompletedNotifies(); // only now, out of the transaction, as PostgresMain() calls it: before 13 it starts a transaction of its own to signal the listeners of what this one (or a task's input before) notified, which within this one is an error
 #endif
