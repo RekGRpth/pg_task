@@ -181,6 +181,7 @@ void task_free(Task *t);
 void task_untake(Task *t);
 void xact_started_my(bool value);
 Work *get_work(void);
+extern volatile sig_atomic_t make_lock_timeout;
 void make_schema(const Work *w);
 void make_type(const Work *w);
 void make_table(const Work *w);

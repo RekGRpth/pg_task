@@ -16,6 +16,7 @@
 #include <utils/builtins.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
+#include <utils/timeout.h>
 
 #ifdef GP_VERSION_NUM
 #ifdef HAVE_CREATING_EXTENSION_LOCAL
@@ -1128,8 +1129,13 @@ static void work_writeable(Task *t) {
     t->socket(t);
 }
 
+// a wake-up, see the README, rather than a query cancel: but PostgreSQL's statement and lock timeouts signal through SIGINT too, which pg_work's own queries, as a scheduler kept running whatever long transactions of others there are, don't go by, except for the lock timeout of the DDL of make_ddl(), which waits for a table busy with its tasks only so long before retrying
 static void work_idle(SIGNAL_ARGS) {
     int save_errno = errno;
+    if (make_lock_timeout && get_timeout_indicator(LOCK_TIMEOUT, false)) {
+        InterruptPending = true;
+        QueryCancelPending = true;
+    }
     idle_count = 0;
     SetLatch(MyLatch);
     errno = save_errno;

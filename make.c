@@ -37,12 +37,15 @@
 #include <utils/rel.h>
 #endif
 
+volatile sig_atomic_t make_lock_timeout = false; // the DDL below is running, whose lock timeout pg_work's own SIGINT handler, which lock timeouts signal through, is to let through, see work_idle()
+
 static void make_ddl(const char *src, int res) {
     ResourceOwner oldowner = CurrentResourceOwner;
     MemoryContext oldcontext = CurrentMemoryContext;
     bool ok = false;
     SPI_connect_my(src, InvalidOid);
-    SetConfigOption("lock_timeout", "2000", PGC_USERSET, PGC_S_SESSION);
+    SPI_execute_with_args_my(SQL(SET LOCAL "lock_timeout" = 2000), 0, NULL, NULL, NULL, SPI_OK_UTILITY); // not to wait for long on a table busy with its tasks, but only for this transaction, whose end, commit or abort, gives pg_work back its own, the server's, its database's or its role's
+    make_lock_timeout = true;
     for (int attempt = 1; !ok && attempt <= 5; attempt++) {
         BeginInternalSubTransaction(NULL);
         MemoryContextSwitchTo(oldcontext);
@@ -64,14 +67,14 @@ static void make_ddl(const char *src, int res) {
 #if PG_VERSION_NUM < 100000
                 SPI_restore_connection();
 #endif
-                if (edata->sqlerrcode != ERRCODE_LOCK_NOT_AVAILABLE || attempt == 5) ReThrowError(edata);
+                if (edata->sqlerrcode != ERRCODE_LOCK_NOT_AVAILABLE || attempt == 5) { make_lock_timeout = false; ReThrowError(edata); }
                 elog(DEBUG1, "lock not available, attempt = %i, src = %s", attempt, src);
                 FreeErrorData(edata);
                 pg_usleep(200000L);
             }
         PG_END_TRY();
     }
-    SetConfigOption("lock_timeout", "0", PGC_USERSET, PGC_S_SESSION);
+    make_lock_timeout = false;
     SPI_finish_my();
 }
 
