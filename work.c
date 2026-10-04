@@ -692,12 +692,13 @@ static void work_query(Task *t) {
     quote_group = quote_literal_cstr(t->group);
     appendStringInfo(&preamble, SQL(SET SESSION "pg_task.group" = %s;), quote_group);
     if (quote_group != t->group) pfree((void *)quote_group);
-    quote_schema = quote_literal_cstr(t->work->schema);
+    // the names as they are, as a local task has them, not as quoted for SQL, as pg_work keeps them besides
+    quote_schema = quote_literal_cstr(t->shared->schema);
     appendStringInfo(&preamble, SQL(SET SESSION "pg_task.schema" = %s;), quote_schema);
-    if (quote_schema != t->work->schema) pfree((void *)quote_schema);
-    quote_table = quote_literal_cstr(t->work->table);
+    pfree((void *)quote_schema);
+    quote_table = quote_literal_cstr(t->shared->table);
     appendStringInfo(&preamble, SQL(SET SESSION "pg_task.table" = %s;), quote_table);
-    if (quote_table != t->work->table) pfree((void *)quote_table);
+    pfree((void *)quote_table);
     if (t->timeout) appendStringInfo(&preamble, SQL(SET SESSION "statement_timeout" = %i;), t->timeout);
     else appendStringInfoString(&preamble, SQL(RESET "statement_timeout";));
     elog(DEBUG1, "id = %li, timeout = %i, preamble = %s, input = %s, count = %i", t->shared->id, t->timeout, preamble.data, t->input, t->count);

@@ -1,0 +1,39 @@
+-- a remote task gets pg_task.schema and pg_task.table as they are, as a local one does, not quoted as identifiers: here for names that need quoting
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || current_user || '","schema":"Quoted Schema","table":"Quoted Table"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'Quoted Schema' AND c.relname = 'Quoted Table') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work Quoted Schema Quoted Table %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of "Quoted Schema"."Quoted Table" to become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+INSERT INTO "Quoted Schema"."Quoted Table" ("group", remote, input) VALUES
+    ('local', NULL, 'SELECT current_setting(''pg_task.schema'') AS s, current_setting(''pg_task.table'') AS t'),
+    ('remote', 'dbname=' || :'DBNAME', 'SELECT current_setting(''pg_task.schema'') AS s, current_setting(''pg_task.table'') AS t');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM "Quoted Schema"."Quoted Table" WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the tasks of "Quoted Schema"."Quoted Table" to finish'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", state, output FROM "Quoted Schema"."Quoted Table" ORDER BY "group";
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work Quoted Schema Quoted Table %') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of "Quoted Schema"."Quoted Table" to stop'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SET client_min_messages TO WARNING;
+DROP SCHEMA "Quoted Schema" CASCADE;
+RESET client_min_messages;
