@@ -114,7 +114,7 @@ static void work_query(Task *t);
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
 static void work_cancel_free(Cancel *c);
 #endif
-static void work_reap(const Work *w);
+static bool work_reap(const Work *w);
 static void work_result(Task *t);
 static void work_stop(const Work *w);
 static bool work_superuser(const char *user);
@@ -351,6 +351,7 @@ static void work_finish(Task *t) {
 #endif
     }
     if (!proc_exit_inprogress && t->pid && !unlock_table_pid_hash(t->shared->oid, t->pid, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->pid, t->shared->hash)));
+    idle_count = 0; // a slot of its group is free now, for a task of the group that waits for one, which an idle pg_work doesn't wait for: see work_reap()
     work_free(t);
 }
 
@@ -969,7 +970,9 @@ static void work_local(const Task *t, BackgroundWorkerHandle *handle) {
     dlist_push_tail(&local, &l->node);
 }
 
-static void work_reap(const Work *w) {
+// returns whether a task worker exited, freeing a slot of its group
+static bool work_reap(const Work *w) {
+    bool reaped = false;
     dlist_mutable_iter iter;
     dlist_foreach_modify(iter, &local) {
         Local *l = dlist_container(Local, node, iter.cur);
@@ -979,7 +982,9 @@ static void work_reap(const Work *w) {
         dlist_delete(&l->node);
         pfree(l->handle);
         pfree(l);
+        reaped = true;
     }
+    return reaped;
 }
 
 static void work_task(Task *t) {
@@ -1267,6 +1272,8 @@ void work_main(Datum main_arg) {
             else if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
         work_expire();
+        // an idle pg_work waits only for tasks planned ahead, not for those due already that wait for a slot of their group, which a task done frees: back to passes every sleep, for them to be taken
+        if (work_reap(&work)) idle_count = 0;
         work_latch(&work);
         INSTR_TIME_SET_CURRENT(current_time_reset);
         INSTR_TIME_SUBTRACT(current_time_reset, start_time_reset);
