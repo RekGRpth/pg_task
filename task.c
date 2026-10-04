@@ -202,6 +202,7 @@ bool task_done(Task *t, bool live) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     elog(DEBUG1, "id = %li, output = %s, error = %s", t->shared->id, t->output.data ? t->output.data : init_null(), t->error.data ? t->error.data : init_null());
+    HOLD_INTERRUPTS(); // the input done, no termination is to fail its bookkeeping, leaving the task in WORK, to run again on reset, as in pg_work for a remote one
     set_ps_display_my("done");
     if (!src.data) {
         initStringInfoMy(&src);
@@ -232,6 +233,7 @@ bool task_done(Task *t, bool live) {
     set_ps_display_my("idle");
     exit = ShutdownRequestPending || exit || task_live(t); // with the group and remote of the task just done still there to match the next one by
     task_free(t);
+    RESUME_INTERRUPTS();
     return exit;
 }
 

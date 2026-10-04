@@ -134,9 +134,19 @@ void NullCommandMy(CommandDest dest) {
     if (task.shared) elog(DEBUG1, "id = %li", task.shared->id);
 }
 
+static bool held = false; // interrupts held since the input committed, see dest_xact()
+
+// the next statement of the input after one that committed, COMMIT, say, to run with interrupts, as before
+static void dest_resume(void) {
+    if (!held) return;
+    held = false;
+    RESUME_INTERRUPTS();
+}
+
 #if PG_VERSION_NUM >= 130000
 void BeginCommandMy(CommandTag commandTag, CommandDest dest) {
     if (task.shared) elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, GetCommandTagName(commandTag));
+    dest_resume();
 }
 
 void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undecorated_output) {
@@ -156,6 +166,7 @@ void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undeco
 #else
 void BeginCommandMy(const char *commandTag, CommandDest dest) {
     if (task.shared) elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, commandTag);
+    dest_resume();
 }
 
 void EndCommandMy(const char *commandTag, CommandDest dest) {
@@ -406,7 +417,15 @@ static void dest_shmem_exit(int code, Datum arg) {
     (void)task_done(&task, false);
 }
 
+// a termination right after the input committed, at the first check for interrupts, as the end of any message logged has, the duration of the statement, say, would leave the task done in WORK, to run again on reset: hold interrupts from its commit on, in local mode, where exec_simple_query() commits it, till the bookkeeping is done, or the next statement of the input starts, see dest_resume()
+static void dest_xact(XactEvent event, void *arg) {
+    if (event != XACT_EVENT_COMMIT || !running || held) return;
+    HOLD_INTERRUPTS();
+    held = true;
+}
+
 void dest_init(void) {
+    RegisterXactCallback(dest_xact, NULL);
     emit_log_hook_prev = emit_log_hook;
     emit_log_hook = dest_emit_log;
     before_shmem_exit(dest_shmem_exit, (Datum)0);
@@ -445,6 +464,7 @@ bool dest_timeout(void) {
         running = true;
         dest_execute();
         running = false;
+        if (held) held = false; else HOLD_INTERRUPTS(); // the input done, no termination is to come in between it and its bookkeeping, which would leave the task in WORK, to run again on reset: until the end, see below, if not since its commit already, see dest_xact()
         QueryCancelPending = false; // a cancel that came too late for the input, after its last CHECK_FOR_INTERRUPTS(), isn't meant for the bookkeeping, outside any PG_TRY()
         SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
         if (task.shared->spi) {
@@ -455,6 +475,8 @@ bool dest_timeout(void) {
             finished = true;
         }
     PG_CATCH();
+        held = false;
+        HOLD_INTERRUPTS(); // as above, the error's errfinish() having let them through again
         running = false;
         QueryCancelPending = false; // a cancel of the input that failed otherwise first, its program killed by the SIGINT dest_cancel() sends with it, say, is for no task any more: rather than fail its bookkeeping, outside any PG_TRY()
         task_error(&task);
@@ -485,6 +507,7 @@ bool dest_timeout(void) {
         PG_TRY();
             dest_discard();
         PG_CATCH();
+            HOLD_INTERRUPTS(); // as above
             if (task.shared->spi) {
                 EmitErrorReport();
                 FlushErrorState();
@@ -494,5 +517,7 @@ bool dest_timeout(void) {
             exit = true;
         PG_END_TRY();
     }
+    if (!exit && ProcDiePending) { task_untake(&task); exit = true; } // to be terminated, now that its interrupts come through: the next task, taken for nothing, back to PLAN
+    RESUME_INTERRUPTS();
     return exit;
 }
