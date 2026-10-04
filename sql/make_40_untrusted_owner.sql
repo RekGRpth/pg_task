@@ -1,0 +1,60 @@
+-- the self-provisioning takes in no table, type or trigger function of pg_task's that someone else made before it did, as anyone could in public before 15, and stays theirs to change: pg_work refuses them, unless owned by pg_task.user or a superuser; and a function of the same name with arguments doesn't keep pg_work from starting
+SET client_min_messages = warning;
+DROP SCHEMA IF EXISTS untrusted_table_schema, untrusted_function_schema, untrusted_overload_schema CASCADE;
+DROP ROLE IF EXISTS task_untrusted;
+CREATE ROLE task_untrusted;
+RESET client_min_messages;
+CREATE SCHEMA untrusted_table_schema;
+CREATE SCHEMA untrusted_function_schema;
+CREATE SCHEMA untrusted_overload_schema;
+GRANT USAGE, CREATE ON SCHEMA untrusted_table_schema, untrusted_function_schema, untrusted_overload_schema TO task_untrusted;
+SET ROLE task_untrusted;
+CREATE TABLE untrusted_table_schema.task (id int);
+CREATE FUNCTION untrusted_function_schema.task_wake_up() RETURNS trigger LANGUAGE plpgsql AS $function$BEGIN RETURN NULL; END$function$;
+CREATE FUNCTION untrusted_overload_schema.task_wake_up(int) RETURNS int LANGUAGE sql AS $function$SELECT 1$function$;
+RESET ROLE;
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || current_user || '","schema":"untrusted_table_schema"},{"data":"' || :'DBNAME' || '","user":"' || current_user || '","schema":"untrusted_function_schema"},{"data":"' || :'DBNAME' || '","user":"' || current_user || '","schema":"untrusted_overload_schema"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_work.restart = 1;
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'untrusted_overload_schema' AND c.relname = 'task') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work untrusted_overload_schema task %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of untrusted_overload_schema.task to become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- and once more, now with the trigger function of its own beside the other one
+SELECT pg_terminate_backend(pid) AS terminated FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work untrusted_overload_schema task %';
+SELECT pg_sleep(0.5);
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'untrusted_overload_schema' AND c.relname = 'task') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work untrusted_overload_schema task %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of untrusted_overload_schema.task to become idle again'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- for the other two to have had their go at it too
+SELECT pg_sleep(2);
+SELECT NOT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid = 'untrusted_table_schema.task'::regclass AND attname = 'plan') AS table_left_alone;
+SELECT prosrc = 'BEGIN RETURN NULL; END' AS function_left_alone FROM pg_catalog.pg_proc WHERE oid = 'untrusted_function_schema.task_wake_up()'::regprocedure;
+ALTER SYSTEM RESET pg_work.restart;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work untrusted_%') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work workers of the untrusted schemas to go away'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SET client_min_messages TO WARNING;
+DROP SCHEMA untrusted_table_schema, untrusted_function_schema, untrusted_overload_schema CASCADE;
+RESET client_min_messages;
+DROP ROLE task_untrusted;

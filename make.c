@@ -98,6 +98,14 @@ static bool make_test(const char *src, int nargs, Oid *argtypes, Datum *values, 
     return test;
 }
 
+// an object of pg_task's that someone else made before pg_work did, in public, say, where anyone could create one before 15, is theirs to change still, the body of a function, which CREATE OR REPLACE leaves theirs, the table, its policy or its enum of states, and so to run what they like as pg_task.user or as the authors of tasks: rather than take it in, refuse unless it's owned by pg_task.user or a superuser
+static void make_owner(const char *what, const char *name, const char *src, int nargs, Oid *argtypes, Datum *values) {
+    SPI_connect_my(src, InvalidOid);
+    SPI_execute_with_args_my(src, nargs, argtypes, values, NULL, SPI_OK_SELECT);
+    if (SPI_processed) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE), errmsg("%s %s exists and is owned by %s, not by pg_task.user or a superuser", what, name, SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1)), errhint("Have it owned by pg_task.user (ALTER ... OWNER TO), if it's to be trusted with the tasks of others, or else drop it.")));
+    SPI_finish_my();
+}
+
 void make_schema(const Work *w) {
     Datum values[] = {CStringGetTextDatum(w->shared->schema)};
     static Oid argtypes[] = {TEXTOID};
@@ -160,7 +168,21 @@ static void make_function(const Work *w, const char *name, const char *source, b
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT COALESCE((SELECT prosrc OPERATOR(pg_catalog.=) $3 AND prosecdef OPERATOR(pg_catalog.=) $4 AND proconfig OPERATOR(pg_catalog.=) ARRAY['search_path=pg_catalog, pg_temp']::pg_catalog.text[] FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) $1 AND nspname OPERATOR(pg_catalog.=) $2), false) AS "test"
+        SELECT r.rolname::pg_catalog.text AS "owner" FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace JOIN pg_catalog.pg_roles r ON r.oid OPERATOR(pg_catalog.=) proowner WHERE proname OPERATOR(pg_catalog.=) $1 AND nspname OPERATOR(pg_catalog.=) $2 AND pronargs OPERATOR(pg_catalog.=) 0 AND r.rolname OPERATOR(pg_catalog.<>) current_user AND NOT r.rolsuper
+    ));
+    {
+        const char *quote = quote_identifier(name);
+        StringInfoData function;
+        initStringInfoMy(&function);
+        appendStringInfo(&function, "%s.%s()", w->schema, quote);
+        make_owner("function", function.data, src.data, 2, argtypes, values);
+        pfree(function.data);
+        if (quote != name) pfree((void *)quote);
+    }
+    resetStringInfo(&src);
+    // the trigger function, with no arguments, not one of the same name with some, which someone may have made too
+    appendStringInfo(&src, SQL(
+        SELECT COALESCE((SELECT prosrc OPERATOR(pg_catalog.=) $3 AND prosecdef OPERATOR(pg_catalog.=) $4 AND proconfig OPERATOR(pg_catalog.=) ARRAY['search_path=pg_catalog, pg_temp']::pg_catalog.text[] FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) $1 AND nspname OPERATOR(pg_catalog.=) $2 AND pronargs OPERATOR(pg_catalog.=) 0), false) AS "test"
     ));
     if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         const char *quote = quote_identifier(name);
@@ -604,6 +626,11 @@ void make_table(const Work *w) {
     set_ps_display_my("table");
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
+        SELECT r.rolname::pg_catalog.text AS "owner" FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) relnamespace JOIN pg_catalog.pg_roles r ON r.oid OPERATOR(pg_catalog.=) relowner WHERE nspname OPERATOR(pg_catalog.=) $1 AND relname OPERATOR(pg_catalog.=) $2 AND relkind OPERATOR(pg_catalog.=) ANY(ARRAY['r', 'p']::"char"[]) AND r.rolname OPERATOR(pg_catalog.<>) current_user AND NOT r.rolsuper
+    ));
+    make_owner("table", w->schema_table, src.data, countof(argtypes), argtypes, values);
+    resetStringInfo(&src);
+    appendStringInfo(&src, SQL(
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) relnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND relname OPERATOR(pg_catalog.=) $2 AND relkind OPERATOR(pg_catalog.=) ANY(ARRAY['r', 'p']::"char"[])) AS "test"
     ));
     if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
@@ -845,6 +872,11 @@ void make_type(const Work *w) {
     StringInfoData src;
     set_ps_display_my("type");
     initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        SELECT r.rolname::pg_catalog.text AS "owner" FROM pg_catalog.pg_type JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace JOIN pg_catalog.pg_roles r ON r.oid OPERATOR(pg_catalog.=) typowner WHERE nspname OPERATOR(pg_catalog.=) $1 AND typname OPERATOR(pg_catalog.=) 'state' AND r.rolname OPERATOR(pg_catalog.<>) current_user AND NOT r.rolsuper
+    ));
+    make_owner("type", w->schema_type, src.data, countof(argtypes), argtypes, values);
+    resetStringInfo(&src);
     appendStringInfo(&src, SQL(
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_type JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND typname OPERATOR(pg_catalog.=) 'state') AS "test"
     ));
