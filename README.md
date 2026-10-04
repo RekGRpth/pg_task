@@ -126,7 +126,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | group | text | NOT NULL | pg_task.group | Task grouping by name |
 | input | text | NOT NULL | | Sql command(s) to execute |
 | null | text | NOT NULL | pg_task.null | Null text value representation |
-| output | text | NULL | | Received result(s) |
+| output | text | NULL | | Received result(s), up to 16 MB short of 1 GB: a task that outputs more fails with `task output exceeds ... bytes`, keeping that much |
 | remote | text | NULL | | Connect to remote database (if need) |
 | user | name | NOT NULL | current_user | Role that inserted the task; input is executed as this role, and the column is immutable after insert |
 

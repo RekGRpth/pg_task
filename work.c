@@ -593,11 +593,33 @@ static void work_success(Task *t, const PGresult *result, int row) {
     }
 }
 
+// past the most of output a task may keep, see TASK_OUTPUT_MAX, as the string buffer would take up to MaxAllocSize
+static void work_output(const Task *t) {
+    if (t->output.data && t->output.len > (int)TASK_OUTPUT_MAX) ereport(ERROR, (errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED), errmsg("task output exceeds %lu bytes", (unsigned long)TASK_OUTPUT_MAX)));
+}
+
+// the task failed on its output, too much of it, with the error taken already: keep the most of it it may, and fail it, rather than take pg_work down, with every remote task it runs, and have the task run again on every reset
+static void work_failed(Task *t) {
+    if (t->output.data && t->output.len > (int)TASK_OUTPUT_MAX) t->output.data[t->output.len = pg_mbcliplen(t->output.data, t->output.len, TASK_OUTPUT_MAX)] = '\0';
+    if (!work_encoding(t)) return;
+    (void)task_done(t, false); // with live = false nothing new is taken into t, so it can be dropped
+    work_finish(t); // with the rest of the result unread
+}
+
 static void work_copy(Task *t) {
-    char *buffer = NULL;
-    int len;
+    static char *buffer = NULL; // not to be clobbered by an error
+    int len = 0;
+    volatile bool failed = false;
     if (!t->output.data) initStringInfoMy(&t->output);
-    while ((len = PQgetCopyData(t->conn, &buffer, true)) > 0) { appendBinaryStringInfo(&t->output, buffer, len); PQfreemem(buffer); buffer = NULL; }
+    PG_TRY();
+        while ((len = PQgetCopyData(t->conn, &buffer, true)) > 0) { appendBinaryStringInfo(&t->output, buffer, len); PQfreemem(buffer); buffer = NULL; work_output(t); }
+    PG_CATCH();
+        task_error(t);
+        EmitErrorReport();
+        FlushErrorState();
+        failed = true;
+    PG_END_TRY();
+    if (failed) { if (buffer) PQfreemem(buffer); buffer = NULL; work_failed(t); return; }
     switch (len) {
         case 0: t->event = WL_SOCKET_READABLE; t->socket = work_copy; break;
         case -2: work_error((errmsg("id = %li, PQgetCopyData == -2", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
@@ -607,17 +629,28 @@ static void work_copy(Task *t) {
 
 static void work_result(Task *t) {
     for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK; PQclear(result)) {
+        volatile bool copy = false, failed = false;
         if (work_busy(t, work_result)) return;
         if (!(result = PQgetResult(t->conn))) break;
-        switch (PQresultStatus(result)) {
-            case PGRES_COMMAND_OK: work_command(t, result); break;
-            case PGRES_COPY_BOTH: if (PQputCopyEnd(t->conn, "COPY BOTH is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
-            case PGRES_COPY_IN: if (PQputCopyEnd(t->conn, "COPY FROM STDIN is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
-            case PGRES_COPY_OUT: PQclear(result); work_copy(t); return;
-            case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
-            case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) work_success(t, result, row); break;
-            default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
-        }
+        PG_TRY();
+            switch (PQresultStatus(result)) {
+                case PGRES_COMMAND_OK: work_command(t, result); break;
+                case PGRES_COPY_BOTH: if (PQputCopyEnd(t->conn, "COPY BOTH is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
+                case PGRES_COPY_IN: if (PQputCopyEnd(t->conn, "COPY FROM STDIN is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
+                case PGRES_COPY_OUT: copy = true; break;
+                case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
+                case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) { work_success(t, result, row); work_output(t); } break;
+                default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
+            }
+            work_output(t);
+        PG_CATCH();
+            task_error(t);
+            EmitErrorReport();
+            FlushErrorState();
+            failed = true;
+        PG_END_TRY();
+        if (failed) { PQclear(result); work_failed(t); return; }
+        if (copy) { PQclear(result); work_copy(t); return; }
     }
     work_done(t);
 }

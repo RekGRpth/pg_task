@@ -2,6 +2,8 @@
 #define _INCLUDE_H_
 
 #define countof(array) (sizeof(array)/sizeof(array[0]))
+// the most of output a task may keep, which, stored in its row by the bookkeeping, must leave room within the most a single allocation may take for a copy or two more and the compression of TOAST (lz4 adds up to 1/255): a task that outputs more fails, keeping that much, rather than fail its bookkeeping and have the task run again on every reset
+#define TASK_OUTPUT_MAX (MaxAllocSize - 16 * 1024 * 1024)
 #define SQL(...) #__VA_ARGS__
 
 #include <postgres.h>

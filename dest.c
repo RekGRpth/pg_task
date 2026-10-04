@@ -2,6 +2,7 @@
 
 #include <access/xact.h>
 #include <catalog/namespace.h>
+#include <mb/pg_wchar.h>
 #include <commands/prepare.h>
 #include <miscadmin.h>
 #include <pgstat.h>
@@ -74,6 +75,7 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
         }
     }
     task.row++;
+    if (task.output.len > (int)TASK_OUTPUT_MAX) ereport(ERROR, (errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED), errmsg("task output exceeds %lu bytes", (unsigned long)TASK_OUTPUT_MAX)));
 #if PG_VERSION_NUM >= 90600
     return true;
 #endif
@@ -253,6 +255,7 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
                 pfree(value);
             }
         }
+        if (task.output.len > (int)TASK_OUTPUT_MAX) ereport(ERROR, (errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED), errmsg("task output exceeds %lu bytes", (unsigned long)TASK_OUTPUT_MAX)));
     }
     if (count) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, !strcmp(tagname, "INSERT") ? "%s 0 %lu" : "%s %lu", tagname, (unsigned long)SPI_processed);
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
@@ -420,6 +423,7 @@ bool dest_timeout(void) {
         running = false;
         QueryCancelPending = false; // a cancel of the input that failed otherwise first, its program killed by the SIGINT dest_cancel() sends with it, say, is for no task any more: rather than fail its bookkeeping, outside any PG_TRY()
         task_error(&task);
+        if (task.output.len > (int)TASK_OUTPUT_MAX) task.output.data[task.output.len = pg_mbcliplen(task.output.data, task.output.len, TASK_OUTPUT_MAX)] = '\0'; // past the most it may keep, see TASK_OUTPUT_MAX, as the string buffer would take up to MaxAllocSize
         dest_catch();
         if (task.shared->spi) {
             RollbackAndReleaseCurrentSubTransaction();
