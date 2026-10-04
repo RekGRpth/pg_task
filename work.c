@@ -435,6 +435,7 @@ static void work_reset(const Work *w) {
     static Oid argtypes[] = {TEXTOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
+    if (ShutdownRequestPending) return; // as work_sleep() does
     set_ps_display_my("reset");
     work_reap(w);
     initStringInfoMy(&ids);
@@ -1080,6 +1081,7 @@ static void work_sleep(Work *w) {
     static Oid argtypes[] = {INT4OID, INT4OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
+    if (ShutdownRequestPending) return; // its entry gone from pg_task.json, found by the reload in this very turn of its loop, say: take no task it won't run, to be left in TAKE once it's gone
     elog(DEBUG1, "idle_count = %lu", idle_count);
     set_ps_display_my("sleep");
     work_reap(w);
