@@ -231,7 +231,17 @@ static void conf_check(void) {
     conf_reconcile();
     dlist_foreach_modify(iter, &head) {
         Work *w = dlist_container(Work, node, iter.cur);
-        if (w->spawn) conf_work(w); else conf_free(w);
+        if (!w->spawn) { conf_free(w); continue; }
+        // an entry that can't be started, its role not made (a reserved name), its database neither (template1 in use), or no worker to be had, mustn't take pg_conf down, to be restarted into the same error over and over, keeping the entries after it from starting: report it and go on, for it to be tried again on the next reload
+        PG_TRY();
+            conf_work(w);
+        PG_CATCH();
+            MemoryContextSwitchTo(oldMemoryContext);
+            EmitErrorReport();
+            FlushErrorState();
+            SPI_abort_my();
+            conf_free(w);
+        PG_END_TRY();
     }
 }
 
