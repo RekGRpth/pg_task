@@ -134,6 +134,15 @@ static bool work_superuser(const char *user);
     work_error_remote ? work_finish(t) : work_free(t); \
 } while(0)
 
+// the connection of a remote task broke: on its way from the task done to the next one, which task_done() took into TAKE already, as work_discard() is, the next one, never run, isn't to fail for it but to go back to PLAN, as work_discard() has it when DISCARD ALL fails
+#define work_broken(...) do { \
+    if (t->socket == work_discard) { \
+        ereport(WARNING, __VA_ARGS__); \
+        task_untake(t); \
+        work_finish(t); \
+    } else work_error(__VA_ARGS__); \
+} while(0)
+
 static
 #if PG_VERSION_NUM >= 120000 && defined(GP_VERSION_NUM)
 void
@@ -360,11 +369,11 @@ static int work_nevents(void) {
     int nevents = 2;
     dlist_foreach_modify(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
-        if (PQstatus(t->conn) == CONNECTION_BAD) { work_error((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), work_errdetail(PQerrorMessage(t->conn)))); continue; }
-        if (PQsocket(t->conn) == PGINVALID_SOCKET) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsocket == PGINVALID_SOCKET"), work_errdetail(PQerrorMessage(t->conn)))); continue; }
+        if (PQstatus(t->conn) == CONNECTION_BAD) { work_broken((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), work_errdetail(PQerrorMessage(t->conn)))); continue; }
+        if (PQsocket(t->conn) == PGINVALID_SOCKET) { work_broken((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsocket == PGINVALID_SOCKET"), work_errdetail(PQerrorMessage(t->conn)))); continue; }
         // a nonblocking connection sends only what the socket takes and keeps the rest of a long query or input, which the server waits for: send more of it whenever the socket is writable again, reading what the server answers meanwhile
         if (PQstatus(t->conn) == CONNECTION_OK) switch (PQflush(t->conn)) {
-            case -1: work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQflush failed"), work_errdetail(PQerrorMessage(t->conn)))); continue;
+            case -1: work_broken((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQflush failed"), work_errdetail(PQerrorMessage(t->conn)))); continue;
             case 0: t->event &= ~WL_SOCKET_WRITEABLE; break;
             default: t->event |= WL_SOCKET_WRITEABLE; break;
         }
@@ -512,7 +521,7 @@ static void work_latch(const Work *w) {
 }
 
 static void work_readable(Task *t) {
-    if (PQstatus(t->conn) == CONNECTION_OK && !PQconsumeInput(t->conn)) { work_error((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("!PQconsumeInput"), work_errdetail(PQerrorMessage(t->conn)))); return; }
+    if (PQstatus(t->conn) == CONNECTION_OK && !PQconsumeInput(t->conn)) { work_broken((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("!PQconsumeInput"), work_errdetail(PQerrorMessage(t->conn)))); return; }
     t->socket(t);
 }
 
