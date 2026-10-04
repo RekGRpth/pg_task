@@ -440,6 +440,19 @@ bool dest_timeout(void) {
     pgstat_report_activity(STATE_IDLE, NULL);
     set_ps_display_my("idle");
     exit = task_done(&task, true);
-    if (!exit && !task.save) dest_discard();
+    if (!exit && !task.save) {
+        // the next task, which task_done() took into TAKE already, mustn't stay there, counted against the max of its group, until reset, for a worker that can't reset its session for it and goes: give it back, cleaning up after the error first, as after one of an input
+        PG_TRY();
+            dest_discard();
+        PG_CATCH();
+            if (task.shared->spi) {
+                EmitErrorReport();
+                FlushErrorState();
+                SPI_abort_my();
+            } else dest_catch();
+            task_untake(&task);
+            exit = true;
+        PG_END_TRY();
+    }
     return exit;
 }
