@@ -1268,9 +1268,11 @@ void work_main(Datum main_arg) {
 #endif
 #endif
 #endif
+    if (!lock_data_make(MyDatabaseId)) ereport(WARNING, (errmsg("!lock_data_make(%i)", MyDatabaseId)));
     make_schema(&work);
     make_type(&work);
     make_table(&work);
+    if (!unlock_data_make(MyDatabaseId)) ereport(WARNING, (errmsg("!unlock_data_make(%i)", MyDatabaseId)));
 #ifdef GP_VERSION_NUM
 #ifdef HAVE_CREATING_EXTENSION_LOCAL
     creating_extension_local = false;

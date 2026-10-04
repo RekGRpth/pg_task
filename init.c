@@ -112,6 +112,19 @@ bool lock_data_user(Oid data, Oid user) {
     return LockAcquire(&tag, AccessExclusiveLock, true, true) == LOCKACQUIRE_OK;
 }
 
+// the self-provisioning of pg_work in a database, waited for: two of them, for tables of the same schema, would both find it or its enum of states missing, and both create it, the second one failing on the first one's
+bool lock_data_make(Oid data) {
+    LOCKTAG tag = {data, 0, 0, 8, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "data = %i", data);
+    return LockAcquire(&tag, AccessExclusiveLock, true, false) == LOCKACQUIRE_OK;
+}
+
+bool unlock_data_make(Oid data) {
+    LOCKTAG tag = {data, 0, 0, 8, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "data = %i", data);
+    return LockRelease(&tag, AccessExclusiveLock, true);
+}
+
 bool lock_table_id(Oid table, int64 id) {
     LOCKTAG tag = {table, (uint32)(id >> 32), (uint32)id, 4, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
     elog(DEBUG1, "table = %i, id = %li", table, id);
