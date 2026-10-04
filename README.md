@@ -85,7 +85,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | pg_task.json | json | [{"data":"postgres"}] | config | Json configuration, available keys: data, reset, run, schema, sleep, spi, table and user |
 | pg_task.live | interval | 0 sec | config, database, user, session | Non-negative maximum time of live of current background worker process before exit |
 | pg_task.null | text | \N | config, database, user, session | Null text value representation |
-| pg_task.plan | timestamptz | statement_timestamp() | config, database, user, session | Default value for plan timestamp |
+| pg_task.plan | timestamptz | statement_timestamp() | config, database, user, session (superuser only) | Default value for plan timestamp, and what the scheduler takes for now: an SQL expression, run as `pg_task.user`, so only a superuser may set it |
 | pg_task.quote | char | | config, database, user, session | Results columns quote |
 | pg_task.repeat | interval | 0 sec | config, database, user, session | Non-negative auto repeat tasks interval |
 | pg_task.reset | interval | 1 hour | config, database, user | Interval of reset tasks |

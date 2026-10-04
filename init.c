@@ -275,7 +275,7 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_task.json", "pg_task json", "Json configuration, available keys: data, reset, run, schema, sleep, spi, table and user", &init.task.json, SQL([{"data":"postgres"}]), PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.live", "pg_task live", "Non-negative maximum time of live of current background worker process before exit", &init.task.live, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.null", "pg_task null", "Null text value representation", &init.null, "\\N", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.plan", "pg_task plan", "Default value for plan timestamp", &init.plan, "statement_timestamp()", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.plan", "pg_task plan", "Default value for plan timestamp", &init.plan, "statement_timestamp()", PGC_SUSET, 0, NULL, NULL, NULL); // an SQL expression, which the bookkeeping, as pg_task.user, and pg_work run as is: for superusers only to set, not for task authors in their own sessions
     DefineCustomStringVariable("pg_task.quote", "pg_task quote", "Results columns quote", &init.task.quote, "", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.repeat", "pg_task repeat", "Non-negative auto repeat tasks interval", &init.task.repeat, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.reset", "pg_task reset", "Interval of reset tasks", &init.task.reset, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
