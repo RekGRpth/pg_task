@@ -101,6 +101,7 @@ static dlist_head cancels;
 #define WORK_CANCEL_TIMEOUT 10000 // milliseconds a cancel request, a single packet, may take to get through
 #endif
 static volatile uint64 idle_count = 0;
+static volatile sig_atomic_t woken = false; // by the wake-up trigger, see work_idle()
 static Work work = {0};
 
 Work *get_work(void) {
@@ -1115,8 +1116,12 @@ static void work_sleep(Work *w) {
     } while (SPI_processed);
     SPI_cursor_close_my(portal);
     SPI_finish_my();
-    if (dlist_is_empty(&head)) idle_count++; else {
+    if (dlist_is_empty(&head)) {
+        // the wake-up trigger signals from within the transaction that inserts or plans the task, before it commits, so the pass right after may well not see it yet: not one to count towards going idle, which waits with no timeout for a task it doesn't see, but for the next one
+        if (woken) woken = false; else idle_count++;
+    } else {
         idle_count = 0;
+        woken = false;
         dlist_foreach_modify(iter, &head) {
             Task *t = dlist_container(Task, node, iter.cur);
             t->remote ? work_remote(t) : work_task(t);
@@ -1138,6 +1143,7 @@ static void work_idle(SIGNAL_ARGS) {
         QueryCancelPending = true;
     }
     idle_count = 0;
+    woken = true;
     SetLatch(MyLatch);
     errno = save_errno;
 }
