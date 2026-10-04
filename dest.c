@@ -401,6 +401,7 @@ void dest_cancel(SIGNAL_ARGS) {
 bool dest_timeout(void) {
     bool exit;
     int StatementTimeoutMy = StatementTimeout;
+    volatile bool released = false, finished = false;
     if (task_work(&task)) return true;
     task.skip = 0; // or a task failed before in this worker would hide the command tag of the next one, and with nothing else to output have it deleted
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
@@ -418,7 +419,13 @@ bool dest_timeout(void) {
         running = false;
         QueryCancelPending = false; // a cancel that came too late for the input, after its last CHECK_FOR_INTERRUPTS(), isn't meant for the bookkeeping, outside any PG_TRY()
         SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
-        if (task.shared->spi) ReleaseCurrentSubTransaction();
+        if (task.shared->spi) {
+            ReleaseCurrentSubTransaction();
+            released = true;
+            // the commit of the input, whose deferred triggers and constraints, serialization check or notifications may fail it too, as exec_simple_query() has it in local mode: here, rather than fail the worker, and have the task run again on every reset
+            SPI_finish_my();
+            finished = true;
+        }
     PG_CATCH();
         running = false;
         QueryCancelPending = false; // a cancel of the input that failed otherwise first, its program killed by the SIGINT dest_cancel() sends with it, say, is for no task any more: rather than fail its bookkeeping, outside any PG_TRY()
@@ -426,15 +433,20 @@ bool dest_timeout(void) {
         if (task.output.len > (int)TASK_OUTPUT_MAX) task.output.data[task.output.len = pg_mbcliplen(task.output.data, task.output.len, TASK_OUTPUT_MAX)] = '\0'; // past the most it may keep, see TASK_OUTPUT_MAX, as the string buffer would take up to MaxAllocSize
         dest_catch();
         if (task.shared->spi) {
-            RollbackAndReleaseCurrentSubTransaction();
+            if (!released) {
+                RollbackAndReleaseCurrentSubTransaction();
 #if PG_VERSION_NUM < 100000
-            SPI_restore_connection();
+                SPI_restore_connection();
 #endif
+            } else if (!finished) {
+                SPI_abort_my(); // the commit failed
+                finished = true;
+            }
         }
         // only once the failed (sub)transaction is gone, whose abort would take it back to the author's search_path, for the task's bookkeeping to run with
         SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     PG_END_TRY();
-    if (task.shared->spi) SPI_finish_my();
+    if (task.shared->spi && !finished) SPI_finish_my();
     StatementTimeout = StatementTimeoutMy;
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
