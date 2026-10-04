@@ -383,6 +383,34 @@ static void dest_discard(void) {
 }
 
 static volatile sig_atomic_t running = false; // the task's input, rather than its bookkeeping, which a cancel must not fail
+static bool fatal = false; // the input failed with FATAL, see dest_emit_log()
+static emit_log_hook_type emit_log_hook_prev = NULL;
+
+// FATAL takes the worker down right away, with no PG_CATCH() to record the error of the input, as exit_on_error or transaction_timeout make one, and the task stays in WORK, to run again on every reset: take it for the task as it's logged, for dest_shmem_exit() to record, but for a termination, as on a shutdown, which leaves the task, not done, to be run again
+static void dest_emit_log(ErrorData *edata) {
+    if (running && !fatal && task.shared && edata->elevel == FATAL && edata->sqlerrcode != ERRCODE_ADMIN_SHUTDOWN) {
+        fatal = true;
+        task_error_data(&task, edata);
+    }
+    if (emit_log_hook_prev) emit_log_hook_prev(edata);
+}
+
+// on the way out after such a FATAL, before the connection's own exit callback, as the one removing temporary tables does: abort the input's transaction and fail the task
+static void dest_shmem_exit(int code, Datum arg) {
+    if (!code || !fatal) return;
+    fatal = false;
+    running = false;
+    QueryCancelPending = false;
+    AbortOutOfAnyTransaction();
+    if (task.output.len > (int)TASK_OUTPUT_MAX) task.output.data[task.output.len = pg_mbcliplen(task.output.data, task.output.len, TASK_OUTPUT_MAX)] = '\0';
+    (void)task_done(&task, false);
+}
+
+void dest_init(void) {
+    emit_log_hook_prev = emit_log_hook;
+    emit_log_hook = dest_emit_log;
+    before_shmem_exit(dest_shmem_exit, (Datum)0);
+}
 
 // work_stop()'s cancel of a task in STOP, sent as SIGUSR2 rather than the SIGINT of pg_cancel_backend(), which stays as it is: it's for the task work_stop() saw this worker hold the lock of, which this worker may be done with by now and running the next one or recording the result, so cancel the query as StatementCancelHandler() does only while running the input of that very task
 void dest_cancel(SIGNAL_ARGS) {

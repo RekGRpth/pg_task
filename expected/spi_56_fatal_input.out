@@ -1,0 +1,21 @@
+-- an input failing with FATAL, which exit_on_error makes of any error, or transaction_timeout raises from 17 on, takes its worker down at once, with no error handling: the task fails all the same, with that error, rather than stay in WORK, to run again on every reset
+DELETE FROM task WHERE "group" = 'fatal_input';
+\set remote NULL
+INSERT INTO task ("group", remote, input) VALUES
+    ('fatal_input', :remote, 'SET exit_on_error = on; SELECT 1/0'),
+    ('fatal_input', :remote, 'SET transaction_timeout = 1000; SELECT pg_sleep(3)');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'fatal_input' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''fatal_input'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT input LIKE '%exit_on_error%' AS exit_on_error, state, error LIKE '%division by zero%' OR error LIKE '%transaction timeout%' OR (input LIKE '%transaction_timeout%' AND current_setting('server_version_num')::int < 170000) AS its_error FROM task WHERE "group" = 'fatal_input' ORDER BY id;
+ exit_on_error | state | its_error 
+---------------+-------+-----------
+ t             | FAIL  | t
+ f             | FAIL  | t
+(2 rows)
+
+DELETE FROM task WHERE "group" = 'fatal_input';

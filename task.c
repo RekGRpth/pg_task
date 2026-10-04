@@ -311,6 +311,11 @@ void task_error(Task *t) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
     MemoryContextSwitchTo(oldMemoryContext);
+    task_error_data(t, edata);
+    FreeErrorData(edata);
+}
+
+void task_error_data(Task *t, const ErrorData *edata) {
     if (!t->error.data) initStringInfoMy(&t->error);
     if (!t->output.data) initStringInfoMy(&t->output);
     t->skip++;
@@ -372,7 +377,6 @@ void task_error(Task *t) {
         appendStringInfoString(&t->error, _("STATEMENT:  "));
         append_with_tabs(&t->error, t->input);
     }
-    FreeErrorData(edata);
 }
 
 static void task_shmem_exit(int code, Datum arg) {
@@ -424,6 +428,7 @@ void task_main(Datum main_arg) {
 #else
     BackgroundWorkerInitializeConnectionMy(task->shared->data, task->shared->owner);
 #endif
+    dest_init(); // once connected, for its exit callback to run before the one of the connection
     StartTransactionCommand();
     userid = get_role_oid(task->shared->user, false);
     CommitTransactionCommand();

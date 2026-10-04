@@ -126,6 +126,7 @@ typedef struct Task {
 } Task;
 
 bool dest_timeout(void);
+void dest_init(void);
 bool init_free_task(int slot, const char *data, Oid oid, int64 id);
 bool init_free_work(int slot, const char *data, const char *user, int hash);
 void init_work(int n, const char **data, const char **user, const int *hash, bool *in_use);
@@ -183,6 +184,7 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_finish_my(void);
 void stmt_timeout_active_my(bool value);
 void task_error(Task *t);
+void task_error_data(Task *t, const ErrorData *edata);
 void task_free(Task *t);
 void task_untake(Task *t);
 void xact_started_my(bool value);
