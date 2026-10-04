@@ -37,6 +37,13 @@
 #include <utils/rel.h>
 #endif
 
+// to act as a role, as a task runs as its author, or to see its tasks: from 16 on, MEMBER is any membership, also one WITH SET FALSE, which doesn't let SET ROLE to it, as pg_task.user is checked with in work_owner(), while before it every membership did
+#if PG_VERSION_NUM >= 160000
+#define MAKE_ACT "SET"
+#else
+#define MAKE_ACT "MEMBER"
+#endif
+
 volatile sig_atomic_t make_lock_timeout = false; // the DDL below is running, whose lock timeout pg_work's own SIGINT handler, which lock timeouts signal through, is to let through, see work_idle()
 
 static void make_ddl(const char *src, int res) {
@@ -306,14 +313,14 @@ static void make_user_immutable(const Work *w) {
         BEGIN
             IF TG_OP OPERATOR(pg_catalog.=) 'INSERT' THEN
                 BEGIN
-                    IF NOT pg_catalog.pg_has_role(current_user, NEW."user", 'MEMBER') AND NOT pg_catalog.pg_has_role(current_user, (SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) TG_RELID), 'MEMBER') THEN NEW."user" := current_user; END IF;
+                    IF NOT pg_catalog.pg_has_role(current_user, NEW."user", '%1$s') AND NOT pg_catalog.pg_has_role(current_user, (SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) TG_RELID), '%1$s') THEN NEW."user" := current_user; END IF;
                 EXCEPTION WHEN undefined_object THEN NEW."user" := current_user;
                 END;
             ELSIF NEW."user" IS DISTINCT FROM OLD."user" THEN RAISE EXCEPTION 'user column is immutable';
             END IF;
             RETURN NEW;
         END;
-    ));
+    ), MAKE_ACT);
     make_function(w, name.data, source.data, false);
     make_trigger(w, name.data, TRIGGER_TYPE_BEFORE | TRIGGER_TYPE_INSERT | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, "user");
     pfree(name.data);
@@ -329,7 +336,7 @@ static void make_state_machine(const Work *w) {
     initStringInfoMy(&source);
     appendStringInfo(&source, SQL(
         BEGIN
-            IF NEW."state" OPERATOR(pg_catalog.<>) OLD."state" AND NEW."state" OPERATOR(pg_catalog.<>) ALL (CASE WHEN pg_catalog.pg_has_role(current_user, (SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) TG_RELID), 'MEMBER') THEN CASE OLD."state"
+            IF NEW."state" OPERATOR(pg_catalog.<>) OLD."state" AND NEW."state" OPERATOR(pg_catalog.<>) ALL (CASE WHEN pg_catalog.pg_has_role(current_user, (SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) TG_RELID), '%2$s') THEN CASE OLD."state"
                 WHEN 'PLAN'::%1$s THEN ARRAY['TAKE', 'GONE', 'STOP']::%1$s[]
                 WHEN 'TAKE'::%1$s THEN ARRAY['WORK', 'PLAN', 'DONE', 'FAIL']::%1$s[]
                 WHEN 'WORK'::%1$s THEN ARRAY['DONE', 'FAIL', 'PLAN', 'STOP']::%1$s[]
@@ -338,7 +345,7 @@ static void make_state_machine(const Work *w) {
             END IF;
             RETURN NEW;
         END;
-    ), w->schema_type);
+    ), w->schema_type, MAKE_ACT);
     make_function(w, name.data, source.data, false);
     make_trigger(w, name.data, TRIGGER_TYPE_BEFORE | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, "state");
     pfree(name.data);
@@ -413,7 +420,7 @@ static void make_policy(const Work *w) {
     initStringInfoMy(&expr);
     {
         const char *quote_table = quote_literal_cstr(w->schema_table);
-        appendStringInfo(&expr, "\"user\" OPERATOR(pg_catalog.=) CURRENT_USER OR pg_catalog.pg_has_role((SELECT \"oid\" FROM \"pg_catalog\".\"pg_roles\" WHERE \"rolname\" OPERATOR(pg_catalog.=) \"user\"), 'MEMBER') OR pg_catalog.pg_has_role((SELECT \"relowner\" FROM \"pg_catalog\".\"pg_class\" WHERE \"oid\" OPERATOR(pg_catalog.=) %s::pg_catalog.regclass), 'MEMBER')", quote_table);
+        appendStringInfo(&expr, "\"user\" OPERATOR(pg_catalog.=) CURRENT_USER OR pg_catalog.pg_has_role((SELECT \"oid\" FROM \"pg_catalog\".\"pg_roles\" WHERE \"rolname\" OPERATOR(pg_catalog.=) \"user\"), '%2$s') OR pg_catalog.pg_has_role((SELECT \"relowner\" FROM \"pg_catalog\".\"pg_class\" WHERE \"oid\" OPERATOR(pg_catalog.=) %1$s::pg_catalog.regclass), '%2$s')", quote_table, MAKE_ACT);
         pfree((void *)quote_table);
     }
     initStringInfoMy(&name);
