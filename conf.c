@@ -120,7 +120,11 @@ static void conf_work(Work *w, bool in_use) {
             conf_free(w);
             break;
         }
-        case BGWH_STOPPED: init_free_work(slot, w->shared->data, w->shared->user, w->shared->hash); ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
+        case BGWH_STOPPED: // gone before it was seen to start, with its exit code 1 the postmaster would restart it after a while still, with the slot freed here, by then maybe someone else's: cancel that first, as conf_reconcile() does
+            TerminateBackgroundWorker(handle);
+            pfree(handle);
+            init_free_work(slot, w->shared->data, w->shared->user, w->shared->hash);
+            ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     if (handle) pfree(handle);
 }
@@ -268,6 +272,9 @@ static void conf_check(void) {
             EmitErrorReport();
             FlushErrorState();
             SPI_abort_my();
+            // and the state of exec_simple_query() too, which CREATE DATABASE of make_data() runs through, as PostgresMain() resets it after an error, or the next one would take a transaction for started already, and run with none
+            xact_started_my(false);
+            stmt_timeout_active_my(false);
             conf_free(w);
         PG_END_TRY();
     }
