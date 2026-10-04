@@ -74,7 +74,8 @@ static void conf_free(Work *w) {
     pfree(w);
 }
 
-static void conf_work(Work *w) {
+// in_use: a pg_work of the entry has a slot already, one started by an earlier pg_conf, say, which the postmaster restarts while it can't connect: make its role and database, for it to connect at last, but start no other one
+static void conf_work(Work *w, bool in_use) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker = {0};
     int slot;
@@ -86,6 +87,7 @@ static void conf_work(Work *w) {
     make_data(w);
     if (w->data != w->shared->data) pfree((void *)w->data);
     if (w->user != w->shared->user) pfree((void *)w->user);
+    if (in_use) { elog(DEBUG1, "data = %s, user = %s, hash = %i, in use", w->shared->data, w->shared->user, w->shared->hash); conf_free(w); return; }
     if ((len = strlcpy(worker.bgw_function_name, "work_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
     if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
     if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_work %s %s %li", w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1)));
@@ -125,6 +127,8 @@ static void conf_work(Work *w) {
 
 static void conf_check(void) {
     bool ok = true;
+    bool *in_use;
+    int n;
     dlist_mutable_iter iter;
     MemoryContext oldMemoryContext = CurrentMemoryContext;
     Portal portal;
@@ -229,12 +233,36 @@ static void conf_check(void) {
         return;
     }
     conf_reconcile();
+    n = 0;
+    dlist_foreach_modify(iter, &head) n++;
+    in_use = palloc0(Max(n, 1) * sizeof(*in_use));
+    {
+        const char **data, **user;
+        int *hash;
+        data = palloc0(Max(n, 1) * sizeof(*data));
+        user = palloc0(Max(n, 1) * sizeof(*user));
+        hash = palloc0(Max(n, 1) * sizeof(*hash));
+        n = 0;
+        dlist_foreach_modify(iter, &head) {
+            Work *w = dlist_container(Work, node, iter.cur);
+            data[n] = w->shared->data;
+            user[n] = w->shared->user;
+            hash[n] = w->shared->hash;
+            n++;
+        }
+        init_work(n, data, user, hash, in_use);
+        pfree(data);
+        pfree(user);
+        pfree(hash);
+    }
+    n = 0;
     dlist_foreach_modify(iter, &head) {
         Work *w = dlist_container(Work, node, iter.cur);
+        bool used = in_use[n++];
         if (!w->spawn) { conf_free(w); continue; }
         // an entry that can't be started, its role not made (a reserved name), its database neither (template1 in use), or no worker to be had, mustn't take pg_conf down, to be restarted into the same error over and over, keeping the entries after it from starting: report it and go on, for it to be tried again on the next reload
         PG_TRY();
-            conf_work(w);
+            conf_work(w, used);
         PG_CATCH();
             MemoryContextSwitchTo(oldMemoryContext);
             EmitErrorReport();
@@ -243,6 +271,7 @@ static void conf_check(void) {
             conf_free(w);
         PG_END_TRY();
     }
+    pfree(in_use);
 }
 
 static void conf_reload(void) {

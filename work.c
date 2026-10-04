@@ -1172,6 +1172,8 @@ void work_main(Datum main_arg) {
 #endif
     if (!work.shared->in_use) { ereport(LOG, (errmsg("shared slot not in use, waiting for pg_conf to reinitialize"))); return; } // before registering work_shmem_exit, so that a slot that isn't ours never gets freed
     before_shmem_exit(work_shmem_exit, main_arg);
+    if (init_work_gone(main_arg)) { ereport(LOG, (errmsg("entry no longer in pg_task.json, or taken over by another pg_work"))); return; } // restarted by the postmaster after its entry is gone, or another pg_work was started for it, which pg_conf, with no handle of it, marked in its slot: exit cleanly, for it not to be restarted again, freeing its slot, before connecting, which may well be why it was restarted
+    work.shared->pid = MyProcPid; // alive, for pg_conf not to start another one for its entry, see init_work()
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGINT, work_idle);
     pqsignal(SIGTERM, die); // terminate at the next CHECK_FOR_INTERRUPTS(), as a backend does, rather than in the default handler of background workers, whose FATAL right there can come in the middle of a commit

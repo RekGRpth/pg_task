@@ -385,6 +385,27 @@ bool init_free_work(int slot, const char *data, const char *user, int hash) {
     return freed;
 }
 
+// the slots of pg_work are what pg_conf knows of the ones it started across its own restarts, which lose its handles of them: one that crashed, or can't connect, its database not allowing connections, say, is restarted by the postmaster after a while with its slot kept, and over and over in the latter case, so a pg_conf restarted meanwhile mustn't add another one for its entry each time, nor leave it restarting once its entry is gone; in one go, for a pg_work restarted meanwhile not to see a state half way: in_use tells of each entry wanted whether a pg_work of it is alive, started and not exited yet, or starting, with no pid yet, for no other one to be started; one that isn't, waiting to be restarted, is gone, taken over by the one pg_conf starts now, as is one whose entry is gone, for either to exit cleanly once restarted, freeing its slot
+void init_work(int n, const char **data, const char **user, const int *hash, bool *in_use) {
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    for (int i = 0; i < n; i++) in_use[i] = false;
+    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].id && !shared[slot].gone) {
+        int wanted = -1;
+        for (int i = 0; i < n; i++) if (shared[slot].hash == hash[i] && !strcmp(shared[slot].data, data[i]) && !strcmp(shared[slot].user, user[i])) { wanted = i; break; }
+        if (wanted >= 0 && (!shared[slot].pid || !kill(shared[slot].pid, 0) || errno != ESRCH)) in_use[wanted] = true;
+        else shared[slot].gone = true;
+    }
+    LWLockRelease(BackgroundWorkerLock);
+}
+
+bool init_work_gone(Datum main_arg) {
+    bool gone;
+    LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
+    gone = shared[DatumGetInt32(main_arg)].gone;
+    LWLockRelease(BackgroundWorkerLock);
+    return gone;
+}
+
 // the same for the slot of a task worker that stopped before pg_work saw it start: one that ran and exited meanwhile has freed it itself, and by now it may belong to someone else
 bool init_free_task(int slot, const char *data, Oid oid, int64 id) {
     bool freed;
