@@ -466,6 +466,7 @@ void task_main(Datum main_arg) {
     SetConfigOption("pg_task.oid", oid.data, PGC_USERSET, PGC_S_SESSION);
     pfree(oid.data);
     task->pid = MyProcPid;
+    task->shared->pid = MyProcPid; // for pg_work to count this worker in its group by its slot, see init_task_pids(), once, with its lock
     task->start = GetCurrentTimestamp();
     set_ps_display_my("idle");
     if (!lock_table_pid_hash(task->shared->oid, task->pid, task->shared->hash)) { ereport(WARNING, (errmsg("!lock_table_pid_hash(%i, %i, %i)", task->shared->oid, task->pid, task->shared->hash))); return; }

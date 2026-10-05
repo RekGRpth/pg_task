@@ -1083,11 +1083,12 @@ static void work_appname(const Work *w) {
 }
 
 static void work_sleep(Work *w) {
-    Datum values[] = {Int32GetDatum(w->shared->run), Int32GetDatum(w->shared->limit), Int32GetDatum(0)};
+    Datum values[] = {Int32GetDatum(w->shared->run), Int32GetDatum(w->shared->limit), Int32GetDatum(0), (Datum)0, (Datum)0};
     dlist_head head;
     dlist_mutable_iter iter;
     Portal portal;
-    static Oid argtypes[] = {INT4OID, INT4OID, INT4OID};
+    static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TEXTOID, TEXTOID};
+    StringInfoData pids, hashes;
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return; // its entry gone from pg_task.json, found by the reload in this very turn of its loop, say: take no task it won't run, to be left in TAKE once it's gone
@@ -1095,6 +1096,17 @@ static void work_sleep(Work *w) {
     set_ps_display_my("sleep");
     work_reap(w);
     values[2] = Int32GetDatum(init_free_slots());
+    initStringInfoMy(&pids);
+    initStringInfoMy(&hashes);
+    appendStringInfoChar(&pids, '{');
+    appendStringInfoChar(&hashes, '{');
+    init_task_pids(w->shared->data, w->shared->oid, &pids, &hashes);
+    appendStringInfoChar(&pids, '}');
+    appendStringInfoChar(&hashes, '}');
+    values[3] = CStringGetTextDatumMy(pids.data);
+    values[4] = CStringGetTextDatumMy(hashes.data);
+    pfree(pids.data);
+    pfree(hashes.data);
     dlist_init(&head);
 #ifdef GP_VERSION_NUM
     if (true) {
@@ -1122,10 +1134,13 @@ static void work_sleep(Work *w) {
             ),
         ), w->schema_table, init_plan());
 #endif
-        // the slots taken in each group: one per pid holding the slot lock (a task worker and we for it hold the same one), plus one per remote task not yet connected; the tasks that fit in the slots left in their group, cut there before the limit, not after it, or a group with more tasks due than it has slots for would take up the whole limit and keep the others waiting for the next pass, and of them the local ones that fit in the slots of pg_task free now, each needing a task worker in one, as a remote one doesn't, for no more of them to be taken only to go back to PLAN, and only then locked, as a window function can't be
+        // the slots taken in each group: one per pid holding the slot lock (a task worker and we for it hold the same one), or having a slot of a task worker of the group, which its input can't let go of, as it can of its lock, with pg_advisory_unlock_all() say, and which an earlier pg_work, restarted since, held no more, plus one per remote task not yet connected; the tasks that fit in the slots left in their group, cut there before the limit, not after it, or a group with more tasks due than it has slots for would take up the whole limit and keep the others waiting for the next pass, and of them the local ones that fit in the slots of pg_task free now, each needing a task worker in one, as a remote one doesn't, for no more of them to be taken only to go back to PLAN, and only then locked, as a window function can't be
         appendStringInfo(&src, SQL(
             l AS (
-                SELECT pg_catalog.count(DISTINCT CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 5 THEN "classid" END) OPERATOR(pg_catalog.+) pg_catalog.count(CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 7 THEN "classid" END) AS "classid", "objid" FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessShareLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) ANY(ARRAY[5, 7]) AND "database" OPERATOR(pg_catalog.=) %2$i GROUP BY "objid"
+                SELECT pg_catalog.count(DISTINCT CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 5 THEN "classid" END) OPERATOR(pg_catalog.+) pg_catalog.count(CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 7 THEN "classid" END) AS "classid", "objid" FROM (
+                    SELECT "classid", "objid", "objsubid" FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessShareLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) ANY(ARRAY[5, 7]) AND "database" OPERATOR(pg_catalog.=) %2$i
+                    UNION ALL SELECT ((($4)::pg_catalog.int4[])["i"])::pg_catalog.oid, ((($5)::pg_catalog.int4[])["i"])::pg_catalog.oid, 5::pg_catalog.int2 FROM pg_catalog.generate_subscripts(($4)::pg_catalog.int4[], 1) AS w ("i")
+                ) AS l GROUP BY "objid"
             ), c AS (
                 SELECT "id", "local", "hash", "count" AS "priority", "count" OPERATOR(pg_catalog.-) pg_catalog.row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM (
                     SELECT "id", "remote" IS NULL AS "local", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) AS "hash", CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" OPERATOR(pg_catalog.=) pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s'))
@@ -1155,6 +1170,8 @@ static void work_sleep(Work *w) {
     SPI_connect_my(src.data, InvalidOid);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL, false);
+    pfree((void *)values[3]);
+    pfree((void *)values[4]);
     do {
         SPI_cursor_fetch_my(src.data, portal, true, init_work_fetch());
         for (uint64 row = 0; row < SPI_processed; row++) {
@@ -1166,6 +1183,7 @@ static void work_sleep(Work *w) {
             t->user = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "user", false, TEXTOID));
             t->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(Shared));
             *t->shared = *w->shared;
+            t->shared->pid = 0; // ours, rather than that of the task worker, which sets it itself, see init_task_pids()
             t->work = w;
             t->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
             t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false, INT8OID));

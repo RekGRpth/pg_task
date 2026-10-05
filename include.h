@@ -151,6 +151,7 @@ void unlock_advisory_all(void);
 void relock_table_id(Oid table, int64 id);
 void relock_table_pid_hash(Oid table, int pid, int hash);
 void init_task_ids(StringInfo ids, const char *data, Oid oid);
+void init_task_pids(const char *data, Oid oid, StringInfo pids, StringInfo hashes);
 bool unlock_table_id(Oid table, int64 id);
 bool unlock_table_id_hash(Oid table, int64 id, int hash);
 bool unlock_table_pid_hash(Oid table, int pid, int hash);

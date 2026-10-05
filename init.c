@@ -474,6 +474,16 @@ void init_task_ids(StringInfo ids, const char *data, Oid oid) {
     LWLockRelease(BackgroundWorkerLock);
 }
 
+// the task workers of a table, by their slots, each with its pid, or a placeholder unlike any for one yet to start, and the hash of its group: for a pass to count the slots of a group taken with them too, which their inputs can't let go of, as they can of their locks, a worker counted once, its lock held still or not (see work_sleep())
+void init_task_pids(const char *data, Oid oid, StringInfo pids, StringInfo hashes) {
+    LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
+    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && shared[slot].id && shared[slot].oid == oid && !strcmp(shared[slot].data, data)) {
+        appendStringInfo(pids, "%s%i", pids->len > 1 ? "," : "", shared[slot].pid ? shared[slot].pid : -1 - slot);
+        appendStringInfo(hashes, "%s%i", hashes->len > 1 ? "," : "", shared[slot].hash);
+    }
+    LWLockRelease(BackgroundWorkerLock);
+}
+
 bool init_work_gone(Datum main_arg) {
     bool gone;
     LWLockAcquire(BackgroundWorkerLock, LW_SHARED);

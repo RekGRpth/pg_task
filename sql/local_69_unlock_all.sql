@@ -1,4 +1,4 @@
--- pg_advisory_unlock_all() in an input lets go of the locks of pg_task too, which tell a running task and its group by: a pg_work restarted meanwhile, which knows the task workers of the one before it only by them, still doesn't take the task for orphaned, back to PLAN, to run it once more, and the locks are taken back after the command
+-- pg_advisory_unlock_all() in an input lets go of the locks of pg_task too, which tell a running task and its group by: a pg_work restarted meanwhile, which knows the task workers of the one before it but by them and by their slots, still doesn't take the task for orphaned, back to PLAN, to run it once more, and the locks are taken back after the command
 DELETE FROM task WHERE "group" = 'unlock_all';
 CREATE TABLE unlock_all_runs (a int);
 GRANT INSERT ON unlock_all_runs TO PUBLIC;
@@ -25,6 +25,8 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work to be restarted'; END IF;
 END;$body$ LANGUAGE plpgsql;
+-- nor takes the group for free of the task, its slot still taken by the worker, which counts as its lock did: the next task of the group waits for the first one to be done
+INSERT INTO task ("group", input) VALUES ('unlock_all', 'SELECT 2');
 -- until no task worker of the group is left, the one of a second run included
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
@@ -37,6 +39,7 @@ END;$body$ LANGUAGE plpgsql;
 ALTER SYSTEM RESET pg_task.reset;
 SELECT pg_reload_conf();
 SELECT count(*) AS runs FROM unlock_all_runs;
+SELECT (SELECT start FROM task WHERE "group" = 'unlock_all' AND input = 'SELECT 2') >= (SELECT max(stop) FROM task WHERE "group" = 'unlock_all' AND input LIKE 'SELECT pg_advisory_unlock_all(), %') AS one_at_a_time;
 -- the locks back after the input that let go of them, the one of the group and the one of the task, for the bookkeeping to find them, and the worker to go on with the next task of the group, rather than exit for the lock it missed
 INSERT INTO task ("group", input, count) VALUES ('unlock_all', 'SELECT pg_advisory_unlock_all()', 5), ('unlock_all', 'SELECT count(*) FROM pg_locks WHERE locktype = ''userlock'' AND pid = pg_backend_pid()', 5);
 DO $body$ DECLARE ok boolean := false; BEGIN
