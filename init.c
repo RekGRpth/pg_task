@@ -190,6 +190,27 @@ void unlock_advisory_all(void) {
     }
 }
 
+// a lock of pg_task back, which an input may have let go of, as pg_advisory_unlock_all() and DISCARD ALL let go of user locks with advisory ones: held still, the hold just taken goes again, for it to stay held once
+static void relock(const LOCKTAG *tag, LOCKMODE mode) {
+    switch (LockAcquire(tag, mode, true, true)) {
+        case LOCKACQUIRE_OK: elog(DEBUG1, "taken back"); break;
+        case LOCKACQUIRE_NOT_AVAIL: ereport(WARNING, (errmsg("could not take back lock %u, %u, %u, %u", tag->locktag_field1, tag->locktag_field2, tag->locktag_field3, tag->locktag_field4))); break;
+        default: LockRelease(tag, mode, true); break;
+    }
+}
+
+void relock_table_id(Oid table, int64 id) {
+    LOCKTAG tag = {table, (uint32)(id >> 32), (uint32)id, 4, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "table = %i, id = %li", table, id);
+    relock(&tag, AccessExclusiveLock);
+}
+
+void relock_table_pid_hash(Oid table, int pid, int hash) {
+    LOCKTAG tag = {table, (uint32)pid, (uint32)hash, 5, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "table = %i, pid = %i, hash = %i", table, pid, hash);
+    relock(&tag, AccessShareLock);
+}
+
 static char *text_to_cstring_my(const text *t) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     char *result = text_to_cstring(t);
@@ -444,6 +465,13 @@ void init_work_wake(const Shared *task) {
     for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].id && !shared[slot].gone && shared[slot].pid && !strcmp(shared[slot].data, task->data) && !strcmp(shared[slot].user, task->user) && !strcmp(shared[slot].schema, task->schema) && !strcmp(shared[slot].table, task->table)) { pid = shared[slot].pid; break; }
     LWLockRelease(BackgroundWorkerLock);
     if (pid && kill(pid, SIGINT)) elog(DEBUG1, "could not wake pg_work %i: %m", pid);
+}
+
+// the tasks of a table that task workers run, by their slots, which outlive a restart of the pg_work that started them, and which no input can let go of, as it can of the lock of its task, with pg_advisory_unlock_all() say: for work_reset() not to take them for orphaned
+void init_task_ids(StringInfo ids, const char *data, Oid oid) {
+    LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
+    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && shared[slot].id && shared[slot].oid == oid && !strcmp(shared[slot].data, data)) appendStringInfo(ids, "%s%li", ids->len > 1 ? "," : "", shared[slot].id);
+    LWLockRelease(BackgroundWorkerLock);
 }
 
 bool init_work_gone(Datum main_arg) {

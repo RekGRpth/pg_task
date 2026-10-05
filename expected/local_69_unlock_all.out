@@ -1,0 +1,87 @@
+-- pg_advisory_unlock_all() in an input lets go of the locks of pg_task too, which tell a running task and its group by: a pg_work restarted meanwhile, which knows the task workers of the one before it only by them, still doesn't take the task for orphaned, back to PLAN, to run it once more, and the locks are taken back after the command
+DELETE FROM task WHERE "group" = 'unlock_all';
+CREATE TABLE unlock_all_runs (a int);
+GRANT INSERT ON unlock_all_runs TO PUBLIC;
+ALTER SYSTEM SET pg_task.reset = '1 sec';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+INSERT INTO task ("group", input) VALUES ('unlock_all', 'SELECT pg_advisory_unlock_all(), pg_sleep(6); INSERT INTO unlock_all_runs VALUES (1)');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'unlock_all' AND state = 'WORK') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task in group ''unlock_all'' to start'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pg_sleep(0.5);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+SELECT pid AS work_pid FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database()
+\gset
+SELECT set_config('pg_task_test.work_pid', :'work_pid', false) IS NOT NULL AS work_pid_saved;
+ work_pid_saved 
+----------------
+ t
+(1 row)
+
+SELECT pg_terminate_backend(:work_pid) AS work_terminated;
+ work_terminated 
+-----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database() AND pid <> current_setting('pg_task_test.work_pid')::int) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work to be restarted'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- until no task worker of the group is left, the one of a second run included
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'unlock_all' AND state NOT IN ('DONE', 'GONE', 'FAIL')) AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name = 'pg_task public task unlock_all' AND datname = current_database()) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''unlock_all'' to finish (leave PLAN/TAKE/WORK) and its worker to exit'; END IF;
+END;$body$ LANGUAGE plpgsql;
+ALTER SYSTEM RESET pg_task.reset;
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+SELECT count(*) AS runs FROM unlock_all_runs;
+ runs 
+------
+    1
+(1 row)
+
+-- the locks back after the input that let go of them, the one of the group and the one of the task, for the bookkeeping to find them, and the worker to go on with the next task of the group, rather than exit for the lock it missed
+INSERT INTO task ("group", input, count) VALUES ('unlock_all', 'SELECT pg_advisory_unlock_all()', 5), ('unlock_all', 'SELECT count(*) FROM pg_locks WHERE locktype = ''userlock'' AND pid = pg_backend_pid()', 5);
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'unlock_all' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''unlock_all'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, output, error, pid = (SELECT min(pid) FROM task WHERE "group" = 'unlock_all' AND count = 5) AS same_worker FROM task WHERE "group" = 'unlock_all' AND count = 5 ORDER BY id;
+ state | output | error | same_worker 
+-------+--------+-------+-------------
+ DONE  |        |       | t
+ DONE  | 2      |       | t
+(2 rows)
+
+DROP TABLE unlock_all_runs;
+DELETE FROM task WHERE "group" = 'unlock_all';

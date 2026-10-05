@@ -70,6 +70,7 @@ test.conf:
 	echo "shared_preload_libraries = 'pg_task'" >$@
 	echo "max_worker_processes = 20" >>$@
 	echo "pg_conf.restart = 1" >>$@
+	echo "pg_work.restart = 1" >>$@
 	echo "pg_task.json = '[{\"data\":\"$(CONTRIB_TESTDB)\",\"user\":\"$(PG_TASK_TEST_USER)\"}]'" >>$@
 installcheck: test.conf
 check: test.conf

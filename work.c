@@ -442,6 +442,7 @@ static void work_reset(const Work *w) {
     appendStringInfoChar(&ids, '{');
     dlist_foreach(iter, &local) appendStringInfo(&ids, "%s%li", ids.len > 1 ? "," : "", dlist_container(Local, node, iter.cur)->id);
     dlist_foreach(iter, &remote) appendStringInfo(&ids, "%s%li", ids.len > 1 ? "," : "", dlist_container(Task, node, iter.cur)->shared->id);
+    init_task_ids(&ids, w->shared->data, w->shared->oid); // and those of task workers an earlier pg_work started, before it was restarted, which hold the lock of their task no longer, if an input let go of it
     appendStringInfoChar(&ids, '}');
     values[0] = CStringGetTextDatumMy(ids.data);
     // the lock of a task is tagged by the high and the low 32 bits of its id, unsigned (see lock_table_id()), the low ones as id & 4294967295, here as in work_timeout() and work_stop(): an arithmetic id << 32 >> 32 would extend their sign, into a negative oid for half the ids, and an error taking pg_work down

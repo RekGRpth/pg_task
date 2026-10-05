@@ -137,6 +137,12 @@ void NullCommandMy(CommandDest dest) {
 static bool held = false; // interrupts held since the input committed, see dest_xact()
 
 // the next statement of the input after one that committed, COMMIT, say, to run with interrupts, as before
+// the locks of the task and of its group back, after a command of its input that let go of them, as pg_advisory_unlock_all() and DISCARD ALL do, not telling them from advisory ones: for a pg_work restarted meanwhile not to take its group for free of it, nor the task for orphaned (see init_task_ids()), and for the bookkeeping to find them
+static void dest_relock(void) {
+    relock_table_pid_hash(task.shared->oid, task.pid, task.shared->hash);
+    if (task.lock) relock_table_id(task.shared->oid, task.shared->id);
+}
+
 static void dest_resume(void) {
     if (!held) return;
     held = false;
@@ -154,6 +160,7 @@ void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undeco
     CommandTag tag = qc->commandTag;
     const char *tagname = GetCommandTagName(tag);
     if (!task.shared) return;
+    dest_relock();
     if (command_tag_display_rowcount(tag) && !force_undecorated_output) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, tag == CMDTAG_INSERT ? "%s 0 %lu" : "%s %lu", tagname, qc->nprocessed);
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
     elog(DEBUG1, "id = %li, completionTag = %s", task.shared->id, completionTag);
@@ -171,6 +178,7 @@ void BeginCommandMy(const char *commandTag, CommandDest dest) {
 
 void EndCommandMy(const char *commandTag, CommandDest dest) {
     if (!task.shared) return;
+    dest_relock();
     elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, commandTag);
     if (task.skip) task.skip = 0; else {
         if (!task.output.data) initStringInfoMy(&task.output);
@@ -502,6 +510,7 @@ bool dest_timeout(void) {
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);
     set_ps_display_my("idle");
+    dest_relock(); // the input may have failed, or run in SPI as a whole, after letting go of them
     exit = task_done(&task, true);
     if (!exit && !task.save) {
         // the next task, which task_done() took into TAKE already, mustn't stay there, counted against the max of its group, until reset, for a worker that can't reset its session for it and goes: give it back, cleaning up after the error first, as after one of an input
