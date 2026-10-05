@@ -343,11 +343,8 @@ void task_error_data(Task *t, const ErrorData *edata) {
     if (edata->cursorpos > 0) appendStringInfo(&t->error, _(" at character %d"), edata->cursorpos);
     else if (edata->internalpos > 0) appendStringInfo(&t->error, _(" at character %d"), edata->internalpos);
     if (Log_error_verbosity >= PGERROR_DEFAULT) {
-        if (edata->detail_log) {
-            if (t->error.len) appendStringInfoChar(&t->error, '\n');
-            appendStringInfoString(&t->error, _("DETAIL:  "));
-            append_with_tabs(&t->error, edata->detail_log);
-        } else if (edata->detail) {
+        // the detail the client gets, as a remote task has it, not detail_log, which is for the server log only, with the queries of others in it, those of a deadlock say
+        if (edata->detail) {
             if (t->error.len) appendStringInfoChar(&t->error, '\n');
             appendStringInfoString(&t->error, _("DETAIL:  "));
             append_with_tabs(&t->error, edata->detail);

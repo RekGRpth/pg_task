@@ -1,3 +1,4 @@
+-- a deadlock fails one of the tasks with the detail the client gets, not the one for the server log only, which has the queries of the other sessions in it
 ALTER SYSTEM SET deadlock_timeout = '100ms';
 SELECT pg_reload_conf();
 DELETE FROM task WHERE "group" IN ('deadlock_a', 'deadlock_b');
@@ -12,6 +13,6 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 150 x pg_sleep(0.1) waiting for task groups ''deadlock_a'', ''deadlock_b'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT count(*) FILTER (WHERE state = 'FAIL' AND error LIKE '%deadlock detected%' AND error ~ 'Process \d+: ') = 1 AS deadlock_log_detail_ok, count(*) FILTER (WHERE state = 'DONE') = 1 AS other_committed FROM task WHERE "group" IN ('deadlock_a', 'deadlock_b') AND plan > :ct::timestamp;
+SELECT count(*) FILTER (WHERE state = 'FAIL' AND error LIKE '%deadlock detected%' AND error ~ 'Process \d+ waits for ' AND error !~ 'Process \d+: ') = 1 AS deadlock_client_detail_ok, count(*) FILTER (WHERE state = 'DONE') = 1 AS other_committed FROM task WHERE "group" IN ('deadlock_a', 'deadlock_b') AND plan > :ct::timestamp;
 ALTER SYSTEM RESET deadlock_timeout;
 SELECT pg_reload_conf();
