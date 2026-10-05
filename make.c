@@ -119,6 +119,12 @@ void make_schema(const Work *w) {
     StringInfoData src;
     set_ps_display_my("schema");
     initStringInfoMy(&src);
+    // its owner may drop the objects of others in it, the task table of pg_task say, for one of its own, whose triggers then run as pg_task.user: pg_work refuses it too, unless owned by pg_task.user or a superuser, as the objects of its own; that of public from 15 on, pg_database_owner, being the owner of the database
+    appendStringInfo(&src, SQL(
+        SELECT r.rolname::pg_catalog.text AS "owner" FROM pg_catalog.pg_namespace AS n JOIN pg_catalog.pg_roles AS r ON r.oid OPERATOR(pg_catalog.=) CASE WHEN n.nspowner OPERATOR(pg_catalog.=) (SELECT "oid" FROM pg_catalog.pg_roles WHERE rolname OPERATOR(pg_catalog.=) 'pg_database_owner') THEN (SELECT datdba FROM pg_catalog.pg_database WHERE datname OPERATOR(pg_catalog.=) pg_catalog.current_database()) ELSE n.nspowner END WHERE nspname OPERATOR(pg_catalog.=) $1 AND r.rolname OPERATOR(pg_catalog.<>) current_user AND NOT r.rolsuper
+    ));
+    make_owner("schema", w->schema, src.data, countof(argtypes), argtypes, values);
+    resetStringInfo(&src);
     appendStringInfo(&src, SQL(
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_namespace WHERE nspname OPERATOR(pg_catalog.=) $1) AS "test"
     ));
