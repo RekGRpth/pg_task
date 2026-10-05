@@ -256,8 +256,8 @@ static void work_check(const Work *w) {
 
 static void work_command(Task *t, PGresult *result) {
     if (t->skip) { t->skip--; return; }
-    if (!t->output.data) initStringInfoMy(&t->output);
-    appendStringInfo(&t->output, "%s%s", t->output.len ? "\n" : "", PQcmdStatus(result));
+    task_line(t);
+    appendStringInfoString(&t->output, PQcmdStatus(result));
 }
 
 // returns the position of the first cancel request among the events, after those of the remote tasks
@@ -596,7 +596,7 @@ static void work_discard(Task *t) {
 }
 
 static void work_headers(Task *t, const PGresult *result) {
-    if (t->output.len) appendStringInfoString(&t->output, "\n");
+    task_line(t);
     for (int col = 0; col < PQnfields(result); col++) {
         if (col > 0 && t->delimiter) appendStringInfoChar(&t->output, t->delimiter); // none for an empty one, as for quote and escape, rather than a NUL ending the output there
         appendBinaryStringInfoEscapeQuote(&t->output, PQfname(result, col), strlen(PQfname(result, col)), false, t->escape, t->quote);
@@ -606,7 +606,7 @@ static void work_headers(Task *t, const PGresult *result) {
 static void work_success(Task *t, const PGresult *result, int row) {
     if (!t->output.data) initStringInfoMy(&t->output);
     if (t->header && !row && PQnfields(result) > 1) work_headers(t, result);
-    if (t->output.len) appendStringInfoString(&t->output, "\n");
+    task_line(t);
     for (int col = 0; col < PQnfields(result); col++) {
         if (col > 0 && t->delimiter) appendStringInfoChar(&t->output, t->delimiter); // none for an empty one, as for quote and escape, rather than a NUL ending the output there
         if (PQgetisnull(result, row, col)) appendStringInfoString(&t->output, t->null);

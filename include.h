@@ -99,6 +99,7 @@ typedef struct Work {
 
 typedef struct Task {
     bool header;
+    bool line; // of the output, the first one taken already: see task_line()
     bool lock;
     bool reserve;
     bool save;
@@ -177,6 +178,7 @@ Portal SPI_cursor_open_my(const char *src, SPIPlanPtr plan, Datum *values, const
 Shared *init_shared(Datum main_arg);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
 Task *get_task(void);
+void task_line(Task *t);
 void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len, bool string, char escape, char quote);
 void append_with_tabs(StringInfo buf, const char *str);
 void dest_cancel(SIGNAL_ARGS);

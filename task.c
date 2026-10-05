@@ -410,12 +410,20 @@ static void task_latch(void) {
     if (ConfigReloadPending) task_reload();
 }
 
+// a line of the output for a row, its headers or a command tag, after the one before it, if any, even an empty one, which the length of the output so far would leave out, running the next one into it
+void task_line(Task *t) {
+    if (!t->output.data) initStringInfoMy(&t->output);
+    if (t->line) appendStringInfoChar(&t->output, '\n');
+    t->line = true;
+}
+
 void task_free(Task *t) {
     if (t->error.data) { pfree(t->error.data); t->error.data = NULL; t->error.len = 0; }
     if (t->group) { pfree(t->group); t->group = NULL; }
     if (t->input) { pfree(t->input); t->input = NULL; }
     if (t->null) { pfree(t->null); t->null = NULL; }
     if (t->output.data) { pfree(t->output.data); t->output.data = NULL; t->output.len = 0; }
+    t->line = false;
     if (t->remote) { pfree(t->remote); t->remote = NULL; }
     if (t->user) { pfree(t->user); t->user = NULL; }
 }

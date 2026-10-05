@@ -40,7 +40,7 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
 }
 
 static void headers(TupleDesc tupdesc) {
-    if (task.output.len) appendStringInfoString(&task.output, "\n");
+    task_line(&task);
     for (int col = 1; col <= tupdesc->natts; col++) {
         char *fname = SPI_fname(tupdesc, col);
         if (col > 1 && task.delimiter) appendStringInfoChar(&task.output, task.delimiter); // none for an empty one, as for quote and escape, rather than a NUL ending the output there
@@ -65,7 +65,7 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
     ;
     if (!task.output.data) initStringInfoMy(&task.output);
     if (task.header && !task.row && tupdesc->natts > 1) headers(tupdesc);
-    if (task.output.len) appendStringInfoString(&task.output, "\n");
+    task_line(&task);
     for (int col = 1; col <= tupdesc->natts; col++) {
         char *value = SPI_getvalue_my(slot, tupdesc, col);
         if (col > 1 && task.delimiter) appendStringInfoChar(&task.output, task.delimiter); // none for an empty one, as for quote and escape, rather than a NUL ending the output there
@@ -165,8 +165,7 @@ void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undeco
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
     elog(DEBUG1, "id = %li, completionTag = %s", task.shared->id, completionTag);
     if (task.skip) task.skip = 0; else {
-        if (!task.output.data) initStringInfoMy(&task.output);
-        if (task.output.len) appendStringInfoString(&task.output, "\n");
+        task_line(&task);
         appendStringInfoString(&task.output, completionTag);
     }
 }
@@ -181,8 +180,7 @@ void EndCommandMy(const char *commandTag, CommandDest dest) {
     dest_relock();
     elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, commandTag);
     if (task.skip) task.skip = 0; else {
-        if (!task.output.data) initStringInfoMy(&task.output);
-        if (task.output.len) appendStringInfoString(&task.output, "\n");
+        task_line(&task);
         appendStringInfoString(&task.output, commandTag);
     }
 }
@@ -265,7 +263,7 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
         task.skip = 1;
         if (!task.output.data) initStringInfoMy(&task.output);
         if (task.header && !row && SPI_tuptable->tupdesc->natts > 1) headers(SPI_tuptable->tupdesc);
-        if (task.output.len) appendStringInfoString(&task.output, "\n");
+        task_line(&task);
         for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
             char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
             if (col > 1 && task.delimiter) appendStringInfoChar(&task.output, task.delimiter); // none for an empty one, as for quote and escape, rather than a NUL ending the output there
@@ -280,8 +278,7 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
     elog(DEBUG1, "id = %li, completionTag = %s", task.shared->id, completionTag);
     if (task.skip) task.skip = 0; else {
-        if (!task.output.data) initStringInfoMy(&task.output);
-        if (task.output.len) appendStringInfoString(&task.output, "\n");
+        task_line(&task);
         appendStringInfoString(&task.output, completionTag);
     }
 }
