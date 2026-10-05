@@ -1,0 +1,19 @@
+-- a timeout the check of the column lets through, as it takes a month for 30 days, while it is less than nothing in milliseconds, as EXTRACT(epoch) takes a year for 365.25 days, out of the range of int4, runs the task with no timeout of its own, as 0 does, rather than fail its taking outside any error handling, taking down the worker, or pg_work for a remote task, again on every reset
+DELETE FROM task WHERE "group" = 'timeout_overflow';
+SELECT 'dbname=' || :'DBNAME' AS remote
+\gset
+INSERT INTO task ("group", remote, input, timeout) VALUES ('timeout_overflow', :'remote', 'SELECT 1', '-60 mon 1800 days 1 hour');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'timeout_overflow' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''timeout_overflow'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, output, error FROM task WHERE "group" = 'timeout_overflow';
+ state | output | error 
+-------+--------+-------
+ DONE  | 1      | 
+(1 row)
+
+DELETE FROM task WHERE "group" = 'timeout_overflow';

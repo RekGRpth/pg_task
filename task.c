@@ -267,12 +267,13 @@ bool task_work(Task *t) {
         SetConfigOption("pg_task.id", id.data, PGC_USERSET, PGC_S_SESSION);
         pfree(id.data);
     }
+    // the timeout in milliseconds within int4 both ways: the check of the column, >= '0', takes a month for 30 days, while EXTRACT(epoch) takes a year for 365.25 days, so '-60 mon 1800 days' passes it, and is less than nothing, which would fail the cast, outside any PG_TRY(), taking down the worker, or pg_work for a remote task, again on every reset, or else go past the cap of statement_timeout: none of its own for it, as for 0
     // only from TAKE: until the lock above, work_reset may have taken the task back to PLAN (a remote connection or a local worker still starting has no lock yet), and PLAN -> WORK is an invalid state transition, whose error takes pg_work down with every remote task it runs
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             UPDATE %1$s AS t SET "state" = 'WORK', "start" = %2$s, "pid" = $2 WHERE "id" OPERATOR(pg_catalog.=) $1 AND "state" OPERATOR(pg_catalog.=) 'TAKE'
-            RETURNING "group", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) AS "hash", "input", LEAST(EXTRACT(epoch FROM "timeout") OPERATOR(pg_catalog.*) 1000, 2147483647)::pg_catalog.int4 AS "timeout", "header", "string", "null", "delimiter", "quote", "escape", "remote", "save", ("user")::pg_catalog.text AS "user"
+            RETURNING "group", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) AS "hash", "input", GREATEST(LEAST(EXTRACT(epoch FROM "timeout") OPERATOR(pg_catalog.*) 1000, 2147483647), 0)::pg_catalog.int4 AS "timeout", "header", "string", "null", "delimiter", "quote", "escape", "remote", "save", ("user")::pg_catalog.text AS "user"
         ), t->work->schema_table, init_plan(), "");
     }
     SPI_connect_my(src.data, userid);
