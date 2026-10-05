@@ -304,12 +304,15 @@ bool task_work(Task *t) {
         if (0 < StatementTimeout && StatementTimeout < t->timeout) t->timeout = StatementTimeout;
         t->user = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "user", false, TEXTOID));
         elog(DEBUG1, "group = %s, remote = %s, hash = %i, input = %s, timeout = %i, header = %s, save = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, user = %s", t->group, t->remote ? t->remote : init_null(), t->shared->hash, t->input, t->timeout, t->header ? "true" : "false", t->save ? "true" : "false", t->string ? "true" : "false", t->null, t->delimiter, t->quote ? t->quote : 30, t->escape ? t->escape : 30, t->user);
-        if (!t->remote) SetConfigOption("pg_task.group", t->group, PGC_USERSET, PGC_S_SESSION);
-        initStringInfoMy(&application_name);
-        appendStringInfo(&application_name, "pg_task %s %s %s", t->shared->schema, t->shared->table, t->group);
-        SetConfigOption("application_name", application_name.data, PGC_USERSET, PGC_S_SESSION);
-        pgstat_report_appname(application_name.data);
-        pfree(application_name.data);
+        // for a local task only: a remote one runs in pg_work, among other remote tasks, which would take the name of pg_work, by which it is found, for that of the last one, while the connection of each has it already (see work_remote())
+        if (!t->remote) {
+            SetConfigOption("pg_task.group", t->group, PGC_USERSET, PGC_S_SESSION);
+            initStringInfoMy(&application_name);
+            appendStringInfo(&application_name, "pg_task %s %s %s", t->shared->schema, t->shared->table, t->group);
+            SetConfigOption("application_name", application_name.data, PGC_USERSET, PGC_S_SESSION);
+            pgstat_report_appname(application_name.data);
+            pfree(application_name.data);
+        }
     }
     SPI_finish_my();
     set_ps_display_my("idle");

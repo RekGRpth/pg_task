@@ -108,7 +108,6 @@ Work *get_work(void) {
     return &work;
 }
 
-static void work_appname(const Work *w);
 static void work_discard(Task *t);
 static void work_query(Task *t);
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
@@ -340,12 +339,10 @@ static void work_fatal(Task *t, const PGresult *result) {
 }
 
 static void work_free(Task *t) {
-    Work *w = t->work;
     dlist_delete(&t->node);
     task_free(t);
     pfree(t->shared);
     pfree(t);
-    work_appname(w);
 }
 
 static void work_unreserve(Task *t) {
@@ -1081,15 +1078,6 @@ static void work_task(Task *t) {
         case BGWH_STOPPED: init_free_task(DatumGetInt32(worker.bgw_main_arg), t->shared->data, t->shared->oid, t->shared->id); work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     if (handle) pfree(handle);
-}
-
-static void work_appname(const Work *w) {
-    StringInfoData application_name;
-    initStringInfoMy(&application_name);
-    appendStringInfo(&application_name, "pg_work %s %s %li", w->shared->schema, w->shared->table, w->shared->sleep);
-    SetConfigOption("application_name", application_name.data, PGC_USERSET, PGC_S_SESSION);
-    pgstat_report_appname(application_name.data);
-    pfree(application_name.data);
 }
 
 static void work_sleep(Work *w) {
