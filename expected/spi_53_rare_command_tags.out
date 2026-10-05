@@ -12,15 +12,14 @@ CREATE RULE rct_v_insert AS ON INSERT TO rct_v DO INSTEAD UPDATE rct_t SET i = N
 CREATE VIEW rct_w AS SELECT i FROM rct_t;
 CREATE RULE rct_w_insert AS ON INSERT TO rct_w DO INSTEAD NOTHING;
 \set remote NULL
-\set old_spi '(current_setting(''server_version_num'')::int < 100000)'
 CREATE TEMP TABLE rct_case (n int, input text, state text, output text, error text, applies boolean, save boolean DEFAULT false);
 INSERT INTO rct_case VALUES
     (1, 'CREATE TABLE IF NOT EXISTS rct_ctas AS SELECT 1 AS i', 'DONE', 'CREATE TABLE AS', NULL, current_setting('server_version_num')::int >= 90500, false),
     (2, 'INSERT INTO rct_v VALUES (5)', 'DONE', 'INSERT 0 0', NULL, true, false),
     (3, 'INSERT INTO rct_w VALUES (5)', 'DONE', 'INSERT 0 0', NULL, true, false),
-    (4, 'PREPARE rct_p AS INSERT INTO rct_u VALUES (7); EXECUTE rct_p', 'DONE', E'PREPARE\nINSERT 0 1', NULL, NOT :old_spi, false),
-    (5, 'PREPARE rct_q(int) AS SELECT 10 / $1 AS a; EXECUTE rct_q(2)', 'DONE', E'PREPARE\n5', NULL, NOT :old_spi, false),
-    (6, 'INSERT INTO rct_u VALUES (9); PREPARE rct_c AS SELECT count(*) AS a FROM rct_u WHERE i = 9; EXECUTE rct_c', 'DONE', E'INSERT 0 1\nPREPARE\n1', NULL, NOT :old_spi, false),
+    (4, 'PREPARE rct_p AS INSERT INTO rct_u VALUES (7); EXECUTE rct_p', 'DONE', E'PREPARE\nINSERT 0 1', NULL, true, false),
+    (5, 'PREPARE rct_q(int) AS SELECT 10 / $1 AS a; EXECUTE rct_q(2)', 'DONE', E'PREPARE\n5', NULL, true, false),
+    (6, 'INSERT INTO rct_u VALUES (9); PREPARE rct_c AS SELECT count(*) AS a FROM rct_u WHERE i = 9; EXECUTE rct_c', 'DONE', E'INSERT 0 1\nPREPARE\n1', NULL, true, false),
     (7, 'PREPARE rct_e(int) AS SELECT 1 / $1 AS a; EXECUTE rct_e(0)', 'FAIL', NULL, 'ERROR:  division by zero', true, false),
     (8, 'PREPARE rct_s AS INSERT INTO rct_u VALUES (11)', 'DONE', 'PREPARE', NULL, true, true),
     (9, 'EXECUTE rct_s', 'DONE', 'INSERT 0 1', NULL, true, true);

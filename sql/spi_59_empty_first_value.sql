@@ -1,6 +1,6 @@
 -- rows of the output are on lines of their own, even with an empty value first: by the length of the output so far, the next row ran into it
 DELETE FROM task WHERE "group" = 'empty_first_value';
-INSERT INTO task ("group", remote, input) VALUES ('empty_first_value', NULL, 'SELECT unnest(ARRAY['''', ''a'', '''', ''b''])'); -- no input of several statements, whose results SPI tells only of the last one of before 10
+INSERT INTO task ("group", remote, input) VALUES ('empty_first_value', NULL, 'SELECT unnest(ARRAY['''', ''a'', '''', ''b''])'), ('empty_first_value', NULL, 'SELECT ''''; SELECT ''c''');
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'empty_first_value' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;

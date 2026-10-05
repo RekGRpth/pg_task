@@ -62,7 +62,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | pg_task.drift | bool | false | config, database, user, session | Compute next repeat time by stop time instead by plan time |
 | pg_task.header | bool | true | config, database, user, session | Show columns headers in output (only when the query returns at least one row and more than one column) |
 | pg_task.save | bool | false | config, database, user, session | Save session state between tasks |
-| pg_task.spi | bool | false | config, database, user, session | SPI (or local) execution? Also affects `input` containing multiple `;`-separated statements: on PostgreSQL 10+, SPI mode runs each statement separately and appends all results, same as local mode; on pre-10 backends, SPI mode returns only the last statement's result |
+| pg_task.spi | bool | false | config, database, user, session | SPI (or local) execution? Also affects `input` containing multiple `;`-separated statements: SPI mode runs each statement separately and appends all results, same as local mode |
 | pg_task.string | bool | true | config, database, user, session | Quote only strings |
 | pg_conf.fetch | int | 10 | config, database, superuser | Fetch conf rows at once |
 | pg_conf.max | int | max_worker_processes | config | Maximum task and work workers |
@@ -214,7 +214,7 @@ Each path has its own restrictions on what `input` can contain:
 
 | | local | SPI | remote |
 | --- | --- | --- | --- |
-| Several `;`-separated statements | all results appended to `output` | all results appended to `output` (PostgreSQL 10+, split via `RawStmt.stmt_location`); only the *last* statement's result on pre-10 backends | all results appended to `output` |
+| Several `;`-separated statements | all results appended to `output` | all results appended to `output` (split via `RawStmt.stmt_location`, or before PostgreSQL 10 by the server's own scanner, at each `;` outside parentheses) | all results appended to `output` |
 | `COPY ... FROM STDIN` / `... TO STDOUT` / `COPY BOTH` | rejected outright (`COPY … is not supported`) | rejected outright (`SPI_ERROR_COPY`) | `FROM STDIN`/`BOTH` rejected (pg_task has no data to stream in); `TO STDOUT` **is** supported and streamed straight into `output` |
 | `COPY ... TO/FROM` a server-side file or `PROGRAM` | allowed, if the role has the privilege | allowed, if the role has the privilege (SPI rejects only `STDIN`/`STDOUT`) | allowed, if the role has the privilege — runs on the remote server |
 | Explicit `BEGIN`/`COMMIT`/`ROLLBACK` in `input` | allowed (a transaction left open at the end is closed automatically) | rejected (`SPI_ERROR_TRANSACTION`) | allowed (it's a real client session on the far side) |

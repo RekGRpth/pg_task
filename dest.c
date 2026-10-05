@@ -23,6 +23,10 @@
 #include <jit/jit.h>
 #endif
 
+#if PG_VERSION_NUM < 100000
+#include <parser/scanner.h>
+#endif
+
 static Task task = {0};
 
 Task *get_task(void) {
@@ -283,6 +287,40 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     }
 }
 
+#if PG_VERSION_NUM < 100000
+// no stmt_location before 10 to slice the input by, into the text of each statement, as from 10 on: up to each ; outside parentheses, those of the actions of CREATE RULE say, by the tokens of the server's own scanner, which takes quotes and dollar quotes as the parser did, a statement of no tokens, an empty one, giving no parse tree
+static void dest_execute_split(const char *src, List *parsetree_list) {
+    bool tokens = false;
+    core_yy_extra_type yyextra;
+    core_yyscan_t scanner = scanner_init(src, &yyextra, ScanKeywords, NumScanKeywords);
+    core_YYSTYPE yylval;
+    int depth = 0, start = 0, token;
+    List *stmts = NIL; // all of them first, then run, as an error of one would leave the scanner unfinished
+    ListCell *stmt, *tree;
+    YYLTYPE yylloc;
+    yyextra.escape_string_warning = false; // the parser has warned already
+    while ((token = core_yylex(&yylval, &yylloc, scanner))) {
+        if (token == ';' && depth <= 0) {
+            if (tokens) stmts = lappend(stmts, pnstrdup(src + start, yylloc + 1 - start));
+            start = yylloc + 1;
+            tokens = false;
+            continue;
+        }
+        if (token == '(') depth++; else if (token == ')') depth--;
+        tokens = true;
+    }
+    scanner_finish(scanner);
+    if (tokens) stmts = lappend(stmts, pstrdup(src + start));
+    if (list_length(stmts) != list_length(parsetree_list)) { // not to be, but rather than run a statement by the parse tree of another: as SPI_execute() runs them all, reporting the last statement only
+        elog(WARNING, "%i statements of %i parse trees", list_length(stmts), list_length(parsetree_list));
+        dest_execute_spi(src, (Node *)llast(parsetree_list), false);
+        return;
+    }
+    forboth(stmt, stmts, tree, parsetree_list) dest_execute_spi(lfirst(stmt), (Node *)lfirst(tree), true);
+    list_free_deep(stmts);
+}
+#endif
+
 static void dest_execute(void) {
     if (!task.shared->spi) {
         ListCell *cell;
@@ -330,7 +368,7 @@ static void dest_execute(void) {
             dest_execute_spi(task.input + prev_start, prev_stmt, true);
         }
 #else
-        dest_execute_spi(task.input, (Node *)llast(parsetree_list), list_length(parsetree_list) == 1); // SPI_execute() reports the last statement only
+        if (list_length(parsetree_list) <= 1) dest_execute_spi(task.input, (Node *)linitial(parsetree_list), true); else dest_execute_split(task.input, parsetree_list);
 #endif
     }
 }
