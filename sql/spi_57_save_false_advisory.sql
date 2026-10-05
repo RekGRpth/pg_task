@@ -1,0 +1,14 @@
+-- with save = false, the advisory locks a task takes in its session are let go of before the next task of its worker, as DISCARD ALL does for a remote one: they'd be held for as long as the worker lives
+DELETE FROM task WHERE "group" = 'save_false_advisory';
+INSERT INTO task ("group", input, count, save) VALUES ('save_false_advisory', 'SELECT pg_advisory_lock(67), pg_advisory_lock(67), pg_advisory_lock_shared(67, 68)', 5, false);
+INSERT INTO task ("group", input, count, save) VALUES ('save_false_advisory', 'SELECT count(*) FROM pg_locks WHERE locktype = ''advisory'' AND pid = pg_backend_pid()', 5, false);
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'save_false_advisory' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''save_false_advisory'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, output, pid = (SELECT min(pid) FROM task WHERE "group" = 'save_false_advisory') AS same_worker FROM task WHERE "group" = 'save_false_advisory' ORDER BY id;
+SELECT count(*) AS held FROM pg_locks WHERE locktype = 'advisory' AND objid IN (67, 68);
+DELETE FROM task WHERE "group" = 'save_false_advisory';

@@ -384,6 +384,7 @@ static void dest_discard(void) {
     RESUME_CANCEL_INTERRUPTS();
 #endif
     task.shared = shared;
+    unlock_advisory_all();
     SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("pg_task.schema", task.shared->schema, PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("pg_task.table", task.shared->table, PGC_USERSET, PGC_S_SESSION);

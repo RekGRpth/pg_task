@@ -147,6 +147,7 @@ bool task_work(Task *t);
 bool unlock_data_user_hash(Oid data, Oid user, int hash);
 bool unlock_data_make(Oid data);
 bool unlock_data_user(Oid data, Oid user);
+void unlock_advisory_all(void);
 bool unlock_table_id(Oid table, int64 id);
 bool unlock_table_id_hash(Oid table, int64 id, int hash);
 bool unlock_table_pid_hash(Oid table, int pid, int hash);

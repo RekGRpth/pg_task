@@ -175,6 +175,21 @@ bool unlock_table_pid_hash(Oid table, int pid, int hash) {
     return LockRelease(&tag, AccessShareLock, true);
 }
 
+// the advisory locks of the session, which pg_advisory_lock() and the like take, let go of as DISCARD ALL does, but not those of pg_task, as pg_advisory_unlock_all() would too: one hold at a time, the lock manager keeping the count of them to itself
+void unlock_advisory_all(void) {
+    for (bool released = true; released; ) {
+        LockData *data = GetLockStatusData();
+        released = false;
+        for (int i = 0; i < data->nelements && !released; i++) {
+            LockInstanceData *instance = &data->locks[i];
+            if (instance->pid != MyProcPid || instance->locktag.locktag_type != LOCKTAG_ADVISORY || instance->locktag.locktag_lockmethodid != USER_LOCKMETHOD) continue;
+            for (LOCKMODE mode = 1; mode < MAX_LOCKMODES; mode++) if (instance->holdMask & LOCKBIT_ON(mode) && LockRelease(&instance->locktag, mode, true)) released = true;
+        }
+        pfree(data->locks);
+        pfree(data);
+    }
+}
+
 static char *text_to_cstring_my(const text *t) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     char *result = text_to_cstring(t);
