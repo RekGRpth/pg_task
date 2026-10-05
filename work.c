@@ -118,6 +118,7 @@ static bool work_reap(const Work *w);
 static void work_result(Task *t);
 static void work_stop(const Work *w);
 static bool work_superuser(const char *user);
+static bool work_verify(Task *t);
 
 #define work_error(...) do { \
     bool work_error_exit PG_USED_FOR_ASSERTS_ONLY; \
@@ -129,6 +130,7 @@ static bool work_superuser(const char *user);
         EmitErrorReport(); \
         FlushErrorState(); \
     PG_END_TRY(); \
+    (void)work_verify(t); /* as a task done would have them, see work_encoding(): a remote task's output so far, and the server's messages, its connection broken say */ \
     work_error_exit = task_done(t, false); /* with live = false nothing new is taken into t, so it can be dropped */ \
     Assert(work_error_exit); \
     work_error_remote ? work_finish(t) : work_free(t); \
@@ -535,14 +537,16 @@ static bool work_busy(Task *t, void (*socket) (Task *t)) {
     return true;
 }
 
-// the results came in the client_encoding of the connection, which is that of this database (see work_remote()) unless the input set another one, which, as servers from 14 on tell of it only once the input is through, if at all, can't be told by result: store them only if they are text of this database at least, or else fail the task, with neither stored, as inserting them would
-static bool work_encoding(Task *t) {
+// the results came in the client_encoding of the connection, which is that of this database (see work_remote()) unless the input set another one, which, as servers from 14 on tell of it only once the input is through, if at all, can't be told by result, and so did the messages of the server, localized: the output and the error are stored only if they are text of this database at least, one that isn't dropped, for the error of it, after the one the task has, if any, rather than stored as it is, invalid for anything that reads it
+static bool work_verify(Task *t) {
     StringInfoData bad = {0};
     if (t->output.data && !pg_verifymbstr(t->output.data, t->output.len, true)) { bad = t->output; t->output.data = NULL; t->output.len = 0; }
-    else if (t->error.data && !pg_verifymbstr(t->error.data, t->error.len, true)) { bad = t->error; t->error.data = NULL; t->error.len = 0; }
+    if (t->error.data && !pg_verifymbstr(t->error.data, t->error.len, true)) {
+        if (bad.data) pfree(t->error.data); else bad = t->error;
+        t->error.data = NULL;
+        t->error.len = 0;
+    }
     if (!bad.data) return true;
-    if (t->output.data) { pfree(t->output.data); t->output.data = NULL; t->output.len = 0; }
-    if (t->error.data) { pfree(t->error.data); t->error.data = NULL; t->error.len = 0; }
     PG_TRY();
         (void)pg_verifymbstr(bad.data, bad.len, false);
     PG_CATCH();
@@ -551,6 +555,12 @@ static bool work_encoding(Task *t) {
         FlushErrorState();
     PG_END_TRY();
     pfree(bad.data);
+    return false;
+}
+
+// a task done with results that aren't text of this database fails, as inserting them would
+static bool work_encoding(Task *t) {
+    if (work_verify(t)) return true;
     (void)task_done(t, false); // with live = false nothing new is taken into t, so it can be dropped
     work_finish(t); // and the session with the client_encoding it set
     return false;
