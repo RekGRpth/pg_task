@@ -131,6 +131,7 @@ bool init_free_task(int slot, const char *data, Oid oid, int64 id);
 bool init_free_work(int slot, const char *data, const char *user, int hash);
 void init_work(int n, const char **data, const char **user, const int *hash, bool *in_use);
 bool init_work_gone(Datum main_arg);
+void init_work_wake(const Shared *task);
 bool init_oid_is_string(Oid oid);
 bool init_stop(const char *data, Oid oid, int64 id);
 bool is_log_level_output(int elevel, int log_min_level);

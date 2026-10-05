@@ -383,6 +383,7 @@ void task_error_data(Task *t, const ErrorData *edata) {
 
 static void task_shmem_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
+    init_work_wake(get_task()->shared);
     init_free(DatumGetInt32(arg));
 }
 

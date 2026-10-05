@@ -411,6 +411,15 @@ void init_work(int n, const char **data, const char **user, const int *hash, boo
     LWLockRelease(BackgroundWorkerLock);
 }
 
+// a task worker on its way out frees a slot of its group, for the next task of the group, which its pg_work learns of from the postmaster, but not one restarted since an earlier one started the task worker: wake the pg_work of its table, as the wake-up trigger does, found by its slot
+void init_work_wake(const Shared *task) {
+    int pid = 0;
+    LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
+    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].id && !shared[slot].gone && shared[slot].pid && !strcmp(shared[slot].data, task->data) && !strcmp(shared[slot].user, task->user) && !strcmp(shared[slot].schema, task->schema) && !strcmp(shared[slot].table, task->table)) { pid = shared[slot].pid; break; }
+    LWLockRelease(BackgroundWorkerLock);
+    if (pid && kill(pid, SIGINT)) elog(DEBUG1, "could not wake pg_work %i: %m", pid);
+}
+
 bool init_work_gone(Datum main_arg) {
     bool gone;
     LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
