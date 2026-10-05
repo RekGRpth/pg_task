@@ -399,7 +399,14 @@ static void dest_discard(void) {
     pfree(oid.data);
 }
 
+#ifdef HAVE_LOG_MIN_MESSAGES_ARRAY
+#define log_min_messages_my log_min_messages[MyBackendType]
+#else
+#define log_min_messages_my log_min_messages
+#endif
+
 static volatile sig_atomic_t running = false; // the task's input, rather than its bookkeeping, which a cancel must not fail
+static int quiet = 0; // the log_min_messages of the server, above FATAL, which dest_loud() let FATAL through for the input instead of
 static bool fatal = false; // the input failed with FATAL, see dest_emit_log()
 static emit_log_hook_type emit_log_hook_prev = NULL;
 
@@ -409,7 +416,21 @@ static void dest_emit_log(ErrorData *edata) {
         fatal = true;
         task_error_data(&task, edata);
     }
+    if (quiet && edata->elevel == FATAL) edata->output_to_server = false; // not for the log after all, see dest_loud()
     if (emit_log_hook_prev) emit_log_hook_prev(edata);
+}
+
+// the hook above sees only what goes to the log, which a FATAL doesn't with log_min_messages = panic: for the input, let one go there, for the hook to fail its task by it, rather than leave it in WORK, to run again on every reset, and to keep it out of the log then
+static void dest_loud(void) {
+    if (log_min_messages_my <= FATAL) return;
+    quiet = log_min_messages_my;
+    log_min_messages_my = FATAL;
+}
+
+// the level back, unless the input set another one itself
+static void dest_quiet(void) {
+    if (quiet && log_min_messages_my == FATAL) log_min_messages_my = quiet;
+    quiet = 0;
 }
 
 // on the way out after such a FATAL, before the connection's own exit callback, as the one removing temporary tables does: abort the input's transaction and fail the task
@@ -467,9 +488,11 @@ bool dest_timeout(void) {
     PG_TRY();
         SetConfigOption("search_path", task_search_path(), PGC_USERSET, PGC_S_SESSION);
         QueryCancelPending = false; // a cancel that came in between tasks, held off meanwhile, is for no task, as one coming to an idle backend
+        dest_loud();
         running = true;
         dest_execute();
         running = false;
+        dest_quiet();
         if (held) held = false; else HOLD_INTERRUPTS(); // the input done, no termination is to come in between it and its bookkeeping, which would leave the task in WORK, to run again on reset: until the end, see below, if not since its commit already, see dest_xact()
         QueryCancelPending = false; // a cancel that came too late for the input, after its last CHECK_FOR_INTERRUPTS(), isn't meant for the bookkeeping, outside any PG_TRY()
         SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
@@ -484,6 +507,7 @@ bool dest_timeout(void) {
         held = false;
         HOLD_INTERRUPTS(); // as above, the error's errfinish() having let them through again
         running = false;
+        dest_quiet();
         QueryCancelPending = false; // a cancel of the input that failed otherwise first, its program killed by the SIGINT dest_cancel() sends with it, say, is for no task any more: rather than fail its bookkeeping, outside any PG_TRY()
         task_error(&task);
         if (task.output.len > (int)TASK_OUTPUT_MAX) task.output.data[task.output.len = pg_mbcliplen(task.output.data, task.output.len, TASK_OUTPUT_MAX)] = '\0'; // past the most it may keep, see TASK_OUTPUT_MAX, as the string buffer would take up to MaxAllocSize

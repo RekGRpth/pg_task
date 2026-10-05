@@ -28,6 +28,11 @@ HAVE_CREATING_EXTENSION_LOCAL = $(shell grep -q creating_extension_local $(shell
 ifeq ($(HAVE_CREATING_EXTENSION_LOCAL),yes)
 PG_CPPFLAGS += -DHAVE_CREATING_EXTENSION_LOCAL
 endif
+# log_min_messages per process type, from 19 on
+HAVE_LOG_MIN_MESSAGES_ARRAY = $(shell grep -q 'log_min_messages\[\]' $(shell $(PG_CONFIG) --includedir-server)/utils/guc.h 2>/dev/null && echo yes || echo no)
+ifeq ($(HAVE_LOG_MIN_MESSAGES_ARRAY),yes)
+PG_CPPFLAGS += -DHAVE_LOG_MIN_MESSAGES_ARRAY
+endif
 PGXS = $(shell $(PG_CONFIG) --pgxs)
 REGRESS = $(patsubst sql/%.sql,%,$(TESTS))
 PG_TASK_TEST_INSTANCE ?= temp
