@@ -237,7 +237,7 @@ bool task_done(Task *t, bool live) {
     if (values[2]) pfree((void *)values[2]);
     if (insert) task_insert(t);
     if (delete) task_delete(t);
-    if (update) task_update(t, done);
+    if (update && !TIMESTAMP_NOT_FINITE(done)) task_update(t, done); // a plan of infinity, from before the check of make_valid(), can't be subtracted from
     if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) { ereport(WARNING, (errmsg("!unlock_table_id(%i, %li)", t->shared->oid, t->shared->id))); exit = true; }
     t->lock = false;
     SPI_finish_my();

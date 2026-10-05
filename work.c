@@ -494,7 +494,7 @@ static long work_timeout(const Work *w, long reset) {
                 LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$i AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
                 WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND l.pid IS NULL LIMIT 1
            ), pg_catalog.ceil(EXTRACT(epoch FROM ((
-                SELECT "plan" OPERATOR(pg_catalog.-) %4$s AS "plan" FROM %1$s WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.>=) %4$s ORDER BY 1 LIMIT 1
+                SELECT "plan" OPERATOR(pg_catalog.-) %4$s AS "plan" FROM %1$s WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.>=) %4$s AND pg_catalog.isfinite("plan") ORDER BY 1 LIMIT 1
            )))::pg_catalog.float8 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int8), -1)::pg_catalog.int8 as "min"
         ), w->schema_table, w->shared->oid, w->schema_type, init_plan());
     }
