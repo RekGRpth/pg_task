@@ -358,7 +358,7 @@ static void work_finish(Task *t) {
         ReleaseExternalFD();
 #endif
     }
-    if (!proc_exit_inprogress && t->pid && !unlock_table_pid_hash(t->shared->oid, t->pid, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->pid, t->shared->hash)));
+    if (!proc_exit_inprogress && t->key && !unlock_table_pid_hash(t->shared->oid, t->key, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->key, t->shared->hash)));
     idle_count = 0; // a slot of its group is free now, for a task of the group that waits for one, which an idle pg_work doesn't wait for: see work_reap()
     work_free(t);
 }
@@ -720,6 +720,7 @@ static void work_query(Task *t) {
 static void work_connect(Task *t) {
     bool connected = false;
     int pid;
+    static uint32 key = 0;
     switch (PQstatus(t->conn)) {
         case CONNECTION_BAD: work_error((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), work_errdetail(PQerrorMessage(t->conn)))); return;
         case CONNECTION_OK: elog(DEBUG1, "id = %li, PQstatus == CONNECTION_OK", t->shared->id); connected = true; break;
@@ -737,9 +738,12 @@ static void work_connect(Task *t) {
         // only now does libpq know whether the server actually asked for the password, and it's the task author who must not be able to connect without one
         if (!work_superuser(t->user) && !PQconnectionUsedPassword(t->conn)) { work_error((errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superuser cannot connect if the server does not request a password."), errhint("Target server's authentication method must be changed."))); return; }
         if (!(pid = PQbackendPID(t->conn))) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQbackendPID failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
-        if (!lock_table_pid_hash(t->shared->oid, pid, t->shared->hash)) { work_error((errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", t->shared->oid, pid, t->shared->hash))); return; }
+        // by a key of its own, in place of the pid of the connection, as a task worker holds it by its pid: the pid of another server, one of the hosts of the connection string say, may be that of another connection of the group, whose lock the same tag would make one, the slots of the group counted one short, rather than the pid of a process here, which no key takes, from 2^31 on
+        if (!++key) key = 1;
+        if (!lock_table_pid_hash(t->shared->oid, (int)(key | 0x80000000), t->shared->hash)) { work_error((errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", t->shared->oid, (int)(key | 0x80000000), t->shared->hash))); return; }
+        t->key = (int)(key | 0x80000000);
         t->pid = pid;
-        work_unreserve(t); // the slot is now held by the lock of the connection's pid
+        work_unreserve(t); // the slot is now held by the lock of the connection
         work_query(t);
     }
 }

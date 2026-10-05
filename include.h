@@ -115,6 +115,7 @@ typedef struct Task {
     dlist_node node;
     int count;
     int event;
+    int key; // of the lock a remote task holds the slot of its group by, see work_connect()
     int pid;
     int skip;
     int timeout;
