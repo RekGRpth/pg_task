@@ -28,6 +28,11 @@ HAVE_CREATING_EXTENSION_LOCAL = $(shell grep -q creating_extension_local $(shell
 ifeq ($(HAVE_CREATING_EXTENSION_LOCAL),yes)
 PG_CPPFLAGS += -DHAVE_CREATING_EXTENSION_LOCAL
 endif
+# whether a commit is one of a procedure's own, from 11 on
+HAVE_SPI_INSIDE_NONATOMIC_CONTEXT = $(shell grep -q SPI_inside_nonatomic_context $(shell $(PG_CONFIG) --includedir-server)/executor/spi.h 2>/dev/null && echo yes || echo no)
+ifeq ($(HAVE_SPI_INSIDE_NONATOMIC_CONTEXT),yes)
+PG_CPPFLAGS += -DHAVE_SPI_INSIDE_NONATOMIC_CONTEXT
+endif
 # log_min_messages per process type, from 19 on
 HAVE_LOG_MIN_MESSAGES_ARRAY = $(shell grep -q 'log_min_messages\[\]' $(shell $(PG_CONFIG) --includedir-server)/utils/guc.h 2>/dev/null && echo yes || echo no)
 ifeq ($(HAVE_LOG_MIN_MESSAGES_ARRAY),yes)

@@ -1,0 +1,17 @@
+-- a COMMIT of a procedure or a DO block, from 11 on, doesn't hold off interrupts, as the commit of a statement of the input does till the next one, none of which starts till its end: its timeout still cancels the rest of it
+DELETE FROM task WHERE "group" = 'procedure_commit';
+INSERT INTO task ("group", input, timeout) VALUES ('procedure_commit', 'DO $do$BEGIN COMMIT; PERFORM pg_sleep(10); END$do$', '1 sec');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'procedure_commit' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''procedure_commit'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT current_setting('server_version_num')::int < 110000 OR (state = 'FAIL' AND error LIKE '%statement timeout%' AND stop - start < interval '5 sec') AS cancelled_in_time FROM task WHERE "group" = 'procedure_commit';
+ cancelled_in_time 
+-------------------
+ t
+(1 row)
+
+DELETE FROM task WHERE "group" = 'procedure_commit';

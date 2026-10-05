@@ -485,6 +485,9 @@ static void dest_shmem_exit(int code, Datum arg) {
 // a termination right after the input committed, at the first check for interrupts, as the end of any message logged has, the duration of the statement, say, would leave the task done in WORK, to run again on reset: hold interrupts from its commit on, in local mode, where exec_simple_query() commits it, till the bookkeeping is done, or the next statement of the input starts, see dest_resume()
 static void dest_xact(XactEvent event, void *arg) {
     if (event != XACT_EVENT_COMMIT || !running || held) return;
+#ifdef HAVE_SPI_INSIDE_NONATOMIC_CONTEXT
+    if (SPI_inside_nonatomic_context()) return; // not the commit of a COMMIT a procedure or a DO block runs, the rest of which, no statement of the input starting till its end, would go on with no interrupts, no timeout, cancel or termination let through
+#endif
     HOLD_INTERRUPTS();
     held = true;
 }
