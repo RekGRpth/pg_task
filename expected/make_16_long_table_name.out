@@ -23,7 +23,7 @@ END;$body$ LANGUAGE plpgsql;
 SELECT count(*) AS triggers, count(DISTINCT t.tgfoid) AS functions, bool_and(t.tgname = p.proname) AS trigger_calls_its_own_function, max(length(t.tgname)) < 64 AS names_fit FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_proc p ON p.oid = t.tgfoid WHERE t.tgrelid = 'task_long_name_schema.task_long_name_4567890123456789012345678901234567890123456789'::regclass AND NOT t.tgisinternal;
  triggers | functions | trigger_calls_its_own_function | names_fit 
 ----------+-----------+--------------------------------+-----------
-       26 |        26 | t                              | t
+       27 |        27 | t                              | t
 (1 row)
 
 SELECT pid AS long_name_pid, set_config('pg_task_test.long_name_pid', pid::text, false) AS ignored FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work task_long_name_schema %' AND datname = current_database()
@@ -46,7 +46,7 @@ END;$body$ LANGUAGE plpgsql;
 SELECT count(*) AS triggers_after_restart FROM pg_catalog.pg_trigger WHERE tgrelid = 'task_long_name_schema.task_long_name_4567890123456789012345678901234567890123456789'::regclass AND NOT tgisinternal;
  triggers_after_restart 
 ------------------------
-                     26
+                     27
 (1 row)
 
 ALTER SYSTEM SET pg_task.json = :'json_baseline';

@@ -820,6 +820,7 @@ void make_table(const Work *w) {
     make_user_immutable(w);
     make_state_machine(w);
     make_valid(w);
+    make_immutable(w, "id"); // the lock of a running task is by its id, which a change of would leave it for work_reset() to run again, and its bookkeeping without the row
     make_immutable(w, "group");
     make_immutable(w, "remote");
     make_immutable(w, "parent");

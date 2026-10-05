@@ -28,7 +28,7 @@ SELECT count(*) = 6 AS index_count_ok FROM pg_catalog.pg_index WHERE indrelid = 
  t
 (1 row)
 
-SELECT count(*) = 26 AS trigger_ok FROM pg_catalog.pg_trigger WHERE tgrelid = 'task_make_test_schema.task_make_test'::regclass AND NOT tgisinternal;
+SELECT count(*) = 27 AS trigger_ok FROM pg_catalog.pg_trigger WHERE tgrelid = 'task_make_test_schema.task_make_test'::regclass AND NOT tgisinternal;
  trigger_ok 
 ------------
  t
