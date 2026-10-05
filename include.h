@@ -37,8 +37,10 @@
 
 #if PG_VERSION_NUM >= 100000
 #define WaitLatchMy(latch, wakeEvents, timeout) WaitLatch(latch, wakeEvents, timeout, PG_WAIT_EXTENSION)
+#define WaitLatchOrSocketMy(latch, wakeEvents, sock, timeout) WaitLatchOrSocket(latch, wakeEvents, sock, timeout, PG_WAIT_EXTENSION)
 #else
 #define WaitLatchMy(latch, wakeEvents, timeout) WaitLatch(latch, wakeEvents, timeout)
+#define WaitLatchOrSocketMy(latch, wakeEvents, sock, timeout) WaitLatchOrSocket(latch, wakeEvents, sock, timeout)
 #endif
 
 #if PG_VERSION_NUM >= 110000

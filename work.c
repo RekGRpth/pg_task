@@ -774,7 +774,7 @@ static void work_cancel_drain(long timeout) {
         int usecs;
         TimestampDifference(GetCurrentTimestamp(), end, &secs, &usecs);
         if (!secs && !usecs) break;
-        if (WaitLatchOrSocket(NULL, c->event | WL_TIMEOUT | WL_POSTMASTER_DEATH, PQcancelSocket(c->conn), secs * 1000 + usecs / 1000, PG_WAIT_EXTENSION) & (WL_TIMEOUT | WL_POSTMASTER_DEATH)) break;
+        if (WaitLatchOrSocketMy(NULL, c->event | WL_TIMEOUT | WL_POSTMASTER_DEATH, PQcancelSocket(c->conn), secs * 1000 + usecs / 1000) & (WL_TIMEOUT | WL_POSTMASTER_DEATH)) break;
         work_cancel_poll(c);
     }
     dlist_foreach_modify(iter, &cancels) work_cancel_free(dlist_container(Cancel, node, iter.cur));
