@@ -38,7 +38,14 @@ typedef struct Registered {
     dlist_node node;
     int hash;
     int slot;
+    int64 reg;
 } Registered;
+
+// tells a registration of pg_work from any other, across restarts of pg_conf too, for its slot to be freed only while still its, see init_free_work()
+static int64 conf_reg(void) {
+    static uint32 n = 0;
+    return ((int64)MyProcPid << 32) | ++n;
+}
 
 static void conf_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
@@ -48,20 +55,13 @@ static void conf_reconcile(void) {
     dlist_mutable_iter iter;
     dlist_foreach_modify(iter, &reg_head) {
         Registered *r = dlist_container(Registered, node, iter.cur);
-        dlist_iter want;
-        bool running = false;
         pid_t pid;
-        dlist_foreach(want, &head) {
-            const Work *w = dlist_container(Work, node, want.cur);
-            if (!w->spawn && w->shared->hash == r->hash && !strcmp(w->shared->data, r->data) && !strcmp(w->shared->user, r->user)) { running = true; break; }
-        }
-        if (running) continue; // wanted and holding its lock
         // still running: let it notice the same reload via its own work_check() and self-terminate cleanly; only reap it here once it's confirmed stopped, so we never signal a worker that might be mid-SPI-call
         if (GetBackgroundWorkerPid(r->handle, &pid) != BGWH_STOPPED) continue;
-        // stopped, and either no longer wanted or about to be spawned anew by conf_work(): drop it either way, so no stale entry is left to match a later worker with the same data/user/hash
+        // stopped, and either no longer wanted, taken over by another pg_work of its entry, or about to be spawned anew by conf_work(): drop it either way, so no stale registration is left to be restarted, or to free a slot that a later pg_work has taken
         elog(DEBUG1, "reaping stopped worker, data = %s, user = %s, hash = %i, slot = %i", r->data, r->user, r->hash, r->slot);
         TerminateBackgroundWorker(r->handle); // cancel a pending crash restart
-        init_free_work(r->slot, r->data, r->user, r->hash);
+        init_free_work(r->slot, r->reg);
         pfree(r->handle);
         dlist_delete(&r->node);
         pfree(r);
@@ -95,6 +95,7 @@ static void conf_work(Work *w, bool in_use) {
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
+    w->shared->reg = conf_reg();
     if ((slot = init_arg(w->shared)) == -1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not find empty slot")));
     worker.bgw_main_arg = Int32GetDatum(slot);
     worker.bgw_notify_pid = MyProcPid;
@@ -112,6 +113,7 @@ static void conf_work(Work *w, bool in_use) {
             r->handle = handle;
             r->hash = w->shared->hash;
             r->slot = slot;
+            r->reg = w->shared->reg;
             strlcpy(r->data, w->shared->data, sizeof(r->data));
             strlcpy(r->user, w->shared->user, sizeof(r->user));
             dlist_push_tail(&reg_head, &r->node);
@@ -123,7 +125,7 @@ static void conf_work(Work *w, bool in_use) {
         case BGWH_STOPPED: // gone before it was seen to start, with its exit code 1 the postmaster would restart it after a while still, with the slot freed here, by then maybe someone else's: cancel that first, as conf_reconcile() does
             TerminateBackgroundWorker(handle);
             pfree(handle);
-            init_free_work(slot, w->shared->data, w->shared->user, w->shared->hash);
+            init_free_work(slot, w->shared->reg);
             ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     if (handle) pfree(handle);

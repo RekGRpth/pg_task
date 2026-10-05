@@ -69,6 +69,7 @@ typedef struct Shared {
     char table[NAMEDATALEN];
     char user[NAMEDATALEN];
     int64 id;
+    int64 reg; // of a pg_work: the registration of it, which a restart of it keeps, see init_free_work()
     int64 reset;
     int64 sleep;
     int64 stop;
@@ -128,7 +129,7 @@ typedef struct Task {
 bool dest_timeout(void);
 void dest_init(void);
 bool init_free_task(int slot, const char *data, Oid oid, int64 id);
-bool init_free_work(int slot, const char *data, const char *user, int hash);
+bool init_free_work(int slot, int64 reg);
 void init_work(int n, const char **data, const char **user, const int *hash, bool *in_use);
 bool init_work_gone(Datum main_arg);
 void init_work_wake(const Shared *task);
