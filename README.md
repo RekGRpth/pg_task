@@ -75,7 +75,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | pg_task.run | int | 2147483647 | config, database, user, session | Maximum count of concurrently executing tasks in work |
 | pg_task.sleep | int | 1000 | config, database, user | Check tasks every sleep milliseconds |
 | pg_work.fetch | int | 100 | config, database, superuser | Fetch work rows at once |
-| pg_work.idle | int | 60 | config, database, user | Idle work count |
+| pg_work.idle | int | 60 | config, database, user | Empty passes after which pg_work goes idle: waits for the next task planned or a wake-up rather than polling every `sleep`, though no longer than `idle` × `sleep`, for a task it may have missed |
 | pg_work.restart | int | 60 | config, database, user | Restart pg_work after it crashed in that many seconds (that of the role and database of its entry, read when pg_conf starts it) |
 | pg_task.active | interval | 1 hour | config, database, user, session | Positive period after plan time, when task is active for executing |
 | pg_task.data | text | postgres | config | Database name for tasks table |

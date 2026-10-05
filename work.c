@@ -1306,7 +1306,12 @@ void work_main(Datum main_arg) {
         }
         if (idle_count < (uint64)init_work_idle()) timeout = Min(current_reset, current_sleep);
         // idle: till the next task is planned, in milliseconds rounded up, not to wake before it, and not before the pass it takes is due either, or once its plan is past, which work_timeout() leaves out, as it does the tasks that wait for a slot of their group, there'd be no pass and no end to the wait
-        else if ((timeout = work_timeout(&work, current_reset)) >= 0 && timeout < current_sleep) timeout = current_sleep;
+        else {
+            // but not for longer than idle passes would take: work_timeout() leaves out tasks due already, some of which an idle pg_work may not have seen, as one committed long after its wake-up, held by someone else on the pass, or waiting for a slot that a task worker of an earlier pg_work frees, whose exit wakes no one
+            long most = (long)init_work_idle() * work.shared->sleep;
+            if ((timeout = work_timeout(&work, current_reset)) < 0 || timeout > most) timeout = most;
+            if (timeout < current_sleep) timeout = current_sleep;
+        }
         if ((deadline = work_deadline()) >= 0 && (timeout < 0 || deadline < timeout)) timeout = deadline;
         // the next task planned in more than about 24.8 days (repeat = '1 month', say), or as long a reset, is more than the wait takes: it asserts and passes the int it gets to epoll, which would make it wait forever instead, so wake up in time to compute the timeout again
         if (timeout > INT_MAX) timeout = INT_MAX;
