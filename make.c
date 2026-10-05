@@ -140,13 +140,16 @@ void make_schema(const Work *w) {
     set_ps_display_my("idle");
 }
 
+// the value, which has the names of the schema in it, those of its type, as a parameter, not in the text of the query, as anything in the name of the schema would end a quote, $$ say, which pg_task.schema may come with from the settings of the database, which its owner may change
 static void make_default(const Work *w, const char *name, const char *value) {
+    Datum values[] = {CStringGetTextDatum(value)};
+    static Oid argtypes[] = {TEXTOID};
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid WHERE attnum OPERATOR(pg_catalog.=) adnum AND attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') IS NOT DISTINCT FROM $$%3$s$$ AS "test"
-    ), w->shared->oid, name, value);
-    if (!make_test(src.data, 0, NULL, NULL, NULL)) {
+        SELECT (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid WHERE attnum OPERATOR(pg_catalog.=) adnum AND attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') IS NOT DISTINCT FROM $1 AS "test"
+    ), w->shared->oid, name);
+    if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             ALTER TABLE %1$s ALTER COLUMN "%2$s" SET DEFAULT %3$s;
@@ -155,6 +158,7 @@ static void make_default(const Work *w, const char *name, const char *value) {
         make_ddl(src.data, SPI_OK_UPDATE);
     }
     pfree(src.data);
+    pfree((void *)values[0]);
 }
 
 // whether the column has a check of ours, not just any: one of the user's own on the column too must neither break the lookup nor pass for ours
@@ -199,12 +203,14 @@ static void make_function(const Work *w, const char *name, const char *source, b
     ));
     if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         const char *quote = quote_identifier(name);
+        const char *quote_source = quote_literal_cstr(source); // the body has the names of the schema in it, which would end a dollar quote, see make_default()
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
-            CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp %4$s AS $function$%3$s$function$ LANGUAGE plpgsql;
-        ), w->schema, quote, source, security_definer ? "SECURITY DEFINER" : "SECURITY INVOKER");
+            CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp %4$s AS %3$s LANGUAGE plpgsql;
+        ), w->schema, quote, quote_source, security_definer ? "SECURITY DEFINER" : "SECURITY INVOKER");
         make_ddl(src.data, SPI_OK_UTILITY);
         if (quote != name) pfree((void *)quote);
+        pfree((void *)quote_source);
     }
     pfree(src.data);
     pfree((void *)values[0]);
@@ -571,12 +577,14 @@ static void make_index(const Work *w, const char *name) {
 }
 
 static void make_hash(const Work *w, const char *value) {
+    Datum values[] = {CStringGetTextDatum(value)};
+    static Oid argtypes[] = {TEXTOID};
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT EXISTS (SELECT * FROM pg_catalog.pg_index WHERE 0 OPERATOR(pg_catalog.=) indkey[0] AND indrelid OPERATOR(pg_catalog.=) %1$i AND pg_catalog.pg_get_expr(indexprs, indrelid) OPERATOR(pg_catalog.=) $$%2$s$$) AS "test"
-    ), w->shared->oid, value);
-    if (!make_test(src.data, 0, NULL, NULL, NULL)) {
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_index WHERE 0 OPERATOR(pg_catalog.=) indkey[0] AND indrelid OPERATOR(pg_catalog.=) %1$i AND pg_catalog.pg_get_expr(indexprs, indrelid) OPERATOR(pg_catalog.=) $1) AS "test"
+    ), w->shared->oid);
+    if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             CREATE INDEX ON %1$s USING btree (%2$s);
@@ -584,6 +592,7 @@ static void make_hash(const Work *w, const char *value) {
         make_ddl(src.data, SPI_OK_UTILITY);
     }
     pfree(src.data);
+    pfree((void *)values[0]);
 }
 
 static void make_table_comment(const Work *w, const char *value) {
