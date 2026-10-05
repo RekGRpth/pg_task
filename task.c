@@ -1,6 +1,7 @@
 #include "include.h"
 
 #include <access/xact.h>
+#include <mb/pg_wchar.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
@@ -193,14 +194,24 @@ void task_untake(Task *t) {
     SPI_finish_my();
 }
 
+// the output and the error of a task together within the most it may keep, see TASK_OUTPUT_MAX, as its row is put together whole before TOAST takes them out of it, or its bookkeeping fails, and the task runs again on every reset: the error first, which tells why it failed, then of the output what room is left
+static void task_fit(Task *t) {
+    int error = t->error.data ? t->error.len : 0;
+    if (error > (int)TASK_OUTPUT_MAX) t->error.data[t->error.len = error = pg_mbcliplen(t->error.data, error, TASK_OUTPUT_MAX)] = '\0';
+    if (t->output.data && t->output.len > (int)TASK_OUTPUT_MAX - error) t->output.data[t->output.len = pg_mbcliplen(t->output.data, t->output.len, TASK_OUTPUT_MAX - error)] = '\0';
+}
+
 bool task_done(Task *t, bool live) {
     bool delete = false, exit = true, insert = false, update = false;
     TimestampTz done = 0;
     char nulls[] = {' ', t->output.data ? ' ' : 'n', t->error.data ? ' ' : 'n', ' '};
-    Datum values[] = {Int64GetDatum(t->shared->id), CStringGetTextDatumMy(t->output.data), CStringGetTextDatumMy(t->error.data), BoolGetDatum(t->lock)};
+    Datum values[] = {Int64GetDatum(t->shared->id), (Datum)0, (Datum)0, BoolGetDatum(t->lock)};
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID, BOOLOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
+    task_fit(t);
+    values[1] = CStringGetTextDatumMy(t->output.data);
+    values[2] = CStringGetTextDatumMy(t->error.data);
     elog(DEBUG1, "id = %li, output = %s, error = %s", t->shared->id, t->output.data ? t->output.data : init_null(), t->error.data ? t->error.data : init_null());
     HOLD_INTERRUPTS(); // the input done, no termination is to fail its bookkeeping, leaving the task in WORK, to run again on reset, as in pg_work for a remote one
     set_ps_display_my("done");

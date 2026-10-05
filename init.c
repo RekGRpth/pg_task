@@ -307,9 +307,10 @@ void _PG_init(void) {
     RegisterBackgroundWorker(&worker);
 }
 
+// into the error of a task, up to the most it may keep, see TASK_OUTPUT_MAX, rather than fail on a message or a statement that won't fit in a string buffer with the rest of it: task_done() cuts it to that, at a character
 void append_with_tabs(StringInfo buf, const char *str) {
     char ch;
-    while ((ch = *str++) != '\0') {
+    while ((ch = *str++) != '\0' && buf->len < (int)TASK_OUTPUT_MAX) {
         appendStringInfoCharMacro(buf, ch);
         if (ch == '\n') appendStringInfoCharMacro(buf, '\t');
     }
