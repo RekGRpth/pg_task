@@ -177,6 +177,7 @@ void exec_simple_query_my(const char *query_string);
 void initStringInfoMy(StringInfo buf);
 void _PG_init(void);
 void init_free(int slot);
+int init_free_slots(void);
 void SPI_abort_my(void);
 void SPI_connect_my(const char *src, Oid userid);
 void SPI_cursor_close_my(Portal portal);

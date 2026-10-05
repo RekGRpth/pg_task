@@ -1,0 +1,12 @@
+-- local tasks due at once, more than there are background workers for, wait for one in PLAN rather than fail: all of them get done (max_worker_processes is 20 in the suite's own instance)
+DELETE FROM task WHERE "group" LIKE 'worker_shortage_%';
+INSERT INTO task ("group", input) SELECT 'worker_shortage_' || n, 'SELECT pg_sleep(0.5)' FROM generate_series(1, 60) AS n;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..600 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" LIKE 'worker_shortage_%' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 600 x pg_sleep(0.1) waiting for task groups ''worker_shortage_%%'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, count(*) FROM task WHERE "group" LIKE 'worker_shortage_%' GROUP BY state ORDER BY state;
+DELETE FROM task WHERE "group" LIKE 'worker_shortage_%';

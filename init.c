@@ -383,6 +383,15 @@ int init_arg(const Shared *s) {
     return -1;
 }
 
+// the slots free for task workers now, one each, to take no more local tasks than that: only a guess, others taking some meanwhile
+int init_free_slots(void) {
+    int free = 0;
+    LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
+    for (int slot = 0; slot < init.conf.max; slot++) if (!shared[slot].in_use) free++;
+    LWLockRelease(BackgroundWorkerLock);
+    return free;
+}
+
 void init_free(int slot) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
     MemSet(&shared[slot], 0, sizeof(Shared));

@@ -1031,6 +1031,13 @@ static bool work_reap(const Work *w) {
     return reaped;
 }
 
+// no worker to be had for the task now, every one in use, which is no error of the task: back to PLAN, for a pass to take it once one is free, as a task worker exiting wakes pg_work, rather than fail it
+static void work_busy_worker(Task *t, const char *message, const char *setting) {
+    ereport(WARNING, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("id = %li, %s, to be run later", t->shared->id, message), errhint("Consider increasing configuration parameter \"%s\".", setting)));
+    task_untake(t);
+    work_free(t);
+}
+
 static void work_task(Task *t) {
     BackgroundWorkerHandle *handle = NULL;
     BackgroundWorker worker = {0};
@@ -1046,7 +1053,7 @@ static void work_task(Task *t) {
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) { work_error((errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type)))); return; }
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    if ((worker.bgw_main_arg = Int32GetDatum(init_arg(t->shared))) == Int32GetDatum(-1)) { work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not find empty slot"))); return; }
+    if ((worker.bgw_main_arg = Int32GetDatum(init_arg(t->shared))) == Int32GetDatum(-1)) { work_busy_worker(t, "could not find empty slot", "pg_conf.max"); return; }
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -1054,7 +1061,8 @@ static void work_task(Task *t) {
     registered = RegisterDynamicBackgroundWorker(&worker, &handle);
     MemoryContextSwitchTo(oldMemoryContext);
     if (!registered) {
-        init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
+        init_free(worker.bgw_main_arg);
+        work_busy_worker(t, "could not register background worker", "max_worker_processes");
     } else switch (WaitForBackgroundWorkerStartup(handle, &t->pid)) {
         case BGWH_NOT_YET_STARTED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
         case BGWH_POSTMASTER_DIED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
@@ -1074,17 +1082,18 @@ static void work_appname(const Work *w) {
 }
 
 static void work_sleep(Work *w) {
-    Datum values[] = {Int32GetDatum(w->shared->run), Int32GetDatum(w->shared->limit)};
+    Datum values[] = {Int32GetDatum(w->shared->run), Int32GetDatum(w->shared->limit), Int32GetDatum(0)};
     dlist_head head;
     dlist_mutable_iter iter;
     Portal portal;
-    static Oid argtypes[] = {INT4OID, INT4OID};
+    static Oid argtypes[] = {INT4OID, INT4OID, INT4OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return; // its entry gone from pg_task.json, found by the reload in this very turn of its loop, say: take no task it won't run, to be left in TAKE once it's gone
     elog(DEBUG1, "idle_count = %lu", idle_count);
     set_ps_display_my("sleep");
     work_reap(w);
+    values[2] = Int32GetDatum(init_free_slots());
     dlist_init(&head);
 #ifdef GP_VERSION_NUM
     if (true) {
@@ -1112,19 +1121,21 @@ static void work_sleep(Work *w) {
             ),
         ), w->schema_table, init_plan());
 #endif
-        // the slots taken in each group: one per pid holding the slot lock (a task worker and we for it hold the same one), plus one per remote task not yet connected; the tasks that fit in the slots left in their group, cut there before the limit, not after it, or a group with more tasks due than it has slots for would take up the whole limit and keep the others waiting for the next pass, and only then locked, as a window function can't be
+        // the slots taken in each group: one per pid holding the slot lock (a task worker and we for it hold the same one), plus one per remote task not yet connected; the tasks that fit in the slots left in their group, cut there before the limit, not after it, or a group with more tasks due than it has slots for would take up the whole limit and keep the others waiting for the next pass, and of them the local ones that fit in the slots of pg_task free now, each needing a task worker in one, as a remote one doesn't, for no more of them to be taken only to go back to PLAN, and only then locked, as a window function can't be
         appendStringInfo(&src, SQL(
             l AS (
                 SELECT pg_catalog.count(DISTINCT CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 5 THEN "classid" END) OPERATOR(pg_catalog.+) pg_catalog.count(CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 7 THEN "classid" END) AS "classid", "objid" FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessShareLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) ANY(ARRAY[5, 7]) AND "database" OPERATOR(pg_catalog.=) %2$i GROUP BY "objid"
             ), c AS (
-                SELECT "id", "hash", "count" AS "priority", "count" OPERATOR(pg_catalog.-) pg_catalog.row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM (
-                    SELECT "id", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) AS "hash", CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" OPERATOR(pg_catalog.=) pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s'))
+                SELECT "id", "local", "hash", "count" AS "priority", "count" OPERATOR(pg_catalog.-) pg_catalog.row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM (
+                    SELECT "id", "remote" IS NULL AS "local", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) AS "hash", CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" OPERATOR(pg_catalog.=) pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s'))
                     WHERE "plan" OPERATOR(pg_catalog.<=) %5$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) OPERATOR(pg_catalog.>=) 0
                     %4$s
                 ) AS c
+            ), r AS (
+                SELECT "id", "priority", CASE WHEN "local" THEN pg_catalog.row_number() OVER (PARTITION BY "local" ORDER BY "priority" DESC, "id") END AS "slot" FROM c WHERE "count" OPERATOR(pg_catalog.>=) 0
             ), s AS (
-                SELECT t.id FROM %1$s AS t JOIN c ON t.id OPERATOR(pg_catalog.=) c.id WHERE c.count OPERATOR(pg_catalog.>=) 0 AND t.state OPERATOR(pg_catalog.=) 'PLAN'
-                ORDER BY c.priority DESC, t.id LIMIT GREATEST(LEAST($1 OPERATOR(pg_catalog.-) (SELECT COALESCE(pg_catalog.sum("classid"), 0) FROM l), $2), 0) FOR NO KEY UPDATE OF t %3$s
+                SELECT t.id FROM %1$s AS t JOIN r ON t.id OPERATOR(pg_catalog.=) r.id WHERE COALESCE(r.slot OPERATOR(pg_catalog.<=) $3, true) AND t.state OPERATOR(pg_catalog.=) 'PLAN'
+                ORDER BY r.priority DESC, t.id LIMIT GREATEST(LEAST($1 OPERATOR(pg_catalog.-) (SELECT COALESCE(pg_catalog.sum("classid"), 0) FROM l), $2), 0) FOR NO KEY UPDATE OF t %3$s
             ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id, pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) AS "hash", "group", "remote", "max", ("user")::pg_catalog.text AS "user"
         ), w->schema_table, w->shared->oid,
 #if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
