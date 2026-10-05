@@ -532,18 +532,18 @@ bool dest_timeout(void) {
         dest_loud();
         running = true;
         dest_execute();
+        if (task.shared->spi) {
+            ReleaseCurrentSubTransaction();
+            released = true;
+            // the commit of the input, whose deferred triggers and constraints, serialization check or notifications may fail it too, as exec_simple_query() has it in local mode: here, rather than fail the worker, and have the task run again on every reset; and as part of the input still, its deferred triggers to be cancelled, stopped or terminated, with interrupts held off from its very commit on only, see dest_xact(), as in local mode
+            SPI_finish_my();
+            finished = true;
+        }
         running = false;
         dest_quiet();
         if (held) held = false; else HOLD_INTERRUPTS(); // the input done, no termination is to come in between it and its bookkeeping, which would leave the task in WORK, to run again on reset: until the end, see below, if not since its commit already, see dest_xact()
         QueryCancelPending = false; // a cancel that came too late for the input, after its last CHECK_FOR_INTERRUPTS(), isn't meant for the bookkeeping, outside any PG_TRY()
         SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
-        if (task.shared->spi) {
-            ReleaseCurrentSubTransaction();
-            released = true;
-            // the commit of the input, whose deferred triggers and constraints, serialization check or notifications may fail it too, as exec_simple_query() has it in local mode: here, rather than fail the worker, and have the task run again on every reset
-            SPI_finish_my();
-            finished = true;
-        }
     PG_CATCH();
         held = false;
         HOLD_INTERRUPTS(); // as above, the error's errfinish() having let them through again

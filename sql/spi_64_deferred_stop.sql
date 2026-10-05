@@ -1,0 +1,28 @@
+-- the commit of an input in spi mode runs its deferred triggers as part of the input, as in local mode: STOP cancels them, rather than wait for them with interrupts held off
+DELETE FROM task WHERE "group" = 'deferred_stop';
+CREATE TABLE deferred_stop_t (i int);
+CREATE FUNCTION deferred_stop_f() RETURNS trigger LANGUAGE plpgsql AS $function$BEGIN PERFORM pg_sleep(10); RETURN NULL; END$function$;
+CREATE CONSTRAINT TRIGGER deferred_stop_tr AFTER INSERT ON deferred_stop_t DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE PROCEDURE deferred_stop_f();
+GRANT ALL ON deferred_stop_t TO PUBLIC;
+INSERT INTO task ("group", input) VALUES ('deferred_stop', 'INSERT INTO deferred_stop_t VALUES (1)');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'deferred_stop' AND state = 'WORK') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task in group ''deferred_stop'' to start'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pg_sleep(1);
+UPDATE task SET state = 'STOP' WHERE "group" = 'deferred_stop';
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'deferred_stop' AND stop IS NOT NULL) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task in group ''deferred_stop'' to be done'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, error LIKE '%canceling statement due to user request%' AS cancelled, stop - start < interval '5 sec' AS in_time FROM task WHERE "group" = 'deferred_stop';
+SELECT count(*) AS inserted FROM deferred_stop_t;
+DELETE FROM task WHERE "group" = 'deferred_stop';
+DROP TABLE deferred_stop_t;
+DROP FUNCTION deferred_stop_f();
