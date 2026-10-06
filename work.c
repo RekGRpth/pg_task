@@ -1370,6 +1370,10 @@ void work_main(Datum main_arg) {
             if (timeout < current_sleep) timeout = current_sleep;
         }
         if ((deadline = work_deadline()) >= 0 && (timeout < 0 || deadline < timeout)) timeout = deadline;
+#if PG_VERSION_NUM < 90600
+        // the copy of 9.6's latch.c waits on a self-pipe of its own, which the server's SetLatch(), the one called, from the signal handlers too, never writes to: a signal coming between its check of the latch and its wait wakes it no sooner than its timeout, which, then, is a sleep at most, idle or not
+        if (timeout < 0 || timeout > work.shared->sleep) timeout = work.shared->sleep;
+#endif
         // the next task planned in more than about 24.8 days (repeat = '1 month', say), or as long a reset, is more than the wait takes: it asserts and passes the int it gets to epoll, which would make it wait forever instead, so wake up in time to compute the timeout again
         if (timeout > INT_MAX) timeout = INT_MAX;
         nevents = WaitEventSetWaitMy(set, timeout, events, nevents);
