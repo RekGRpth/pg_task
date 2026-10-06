@@ -126,7 +126,7 @@ static void task_insert(const Task *t) {
         if (src.data) resetStringInfo(&src); else initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             INSERT INTO %1$s ("parent", "plan", %2$s) SELECT "id", CASE
-                WHEN "drift" THEN %3$s OPERATOR(pg_catalog.+) "repeat" ELSE (WITH RECURSIVE r AS (SELECT "plan" AS p UNION SELECT p OPERATOR(pg_catalog.+) "repeat" FROM r WHERE p OPERATOR(pg_catalog.<=) %3$s) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
+                WHEN "drift" THEN %3$s OPERATOR(pg_catalog.+) "repeat" ELSE (WITH RECURSIVE r AS (SELECT CASE WHEN pg_catalog.isfinite("plan") THEN "plan" ELSE %3$s END AS p UNION SELECT p OPERATOR(pg_catalog.+) "repeat" FROM r WHERE p OPERATOR(pg_catalog.<=) %3$s) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
             END AS "plan", %2$s FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 AND "repeat" OPERATOR(pg_catalog.>) '0 sec' FOR NO KEY UPDATE OF t LIMIT 1 RETURNING id
         ), t->work->schema_table, cached, init_plan());
     }

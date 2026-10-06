@@ -1,0 +1,22 @@
+-- a plan of infinity from before it was refused, which pg_work's own updates of the row keep, doesn't fail them, as the check of the plan, refused as set, does only for a plan set: the task not to run goes GONE, the one with a repeat runs, its next one planned from now on
+DELETE FROM task WHERE "group" LIKE 'infinite_legacy_%';
+SET session_replication_role = replica;
+INSERT INTO task ("group", input, plan) VALUES ('infinite_legacy_once', 'SELECT 1', '-infinity');
+INSERT INTO task ("group", input, plan, repeat) VALUES ('infinite_legacy_repeat', 'SELECT 2', '-infinity', '1 hour');
+RESET session_replication_role;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" LIKE 'infinite_legacy_%' AND plan = '-infinity' AND state NOT IN ('DONE', 'GONE', 'FAIL')) AND EXISTS (SELECT 1 FROM task WHERE "group" = 'infinite_legacy_repeat' AND plan <> '-infinity') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''infinite_legacy_%%'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", state, isfinite(plan) AS finite, plan > now() AS later FROM task WHERE "group" LIKE 'infinite_legacy_%' ORDER BY id;
+         group          | state | finite | later 
+------------------------+-------+--------+-------
+ infinite_legacy_once   | GONE  | f      | f
+ infinite_legacy_repeat | DONE  | f      | f
+ infinite_legacy_repeat | PLAN  | t      | t
+(3 rows)
+
+DELETE FROM task WHERE "group" LIKE 'infinite_legacy_%';
