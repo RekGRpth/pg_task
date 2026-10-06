@@ -10,3 +10,15 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''copy_to_stdout'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = 'copy_to_stdout' AND plan > :ct::timestamp;
+-- the rows of COPY go on lines of their own, after the output before them, if any, and the output after them goes on from their last newline, rather than run into them or leave an empty line
+DELETE FROM task WHERE "group" LIKE 'copy_mix_%';
+INSERT INTO task ("group", input, remote) VALUES ('copy_mix_1', 'SELECT 1; COPY (SELECT 2 UNION ALL SELECT 3) TO STDOUT; SELECT 4', 'dbname=' || :'DBNAME'), ('copy_mix_2', 'COPY (SELECT 2) TO STDOUT; SELECT 3', 'dbname=' || :'DBNAME'), ('copy_mix_3', 'SELECT 1; COPY (SELECT 2) TO STDOUT', 'dbname=' || :'DBNAME');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" LIKE 'copy_mix_%' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''copy_mix_%%'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", state, replace(output, E'\n', '|') AS output FROM task WHERE "group" LIKE 'copy_mix_%' ORDER BY "group";
+DELETE FROM task WHERE "group" LIKE 'copy_mix_%';

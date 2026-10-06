@@ -639,9 +639,17 @@ static void work_copy(Task *t) {
     static char *buffer = NULL; // not to be clobbered by an error
     int len = 0;
     volatile bool failed = false;
+    volatile bool copied = false;
     if (!t->output.data) initStringInfoMy(&t->output);
     PG_TRY();
-        while ((len = PQgetCopyData(t->conn, &buffer, true)) > 0) { appendBinaryStringInfo(&t->output, buffer, len); PQfreemem(buffer); buffer = NULL; work_output(t); }
+        while ((len = PQgetCopyData(t->conn, &buffer, true)) > 0) {
+            if (!copied) task_line(t); // on a line of its own, after the output before it, if any
+            copied = true;
+            appendBinaryStringInfo(&t->output, buffer, len);
+            PQfreemem(buffer);
+            buffer = NULL;
+            work_output(t);
+        }
     PG_CATCH();
         task_error(t);
         EmitErrorReport();
@@ -649,6 +657,7 @@ static void work_copy(Task *t) {
         failed = true;
     PG_END_TRY();
     if (failed) { if (buffer) PQfreemem(buffer); buffer = NULL; work_failed(t); return; }
+    if (copied) t->line = false; // its rows end with a newline each, the last one included, for the next line to go on from
     switch (len) {
         case 0: t->event = WL_SOCKET_READABLE; t->socket = work_copy; break;
         case -2: work_error((errmsg("id = %li, PQgetCopyData == -2", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
