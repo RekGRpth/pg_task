@@ -57,7 +57,8 @@ extern PGDLLIMPORT volatile sig_atomic_t ShutdownRequestPending;
 void SignalHandlerForConfigReload(SIGNAL_ARGS);
 #endif
 
-#ifndef MemoryContextResetAndDeleteChildren
+// gone from 17 on, a macro of MemoryContextReset(), which deletes the children too, from 9.5 on, and a function of its own in 9.4, where MemoryContextReset() only resets them
+#if PG_VERSION_NUM >= 90500 && !defined(MemoryContextResetAndDeleteChildren)
 #define MemoryContextResetAndDeleteChildren(ctx) MemoryContextReset(ctx)
 #endif
 
