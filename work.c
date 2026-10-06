@@ -1263,6 +1263,9 @@ void work_main(Datum main_arg) {
     appendStringInfo(&application_name, "pg_work %s %s %li", work.shared->schema, work.shared->table, work.shared->sleep);
     SetConfigOption("application_name", application_name.data, PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
+#if PG_VERSION_NUM >= 170000
+    SetConfigOption("transaction_timeout", "0", PGC_USERSET, PGC_S_SESSION); // that of the settings of the database or the role, for the transactions of tasks, ends any longer one with FATAL, taking pg_work, with every remote task it runs, down: none for its own, which run no code of others, unlike a task's input
+#endif
     // make_*() compare what pg_get_expr() deparses with the expressions they make, which these two change, from the server's configuration or the role's and database's settings, and so does quote_identifier() with the names below: once connected, as no GUC can be set before
     SetConfigOption("IntervalStyle", "postgres", PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("quote_all_identifiers", "off", PGC_USERSET, PGC_S_SESSION);

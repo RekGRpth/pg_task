@@ -1,0 +1,67 @@
+-- the transaction_timeout of the settings of the database, from 17 on, is for the transactions of tasks, not for those of pg_work itself, which it ended with FATAL, taking pg_work down with every remote task it runs: pg_work keeps going under one of 1 ms
+DO $body$ BEGIN
+    IF current_setting('server_version_num')::int >= 170000 THEN EXECUTE format('ALTER DATABASE %I SET transaction_timeout = %L', current_database(), '1ms'); END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pid AS work_pid FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database()
+\gset
+SELECT set_config('pg_task_test.work_pid', :'work_pid', false) IS NOT NULL AS work_pid_saved;
+ work_pid_saved 
+----------------
+ t
+(1 row)
+
+SELECT pg_terminate_backend(:work_pid) AS work_terminated;
+ work_terminated 
+-----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work public task %' AND datname = current_database() AND pid <> current_setting('pg_task_test.work_pid')::int AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work to be restarted and become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT set_config('pg_task_test.work_pid', (SELECT pid::text FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database()), false) IS NOT NULL AS work_pid_saved;
+ work_pid_saved 
+----------------
+ t
+(1 row)
+
+SELECT pg_sleep(3);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+SELECT pg_stat_clear_snapshot();
+ pg_stat_clear_snapshot 
+------------------------
+ 
+(1 row)
+
+SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database() AND pid = current_setting('pg_task_test.work_pid')::int) AS same_work;
+ same_work 
+-----------
+ t
+(1 row)
+
+DO $body$ BEGIN
+    IF current_setting('server_version_num')::int >= 170000 THEN EXECUTE format('ALTER DATABASE %I RESET transaction_timeout', current_database()); END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT count(pg_terminate_backend(pid)) AS work_terminated FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database();
+ work_terminated 
+-----------------
+               1
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work public task %' AND datname = current_database() AND pid <> current_setting('pg_task_test.work_pid')::int AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work to be restarted without the timeout and become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
