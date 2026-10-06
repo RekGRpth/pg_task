@@ -10,6 +10,7 @@
 #include <tcop/utility.h>
 #include <utils/builtins.h>
 #include <utils/memutils.h>
+#include <utils/timestamp.h>
 
 #if PG_VERSION_NUM < 90500
 #include <storage/barrier.h>
@@ -284,6 +285,21 @@ static void init_libpq(void) {
 #endif
 }
 
+// pg_task.reset is an interval, which pg_conf and pg_work cast it to in one query for all the entries, of every database: one that isn't, set for a database or a role by its owner, which a setting of the user's own allows, would fail it for all of them, the other databases' pg_work left unstarted; refused as set, then, as a setting of a type of its own is
+static bool init_check_interval(char **newval, void **extra, GucSource source) {
+    bool valid = true;
+    MemoryContext oldMemoryContext = CurrentMemoryContext;
+    PG_TRY();
+        (void)DirectFunctionCall3(interval_in, CStringGetDatum(*newval), ObjectIdGetDatum(InvalidOid), Int32GetDatum(-1));
+    PG_CATCH();
+        MemoryContextSwitchTo(oldMemoryContext);
+        FlushErrorState();
+        GUC_check_errdetail("\"%s\" is not an interval.", *newval);
+        valid = false;
+    PG_END_TRY();
+    return valid;
+}
+
 void _PG_init(void) {
     BackgroundWorker worker = {0};
     size_t len;
@@ -319,7 +335,7 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_task.plan", "pg_task plan", "Default value for plan timestamp", &init.plan, "statement_timestamp()", PGC_SUSET, 0, NULL, NULL, NULL); // an SQL expression, which the bookkeeping, as pg_task.user, and pg_work run as is: for superusers only to set, not for task authors in their own sessions
     DefineCustomStringVariable("pg_task.quote", "pg_task quote", "Results columns quote", &init.task.quote, "", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.repeat", "pg_task repeat", "Non-negative auto repeat tasks interval", &init.task.repeat, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.reset", "pg_task reset", "Interval of reset tasks", &init.task.reset, "1 hour", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.reset", "pg_task reset", "Interval of reset tasks", &init.task.reset, "1 hour", PGC_USERSET, 0, init_check_interval, NULL, NULL);
     DefineCustomStringVariable("pg_task.schema", "pg_task schema", "Schema name for tasks table", &init.task.schema, "public", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.table", "pg_task table", "Table name for tasks table", &init.task.table, "task", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.timeout", "pg_task timeout", "Non-negative allowed time for task run", &init.task.timeout, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);

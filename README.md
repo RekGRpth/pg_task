@@ -88,7 +88,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | pg_task.plan | timestamptz | statement_timestamp() | config, database, user, session (superuser only) | Default value for plan timestamp, and what the scheduler takes for now: an SQL expression, run as `pg_task.user`, so only a superuser may set it |
 | pg_task.quote | char | | config, database, user, session | Results columns quote |
 | pg_task.repeat | interval | 0 sec | config, database, user, session | Non-negative auto repeat tasks interval |
-| pg_task.reset | interval | 1 hour | config, database, user | Interval of reset tasks |
+| pg_task.reset | interval | 1 hour | config, database, user | Interval of reset tasks; a value that isn't an interval is refused as set, as it would keep `pg_conf` from applying `pg_task.json` for every database (one set before this check, still in `pg_db_role_setting`, has to be fixed by hand: `pg_conf` logs `pg_task.json not applied` with it) |
 | pg_task.schema | text | public | config, database, user | Schema name for tasks table |
 | pg_task.table | text | task | config, database, user | Table name for tasks table |
 | pg_task.timeout | interval | 0 sec | config, database, user, session | Non-negative allowed time for task run |
