@@ -1,6 +1,7 @@
 #include "include.h"
 
 #include <executor/spi_priv.h>
+#include <mb/pg_wchar.h>
 #include <miscadmin.h>
 #include <pgstat.h>
 #include <storage/proc.h>
@@ -46,19 +47,30 @@ static int errdetail_params_my(int nargs, Oid *argtypes, Datum *values, const ch
         MemoryContext tmpCxt = AllocSetContextCreate(CurrentMemoryContext, "BuildParamLogString", ALLOCSET_DEFAULT_SIZES);
         MemoryContext oldcontext = MemoryContextSwitchTo(tmpCxt);
         StringInfoData buf;
+        // all of them within what a line of the log takes along with the rest of it, the output and the error of a task near the most a task may keep among them, see TASK_OUTPUT_MAX, and its quotes doubled: rather than fail the bookkeeping, outside any PG_TRY(), and have the task run again on every reset
+        const int budget = MaxAllocSize / 16;
         initStringInfo(&buf);
         for (int i = 0; i < nargs; i++) {
             appendStringInfo(&buf, "%s$%d = ", i > 0 ? ", " : "", i + 1);
             if ((nulls && nulls[i] == 'n') || !OidIsValid(argtypes[i])) appendStringInfoString(&buf, "NULL"); else {
                 bool typisvarlena;
                 char *pstring;
+                int max = INT_MAX;
                 Oid typoutput;
                 getTypeOutputInfo(argtypes[i], &typoutput, &typisvarlena);
                 pstring = OidOutputFunctionCall(typoutput, values[i]);
+#if PG_VERSION_NUM >= 130000
+                if (log_parameter_max_length >= 0) max = log_parameter_max_length; // as the server has it for the parameters of its own
+#endif
                 appendStringInfoCharMacro(&buf, '\'');
-                for (char *p = pstring; *p; p++)  {
-                    if (*p == '\'') appendStringInfoCharMacro(&buf, *p);
-                    appendStringInfoCharMacro(&buf, *p);
+                for (char *p = pstring; *p; ) {
+                    int len = pg_mblen(p);
+                    if (p - pstring + len > max || buf.len + 2 * len > budget) { appendStringInfoString(&buf, "..."); break; } // at a character
+                    for (int j = 0; j < len && p[j]; j++) {
+                        if (p[j] == '\'') appendStringInfoCharMacro(&buf, p[j]);
+                        appendStringInfoCharMacro(&buf, p[j]);
+                    }
+                    p += len;
                 }
                 appendStringInfoCharMacro(&buf, '\'');
             }
