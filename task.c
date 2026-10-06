@@ -197,7 +197,7 @@ void task_untake(Task *t) {
 // the output and the error of a task together within the most it may keep, see TASK_OUTPUT_MAX, as its row is put together whole before TOAST takes them out of it, or its bookkeeping fails, and the task runs again on every reset: the error first, which tells why it failed, then of the output what room is left
 static void task_fit(Task *t) {
     int error = t->error.data ? t->error.len : 0;
-    if (error > (int)TASK_OUTPUT_MAX) t->error.data[t->error.len = error = pg_mbcliplen(t->error.data, error, TASK_OUTPUT_MAX)] = '\0';
+    if (error >= (int)TASK_OUTPUT_MAX) t->error.data[t->error.len = error = pg_mbcliplen(t->error.data, error, TASK_OUTPUT_MAX)] = '\0'; // at it too, where append_with_tabs() stops, maybe within a character, which pg_mbcliplen() leaves out
     if (t->output.data && t->output.len > (int)TASK_OUTPUT_MAX - error) t->output.data[t->output.len = pg_mbcliplen(t->output.data, t->output.len, TASK_OUTPUT_MAX - error)] = '\0';
 }
 
