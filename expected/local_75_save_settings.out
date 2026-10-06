@@ -1,0 +1,22 @@
+-- with save = true the search_path and statement_timeout a task sets carry over to the next task of its worker, as the rest of the session does, rather than go back to those of the worker's start, while SHOW tells otherwise
+DELETE FROM task WHERE "group" = 'save_settings';
+INSERT INTO task ("group", input, count, save) VALUES
+    ('save_settings', 'SET search_path = pg_catalog, save_settings_schema; SET statement_timeout = 1000', 5, true),
+    ('save_settings', 'SELECT current_setting(''search_path'') AS search_path, current_setting(''statement_timeout'') AS statement_timeout', 5, true),
+    ('save_settings', 'SELECT pg_sleep(3)', 5, true);
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'save_settings' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''save_settings'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, replace(output, E'\n', '|') AS output, error LIKE '%statement timeout%' AS timed_out, pid = (SELECT min(pid) FROM task WHERE "group" = 'save_settings') AS same_worker FROM task WHERE "group" = 'save_settings' ORDER BY id;
+ state |                                   output                                   | timed_out | same_worker 
+-------+----------------------------------------------------------------------------+-----------+-------------
+ DONE  | SET|SET                                                                    |           | t
+ DONE  | search_path     statement_timeout|pg_catalog, save_settings_schema      1s |           | t
+ FAIL  |                                                                            | t         | t
+(3 rows)
+
+DELETE FROM task WHERE "group" = 'save_settings';

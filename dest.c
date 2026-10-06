@@ -518,12 +518,14 @@ void dest_cancel(SIGNAL_ARGS) {
 bool dest_timeout(void) {
     bool exit;
     int StatementTimeoutMy = StatementTimeout;
+    int StatementTimeoutTask;
     volatile bool released = false, finished = false;
     if (task_work(&task)) return true;
     task.skip = 0; // or a task failed before in this worker would hide the command tag of the next one, and with nothing else to output have it deleted
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
     StatementTimeout = task.timeout ? task.timeout : StatementTimeoutMy; // a task without a timeout of its own still runs under the server's statement_timeout, as a remote one does, and as a timeout of its own is capped by it
+    StatementTimeoutTask = StatementTimeout;
     if (task.shared->spi) {
         SPI_connect_my(task.input, InvalidOid);
         BeginInternalSubTransaction(NULL);
@@ -545,6 +547,7 @@ bool dest_timeout(void) {
         dest_quiet();
         if (held) held = false; else HOLD_INTERRUPTS(); // the input done, no termination is to come in between it and its bookkeeping, which would leave the task in WORK, to run again on reset: until the end, see below, if not since its commit already, see dest_xact()
         QueryCancelPending = false; // a cancel that came too late for the input, after its last CHECK_FOR_INTERRUPTS(), isn't meant for the bookkeeping, outside any PG_TRY()
+        if (task.save) task_search_path_save();
         SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     PG_CATCH();
         held = false;
@@ -567,9 +570,11 @@ bool dest_timeout(void) {
             }
         }
         // only once the failed (sub)transaction is gone, whose abort would take it back to the author's search_path, for the task's bookkeeping to run with
+        if (task.save) task_search_path_save(); // as the input's failed transaction left it, that of the transactions before it, if any, in local mode
         SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     PG_END_TRY();
     if (task.shared->spi && !finished) SPI_finish_my();
+    if (task.save && StatementTimeout != StatementTimeoutTask) StatementTimeoutMy = StatementTimeout; // the input set statement_timeout itself, and committed it, a failed one taking it back: the session's for the next tasks now, as save = true keeps the rest of it, and as SHOW tells
     StatementTimeout = StatementTimeoutMy;
     pgstat_report_stat(false);
     pgstat_report_activity(STATE_IDLE, NULL);

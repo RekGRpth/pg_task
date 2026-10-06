@@ -324,6 +324,16 @@ const char *task_search_path(void) {
     return search_path;
 }
 
+// the search_path an input left the session with, for the next task of the worker to run with, as save = true keeps the rest of the session, rather than that of the worker's start, which the bookkeeping, with an empty one, would have it go back to
+void task_search_path_save(void) {
+    static bool saved = false;
+    const char *value = GetConfigOption("search_path", false, false);
+    char *copy = MemoryContextStrdup(TopMemoryContext, value ? value : "");
+    if (saved) pfree((void *)search_path);
+    search_path = copy;
+    saved = true;
+}
+
 void task_error(Task *t) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();

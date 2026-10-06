@@ -165,6 +165,7 @@ const char *error_severity(int elevel);
 const char *init_null(void);
 const char *init_plan(void);
 const char *task_search_path(void);
+void task_search_path_save(void);
 Datum CStringGetTextDatumMy(const char *s);
 Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid);
 int init_arg(const Shared *ws);
