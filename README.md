@@ -116,7 +116,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | delete | bool | NOT NULL | pg_task.delete | Auto delete task when both output and error are nulls |
 | drift | bool | NOT NULL | pg_task.drift | Compute next repeat time by stop time instead by plan time |
 | header | bool | NOT NULL | pg_task.header | Show columns headers in output (only when the query returns at least one row and more than one column) |
-| save | bool | NOT NULL | pg_task.save | Save session state between tasks; with false, it's reset before the next task of the worker as `DISCARD ALL` does, the session's advisory locks let go of too; with true, the `search_path` and `statement_timeout` a task sets carry over too |
+| save | bool | NOT NULL | pg_task.save | Save session state between tasks; with false, it's reset before the next task of the worker as `DISCARD ALL` does, the session's advisory locks let go of too; with true, the `search_path` a task sets carries over too, and in local and spi mode its `statement_timeout` (for the next tasks with no `timeout` of their own), while that of a remote task is set anew for each from its `timeout` |
 | string | bool | NOT NULL | pg_task.string | Quote only strings |
 | delimiter | char | NOT NULL | pg_task.delimiter | Results columns delimiter, nothing between them if empty |
 | escape | char | NOT NULL | pg_task.escape | Results columns escape |
