@@ -1,7 +1,11 @@
--- pg_task.reset, which pg_conf and pg_work cast to an interval in one query for all the entries of every database, is refused as set for a database or a role if it isn't one, rather than fail that query for all of them
+-- pg_task.reset, which pg_conf and pg_work cast to an interval in one query for all the entries of every database, is refused as set for a database or a role if it isn't one, or isn't positive, rather than fail that query for all of them
 \set VERBOSITY terse
 ALTER DATABASE :"DBNAME" SET pg_task.reset = 'never';
 ERROR:  invalid value for parameter "pg_task.reset": "never"
+ALTER DATABASE :"DBNAME" SET pg_task.reset = '-1 hour';
+ERROR:  invalid value for parameter "pg_task.reset": "-1 hour"
+ALTER DATABASE :"DBNAME" SET pg_task.reset = '0';
+ERROR:  invalid value for parameter "pg_task.reset": "0"
 \set VERBOSITY default
 ALTER DATABASE :"DBNAME" SET pg_task.reset = '2 hours';
 SELECT 'pg_task.reset=2 hours' = ANY(setconfig) AS reset_set FROM pg_catalog.pg_db_role_setting WHERE setdatabase = (SELECT oid FROM pg_catalog.pg_database WHERE datname = current_database()) AND setrole = 0;

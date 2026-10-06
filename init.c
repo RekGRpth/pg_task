@@ -285,18 +285,25 @@ static void init_libpq(void) {
 #endif
 }
 
-// pg_task.reset is an interval, which pg_conf and pg_work cast it to in one query for all the entries, of every database: one that isn't, set for a database or a role by its owner, which a setting of the user's own allows, would fail it for all of them, the other databases' pg_work left unstarted; refused as set, then, as a setting of a type of its own is
+// pg_task.reset is a positive interval, which pg_conf and pg_work cast it to in one query for all the entries, of every database: one that isn't, set for a database or a role by its owner, which a setting of the user's own allows, would fail it for all of them, the other databases' pg_work left unstarted; refused as set, then, as a setting of a type of its own is
 static bool init_check_interval(char **newval, void **extra, GucSource source) {
     bool valid = true;
     MemoryContext oldMemoryContext = CurrentMemoryContext;
+    Interval *volatile interval = NULL;
     PG_TRY();
-        (void)DirectFunctionCall3(interval_in, CStringGetDatum(*newval), ObjectIdGetDatum(InvalidOid), Int32GetDatum(-1));
+        interval = DatumGetIntervalP(DirectFunctionCall3(interval_in, CStringGetDatum(*newval), ObjectIdGetDatum(InvalidOid), Int32GetDatum(-1)));
     PG_CATCH();
         MemoryContextSwitchTo(oldMemoryContext);
         FlushErrorState();
         GUC_check_errdetail("\"%s\" is not an interval.", *newval);
         valid = false;
     PG_END_TRY();
+    // and a positive one, or pg_work would reset ever after, or never
+    if (valid && (double)interval->month * DAYS_PER_MONTH * USECS_PER_DAY + (double)interval->day * USECS_PER_DAY + (double)interval->time <= 0) {
+        GUC_check_errdetail("\"%s\" is not a positive interval.", *newval);
+        valid = false;
+    }
+    if (interval) pfree(interval);
     return valid;
 }
 

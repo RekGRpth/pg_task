@@ -1,0 +1,38 @@
+-- the sleep, run and reset of an entry of pg_task.json, which its keys give past the bounds of the settings, are taken as 1 at least, as the settings have them: none had pg_work spin, or take no task at all
+SELECT current_setting('pg_task.json') AS json_baseline, current_user AS test_user
+\gset
+SELECT left(:'json_baseline', -1) || ',' || json_build_object('data', :'DBNAME', 'user', :'test_user', 'schema', 'entry_bounds_schema', 'sleep', 0, 'run', 0, 'reset', '0')::text || ']' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'entry_bounds_schema' AND c.relname = 'task') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work entry_bounds_schema task %' AND datname = current_database()) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of entry_bounds_schema.task'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pg_sleep(1);
+INSERT INTO entry_bounds_schema.task (input) VALUES ('SELECT 1');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM entry_bounds_schema.task WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task of entry_bounds_schema.task to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, output FROM entry_bounds_schema.task;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work entry_bounds_schema %') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of entry_bounds_schema to go away'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SET client_min_messages TO WARNING;
+DROP SCHEMA entry_bounds_schema CASCADE;
+RESET client_min_messages;
