@@ -152,6 +152,7 @@ bool unlock_data_user_hash(Oid data, Oid user, int hash);
 bool unlock_data_make(Oid data);
 bool unlock_data_user(Oid data, Oid user);
 void unlock_advisory_all(void);
+uint32 init_table_key(Oid table);
 void relock_table_id(Oid table, int64 id);
 void relock_table_pid_hash(Oid table, int pid, int hash);
 void init_task_ids(StringInfo ids, const char *data, Oid oid);

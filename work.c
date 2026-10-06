@@ -449,10 +449,10 @@ static void work_reset(const Work *w) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH s AS (
-                SELECT "id" FROM %1$s AS t LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$i AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
+                SELECT "id" FROM %1$s AS t LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$u AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
                 WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND "id" OPERATOR(pg_catalog.<>) ALL(($1)::pg_catalog.int8[]) AND l.pid IS NULL FOR NO KEY UPDATE OF t %4$s
             ) UPDATE %1$s AS t SET "state" = 'PLAN', "start" = NULL, "stop" = NULL, "pid" = NULL FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id
-        ), w->schema_table, w->shared->oid, w->schema_type,
+        ), w->schema_table, init_table_key(w->shared->oid), w->schema_type,
 #if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
             "SKIP LOCKED"
 #else
@@ -491,12 +491,12 @@ static long work_timeout(const Work *w, long reset) {
         appendStringInfo(&src, SQL(
            SELECT COALESCE(LEAST((
                 SELECT $1 FROM %1$s AS t
-                LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$i AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
+                LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$u AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
                 WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND l.pid IS NULL LIMIT 1
            ), pg_catalog.ceil(EXTRACT(epoch FROM ((
                 SELECT "plan" OPERATOR(pg_catalog.-) %4$s AS "plan" FROM %1$s WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.>=) %4$s AND pg_catalog.isfinite("plan") ORDER BY 1 LIMIT 1
            )))::pg_catalog.float8 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int8), -1)::pg_catalog.int8 as "min"
-        ), w->schema_table, w->shared->oid, w->schema_type, init_plan());
+        ), w->schema_table, init_table_key(w->shared->oid), w->schema_type, init_plan());
     }
     SPI_connect_my(src.data, InvalidOid);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
@@ -864,9 +864,9 @@ static void work_stop(const Work *w) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            SELECT "id", l."pid" FROM %1$s AS t JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$i AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
+            SELECT "id", l."pid" FROM %1$s AS t JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$u AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
             WHERE "state" OPERATOR(pg_catalog.=) 'STOP'
-        ), w->schema_table, w->shared->oid);
+        ), w->schema_table, init_table_key(w->shared->oid));
     }
     SPI_connect_my(src.data, InvalidOid);
     if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
@@ -1160,7 +1160,7 @@ static void work_sleep(Work *w) {
         appendStringInfo(&src, SQL(
             l AS (
                 SELECT pg_catalog.count(DISTINCT CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 5 THEN "classid" END) OPERATOR(pg_catalog.+) pg_catalog.count(CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 7 THEN "classid" END) AS "classid", "objid" FROM (
-                    SELECT "classid", "objid", "objsubid" FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessShareLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) ANY(ARRAY[5, 7]) AND "database" OPERATOR(pg_catalog.=) %2$i
+                    SELECT "classid", "objid", "objsubid" FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessShareLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) ANY(ARRAY[5, 7]) AND "database" OPERATOR(pg_catalog.=) %2$u
                     UNION ALL SELECT ((($4)::pg_catalog.int4[])["i"])::pg_catalog.oid, ((($5)::pg_catalog.int4[])["i"])::pg_catalog.oid, 5::pg_catalog.int2 FROM pg_catalog.generate_subscripts(($4)::pg_catalog.int4[], 1) AS w ("i")
                 ) AS l GROUP BY "objid"
             ), c AS (
@@ -1175,7 +1175,7 @@ static void work_sleep(Work *w) {
                 SELECT t.id FROM %1$s AS t JOIN r ON t.id OPERATOR(pg_catalog.=) r.id WHERE COALESCE(r.slot OPERATOR(pg_catalog.<=) $3, true) AND t.state OPERATOR(pg_catalog.=) 'PLAN'
                 ORDER BY r.priority DESC, t.id LIMIT GREATEST(LEAST($1 OPERATOR(pg_catalog.-) (SELECT COALESCE(pg_catalog.sum("classid"), 0) FROM l), $2), 0) FOR NO KEY UPDATE OF t %3$s
             ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id, pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) AS "hash", "group", "remote", "max", ("user")::pg_catalog.text AS "user"
-        ), w->schema_table, w->shared->oid,
+        ), w->schema_table, init_table_key(w->shared->oid),
 #if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
         "SKIP LOCKED"
 #else
