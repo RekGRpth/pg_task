@@ -25,6 +25,8 @@
 #endif
 
 static const char *search_path;
+static const char *search_path_start; // that of the worker's start, which a reset of the session takes it back to, see task_search_path_reset()
+static bool search_path_saved = false;
 static Oid userid = InvalidOid; // pg_task.user, whose rights the task table bookkeeping needs, while the session itself belongs to the task owner
 
 // the next task of the very group and remote of the task just done, not only of their hash, which "group" || "remote" of others may give too, and which this worker would then run as if it were of its own: a remote one locally, a local one or one of another server on its connection
@@ -324,14 +326,20 @@ const char *task_search_path(void) {
     return search_path;
 }
 
-// the search_path an input left the session with, for the next task of the worker to run with, as save = true keeps the rest of the session, rather than that of the worker's start, which the bookkeeping, with an empty one, would have it go back to
+// the search_path an input left the session with, for the next task of the worker to run with, as save = true keeps the rest of the session, rather than that of the worker's start, which the bookkeeping, with an empty one, would have it go back to: of an input done only, a failed one taking its own back, to that of the bookkeeping too in spi mode, where it's set within the input's subtransaction
 void task_search_path_save(void) {
-    static bool saved = false;
     const char *value = GetConfigOption("search_path", false, false);
     char *copy = MemoryContextStrdup(TopMemoryContext, value ? value : "");
-    if (saved) pfree((void *)search_path);
+    if (search_path_saved) pfree((void *)search_path);
     search_path = copy;
-    saved = true;
+    search_path_saved = true;
+}
+
+// that of the worker's start back, the session reset as DISCARD ALL does, with save = false
+void task_search_path_reset(void) {
+    if (search_path_saved) pfree((void *)search_path);
+    search_path = search_path_start;
+    search_path_saved = false;
 }
 
 void task_error(Task *t) {
@@ -467,6 +475,7 @@ void task_main(Datum main_arg) {
     CommitTransactionCommand();
     search_path = GetConfigOption("search_path", false, false);
     search_path = search_path ? pstrdup(search_path) : "";
+    search_path_start = search_path;
     SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     set_ps_display_my("main");
     process_session_preload_libraries();

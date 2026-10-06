@@ -1,9 +1,11 @@
--- with save = true the search_path and statement_timeout a task sets carry over to the next task of its worker, as the rest of the session does, rather than go back to those of the worker's start, while SHOW tells otherwise
+-- with save = true the search_path and statement_timeout a task sets carry over to the next task of its worker, as the rest of the session does, rather than go back to those of the worker's start, while SHOW tells otherwise: past a failed task too, which takes back its own only, and till a task with save = false resets the session
 DELETE FROM task WHERE "group" = 'save_settings';
 INSERT INTO task ("group", input, count, save) VALUES
-    ('save_settings', 'SET search_path = pg_catalog, save_settings_schema; SET statement_timeout = 1000', 5, true),
-    ('save_settings', 'SELECT current_setting(''search_path'') AS search_path, current_setting(''statement_timeout'') AS statement_timeout', 5, true),
-    ('save_settings', 'SELECT pg_sleep(3)', 5, true);
+    ('save_settings', 'SET search_path = pg_catalog, save_settings_schema; SET statement_timeout = 1000', 10, true),
+    ('save_settings', 'SELECT current_setting(''search_path'') AS search_path, current_setting(''statement_timeout'') AS statement_timeout', 10, true),
+    ('save_settings', 'SELECT pg_sleep(3)', 10, true),
+    ('save_settings', 'SELECT current_setting(''search_path'') AS search_path', 10, false),
+    ('save_settings', 'SELECT current_setting(''search_path'') = (SELECT reset_val FROM pg_settings WHERE name = ''search_path'') AS search_path_reset, current_setting(''statement_timeout'') AS statement_timeout', 10, true);
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'save_settings' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;

@@ -430,6 +430,7 @@ static void dest_discard(void) {
 #endif
     task.shared = shared;
     unlock_advisory_all();
+    task_search_path_reset();
     SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("pg_task.schema", task.shared->schema, PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("pg_task.table", task.shared->table, PGC_USERSET, PGC_S_SESSION);
@@ -570,7 +571,6 @@ bool dest_timeout(void) {
             }
         }
         // only once the failed (sub)transaction is gone, whose abort would take it back to the author's search_path, for the task's bookkeeping to run with
-        if (task.save) task_search_path_save(); // as the input's failed transaction left it, that of the transactions before it, if any, in local mode
         SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     PG_END_TRY();
     if (task.shared->spi && !finished) SPI_finish_my();
