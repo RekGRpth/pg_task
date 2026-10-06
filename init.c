@@ -462,7 +462,7 @@ void init_work(int n, const char **data, const char **user, const int *hash, boo
 void init_work_wake(const Shared *task) {
     int pid = 0;
     LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
-    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].id && !shared[slot].gone && shared[slot].pid && !strcmp(shared[slot].data, task->data) && !strcmp(shared[slot].user, task->user) && !strcmp(shared[slot].schema, task->schema) && !strcmp(shared[slot].table, task->table)) { pid = shared[slot].pid; break; }
+    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].id && shared[slot].reg && !shared[slot].gone && shared[slot].pid && !strcmp(shared[slot].data, task->data) && !strcmp(shared[slot].user, task->user) && !strcmp(shared[slot].schema, task->schema) && !strcmp(shared[slot].table, task->table)) { pid = shared[slot].pid; break; }
     LWLockRelease(BackgroundWorkerLock);
     if (pid && kill(pid, SIGINT)) elog(DEBUG1, "could not wake pg_work %i: %m", pid);
 }
