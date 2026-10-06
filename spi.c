@@ -64,13 +64,13 @@ static int errdetail_params_my(int nargs, Oid *argtypes, Datum *values, const ch
 #endif
                 appendStringInfoCharMacro(&buf, '\'');
                 for (char *p = pstring; *p; ) {
-                    int len = pg_mblen(p);
+                    int j, len = pg_mblen(p);
                     if (p - pstring + len > max || buf.len + 2 * len > budget) { appendStringInfoString(&buf, "..."); break; } // at a character
-                    for (int j = 0; j < len && p[j]; j++) {
+                    for (j = 0; j < len && p[j]; j++) {
                         if (p[j] == '\'') appendStringInfoCharMacro(&buf, p[j]);
                         appendStringInfoCharMacro(&buf, p[j]);
                     }
-                    p += len;
+                    p += j; // up to the end of the string, a character cut short there, rather than past it
                 }
                 appendStringInfoCharMacro(&buf, '\'');
             }
