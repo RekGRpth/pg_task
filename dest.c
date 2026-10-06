@@ -298,7 +298,9 @@ static void dest_execute_split(const char *src, List *parsetree_list) {
     List *stmts = NIL; // all of them first, then run, as an error of one would leave the scanner unfinished
     ListCell *stmt, *tree;
     YYLTYPE yylloc;
-    yyextra.escape_string_warning = false; // the parser has warned already
+#if PG_VERSION_NUM >= 90500
+    yyextra.escape_string_warning = false; // the parser has warned already, which before 9.5 the scanner does by the setting itself, so twice
+#endif
     while ((token = core_yylex(&yylval, &yylloc, scanner))) {
         if (token == ';' && depth <= 0) {
             if (tokens) stmts = lappend(stmts, pnstrdup(src + start, yylloc + 1 - start));
