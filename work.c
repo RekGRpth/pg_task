@@ -563,7 +563,17 @@ static bool work_encoding(Task *t) {
     return false;
 }
 
+// a cancel of the task still on its way, sent asynchronously, see work_cancel(), which would cancel whatever runs on the connection once it gets there, the next task of the group say
+static bool work_cancelling(const Task *t) {
+#ifdef LIBPQ_HAS_ASYNC_CANCEL
+    dlist_iter iter;
+    dlist_foreach(iter, &cancels) if (dlist_container(Cancel, node, iter.cur)->id == t->shared->id) return true;
+#endif
+    return false;
+}
+
 static void work_done(Task *t) {
+    bool live;
     if (PQstatus(t->conn) == CONNECTION_OK && PQtransactionStatus(t->conn) != PQTRANS_IDLE) {
         if (!PQsendQuery(t->conn, SQL(COMMIT))) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
         t->event = WL_SOCKET_READABLE;
@@ -572,7 +582,8 @@ static void work_done(Task *t) {
         return;
     }
     if (!work_encoding(t)) return;
-    if (task_done(t, PQstatus(t->conn) == CONNECTION_OK) || PQstatus(t->conn) != CONNECTION_OK) { work_finish(t); return; } // take the next task of the group only for a connection to run it on
+    live = PQstatus(t->conn) == CONNECTION_OK && !work_cancelling(t); // take the next task of the group only for a connection to run it on, and one no cancel is on its way to
+    if (task_done(t, live) || !live) { work_finish(t); return; }
     if (t->save) { work_query(t); return; }
     if (!PQsendQuery(t->conn, SQL(DISCARD ALL;))) { ereport(WARNING, (errmsg("id = %li, PQsendQuery failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); task_untake(t); work_finish(t); return; }
     t->socket = work_discard;
