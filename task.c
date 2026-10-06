@@ -119,6 +119,7 @@ static void task_insert(const Task *t) {
     set_ps_display_my("insert");
     if (!(columns = task_columns(t))) return;
     // the columns are looked up for every repeat, as the user may have added or dropped one since: a column added would not be copied, and one dropped would fail the plan
+    // the next plan a repeat after another from the plan of the task, as a month after a month isn't two months, past now, but for a 1000 repeats at most, the rest of them in one go then: a tiny repeat long behind would take a row of each in memory, with interrupts held off, the worker or pg_work then neither to be cancelled nor terminated
     if (cached && !strcmp(cached, columns)) pfree(columns); else {
         if (plan) { SPI_freeplan(plan); plan = NULL; }
         if (cached) pfree(cached);
@@ -126,7 +127,7 @@ static void task_insert(const Task *t) {
         if (src.data) resetStringInfo(&src); else initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             INSERT INTO %1$s ("parent", "plan", %2$s) SELECT "id", CASE
-                WHEN "drift" THEN %3$s OPERATOR(pg_catalog.+) "repeat" ELSE (WITH RECURSIVE r AS (SELECT CASE WHEN pg_catalog.isfinite("plan") THEN "plan" ELSE %3$s END AS p UNION SELECT p OPERATOR(pg_catalog.+) "repeat" FROM r WHERE p OPERATOR(pg_catalog.<=) %3$s) SELECT * FROM r ORDER BY 1 DESC LIMIT 1)
+                WHEN "drift" THEN %3$s OPERATOR(pg_catalog.+) "repeat" ELSE (WITH RECURSIVE r AS (SELECT CASE WHEN pg_catalog.isfinite("plan") THEN "plan" ELSE %3$s END AS p, 0 AS n UNION ALL SELECT p OPERATOR(pg_catalog.+) "repeat", n OPERATOR(pg_catalog.+) 1 FROM r WHERE p OPERATOR(pg_catalog.<=) %3$s AND n OPERATOR(pg_catalog.<) 1000) SELECT CASE WHEN p OPERATOR(pg_catalog.>) %3$s THEN p ELSE p OPERATOR(pg_catalog.+) ((pg_catalog.floor(EXTRACT(epoch FROM %3$s OPERATOR(pg_catalog.-) p)::pg_catalog.float8 OPERATOR(pg_catalog./) EXTRACT(epoch FROM "repeat")::pg_catalog.float8) OPERATOR(pg_catalog.+) 1) OPERATOR(pg_catalog.*) "repeat") END FROM r ORDER BY n DESC LIMIT 1)
             END AS "plan", %2$s FROM %1$s AS t WHERE "id" OPERATOR(pg_catalog.=) $1 AND "repeat" OPERATOR(pg_catalog.>) '0 sec' FOR NO KEY UPDATE OF t LIMIT 1 RETURNING id
         ), t->work->schema_table, cached, init_plan());
     }
