@@ -489,6 +489,13 @@ void init_task_pids(const char *data, Oid oid, StringInfo pids, StringInfo hashe
     LWLockRelease(BackgroundWorkerLock);
 }
 
+// the pid of a task worker in its slot, as soon as pg_work knows it started, before it takes the lock of the group's slot by it: till the worker writes it itself, its slot would count apart from that lock, see init_task_pids(), the group a slot short; only while the slot still has the task, the worker gone already and its slot another's maybe
+void init_task_pid(int slot, const char *data, Oid oid, int64 id, int pid) {
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    if (shared[slot].in_use && shared[slot].id == id && shared[slot].oid == oid && !strcmp(shared[slot].data, data) && !shared[slot].pid) shared[slot].pid = pid;
+    LWLockRelease(BackgroundWorkerLock);
+}
+
 bool init_work_gone(Datum main_arg) {
     bool gone;
     LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
