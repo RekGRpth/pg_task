@@ -365,7 +365,7 @@ const char *task_search_path(void) {
     return search_path;
 }
 
-// the search_path an input left the session with, for the next task of the worker to run with, as save = true keeps the rest of the session, rather than that of the worker's start, which the bookkeeping, with an empty one, would have it go back to: of an input done only, a failed one taking its own back, to that of the bookkeeping too in spi mode, where it's set within the input's subtransaction
+// the search_path an input left the session with, for the next task of the worker to run with, as save = true keeps the rest of the session, rather than that of the worker's start, which the bookkeeping, with an empty one, would have it go back to: of a failed input too in local mode, once its transaction is gone, which takes back what it didn't commit itself, see dest_timeout()
 void task_search_path_save(void) {
     const char *value = GetConfigOption("search_path", false, false);
     char *copy = MemoryContextStrdup(TopMemoryContext, value ? value : "");

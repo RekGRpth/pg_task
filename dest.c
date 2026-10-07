@@ -570,7 +570,8 @@ bool dest_timeout(void) {
                 finished = true;
             }
         }
-        // only once the failed (sub)transaction is gone, whose abort would take it back to the author's search_path, for the task's bookkeeping to run with
+        // only once the failed (sub)transaction is gone, whose abort would take it back to the author's search_path, for the task's bookkeeping to run with: in local mode kept as it's left then, what the input committed itself kept (SET search_path = ...; COMMIT; SELECT 1/0), the rest taken back, as statement_timeout below, and as on a remote connection; in spi mode, where an input commits nothing itself, and where the search_path of the task was set within its subtransaction, which the abort takes back too, to the empty one of the bookkeeping, the one saved before kept
+        if (task.save && !task.shared->spi) task_search_path_save();
         SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     PG_END_TRY();
     if (task.shared->spi && !finished) SPI_finish_my();

@@ -43,6 +43,9 @@ static const char *stmt_type(STMT_TYPE stmt) {
 }
 
 static int errdetail_params_my(int nargs, Oid *argtypes, Datum *values, const char *nulls) {
+#if PG_VERSION_NUM >= 130000
+    if (!log_parameter_max_length) return 0; // none logged at all, as the server has it for the parameters of its own, rather than each as ...
+#endif
     if (values && nargs > 0 && !IsAbortedTransactionBlockState()) {
         MemoryContext tmpCxt = AllocSetContextCreate(CurrentMemoryContext, "BuildParamLogString", ALLOCSET_DEFAULT_SIZES);
         MemoryContext oldcontext = MemoryContextSwitchTo(tmpCxt);
