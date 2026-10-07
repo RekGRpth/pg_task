@@ -298,8 +298,15 @@ static bool init_check_interval(char **newval, void **extra, GucSource source) {
         GUC_check_errdetail("\"%s\" is not an interval.", *newval);
         valid = false;
     PG_END_TRY();
-    // and a positive one, or pg_work would reset ever after, or never
-    if (valid && (double)interval->month * DAYS_PER_MONTH * USECS_PER_DAY + (double)interval->day * USECS_PER_DAY + (double)interval->time <= 0) {
+#ifdef INTERVAL_NOT_FINITE
+    // a finite one, from 17 on, whose milliseconds would be out of the range of int8
+    if (valid && INTERVAL_NOT_FINITE(interval)) {
+        GUC_check_errdetail("\"%s\" is not a finite interval.", *newval);
+        valid = false;
+    }
+#endif
+    // and a positive one, or pg_work would reset ever after, or never: as EXTRACT(epoch) has it, which the queries take it by, its whole years of 365.25 days, the months left of 30
+    if (valid && (double)(interval->month / MONTHS_PER_YEAR) * DAYS_PER_YEAR * USECS_PER_DAY + (double)(interval->month % MONTHS_PER_YEAR) * DAYS_PER_MONTH * USECS_PER_DAY + (double)interval->day * USECS_PER_DAY + (double)interval->time <= 0) {
         GUC_check_errdetail("\"%s\" is not a positive interval.", *newval);
         valid = false;
     }

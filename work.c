@@ -178,7 +178,7 @@ static void work_check(const Work *w) {
     set_ps_display_my("check");
     if (!src.data) {
         initStringInfoMy(&src);
-        // the sleep, run and reset of an entry, which the keys of pg_task.json give past the bounds of the settings, 1 at least, as the settings have them, reset in milliseconds rounded up, not to seconds first: none, or less, spun pg_work, or had it wait for good, or take no task
+        // the sleep, run and reset of an entry, which the keys of pg_task.json give past the bounds of the settings, 1 at least, as the settings have them, reset in milliseconds rounded up, not to seconds first, and below 1e15, infinity say: none, or less, spun pg_work, or had it wait for good, or take no task
         appendStringInfo(&src, SQL(
             WITH j AS (
                 WITH s AS (
@@ -188,7 +188,7 @@ static void work_check(const Work *w) {
                 ), g AS (
                     %s
                 ) SELECT    COALESCE(COALESCE("data", "user"), pg_catalog.current_setting('pg_task.data')::pg_catalog.name) AS "data",
-                            GREATEST(pg_catalog.ceil(EXTRACT(epoch FROM COALESCE("reset", (r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, (g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval))::pg_catalog.float8 OPERATOR(pg_catalog.*) 1000)::pg_catalog.int8, 1) AS "reset",
+                            pg_catalog.ceil(GREATEST(LEAST(EXTRACT(epoch FROM COALESCE("reset", (r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval, (g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.reset')::pg_catalog.interval))::pg_catalog.float8 OPERATOR(pg_catalog.*) 1000, 1e15), 1))::pg_catalog.int8 AS "reset",
                             GREATEST(COALESCE("run", (r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.run')::pg_catalog.int4, (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.run')::pg_catalog.int4, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.run')::pg_catalog.int4, (g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.run')::pg_catalog.int4)::pg_catalog.int4, 1) AS "run",
                             COALESCE("schema", r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.schema', u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.schema', d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.schema', (g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.schema'))::pg_catalog.text AS "schema",
                             COALESCE("table", r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.table', u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.table', d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.table', (g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.table'))::pg_catalog.text AS "table",
