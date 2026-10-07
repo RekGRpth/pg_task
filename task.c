@@ -464,6 +464,9 @@ void task_line(Task *t) {
 
 void task_free(Task *t) {
     if (t->error.data) { pfree(t->error.data); t->error.data = NULL; t->error.len = 0; }
+    if (t->failed) { pfree(t->failed); t->failed = NULL; }
+    if (t->hosts) { pfree(t->hosts); t->hosts = NULL; }
+    t->host = t->nhosts = 0;
     if (t->group) { pfree(t->group); t->group = NULL; }
     if (t->input) { pfree(t->input); t->input = NULL; }
     if (t->null) { pfree(t->null); t->null = NULL; }

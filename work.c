@@ -113,6 +113,7 @@ static bool work_bookkeeping(Task *t, bool live, bool *exit);
 static void work_defer(Task *t);
 static void work_discard(Task *t);
 static void work_later(Task *t, const char *message, const char *setting);
+static bool work_next(Task *t, const char *error);
 static void work_query(Task *t);
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
 static void work_cancel_free(Cancel *c);
@@ -463,13 +464,19 @@ static long work_deadline(void) {
     return secs * 1000 + (usecs + 999) / 1000; // rounded up, so as not to wake up just before
 }
 
-// a remote task still connecting past the connect_timeout of its connection string fails, as a synchronous connection would; a cancel request still not through past its time is given up
+// a remote task still connecting past the connect_timeout of its connection string fails, as a synchronous connection would, or goes on to the next host, see work_next(); a cancel request still not through past its time is given up
 static void work_expire(void) {
     dlist_mutable_iter iter;
     TimestampTz now = GetCurrentTimestamp();
     dlist_foreach_modify(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
-        if (t->deadline && t->deadline <= now) work_error((errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("timeout expired"), errdetail("Connecting to the remote server took longer than the connect_timeout of its connection string.")));
+        char *error;
+        if (!t->deadline || t->deadline > now) continue;
+        error = t->hosts ? psprintf("connection to server at \"%s\", port %s failed: timeout expired", PQhost(t->conn), PQport(t->conn)) : NULL;
+        if (work_next(t, error)) { pfree(error); continue; }
+        if (error) pfree(error);
+        if (t->failed) work_error((errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("timeout expired"), work_errdetail(t->failed)));
+        else work_error((errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("timeout expired"), errdetail("Connecting to the remote server took longer than the connect_timeout of its connection string.")));
     }
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
     dlist_foreach_modify(iter, &cancels) {
@@ -808,13 +815,13 @@ static void work_connect(Task *t) {
     int pid;
     static uint32 key = 0;
     switch (PQstatus(t->conn)) {
-        case CONNECTION_BAD: work_error((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), work_errdetail(PQerrorMessage(t->conn)))); return;
+        case CONNECTION_BAD: if (!work_next(t, PQerrorMessage(t->conn))) work_error((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), work_errdetail(t->failed ? t->failed : PQerrorMessage(t->conn)))); return;
         case CONNECTION_OK: elog(DEBUG1, "id = %li, PQstatus == CONNECTION_OK", t->shared->id); connected = true; break;
         default: break;
     }
     if (!connected) switch (PQconnectPoll(t->conn)) {
         case PGRES_POLLING_ACTIVE: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_ACTIVE", t->shared->id); break;
-        case PGRES_POLLING_FAILED: work_error((errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectPoll failed"), work_errdetail(PQerrorMessage(t->conn)))); return;
+        case PGRES_POLLING_FAILED: if (!work_next(t, PQerrorMessage(t->conn))) work_error((errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectPoll failed"), work_errdetail(t->failed ? t->failed : PQerrorMessage(t->conn)))); return;
         case PGRES_POLLING_OK: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_OK", t->shared->id); connected = true; break;
         case PGRES_POLLING_READING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_READING", t->shared->id); t->event = WL_SOCKET_READABLE; break;
         case PGRES_POLLING_WRITING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_WRITING", t->shared->id); t->event = WL_SOCKET_WRITEABLE; break;
@@ -982,33 +989,35 @@ static bool work_superuser(const char *user) {
     return result;
 }
 
-static void work_remote(Task *t) {
-    bool password = false;
-    int connect_timeout = 0;
+// the number of entries of a list of the connection string, as libpq splits those of host, hostaddr and port, at commas, with no escaping
+static int work_count(const char *list) {
+    int count = 1;
+    if (!list) return 0;
+    for (; *list; list++) if (*list == ',') count++;
+    return count;
+}
+
+// its entry i
+static char *work_entry(const char *list, int i) {
+    const char *end;
+    for (; i > 0; i--) list = strchr(list, ',') + 1;
+    return (end = strchr(list, ',')) ? pnstrdup(list, end - list) : pstrdup(list);
+}
+
+// the connection started, to the host tried now, if they are tried one at a time (see work_remote()), with the other options of the connection string as they are
+static void work_start(Task *t) {
+    char *entry[] = {NULL, NULL, NULL};
     char *err;
     char *options = NULL;
     const char **keywords;
     const char **values;
     int arg = 4;
+    int connect_timeout = 0;
     PQconninfoOption *opts = PQconninfoParse(t->remote, &err);
     StringInfoData name, value;
-    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : init_null(), t->shared->max, t->shared->oid);
-#if PG_VERSION_NUM >= 130000
-    // the file descriptors a process may hold for others than files, connections say, are a third of the safe ones, max_files_per_process at most, those of the other remote tasks taking them all: back to PLAN, rather than fail it, with nothing held yet; the one taken here is given back, to be taken again, sure to be had then, right before connecting
-    if (!AcquireExternalFD()) { if (opts) PQconninfoFree(opts); if (err) PQfreemem(err); work_later(t, "too many open files", "max_files_per_process"); return; }
-    ReleaseExternalFD();
-#endif
-    dlist_delete(&t->node);
-    dlist_push_tail(&remote, &t->node);
-    // hold the slot of the group from now on, not only once connected, or the next work_sleep() doesn't count it and takes another task of the group over its max
-    if (!(t->reserve = lock_table_id_hash(t->shared->oid, t->shared->id, t->shared->hash))) ereport(WARNING, (errmsg("!lock_table_id_hash(%i, %li, %i)", t->shared->oid, t->shared->id, t->shared->hash)));
     if (!opts) { work_error((errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), work_errdetail(err))); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
-        elog(DEBUG1, "%s = %s", opt->keyword, opt->val);
-        // Greengage's libpq turns the connection into an internal one with it, which pg_hba.conf lets through unchecked
-        if (!strcmp(opt->keyword, "gpconntype")) { work_error((errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("connection option \"%s\" is not allowed", opt->keyword), errdetail("It makes the connection an internal one, which bypasses pg_hba.conf."))); PQconninfoFree(opts); return; }
-        if (!strcmp(opt->keyword, "password") && opt->val[0]) password = true; // not an empty one, which libpq takes for none, looking one up in the password file of the server's own OS user instead, as dblink and postgres_fdw have it
         if (!strcmp(opt->keyword, "connect_timeout")) connect_timeout = atoi(opt->val);
         if (!strcmp(opt->keyword, "fallback_application_name")) continue;
         if (!strcmp(opt->keyword, "application_name")) continue;
@@ -1016,7 +1025,6 @@ static void work_remote(Task *t) {
         if (!strcmp(opt->keyword, "options")) { options = opt->val; continue; }
         arg++;
     }
-    if (!work_superuser(t->user) && !password) { work_error((errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superusers must provide a password in the connection string."))); PQconninfoFree(opts); return; }
     keywords = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*keywords));
     values = MemoryContextAlloc(TopMemoryContext, arg * sizeof(*values));
     initStringInfoMy(&name);
@@ -1042,14 +1050,18 @@ static void work_remote(Task *t) {
         arg++;
         keywords[arg] = opt->keyword;
         values[arg] = opt->val;
+        if (t->hosts) { // of the lists, only the entry of the host tried now, a port for all of them as it is
+            if (!strcmp(opt->keyword, "host")) values[arg] = entry[0] = work_entry(opt->val, t->hosts[t->host]);
+            if (!strcmp(opt->keyword, "hostaddr")) values[arg] = entry[1] = work_entry(opt->val, t->hosts[t->host]);
+            if (!strcmp(opt->keyword, "port") && work_count(opt->val) > 1) values[arg] = entry[2] = work_entry(opt->val, t->hosts[t->host]);
+        }
     }
     arg++;
     keywords[arg] = NULL;
     values[arg] = NULL;
     t->event = WL_SOCKET_MASK;
     t->socket = work_connect;
-    t->start = GetCurrentTimestamp();
-    if (connect_timeout > 0) t->deadline = TimestampTzPlusMilliseconds(t->start, Max(connect_timeout, 2) * 1000L); // as libpq takes it, 2 seconds at least
+    t->deadline = connect_timeout > 0 ? TimestampTzPlusMilliseconds(GetCurrentTimestamp(), Max(connect_timeout, 2) * 1000L) : 0; // as libpq takes it, 2 seconds at least, for each host
 #if PG_VERSION_NUM >= 130000
     if (!AcquireExternalFD()) work_error((errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("could not establish connection"), errdetail("There are too many open files on the local server."), errhint("Raise the server's max_files_per_process and/or \"ulimit -n\" limits."))); else
 #endif
@@ -1059,13 +1071,81 @@ static void work_remote(Task *t) {
 #endif
         work_error((errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectStartParams failed"), work_errdetail(PQerrorMessage(t->conn))));
     }
-    else if (PQstatus(t->conn) == CONNECTION_BAD) work_error((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), work_errdetail(PQerrorMessage(t->conn))));
+    else if (PQstatus(t->conn) == CONNECTION_BAD) { if (!work_next(t, PQerrorMessage(t->conn))) work_error((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), work_errdetail(t->failed ? t->failed : PQerrorMessage(t->conn)))); }
     else if (!PQisnonblocking(t->conn) && PQsetnonblocking(t->conn, true) == -1) work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetnonblocking failed"), work_errdetail(PQerrorMessage(t->conn))));
+    for (int i = 0; i < countof(entry); i++) if (entry[i]) pfree(entry[i]);
     pfree(name.data);
     pfree(value.data);
     pfree(keywords);
     pfree(values);
     PQconninfoFree(opts);
+}
+
+// a host of the connection string failed, tried one at a time, see work_remote(): its error kept, for that of the last one to have them all, as libpq has them, and on to the next one, if any (false for none, the error of the task to be raised then); t may be gone on return, its error raised for the next one
+static bool work_next(Task *t, const char *error) {
+    StringInfoData failed;
+    if (!t->hosts) return false;
+    initStringInfoMy(&failed);
+    if (t->failed) { appendStringInfoString(&failed, t->failed); pfree(t->failed); }
+    if (error) appendStringInfoString(&failed, error);
+    if (failed.len && failed.data[failed.len - 1] != '\n') appendStringInfoChar(&failed, '\n');
+    t->failed = failed.data;
+    if (++t->host >= t->nhosts) return false;
+    if (t->conn) {
+        PQfinish(t->conn);
+#if PG_VERSION_NUM >= 130000
+        ReleaseExternalFD();
+#endif
+        t->conn = NULL;
+    }
+    work_start(t);
+    return true;
+}
+
+static void work_remote(Task *t) {
+    bool password = false;
+    bool shuffle = false;
+    char *err;
+    const char *host = NULL, *hostaddr = NULL, *port = NULL;
+    int connect_timeout = 0;
+    int nhosts;
+    PQconninfoOption *opts = PQconninfoParse(t->remote, &err);
+    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : init_null(), t->shared->max, t->shared->oid);
+#if PG_VERSION_NUM >= 130000
+    // the file descriptors a process may hold for others than files, connections say, are a third of the safe ones, max_files_per_process at most, those of the other remote tasks taking them all: back to PLAN, rather than fail it, with nothing held yet; the one taken here is given back, to be taken again, sure to be had then, right before connecting
+    if (!AcquireExternalFD()) { if (opts) PQconninfoFree(opts); if (err) PQfreemem(err); work_later(t, "too many open files", "max_files_per_process"); return; }
+    ReleaseExternalFD();
+#endif
+    dlist_delete(&t->node);
+    dlist_push_tail(&remote, &t->node);
+    // hold the slot of the group from now on, not only once connected, or the next work_sleep() doesn't count it and takes another task of the group over its max
+    if (!(t->reserve = lock_table_id_hash(t->shared->oid, t->shared->id, t->shared->hash))) ereport(WARNING, (errmsg("!lock_table_id_hash(%i, %li, %i)", t->shared->oid, t->shared->id, t->shared->hash)));
+    if (!opts) { work_error((errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), work_errdetail(err))); if (err) PQfreemem(err); return; }
+    for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
+        if (!opt->val) continue;
+        elog(DEBUG1, "%s = %s", opt->keyword, opt->val);
+        // Greengage's libpq turns the connection into an internal one with it, which pg_hba.conf lets through unchecked
+        if (!strcmp(opt->keyword, "gpconntype")) { work_error((errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("connection option \"%s\" is not allowed", opt->keyword), errdetail("It makes the connection an internal one, which bypasses pg_hba.conf."))); PQconninfoFree(opts); return; }
+        if (!strcmp(opt->keyword, "password") && opt->val[0]) password = true; // not an empty one, which libpq takes for none, looking one up in the password file of the server's own OS user instead, as dblink and postgres_fdw have it
+        if (!strcmp(opt->keyword, "connect_timeout")) connect_timeout = atoi(opt->val);
+        if (!strcmp(opt->keyword, "host")) host = opt->val;
+        if (!strcmp(opt->keyword, "hostaddr")) hostaddr = opt->val;
+        if (!strcmp(opt->keyword, "port")) port = opt->val;
+        if (!strcmp(opt->keyword, "load_balance_hosts") && !strcmp(opt->val, "random")) shuffle = true;
+    }
+    if (!work_superuser(t->user) && !password) { work_error((errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superusers must provide a password in the connection string."))); PQconninfoFree(opts); return; }
+    // libpq doesn't enforce the connect_timeout of an asynchronous connection, which pg_work does then, while a synchronous one applies it to each host, going on to the next one once it's up, as pg_work can't make libpq do: try them one at a time, for a connect_timeout of each, with lists libpq would take, from 10 on, which has none before, in the order it would, random or not, leaving the addresses of a host name to libpq still, within the connect_timeout of the host then rather than of each
+    nhosts = Max(work_count(host), work_count(hostaddr));
+    if (connect_timeout > 0 && nhosts > 1 && PQlibVersion() >= 100000 && (!host || work_count(host) == nhosts) && (!hostaddr || work_count(hostaddr) == nhosts) && (work_count(port) <= 1 || work_count(port) == nhosts)) {
+        t->hosts = MemoryContextAlloc(TopMemoryContext, nhosts * sizeof(*t->hosts));
+        for (int i = 0; i < nhosts; i++) t->hosts[i] = i;
+        if (shuffle) for (int i = nhosts - 1; i > 0; i--) { int j = random() % (i + 1); int swap = t->hosts[i]; t->hosts[i] = t->hosts[j]; t->hosts[j] = swap; }
+        t->nhosts = nhosts;
+        t->host = 0;
+    }
+    PQconninfoFree(opts);
+    t->start = GetCurrentTimestamp();
+    work_start(t);
 }
 
 // the task worker connects as the task owner: check here that pg_task.user may act as that role at all, the same as SET ROLE to it would require (the user column alone isn't enough, since its trigger doesn't bind the table owner), and fail the task with a proper error instead of letting its connection die with FATAL and the task hang in TAKE until reset

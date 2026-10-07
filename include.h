@@ -107,6 +107,7 @@ typedef struct Task {
     bool string;
     char delimiter;
     char escape;
+    char *failed; // the errors of the hosts of the connection string tried so far, one at a time, see work_next()
     char *group;
     char *input;
     char *null;
@@ -116,6 +117,9 @@ typedef struct Task {
     dlist_node node;
     int count;
     int event;
+    int host; // of them, the one tried now, in the order of hosts
+    int *hosts; // the order the hosts of the connection string are tried in, one at a time, for the connect_timeout of each, see work_remote(), or NULL for libpq to try them itself
+    int nhosts;
     int key; // of the lock a remote task holds the slot of its group by, see work_connect()
     uint64 rows; // of the result a remote task gets in single-row mode so far, its headers before the first, see work_result()
     int pid;
@@ -125,7 +129,7 @@ typedef struct Task {
     Shared *shared;
     StringInfoData error;
     StringInfoData output;
-    TimestampTz deadline; // of connecting to a remote server, from the connect_timeout of its connection string, which libpq doesn't enforce for an asynchronous connection
+    TimestampTz deadline; // of connecting to a remote server, or to the host of it tried now, from the connect_timeout of its connection string, which libpq doesn't enforce for an asynchronous connection
     TimestampTz start;
     uint64 row;
     void (*socket) (struct Task *t);
