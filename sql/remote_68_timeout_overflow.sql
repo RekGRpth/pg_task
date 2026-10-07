@@ -1,8 +1,10 @@
--- a timeout the check of the column lets through, as it takes a month for 30 days, while it is less than nothing in milliseconds, as EXTRACT(epoch) takes a year for 365.25 days, out of the range of int4, runs the task with no timeout of its own, as 0 does, rather than fail its taking outside any error handling, taking down the worker, or pg_work for a remote task, again on every reset
+-- a timeout the check of the column lets through, as it takes a month for 30 days, while it is less than nothing in milliseconds, as EXTRACT(epoch) takes a year for 365.25 days, out of the range of int4, runs the task with no timeout of its own, as 0 does, rather than fail its taking outside any error handling, taking down the worker, or pg_work for a remote task, again on every reset (inserted with the validity trigger off, as one from before it refused an interval of a part less than 0)
 DELETE FROM task WHERE "group" = 'timeout_overflow';
 SELECT 'dbname=' || :'DBNAME' AS remote
 \gset
+ALTER TABLE task DISABLE TRIGGER task_valid;
 INSERT INTO task ("group", remote, input, timeout) VALUES ('timeout_overflow', :'remote', 'SELECT 1', '-60 mon 1800 days 1 hour');
+ALTER TABLE task ENABLE TRIGGER task_valid;
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'timeout_overflow' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;

@@ -1,0 +1,37 @@
+-- an interval of a part less than 0, of parts of both signs ('-1 mon 31 days'), which may take the plan nowhere, or back, is refused as inserted or changed, but not as kept, in a row from before the check, nor in the copy of a repeat pg_work inserts with the intervals of the task before it
+DELETE FROM task WHERE "group" LIKE 'valid_negative_part_%';
+\set VERBOSITY terse
+INSERT INTO task ("group", repeat, input) VALUES ('valid_negative_part_insert', '-1 mon 31 days', 'SELECT 1');
+ERROR:  repeat column has a part less than 0
+INSERT INTO task ("group", active, input) VALUES ('valid_negative_part_insert', '1 day -1 hour', 'SELECT 1');
+ERROR:  active column has a part less than 0
+INSERT INTO task ("group", live, input) VALUES ('valid_negative_part_insert', '-1 year 400 days', 'SELECT 1');
+ERROR:  live column has a part less than 0
+INSERT INTO task ("group", timeout, input) VALUES ('valid_negative_part_insert', '1 mon -0.5 sec', 'SELECT 1');
+ERROR:  timeout column has a part less than 0
+INSERT INTO task ("group", plan, repeat, input) VALUES ('valid_negative_part_ok', now() + interval '1 hour', '1 mon 2 days', 'SELECT 1');
+UPDATE task SET repeat = '2 mon -1 day' WHERE "group" = 'valid_negative_part_ok';
+ERROR:  repeat column has a part less than 0
+ALTER TABLE task DISABLE TRIGGER task_valid;
+INSERT INTO task ("group", plan, repeat, input) VALUES ('valid_negative_part_legacy', now() + interval '2 sec', '-1 mon 31 days', 'SELECT 1');
+ALTER TABLE task ENABLE TRIGGER task_valid;
+UPDATE task SET input = 'SELECT 2' WHERE "group" = 'valid_negative_part_legacy';
+UPDATE task SET repeat = '-2 mon 62 days' WHERE "group" = 'valid_negative_part_legacy';
+ERROR:  repeat column has a part less than 0
+\set VERBOSITY default
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'valid_negative_part_legacy' AND parent IS NOT NULL) AND NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'valid_negative_part_legacy' AND state IN ('TAKE', 'WORK')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task in group ''valid_negative_part_legacy'' to be done and repeated'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", parent IS NOT NULL AS copy, state, input, repeat, error FROM task WHERE "group" LIKE 'valid_negative_part_%' ORDER BY id;
+           group            | copy | state |  input   |        repeat        | error 
+----------------------------+------+-------+----------+----------------------+-------
+ valid_negative_part_ok     | f    | PLAN  | SELECT 1 | @ 1 mon 2 days       | 
+ valid_negative_part_legacy | f    | DONE  | SELECT 2 | @ 1 mon -31 days ago | 
+ valid_negative_part_legacy | t    | PLAN  | SELECT 2 | @ 1 mon -31 days ago | 
+(3 rows)
+
+DELETE FROM task WHERE "group" LIKE 'valid_negative_part_%';

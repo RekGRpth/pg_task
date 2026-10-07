@@ -365,15 +365,34 @@ static void make_state_machine(const Work *w) {
 }
 
 // pg_work adds up plan, active, live, repeat and timeout, and on values out of range that fails, taking down every task it runs: have the author's own insert or update fail on them instead
+// and on an interval of a part less than 0, of parts of both signs ('-1 mon 31 days'), which, more than 0 as it is, may take the plan nowhere, or back, from some days, a repeat say, see task_insert(): only an interval inserted or changed, compared as text, as '1 mon' is equal to '30 days', not one of a row from before this check, which an update of another column, of the state by pg_work say, would fail on otherwise, nor the copy of a repeat with the intervals of the task before it, which pg_work inserts, its bookkeeping failing on them otherwise; the task before it looked up only then, in a statement of its own, as the author inserting a task may have no right to read the table, which a query is checked for whether it gets to read it or not
 static void make_valid(const Work *w) {
+    static const char *columns[] = {"active", "live", "repeat", "timeout"};
     StringInfoData name;
     StringInfoData source;
     initStringInfoMy(&name);
     make_name(w, &name, "valid");
     initStringInfoMy(&source);
-    appendStringInfo(&source, SQL(
+    appendStringInfoString(&source, SQL(
         BEGIN
+            IF TG_OP OPERATOR(pg_catalog.=) 'UPDATE' THEN
+                IF NEW."plan" IS NOT DISTINCT FROM OLD."plan" AND NEW."active"::pg_catalog.text IS NOT DISTINCT FROM OLD."active"::pg_catalog.text AND NEW."live"::pg_catalog.text IS NOT DISTINCT FROM OLD."live"::pg_catalog.text AND NEW."repeat"::pg_catalog.text IS NOT DISTINCT FROM OLD."repeat"::pg_catalog.text AND NEW."timeout"::pg_catalog.text IS NOT DISTINCT FROM OLD."timeout"::pg_catalog.text THEN RETURN NEW;
+                END IF;
+            END IF;
             PERFORM NEW."plan" OPERATOR(pg_catalog.+) (NEW."active" OPERATOR(pg_catalog.+) NEW."live" OPERATOR(pg_catalog.+) NEW."repeat" OPERATOR(pg_catalog.+) NEW."timeout"), pg_catalog.statement_timestamp() OPERATOR(pg_catalog.+) (NEW."active" OPERATOR(pg_catalog.+) NEW."live" OPERATOR(pg_catalog.+) NEW."repeat" OPERATOR(pg_catalog.+) NEW."timeout");
+    ));
+    for (int i = 0; i < (int)countof(columns); i++) appendStringInfo(&source, SQL(
+            IF EXTRACT(year FROM NEW."%1$s") OPERATOR(pg_catalog.<) 0 OR EXTRACT(month FROM NEW."%1$s") OPERATOR(pg_catalog.<) 0 OR EXTRACT(day FROM NEW."%1$s") OPERATOR(pg_catalog.<) 0 OR EXTRACT(hour FROM NEW."%1$s") OPERATOR(pg_catalog.<) 0 OR EXTRACT(minute FROM NEW."%1$s") OPERATOR(pg_catalog.<) 0 OR EXTRACT(second FROM NEW."%1$s") OPERATOR(pg_catalog.<) 0 THEN
+                IF TG_OP OPERATOR(pg_catalog.=) 'INSERT' THEN
+                    IF NEW."parent" IS NULL OR NOT pg_catalog.has_table_privilege(TG_RELID, 'SELECT') THEN RAISE EXCEPTION '%1$s column has a part less than 0';
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM %2$s AS p WHERE p."id" OPERATOR(pg_catalog.=) NEW."parent" AND p."%1$s"::pg_catalog.text OPERATOR(pg_catalog.=) NEW."%1$s"::pg_catalog.text) THEN RAISE EXCEPTION '%1$s column has a part less than 0';
+                    END IF;
+                ELSIF NEW."%1$s"::pg_catalog.text IS DISTINCT FROM OLD."%1$s"::pg_catalog.text THEN RAISE EXCEPTION '%1$s column has a part less than 0';
+                END IF;
+            END IF;
+    ), columns[i], w->schema_table);
+    appendStringInfoString(&source, SQL(
             RETURN NEW;
         END;
     ));

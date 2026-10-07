@@ -1,6 +1,8 @@
--- a repeat long behind, more than a 1000 of it, jumps to the first of it past now, by the way the plan went so far, not by EXTRACT(epoch) of the repeat, which is 0 for '-12 mon 365 days 6 hours', more than 0 as it is, the bookkeeping failing on division by zero then, the task left in WORK, to run again on every reset
+-- a repeat long behind, more than a 1000 of it, jumps to the first of it past now, by the way the plan went so far, not by EXTRACT(epoch) of the repeat, which is 0 for '-12 mon 365 days 6 hours', more than 0 as it is, the bookkeeping failing on division by zero then, the task left in WORK, to run again on every reset (inserted with the validity trigger off, as one from before it refused an interval of a part less than 0)
 DELETE FROM task WHERE "group" LIKE 'repeat_jump_%';
+ALTER TABLE task DISABLE TRIGGER task_valid;
 INSERT INTO task ("group", plan, repeat, input) VALUES ('repeat_jump_hour', now() - interval '10 years 30 minutes', '1 hour', 'SELECT 1'), ('repeat_jump_zero', now() - interval '10 years', '-12 mon 365 days 6 hours', 'SELECT 1');
+ALTER TABLE task ENABLE TRIGGER task_valid;
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         IF EXISTS (SELECT 1 FROM task AS c JOIN task AS t ON c.parent = t.id WHERE t."group" = 'repeat_jump_zero' AND t.parent IS NULL AND c.state = 'DONE') AND EXISTS (SELECT 1 FROM task WHERE "group" = 'repeat_jump_hour' AND state = 'DONE') AND NOT EXISTS (SELECT 1 FROM task WHERE "group" LIKE 'repeat_jump_%' AND state IN ('TAKE', 'WORK')) THEN ok := true; EXIT; END IF;
