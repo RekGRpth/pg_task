@@ -1,0 +1,12 @@
+-- a repeat long behind, more than a 1000 of it, jumps to the first of it past now, by the way the plan went so far, not by EXTRACT(epoch) of the repeat, which is 0 for '-12 mon 365 days 6 hours', more than 0 as it is, the bookkeeping failing on division by zero then, the task left in WORK, to run again on every reset
+DELETE FROM task WHERE "group" LIKE 'repeat_jump_%';
+INSERT INTO task ("group", plan, repeat, input) VALUES ('repeat_jump_hour', now() - interval '10 years 30 minutes', '1 hour', 'SELECT 1'), ('repeat_jump_zero', now() - interval '10 years', '-12 mon 365 days 6 hours', 'SELECT 1');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM task AS c JOIN task AS t ON c.parent = t.id WHERE t."group" = 'repeat_jump_zero' AND t.parent IS NULL AND c.state = 'DONE') AND EXISTS (SELECT 1 FROM task WHERE "group" = 'repeat_jump_hour' AND state = 'DONE') AND NOT EXISTS (SELECT 1 FROM task WHERE "group" LIKE 'repeat_jump_%' AND state IN ('TAKE', 'WORK')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''repeat_jump_%%'' to be done, the first copy of ''repeat_jump_zero'' too'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT t."group", t.state, t.error, c.plan > t.stop AS next_past_done, CASE WHEN t."group" = 'repeat_jump_hour' THEN c.plan - interval '1 hour' <= t.stop AND (EXTRACT(epoch FROM c.plan - t.plan)::numeric % 3600) = 0 END AS first_on_the_hour FROM task AS t JOIN task AS c ON c.parent = t.id WHERE t."group" LIKE 'repeat_jump_%' AND t.parent IS NULL ORDER BY t."group";
+DELETE FROM task WHERE "group" LIKE 'repeat_jump_%';
