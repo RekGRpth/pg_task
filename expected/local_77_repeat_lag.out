@@ -1,6 +1,6 @@
 -- the next plan of a repeating task long behind, a tiny repeat say, or 8760 of an hour as here, is found in no time and with no memory to speak of, rather than repeat by repeat for every one missed, with interrupts held off: past now, at most a repeat on, on the beat of the plan still
 DELETE FROM task WHERE "group" = 'repeat_lag';
-INSERT INTO task ("group", input, plan, repeat) VALUES ('repeat_lag', 'SELECT 1', date_trunc('second', now()) - interval '1 year' + interval '0.25 sec', '1 hour');
+INSERT INTO task ("group", input, plan, repeat) VALUES ('repeat_lag', 'SELECT 1', date_trunc('second', now()) - interval '1 year 30 minutes' + interval '0.25 sec', '1 hour');
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         IF EXISTS (SELECT 1 FROM task WHERE "group" = 'repeat_lag' AND state = 'DONE') THEN ok := true; EXIT; END IF;
