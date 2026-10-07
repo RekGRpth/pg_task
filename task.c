@@ -237,7 +237,9 @@ bool task_done(Task *t, bool live) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             UPDATE %1$s AS t SET "state" = CASE WHEN t."state" OPERATOR(pg_catalog.=) 'STOP' THEN 'STOP' WHEN $3 IS NULL THEN 'DONE' ELSE 'FAIL' END::%2$s, "stop" = %3$s, "output" = $2, "error" = $3 WHERE "id" OPERATOR(pg_catalog.=) $1 AND (t."state" OPERATOR(pg_catalog.=) 'TAKE' OR ($4 AND t."state" OPERATOR(pg_catalog.=) ANY(ARRAY['WORK', 'STOP']::%2$s[])))
-            RETURNING "delete" AND "output" IS NULL AND "error" IS NULL AS "delete", "repeat" OPERATOR(pg_catalog.>) '0 sec' AND t."state" OPERATOR(pg_catalog.<>) 'STOP' AS "insert", "max" OPERATOR(pg_catalog.>=) 0 AND ("count" OPERATOR(pg_catalog.>) 0 OR "live" OPERATOR(pg_catalog.>) '0 sec') AS "live", "max" OPERATOR(pg_catalog.<) 0 AS "update", "plan"
+            RETURNING "delete" AND "output" IS NULL AND "error" IS NULL AS "delete", "repeat" OPERATOR(pg_catalog.>) '0 sec' AND t."state" OPERATOR(pg_catalog.<>) 'STOP' AS "insert", "max" OPERATOR(pg_catalog.>=) 0 AND ("count" OPERATOR(pg_catalog.>) 0 OR "live" OPERATOR(pg_catalog.>) '0 sec') AS "live", "max" OPERATOR(pg_catalog.<) 0 AS "update", "plan",
+                CASE WHEN "max" OPERATOR(pg_catalog.<) 0 AND pg_catalog.isfinite("plan") THEN CASE WHEN "drift" THEN %3$s OPERATOR(pg_catalog.+) ((OPERATOR(pg_catalog.-) "max"::pg_catalog.float8) OPERATOR(pg_catalog.*) '1 msec'::pg_catalog.interval)
+                ELSE "plan" OPERATOR(pg_catalog.+) ((pg_catalog.floor(EXTRACT(epoch FROM %3$s OPERATOR(pg_catalog.-) "plan")::pg_catalog.float8 OPERATOR(pg_catalog.*) 1000 OPERATOR(pg_catalog./) (OPERATOR(pg_catalog.-) "max"::pg_catalog.float8)) OPERATOR(pg_catalog.+) 1) OPERATOR(pg_catalog.*) (OPERATOR(pg_catalog.-) "max"::pg_catalog.float8) OPERATOR(pg_catalog.*) '1 msec'::pg_catalog.interval) END END AS "pause"
         ), t->work->schema_table, t->work->schema_type, init_plan());
     }
     SPI_connect_my(src.data, userid);
@@ -263,6 +265,12 @@ bool task_done(Task *t, bool live) {
         insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false, BOOLOID));
         update = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "update", false, BOOLOID));
         done = DatumGetTimestampTz(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "plan", false, TIMESTAMPTZOID));
+        // the end of the pause it schedules, as task_update() has it for the tasks of the group planned now, for those inserted or planned later too, which work_sleep() takes no sooner, see init_pause()
+        if (update) {
+            bool isnull;
+            Datum until = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, SPI_fnumber(SPI_tuptable->tupdesc, "pause"), &isnull);
+            if (!isnull) init_pause(t->shared->oid, t->shared->hash, DatumGetTimestampTz(until));
+        }
         elog(DEBUG1, "delete = %s, exit = %s, insert = %s, update = %s", delete ? "true" : "false", exit ? "true" : "false", insert ? "true" : "false", update ? "true" : "false");
     }
     if (values[1]) pfree((void *)values[1]);

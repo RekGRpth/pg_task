@@ -163,6 +163,8 @@ void relock_table_id(Oid table, int64 id);
 void relock_table_pid_hash(Oid table, int pid, int hash);
 void init_task_ids(StringInfo ids, const char *data, Oid oid);
 void init_task_pids(const char *data, Oid oid, StringInfo pids, StringInfo hashes);
+void init_pause(Oid oid, int hash, TimestampTz until);
+TimestampTz init_pauses(Oid oid, StringInfo hashes);
 void init_task_pid(int slot, const char *data, Oid oid, int64 id, int pid);
 bool unlock_table_id(Oid table, int64 id);
 bool unlock_table_id_hash(Oid table, int64 id, int hash);

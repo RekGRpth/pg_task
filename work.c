@@ -1313,12 +1313,12 @@ static void work_task(Task *t) {
 }
 
 static void work_sleep(Work *w) {
-    Datum values[] = {Int32GetDatum(w->shared->run), Int32GetDatum(w->shared->limit), Int32GetDatum(0), (Datum)0, (Datum)0};
+    Datum values[] = {Int32GetDatum(w->shared->run), Int32GetDatum(w->shared->limit), Int32GetDatum(0), (Datum)0, (Datum)0, (Datum)0};
     dlist_head head;
     dlist_mutable_iter iter;
     Portal portal;
-    static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TEXTOID, TEXTOID};
-    StringInfoData pids, hashes;
+    static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TEXTOID, TEXTOID, TEXTOID};
+    StringInfoData pids, hashes, pauses;
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return; // its entry gone from pg_task.json, found by the reload in this very turn of its loop, say: take no task it won't run, to be left in TAKE once it's gone
@@ -1337,6 +1337,12 @@ static void work_sleep(Work *w) {
     values[4] = CStringGetTextDatumMy(hashes.data);
     pfree(pids.data);
     pfree(hashes.data);
+    initStringInfoMy(&pauses);
+    appendStringInfoChar(&pauses, '{');
+    (void)init_pauses(w->shared->oid, &pauses);
+    appendStringInfoChar(&pauses, '}');
+    values[5] = CStringGetTextDatumMy(pauses.data);
+    pfree(pauses.data);
     dlist_init(&head);
 #ifdef GP_VERSION_NUM
     if (true) {
@@ -1383,7 +1389,7 @@ static void work_sleep(Work *w) {
             ), c AS (
                 SELECT "id", "local", "hash", "count" AS "priority", "count" OPERATOR(pg_catalog.-) pg_catalog.row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM (
                     SELECT "id", "remote" IS NULL AS "local", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) AS "hash", CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON "objid" OPERATOR(pg_catalog.=) pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s'))
-                    WHERE "plan" OPERATOR(pg_catalog.<=) %5$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) OPERATOR(pg_catalog.>=) 0
+                    WHERE "plan" OPERATOR(pg_catalog.<=) %5$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE("classid", 0) OPERATOR(pg_catalog.>=) 0 AND ("max" OPERATOR(pg_catalog.>=) 0 OR pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) OPERATOR(pg_catalog.<>) ALL(($6)::pg_catalog.int4[]))
                     %4$s
                 ) AS c
             ), r AS (
@@ -1411,6 +1417,7 @@ static void work_sleep(Work *w) {
     portal = SPI_cursor_open_my(src.data, plan, values, NULL, false);
     pfree((void *)values[3]);
     pfree((void *)values[4]);
+    pfree((void *)values[5]);
     do {
         SPI_cursor_fetch_my(src.data, portal, true, init_work_fetch());
         for (uint64 row = 0; row < SPI_processed; row++) {
@@ -1583,7 +1590,14 @@ void work_main(Datum main_arg) {
         else {
             // but not for longer than idle passes would take: work_timeout() leaves out tasks due already, some of which an idle pg_work may not have seen, as one committed long after its wake-up, held by someone else on the pass, or waiting for a slot that a task worker of an earlier pg_work frees, whose exit wakes no one
             long most = (long)init_work_idle() * work.shared->sleep;
+            TimestampTz until = init_pauses(work.shared->oid, NULL); // the soonest end of a pause of a group, its tasks due already left out by work_timeout() too, see init_pause()
             if ((timeout = work_timeout(&work, current_reset)) < 0 || timeout > most) timeout = most;
+            if (until) {
+                long secs;
+                int usecs;
+                TimestampDifference(GetCurrentTimestamp(), until, &secs, &usecs);
+                if (secs * 1000 + (usecs + 999) / 1000 < timeout) timeout = secs * 1000 + (usecs + 999) / 1000;
+            }
             if (timeout < current_sleep) timeout = current_sleep;
         }
         if ((deadline = work_deadline()) >= 0 && (timeout < 0 || deadline < timeout)) timeout = deadline;

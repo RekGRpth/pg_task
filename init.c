@@ -71,6 +71,14 @@ static shmem_request_hook_type prev_shmem_request_hook = NULL;
 #endif
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 static Shared *shared = NULL;
+// the pauses of groups, which a task of a negative max schedules as it's done (see task_done()), till their ends: not only for the tasks of the group planned then, whose plans task_update() puts off, but for those inserted or planned later too, which work_sleep() takes no sooner; in shared memory, as the task worker that's done with a local task is another process than the pg_work taking the next one, and kept no longer than the server runs, a pause across its restart not kept
+typedef struct Pause {
+    int hash;
+    Oid database;
+    Oid oid;
+    TimestampTz until;
+} Pause;
+static Pause *pauses = NULL;
 #if PG_VERSION_NUM < 130000
 volatile sig_atomic_t ShutdownRequestPending = false;
 #endif
@@ -251,7 +259,7 @@ void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len
 }
 
 static size_t init_shared_memsize(void) {
-    return mul_size(init.conf.max, sizeof(Shared));
+    return add_size(mul_size(init.conf.max, sizeof(Shared)), mul_size(init.conf.max, sizeof(Pause))); // as many pauses as slots, those of the more groups at once putting off the ones of the soonest ends, see init_pause()
 }
 
 #if PG_VERSION_NUM >= 150000
@@ -267,6 +275,7 @@ static void init_shmem_startup_hook(void) {
     LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
     shared = ShmemInitStruct("pg_shared", init_shared_memsize(), &found);
     if (!found) MemSet(shared, 0, init_shared_memsize());
+    pauses = (Pause *)(shared + init.conf.max);
     elog(DEBUG1, "pg_shared %s found", found ? "" : "not");
     LWLockRelease(AddinShmemInitLock);
 }
@@ -517,6 +526,35 @@ void init_task_pids(const char *data, Oid oid, StringInfo pids, StringInfo hashe
         appendStringInfo(hashes, "%s%i", hashes->len > 1 ? "," : "", shared[slot].hash);
     }
     LWLockRelease(BackgroundWorkerLock);
+}
+
+// the pause of a group till until, the later of it and one there already, in place of one ended, or, none such, of the one of the soonest end
+void init_pause(Oid oid, int hash, TimestampTz until) {
+    int slot = -1;
+    TimestampTz now = GetCurrentTimestamp();
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    for (int i = 0; i < init.conf.max; i++) if (pauses[i].until > now && pauses[i].database == MyDatabaseId && pauses[i].oid == oid && pauses[i].hash == hash) { slot = i; break; }
+    if (slot >= 0) { if (pauses[slot].until < until) pauses[slot].until = until; } else {
+        for (int i = 0; i < init.conf.max; i++) if (slot < 0 || pauses[i].until < pauses[slot].until) slot = i; // an ended one, never used say, sooner than any other
+        pauses[slot].database = MyDatabaseId;
+        pauses[slot].oid = oid;
+        pauses[slot].hash = hash;
+        pauses[slot].until = until;
+    }
+    LWLockRelease(BackgroundWorkerLock);
+}
+
+// the groups of a table on a pause now, by their hashes, if hashes, and the soonest end of their pauses, 0 for none
+TimestampTz init_pauses(Oid oid, StringInfo hashes) {
+    TimestampTz now = GetCurrentTimestamp();
+    TimestampTz soonest = 0;
+    LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
+    for (int i = 0; i < init.conf.max; i++) if (pauses[i].until > now && pauses[i].database == MyDatabaseId && pauses[i].oid == oid) {
+        if (hashes) appendStringInfo(hashes, "%s%i", hashes->len > 1 ? "," : "", pauses[i].hash);
+        if (!soonest || pauses[i].until < soonest) soonest = pauses[i].until;
+    }
+    LWLockRelease(BackgroundWorkerLock);
+    return soonest;
 }
 
 // the pid of a task worker in its slot, as soon as pg_work knows it started, before it takes the lock of the group's slot by it: till the worker writes it itself, its slot would count apart from that lock, see init_task_pids(), the group a slot short; only while the slot still has the task, the worker gone already and its slot another's maybe
