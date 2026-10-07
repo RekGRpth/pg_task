@@ -113,6 +113,7 @@ static bool work_bookkeeping(Task *t, bool live, bool *exit);
 static void work_defer(Task *t);
 static void work_discard(Task *t);
 static void work_later(Task *t, const char *message, const char *setting);
+static bool work_cancel(Task *t);
 static bool work_next(Task *t, const char *error);
 static void work_query(Task *t);
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
@@ -721,11 +722,36 @@ static void work_output(const Task *t) {
 }
 
 // the task failed on its output, too much of it, with the error taken already: keep the most of it it may, and fail it, rather than take pg_work down, with every remote task it runs, and have the task run again on every reset
-static void work_failed(Task *t) {
+static void work_fail(Task *t) {
     bool exit;
-    if (t->output.data && t->output.len > (int)TASK_OUTPUT_MAX) t->output.data[t->output.len = pg_mbcliplen(t->output.data, t->output.len, TASK_OUTPUT_MAX)] = '\0';
     if (!work_encoding(t)) return;
-    if (work_bookkeeping(t, false, &exit)) work_finish(t); else work_defer(t); // with the rest of the result unread
+    if (work_bookkeeping(t, false, &exit)) work_finish(t); else work_defer(t); // with the rest of the result unread, if any
+}
+
+// the rest of the input, cancelled, read and dropped till the server is through with it, the result of the cancel say, and only then the task failed: with the connection closed at once instead, the rest of the input would go on till it sent something, maybe only once committed, and the cancel, sent asynchronously, through the loop of pg_work, would get there no sooner than the bookkeeping of the task was done, a gigabyte of output to store, after that commit
+static void work_drain(Task *t) {
+    for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK; PQclear(result)) {
+        if (work_busy(t, work_drain)) return;
+        if (!(result = PQgetResult(t->conn))) break;
+        switch (PQresultStatus(result)) {
+            case PGRES_COPY_BOTH: if (PQputCopyEnd(t->conn, "COPY BOTH is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
+            case PGRES_COPY_IN: if (PQputCopyEnd(t->conn, "COPY FROM STDIN is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
+            case PGRES_COPY_OUT: {
+                char *buffer;
+                int len;
+                while ((len = PQgetCopyData(t->conn, &buffer, true)) > 0) PQfreemem(buffer);
+                if (!len) { PQclear(result); t->event = WL_SOCKET_READABLE; t->socket = work_drain; return; } // the rest of it once the socket is readable again
+            } break;
+            default: ereport(DEBUG1, (errmsg("id = %li, dropped %s", t->shared->id, PQresStatus(PQresultStatus(result))), work_errdetail(PQresultErrorMessage(result)))); break;
+        }
+    }
+    work_fail(t);
+}
+
+static void work_failed(Task *t) {
+    bool drain = PQstatus(t->conn) == CONNECTION_OK && PQtransactionStatus(t->conn) == PQTRANS_ACTIVE && work_cancel(t); // the input still running on the remote server, cancelled before anything else, the cut of a gigabyte of output to the most of it a task may keep say
+    if (t->output.data && t->output.len > (int)TASK_OUTPUT_MAX) t->output.data[t->output.len = pg_mbcliplen(t->output.data, t->output.len, TASK_OUTPUT_MAX)] = '\0';
+    if (drain) work_drain(t); else work_fail(t);
 }
 
 static void work_copy(Task *t) {
