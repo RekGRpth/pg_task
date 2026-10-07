@@ -504,17 +504,34 @@ static void work_expire(void) {
 }
 
 // a task isn't abandoned only for not being locked by task_work() yet: skip the ones we are still starting, a remote one connecting or between tasks of its connection, a local one whose task worker is starting, or they'd be taken again while we still run them
+// in two steps, the ids of the tasks pg_work and the task workers start taken only once the tasks left in TAKE or WORK with no lock are found: a task worker taking the next task of its group, see task_live(), has its id in its slot before it commits it into TAKE, but, its lock taken only after that, see task_work(), one committed into TAKE between the ids taken and the tasks found would be put back to PLAN, the worker exiting on it and the task run by the next one; a task found in TAKE or WORK by the first step was there before the ids are taken
 static void work_reset(const Work *w) {
-    Datum values[1];
+    char *found;
+    Datum values[2];
     dlist_iter iter;
     Portal portal;
     StringInfoData ids;
-    static Oid argtypes[] = {TEXTOID};
+    static Oid argtypes[] = {TEXTOID, TEXTOID};
+    static SPIPlanPtr found_plan = NULL;
     static SPIPlanPtr plan = NULL;
+    static StringInfoData found_src = {0};
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return; // as work_sleep() does
     set_ps_display_my("reset");
     work_reap(w);
+    // the lock of a task is tagged by the high and the low 32 bits of its id, unsigned (see lock_table_id()), the low ones as id & 4294967295, here as in work_timeout() and work_stop(): an arithmetic id << 32 >> 32 would extend their sign, into a negative oid for half the ids, and an error taking pg_work down
+    if (!found_src.data) {
+        initStringInfoMy(&found_src);
+        appendStringInfo(&found_src, SQL(
+            SELECT pg_catalog.array_agg("id")::pg_catalog.text AS "found" FROM %1$s AS t LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$u AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
+            WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND l.pid IS NULL
+        ), w->schema_table, init_table_key(w->shared->oid), w->schema_type);
+    }
+    SPI_connect_my(found_src.data, InvalidOid);
+    if (!found_plan) found_plan = SPI_prepare_my(found_src.data, 0, NULL);
+    SPI_execute_plan_my(found_src.data, found_plan, NULL, NULL, SPI_OK_SELECT);
+    if (SPI_processed != 1 || !(found = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "found", true, TEXTOID)))) { SPI_finish_my(); set_ps_display_my("idle"); return; } // none, as mostly
+    SPI_finish_my();
     initStringInfoMy(&ids);
     appendStringInfoChar(&ids, '{');
     dlist_foreach(iter, &local) appendStringInfo(&ids, "%s%li", ids.len > 1 ? "," : "", dlist_container(Local, node, iter.cur)->id);
@@ -522,13 +539,14 @@ static void work_reset(const Work *w) {
     init_task_ids(&ids, w->shared->data, w->shared->oid); // and those of task workers an earlier pg_work started, before it was restarted, which hold the lock of their task no longer, if an input let go of it
     appendStringInfoChar(&ids, '}');
     values[0] = CStringGetTextDatumMy(ids.data);
-    // the lock of a task is tagged by the high and the low 32 bits of its id, unsigned (see lock_table_id()), the low ones as id & 4294967295, here as in work_timeout() and work_stop(): an arithmetic id << 32 >> 32 would extend their sign, into a negative oid for half the ids, and an error taking pg_work down
+    values[1] = CStringGetTextDatumMy(found);
+    pfree(found);
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT "id" FROM %1$s AS t LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$u AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
-                WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND "id" OPERATOR(pg_catalog.<>) ALL(($1)::pg_catalog.int8[]) AND l.pid IS NULL FOR NO KEY UPDATE OF t %4$s
+                WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND "id" OPERATOR(pg_catalog.=) ANY(($2)::pg_catalog.int8[]) AND "id" OPERATOR(pg_catalog.<>) ALL(($1)::pg_catalog.int8[]) AND l.pid IS NULL FOR NO KEY UPDATE OF t %4$s
             ) UPDATE %1$s AS t SET "state" = 'PLAN', "start" = NULL, "stop" = NULL, "pid" = NULL FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id
         ), w->schema_table, init_table_key(w->shared->oid), w->schema_type,
 #if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
@@ -552,6 +570,7 @@ static void work_reset(const Work *w) {
     SPI_cursor_close_my(portal);
     SPI_finish_my();
     pfree((void *)values[0]);
+    pfree((void *)values[1]);
     pfree(ids.data);
     set_ps_display_my("idle");
 }
