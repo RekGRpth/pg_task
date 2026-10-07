@@ -30,10 +30,11 @@ static bool search_path_saved = false;
 static Oid userid = InvalidOid; // pg_task.user, whose rights the task table bookkeeping needs, while the session itself belongs to the task owner
 
 // the next task of the very group and remote of the task just done, not only of their hash, which "group" || "remote" of others may give too, and which this worker would then run as if it were of its own: a remote one locally, a local one or one of another server on its connection
+// and one that fits in its group by its own max, as work_sleep() takes them, with no more than max others running: those of a higher max, taken since the one just done, may well fill the group past it; counted by their rows in TAKE or WORK, rather than by pg_locks, too much to read after every task, which count no fewer of them, only maybe more, those left by a pg_work gone, until the reset, or those whose bookkeeping is put off, see work_defer(): the next one is left to work_sleep() then
 static bool task_live(const Task *t) {
-    char nulls[] = {' ', ' ', ' ', ' ', ' ', ' ', t->remote ? ' ' : 'n'};
-    Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start), CStringGetTextDatumMy(t->shared->owner), CStringGetTextDatumMy(t->group), CStringGetTextDatumMy(t->remote)};
-    static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID, TEXTOID, TEXTOID, TEXTOID};
+    char nulls[] = {' ', ' ', ' ', ' ', ' ', ' ', t->remote ? ' ' : 'n', ' '};
+    Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start), CStringGetTextDatumMy(t->shared->owner), CStringGetTextDatumMy(t->group), CStringGetTextDatumMy(t->remote), Int64GetDatum(t->shared->id)};
+    static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID, TEXTOID, TEXTOID, TEXTOID, INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     elog(DEBUG1, "id = %li, hash = %i, max = %i, count = %i, start = %s", t->shared->id, t->shared->hash, t->shared->max, t->count, timestamptz_to_str(t->start));
@@ -43,14 +44,16 @@ static bool task_live(const Task *t) {
         appendStringInfo(&src, SQL(
             WITH s AS (SELECT "id" FROM %1$s AS t WHERE "plan" OPERATOR(pg_catalog.<=) %3$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%4$s')) OPERATOR(pg_catalog.=) $1 AND "max" OPERATOR(pg_catalog.>=) $2 AND ("user")::pg_catalog.text OPERATOR(pg_catalog.=) $5 AND "group" OPERATOR(pg_catalog.=) $6 AND ("remote" OPERATOR(pg_catalog.=) $7 OR ("remote" IS NULL AND $7 IS NULL)) AND ("plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.>) %3$s OR "repeat" OPERATOR(pg_catalog.>) '0 sec' OR "max" OPERATOR(pg_catalog.<) 0) AND CASE
                 WHEN "count" OPERATOR(pg_catalog.>) 0 AND "live" OPERATOR(pg_catalog.>) '0 sec' THEN "count" OPERATOR(pg_catalog.>) $3 AND $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) %3$s ELSE "count" OPERATOR(pg_catalog.>) $3 OR $4 OPERATOR(pg_catalog.+) "live" OPERATOR(pg_catalog.>) %3$s
-            END ORDER BY "max" DESC, "id" LIMIT 1 FOR NO KEY UPDATE OF t %2$s) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id
+            END AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.>=) (
+                SELECT pg_catalog.count(*) FROM %1$s AS r WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%5$s[]) AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%4$s')) OPERATOR(pg_catalog.=) $1 AND "id" OPERATOR(pg_catalog.<>) $8
+            ) ORDER BY "max" DESC, "id" LIMIT 1 FOR NO KEY UPDATE OF t %2$s) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id
         ), t->work->schema_table,
 #if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
         "SKIP LOCKED",
 #else
         "",
 #endif
-        init_plan(), "");
+        init_plan(), "", t->work->schema_type);
     }
     SPI_connect_my(src.data, userid);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
