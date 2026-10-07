@@ -371,10 +371,8 @@ static void make_valid(const Work *w) {
     initStringInfoMy(&name);
     make_name(w, &name, "valid");
     initStringInfoMy(&source);
-    // a plan of infinity, which the sums below keep as it is, would end up subtracted from the time, by pg_work going idle, by the pause of a group, failing them outside any error handling: refused as set, but one from before the check, which pg_work's own updates of the row keep, let be
     appendStringInfo(&source, SQL(
         BEGIN
-            IF NOT pg_catalog.isfinite(NEW."plan") AND (TG_OP OPERATOR(pg_catalog.=) 'INSERT' OR NEW."plan" IS DISTINCT FROM OLD."plan") THEN RAISE EXCEPTION 'plan must be finite' USING ERRCODE = 'datetime_field_overflow'; END IF;
             PERFORM NEW."plan" OPERATOR(pg_catalog.+) (NEW."active" OPERATOR(pg_catalog.+) NEW."live" OPERATOR(pg_catalog.+) NEW."repeat" OPERATOR(pg_catalog.+) NEW."timeout"), pg_catalog.statement_timestamp() OPERATOR(pg_catalog.+) (NEW."active" OPERATOR(pg_catalog.+) NEW."live" OPERATOR(pg_catalog.+) NEW."repeat" OPERATOR(pg_catalog.+) NEW."timeout");
             RETURN NEW;
         END;

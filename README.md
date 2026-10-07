@@ -88,7 +88,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | pg_task.plan | timestamptz | statement_timestamp() | config, database, user, session (superuser only) | Default value for plan timestamp, and what the scheduler takes for now: an SQL expression, run as `pg_task.user`, so only a superuser may set it |
 | pg_task.quote | char | | config, database, user, session | Results columns quote |
 | pg_task.repeat | interval | 0 sec | config, database, user, session | Non-negative auto repeat tasks interval |
-| pg_task.reset | interval | 1 hour | config, database, user | Interval of reset tasks; a value that isn't an interval is refused as set, as it would keep `pg_conf` from applying `pg_task.json` for every database (one set before this check, still in `pg_db_role_setting`, has to be fixed by hand: `pg_conf` logs `pg_task.json not applied` with it) |
+| pg_task.reset | interval | 1 hour | config, database, user | Interval of reset tasks; a value that isn't a positive, finite interval is refused as set, as it would keep `pg_conf` from applying `pg_task.json` for every database (one set before this check, still in `pg_db_role_setting`, has to be fixed by hand: `pg_conf` logs `pg_task.json not applied` with it) |
 | pg_task.schema | text | public | config, database, user | Schema name for tasks table |
 | pg_task.table | text | task | config, database, user | Table name for tasks table |
 | pg_task.timeout | interval | 0 sec | config, database, user, session | Non-negative allowed time for task run |
@@ -102,7 +102,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | --- | --- | --- | --- | --- |
 | id | bigserial | NOT NULL | autoincrement | Primary key |
 | parent | bigint | NULL | pg_task.id | Parent task id (if exists, like foreign key to id, but without constraint, for performance) |
-| plan | timestamptz | NOT NULL | pg_task.plan | Planned date and time of start; must be finite, `infinity` and `-infinity` are refused (`plan must be finite`) |
+| plan | timestamptz | NOT NULL | pg_task.plan | Planned date and time of start; `infinity` holds a task back till its `plan` is set to a time (see the pattern of a parent task below), `-infinity` makes it due at once, with no pause of its group (`max < 0`) after it, and the next of a repeating one planned from now |
 | start | timestamptz | NULL | | Actual date and time of start |
 | stop | timestamptz | NULL | | Actual date and time of stop |
 | active | interval | NOT NULL | pg_task.active | Positive period after plan time, when task is active for executing |
@@ -179,7 +179,7 @@ Instead of `LISTEN`/`NOTIFY`, `pg_task` wakes idle workers with session-level ad
 
 A second, per-task advisory lock (tagged by the task's own `id`) is used to detect a crashed executor: every `pg_task.reset` interval, `pg_work` looks for rows still in `TAKE`/`WORK` whose `id`-tagged lock nobody currently holds, and resets them to `PLAN` — unless a live task worker still has the task in its shared memory slot, which an input can't let go of, as `pg_advisory_unlock_all()` or `DISCARD ALL` in it let go of the locks of `pg_task` too (user locks, not advisory ones, but in the same lock method); those the worker takes back after each command of the input. That's the crash-recovery mechanism. A crashed `pg_work` itself is restarted by the postmaster after `pg_work.restart` seconds; it first checks `pg_task.json` again, and exits for good if its entry has been removed meanwhile.
 
-When there's genuinely nothing to do, `pg_work` doesn't poll in a tight loop: it computes, in one query, the soonest moment something will actually need attention — the closer of the next `active`/`timeout` deadline among running tasks and the next `PLAN` task's `plan` — and sleeps exactly until then (at most about 24.8 days, `INT_MAX` milliseconds, at a time, after which it works the moment out again). `pg_task.sleep` is a floor on responsiveness for a busy queue, not a fixed polling interval.
+When there's genuinely nothing to do, `pg_work` doesn't poll in a tight loop: it computes, in one query, the soonest moment something will actually need attention — the closer of the next `active`/`timeout` deadline among running tasks and the next `PLAN` task's `plan` — and sleeps exactly until then (at most about 24.8 days, `INT_MAX` milliseconds, at a time, after which it works the moment out again; before PostgreSQL 9.6, where a wake-up of its own copy of the 9.6 latch code may be lost, a `pg_task.sleep` at most). `pg_task.sleep` is a floor on responsiveness for a busy queue, not a fixed polling interval.
 
 ### Self-provisioning and the helper triggers
 

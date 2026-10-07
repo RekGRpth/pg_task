@@ -1,15 +1,46 @@
--- a plan of infinity either way is refused, as the check of the other times is, which it passed, its sums infinite too: pg_work going idle, or the pause of a group with max < 0, subtract the time from it, failing outside any error handling, again and again
-DELETE FROM task WHERE "group" = 'infinite_plan';
-\set VERBOSITY terse
-INSERT INTO task ("group", input, plan) VALUES ('infinite_plan', 'SELECT 1', 'infinity');
-ERROR:  plan must be finite
-INSERT INTO task ("group", input, plan, max) VALUES ('infinite_plan', 'SELECT 1', '-infinity', -1000);
-ERROR:  plan must be finite
-\set VERBOSITY default
-SELECT count(*) AS inserted FROM task WHERE "group" = 'infinite_plan';
- inserted 
-----------
-        0
+-- a plan of infinity holds a task back, one of -infinity makes it due at once: neither fails pg_work, which subtracts the time from the plan of the next task to wait for it going idle, and from that of a task done for the pause of its group, nor the repeat of the task, planned from now then
+DELETE FROM task WHERE "group" LIKE 'infinite_plan_%';
+SELECT pid AS work_pid FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database()
+\gset
+SELECT set_config('pg_task_test.work_pid', :'work_pid', false) IS NOT NULL AS work_pid_saved;
+ work_pid_saved 
+----------------
+ t
 (1 row)
 
-DELETE FROM task WHERE "group" = 'infinite_plan';
+INSERT INTO task ("group", input, plan) VALUES ('infinite_plan_held', 'SELECT 1', 'infinity');
+INSERT INTO task ("group", input, plan, max, repeat) VALUES ('infinite_plan_due', 'SELECT 2', '-infinity', -1000, '1 hour');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'infinite_plan_due' AND state = 'DONE') AND EXISTS (SELECT 1 FROM task WHERE "group" = 'infinite_plan_due' AND state = 'PLAN') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task in group ''infinite_plan_due'' to be done and repeated'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pg_sleep(3);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+SELECT pg_stat_clear_snapshot();
+ pg_stat_clear_snapshot 
+------------------------
+ 
+(1 row)
+
+SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database() AND pid = current_setting('pg_task_test.work_pid')::int) AS same_work;
+ same_work 
+-----------
+ t
+(1 row)
+
+SELECT "group", state, isfinite(plan) AS finite, plan > now() AS later FROM task WHERE "group" LIKE 'infinite_plan_%' ORDER BY id;
+       group        | state | finite | later 
+--------------------+-------+--------+-------
+ infinite_plan_held | PLAN  | f      | t
+ infinite_plan_due  | DONE  | f      | f
+ infinite_plan_due  | PLAN  | t      | t
+(3 rows)
+
+DELETE FROM task WHERE "group" LIKE 'infinite_plan_%';
