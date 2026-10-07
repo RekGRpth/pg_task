@@ -1,0 +1,34 @@
+-- the bookkeeping of a remote task whose row someone else holds is put off, pg_work closing its connection and going on with the other tasks, rather than wait for the row, every other remote task and the taking of tasks with it: it's done once the row is let go of
+DELETE FROM task WHERE "group" LIKE 'bookkeeping_wait_%';
+INSERT INTO task ("group", input, remote) VALUES ('bookkeeping_wait_r', 'SELECT pg_sleep(2)', 'dbname=' || :'DBNAME');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'bookkeeping_wait_r' AND state = 'WORK') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task in group ''bookkeeping_wait_r'' to start'; END IF;
+END;$body$ LANGUAGE plpgsql;
+INSERT INTO task ("group", input) VALUES ('bookkeeping_wait_l', 'SELECT 1 FROM task WHERE "group" = ''bookkeeping_wait_r'' FOR UPDATE; SELECT pg_sleep(8)');
+SELECT pg_sleep(4);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+INSERT INTO task ("group", input, remote) VALUES ('bookkeeping_wait_c', 'SELECT 3', 'dbname=' || :'DBNAME');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" LIKE 'bookkeeping_wait_%' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''bookkeeping_wait_%%'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", state, CASE WHEN "group" = 'bookkeeping_wait_c' THEN start - plan < interval '2 sec' END AS in_time FROM task WHERE "group" LIKE 'bookkeeping_wait_%' ORDER BY "group";
+       group        | state | in_time 
+--------------------+-------+---------
+ bookkeeping_wait_c | DONE  | t
+ bookkeeping_wait_l | DONE  | 
+ bookkeeping_wait_r | DONE  | 
+(3 rows)
+
+DELETE FROM task WHERE "group" LIKE 'bookkeeping_wait_%';

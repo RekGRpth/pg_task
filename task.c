@@ -234,6 +234,20 @@ bool task_done(Task *t, bool live) {
         ), t->work->schema_table, t->work->schema_type, init_plan());
     }
     SPI_connect_my(src.data, userid);
+    // a remote task's, in pg_work, which waits for no row someone else holds, every other remote task, the taking of tasks and their cancels waiting with it, or pg_work failing on a deadlock, with all of them: an error at once, rather, for pg_work to put the bookkeeping off, see work_bookkeeping(), as a lock timeout, an interrupt, wouldn't come through the interrupts held off above
+    if (t->remote) {
+        static SPIPlanPtr nowait_plan = NULL;
+        static StringInfoData nowait_src = {0};
+        static Oid nowait_argtypes[] = {INT8OID};
+        if (!nowait_src.data) {
+            initStringInfoMy(&nowait_src);
+            appendStringInfo(&nowait_src, SQL(
+                SELECT "id" FROM %1$s WHERE "id" OPERATOR(pg_catalog.=) $1 FOR NO KEY UPDATE NOWAIT
+            ), t->work->schema_table);
+        }
+        if (!nowait_plan) nowait_plan = SPI_prepare_my(nowait_src.data, countof(nowait_argtypes), nowait_argtypes);
+        SPI_execute_plan_my(nowait_src.data, nowait_plan, values, NULL, SPI_OK_SELECT);
+    }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) { ereport(WARNING, (errmsg("id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed))); exit = true; } else {

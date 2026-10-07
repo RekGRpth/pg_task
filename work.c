@@ -85,6 +85,7 @@ typedef struct Local {
 } Local;
 
 static dlist_head local; // started task workers whose slot we hold too, until they exit: see work_local()
+static dlist_head pending; // remote tasks done, their connections closed, whose bookkeeping waits for a row someone else holds, see work_bookkeeping()
 static dlist_head remote;
 
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
@@ -108,6 +109,8 @@ Work *get_work(void) {
     return &work;
 }
 
+static bool work_bookkeeping(Task *t, bool live, bool *exit);
+static void work_defer(Task *t);
 static void work_discard(Task *t);
 static void work_query(Task *t);
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
@@ -122,17 +125,19 @@ static bool work_verify(Task *t);
 #define work_error(...) do { \
     bool work_error_exit PG_USED_FOR_ASSERTS_ONLY; \
     bool work_error_remote = t->remote != NULL; \
+    MemoryContext work_error_context = CurrentMemoryContext; \
     PG_TRY(); \
         ereport(ERROR, __VA_ARGS__); \
     PG_CATCH(); \
+        MemoryContextSwitchTo(work_error_context); /* out of ErrorContext, the rest to run in, the bookkeeping say, rather than in one that the next error resets */ \
         task_error(t); \
         EmitErrorReport(); \
         FlushErrorState(); \
     PG_END_TRY(); \
     (void)work_verify(t); /* as a task done would have them, see work_encoding(): a remote task's output so far, and the server's messages, its connection broken say */ \
-    work_error_exit = task_done(t, false); /* with live = false nothing new is taken into t, so it can be dropped */ \
-    Assert(work_error_exit); \
-    work_error_remote ? work_finish(t) : work_free(t); \
+    if (!work_error_remote) { work_error_exit = task_done(t, false); /* with live = false nothing new is taken into t, so it can be dropped */ work_free(t); } \
+    else if (work_bookkeeping(t, false, &work_error_exit)) work_finish(t); \
+    else work_defer(t); \
 } while(0)
 
 // the connection of a remote task broke: on its way from the task done to the next one, which task_done() took into TAKE already, as work_discard() is, the next one, never run, isn't to fail for it but to go back to PLAN, as work_discard() has it when DISCARD ALL fails
@@ -351,6 +356,25 @@ static void work_unreserve(Task *t) {
     t->reserve = false;
 }
 
+// the bookkeeping of a remote task, in pg_work, which takes no row someone else holds, for a while, say, see task_done(), as every other remote task, the taking of tasks and their cancels would wait for it, or pg_work fail on a deadlock, with all of them: false, the bookkeeping put off, to be tried again, see work_pending()
+static bool work_bookkeeping(Task *t, bool live, bool *exit) {
+    ErrorData *edata;
+    MemoryContext oldMemoryContext = CurrentMemoryContext;
+    volatile bool done = true;
+    PG_TRY();
+        *exit = task_done(t, live);
+    PG_CATCH();
+        MemoryContextSwitchTo(oldMemoryContext);
+        edata = CopyErrorData();
+        if (edata->sqlerrcode != ERRCODE_LOCK_NOT_AVAILABLE && edata->sqlerrcode != ERRCODE_T_R_DEADLOCK_DETECTED) ReThrowError(edata);
+        FlushErrorState();
+        FreeErrorData(edata);
+        SPI_abort_my();
+        done = false;
+    PG_END_TRY();
+    return done;
+}
+
 static void work_finish(Task *t) {
     if (!proc_exit_inprogress) work_unreserve(t);
     if (t->conn) {
@@ -362,6 +386,34 @@ static void work_finish(Task *t) {
     if (!proc_exit_inprogress && t->key && !unlock_table_pid_hash(t->shared->oid, t->key, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->key, t->shared->hash)));
     idle_count = 0; // a slot of its group is free now, for a task of the group that waits for one, which an idle pg_work doesn't wait for: see work_reap()
     work_free(t);
+}
+
+// the bookkeeping put off: the connection closed, the task done with it, and the slot of its group freed, but the task kept, with the lock of its id, for work_reset() to leave it be, till work_pending() records it
+static void work_defer(Task *t) {
+    ereport(WARNING, (errmsg("id = %li, its row held by someone else, its bookkeeping put off", t->shared->id)));
+    work_unreserve(t);
+    if (t->conn) {
+        PQfinish(t->conn);
+#if PG_VERSION_NUM >= 130000
+        ReleaseExternalFD();
+#endif
+        t->conn = NULL;
+    }
+    if (t->key && !unlock_table_pid_hash(t->shared->oid, t->key, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->key, t->shared->hash)));
+    t->key = 0;
+    idle_count = 0;
+    dlist_delete(&t->node);
+    dlist_push_tail(&pending, &t->node);
+}
+
+// the bookkeeping put off tried again, with no next task to take, the connection gone
+static void work_pending(void) {
+    dlist_mutable_iter iter;
+    dlist_foreach_modify(iter, &pending) {
+        Task *t = dlist_container(Task, node, iter.cur);
+        bool exit;
+        if (work_bookkeeping(t, false, &exit)) work_free(t);
+    }
 }
 
 static int work_nevents(void) {
@@ -537,6 +589,7 @@ static bool work_busy(Task *t, void (*socket) (Task *t)) {
 
 // the results came in the client_encoding of the connection, which is that of this database (see work_remote()) unless the input set another one, which, as servers from 14 on tell of it only once the input is through, if at all, can't be told by result, and so did the messages of the server, localized: the output and the error are stored only if they are text of this database at least, one that isn't dropped, for the error of it, after the one the task has, if any, rather than stored as it is, invalid for anything that reads it
 static bool work_verify(Task *t) {
+    MemoryContext context = CurrentMemoryContext;
     StringInfoData bad = {0};
     if (t->output.data && !pg_verifymbstr(t->output.data, t->output.len, true)) { bad = t->output; t->output.data = NULL; t->output.len = 0; }
     if (t->error.data && !pg_verifymbstr(t->error.data, t->error.len, true)) {
@@ -548,6 +601,7 @@ static bool work_verify(Task *t) {
     PG_TRY();
         (void)pg_verifymbstr(bad.data, bad.len, false);
     PG_CATCH();
+        MemoryContextSwitchTo(context); // out of ErrorContext, as in work_error()
         task_error(t);
         EmitErrorReport();
         FlushErrorState();
@@ -558,9 +612,9 @@ static bool work_verify(Task *t) {
 
 // a task done with results that aren't text of this database fails, as inserting them would
 static bool work_encoding(Task *t) {
+    bool exit;
     if (work_verify(t)) return true;
-    (void)task_done(t, false); // with live = false nothing new is taken into t, so it can be dropped
-    work_finish(t); // and the session with the client_encoding it set
+    if (work_bookkeeping(t, false, &exit)) work_finish(t); else work_defer(t); // and the session with the client_encoding it set
     return false;
 }
 
@@ -574,6 +628,7 @@ static bool work_cancelling(const Task *t) {
 }
 
 static void work_done(Task *t) {
+    bool exit;
     bool live;
     if (PQstatus(t->conn) == CONNECTION_OK && PQtransactionStatus(t->conn) != PQTRANS_IDLE) {
         if (!PQsendQuery(t->conn, SQL(COMMIT))) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
@@ -584,7 +639,8 @@ static void work_done(Task *t) {
     }
     if (!work_encoding(t)) return;
     live = PQstatus(t->conn) == CONNECTION_OK && !work_cancelling(t); // take the next task of the group only for a connection to run it on, and one no cancel is on its way to
-    if (task_done(t, live) || !live) { work_finish(t); return; }
+    if (!work_bookkeeping(t, live, &exit)) { work_defer(t); return; }
+    if (exit || !live) { work_finish(t); return; }
     if (t->save) { work_query(t); return; }
     if (!PQsendQuery(t->conn, SQL(DISCARD ALL;))) { ereport(WARNING, (errmsg("id = %li, PQsendQuery failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); task_untake(t); work_finish(t); return; }
     t->socket = work_discard;
@@ -630,10 +686,10 @@ static void work_output(const Task *t) {
 
 // the task failed on its output, too much of it, with the error taken already: keep the most of it it may, and fail it, rather than take pg_work down, with every remote task it runs, and have the task run again on every reset
 static void work_failed(Task *t) {
+    bool exit;
     if (t->output.data && t->output.len > (int)TASK_OUTPUT_MAX) t->output.data[t->output.len = pg_mbcliplen(t->output.data, t->output.len, TASK_OUTPUT_MAX)] = '\0';
     if (!work_encoding(t)) return;
-    (void)task_done(t, false); // with live = false nothing new is taken into t, so it can be dropped
-    work_finish(t); // with the rest of the result unread
+    if (work_bookkeeping(t, false, &exit)) work_finish(t); else work_defer(t); // with the rest of the result unread
 }
 
 static void work_copy(Task *t) {
@@ -641,6 +697,7 @@ static void work_copy(Task *t) {
     int len = 0;
     volatile bool failed = false;
     volatile bool copied = false;
+    MemoryContext context = CurrentMemoryContext;
     if (!t->output.data) initStringInfoMy(&t->output);
     PG_TRY();
         while ((len = PQgetCopyData(t->conn, &buffer, true)) > 0) {
@@ -652,6 +709,7 @@ static void work_copy(Task *t) {
             work_output(t);
         }
     PG_CATCH();
+        MemoryContextSwitchTo(context); // out of ErrorContext, as in work_error()
         task_error(t);
         EmitErrorReport();
         FlushErrorState();
@@ -667,6 +725,7 @@ static void work_copy(Task *t) {
 }
 
 static void work_result(Task *t) {
+    MemoryContext context = CurrentMemoryContext;
     for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK; PQclear(result)) {
         volatile bool copy = false, failed = false;
         if (work_busy(t, work_result)) return;
@@ -684,6 +743,7 @@ static void work_result(Task *t) {
             }
             work_output(t);
         PG_CATCH();
+            MemoryContextSwitchTo(context); // out of ErrorContext, as in work_error()
             task_error(t);
             EmitErrorReport();
             FlushErrorState();
@@ -1320,6 +1380,7 @@ void work_main(Datum main_arg) {
     work_check(&work);
     if (ShutdownRequestPending) return;
     dlist_init(&local);
+    dlist_init(&pending);
     dlist_init(&remote);
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
     dlist_init(&cancels);
@@ -1383,6 +1444,7 @@ void work_main(Datum main_arg) {
             if (timeout < current_sleep) timeout = current_sleep;
         }
         if ((deadline = work_deadline()) >= 0 && (timeout < 0 || deadline < timeout)) timeout = deadline;
+        if (!dlist_is_empty(&pending) && (timeout < 0 || timeout > work.shared->sleep)) timeout = work.shared->sleep; // to try the bookkeeping put off again
 #if PG_VERSION_NUM < 90600
         // the copy of 9.6's latch.c waits on a self-pipe of its own, which the server's SetLatch(), the one called, from the signal handlers too, never writes to: a signal coming between its check of the latch and its wait wakes it no sooner than its timeout, which, then, is a sleep at most, idle or not
         if (timeout < 0 || timeout > work.shared->sleep) timeout = work.shared->sleep;
@@ -1400,6 +1462,7 @@ void work_main(Datum main_arg) {
             else if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
         work_expire();
+        work_pending();
         // an idle pg_work waits only for tasks planned ahead, not for those due already that wait for a slot of their group, which a task done frees: back to passes every sleep, for them to be taken
         if (work_reap(&work)) idle_count = 0;
         work_latch(&work);
