@@ -1,0 +1,13 @@
+-- the notices of the remote server are logged by pg_work as its own, at their level, as a local task's are, rather than printed by libpq to stderr as they are, and the notifications of a LISTEN of the task, on a connection kept for the next tasks of the group, are dropped as they come, rather than kept by libpq for as long as the connection lives: the tasks are done as ever
+DELETE FROM task WHERE "group" LIKE 'notice_notify_%';
+INSERT INTO task ("group", input, remote) VALUES ('notice_notify_notice', 'DO $x$BEGIN RAISE NOTICE ''remote notice''; RAISE WARNING ''remote warning'' USING DETAIL = ''some detail'', HINT = ''some hint''; END$x$', 'dbname=' || :'DBNAME');
+INSERT INTO task ("group", input, remote, save, count) VALUES ('notice_notify_listen', 'LISTEN notice_notify', 'dbname=' || :'DBNAME', true, 10), ('notice_notify_listen', 'NOTIFY notice_notify, ''payload''', 'dbname=' || :'DBNAME', true, 10), ('notice_notify_listen', 'SELECT 1 AS a', 'dbname=' || :'DBNAME', true, 10);
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" LIKE 'notice_notify_%' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''notice_notify_%%'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", state, replace(output, E'\n', '|') AS output, error FROM task WHERE "group" LIKE 'notice_notify_%' ORDER BY id;
+DELETE FROM task WHERE "group" LIKE 'notice_notify_%';

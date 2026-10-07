@@ -176,6 +176,22 @@ work_errdetail(const char *err) {
     return errdetail("%.*s", len, err);
 }
 
+static
+#if PG_VERSION_NUM >= 120000 && defined(GP_VERSION_NUM)
+void
+#else
+int
+#endif
+work_errhint(const char *hint) {
+    if (!hint || !hint[0])
+#if PG_VERSION_NUM >= 120000 && defined(GP_VERSION_NUM)
+        return;
+#else
+        return 0;
+#endif
+    return errhint("%s", hint);
+}
+
 static void work_check(const Work *w) {
     bool ok = true;
     MemoryContext oldMemoryContext = CurrentMemoryContext;
@@ -582,8 +598,20 @@ static void work_latch(const Work *w) {
     work_stop(w);
 }
 
+// a notice of the remote server, which libpq would print to stderr as it is, past log_min_messages and the format of the log, a NOTICE as a WARNING: logged as one of pg_work's own instead, at its level, as a local task's is, but no higher than WARNING, so as not to fail anything
+static void work_notice(void *arg, const PGresult *result) {
+    const char *message = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY);
+    const char *sqlstate = PQresultErrorField(result, PG_DIAG_SQLSTATE);
+    const Task *t = arg;
+    int elevel = severity_error(work_severity(result));
+    if (elevel >= ERROR) elevel = WARNING;
+    ereport(elevel, (errcode(sqlstate && strlen(sqlstate) == 5 ? MAKE_SQLSTATE(sqlstate[0], sqlstate[1], sqlstate[2], sqlstate[3], sqlstate[4]) : ERRCODE_WARNING), errmsg_internal("id = %li, %s", t->shared->id, message ? message : PQresultErrorMessage(result)), work_errdetail(PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL)), work_errhint(PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))));
+}
+
 static void work_readable(Task *t) {
     if (PQstatus(t->conn) == CONNECTION_OK && !PQconsumeInput(t->conn)) { work_broken((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("!PQconsumeInput"), work_errdetail(PQerrorMessage(t->conn)))); return; }
+    // the notifications of a LISTEN of the task, which libpq would keep for as long as the connection lives, with save say, a task having nowhere to take them: logged for debug and dropped
+    for (PGnotify *notify; (notify = PQnotifies(t->conn)); PQfreemem(notify)) elog(DEBUG1, "id = %li, notification \"%s\" from %i: %s", t->shared->id, notify->relname, notify->be_pid, notify->extra);
     t->socket(t);
 }
 
@@ -1071,8 +1099,11 @@ static void work_start(Task *t) {
 #endif
         work_error((errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectStartParams failed"), work_errdetail(PQerrorMessage(t->conn))));
     }
-    else if (PQstatus(t->conn) == CONNECTION_BAD) { if (!work_next(t, PQerrorMessage(t->conn))) work_error((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), work_errdetail(t->failed ? t->failed : PQerrorMessage(t->conn)))); }
-    else if (!PQisnonblocking(t->conn) && PQsetnonblocking(t->conn, true) == -1) work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetnonblocking failed"), work_errdetail(PQerrorMessage(t->conn))));
+    else {
+        PQsetNoticeReceiver(t->conn, work_notice, t); // the task's, for as long as the connection lives, the same Task taking the next one of the group on it, see work_done()
+        if (PQstatus(t->conn) == CONNECTION_BAD) { if (!work_next(t, PQerrorMessage(t->conn))) work_error((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), work_errdetail(t->failed ? t->failed : PQerrorMessage(t->conn)))); }
+        else if (!PQisnonblocking(t->conn) && PQsetnonblocking(t->conn, true) == -1) work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsetnonblocking failed"), work_errdetail(PQerrorMessage(t->conn))));
+    }
     for (int i = 0; i < countof(entry); i++) if (entry[i]) pfree(entry[i]);
     pfree(name.data);
     pfree(value.data);
