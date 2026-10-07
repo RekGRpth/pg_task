@@ -112,6 +112,7 @@ Work *get_work(void) {
 static bool work_bookkeeping(Task *t, bool live, bool *exit);
 static void work_defer(Task *t);
 static void work_discard(Task *t);
+static void work_later(Task *t, const char *message, const char *setting);
 static void work_query(Task *t);
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
 static void work_cancel_free(Cancel *c);
@@ -992,6 +993,11 @@ static void work_remote(Task *t) {
     PQconninfoOption *opts = PQconninfoParse(t->remote, &err);
     StringInfoData name, value;
     elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : init_null(), t->shared->max, t->shared->oid);
+#if PG_VERSION_NUM >= 130000
+    // the file descriptors a process may hold for others than files, connections say, are a third of the safe ones, max_files_per_process at most, those of the other remote tasks taking them all: back to PLAN, rather than fail it, with nothing held yet; the one taken here is given back, to be taken again, sure to be had then, right before connecting
+    if (!AcquireExternalFD()) { if (opts) PQconninfoFree(opts); if (err) PQfreemem(err); work_later(t, "too many open files", "max_files_per_process"); return; }
+    ReleaseExternalFD();
+#endif
     dlist_delete(&t->node);
     dlist_push_tail(&remote, &t->node);
     // hold the slot of the group from now on, not only once connected, or the next work_sleep() doesn't count it and takes another task of the group over its max
@@ -1128,8 +1134,8 @@ static bool work_reap(const Work *w) {
     return reaped;
 }
 
-// no worker to be had for the task now, every one in use, which is no error of the task: back to PLAN, for a pass to take it once one is free, as a task worker exiting wakes pg_work, rather than fail it
-static void work_busy_worker(Task *t, const char *message, const char *setting) {
+// no worker to be had for the task now, every one in use, or no file descriptor for the connection of a remote one, see work_remote(), which is no error of the task: back to PLAN, for a pass to take it once one is free, as a task worker exiting or a remote task done wakes pg_work, rather than fail it
+static void work_later(Task *t, const char *message, const char *setting) {
     ereport(WARNING, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("id = %li, %s, to be run later", t->shared->id, message), errhint("Consider increasing configuration parameter \"%s\".", setting)));
     task_untake(t);
     work_free(t);
@@ -1150,7 +1156,7 @@ static void work_task(Task *t) {
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) { work_error((errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type)))); return; }
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    if ((worker.bgw_main_arg = Int32GetDatum(init_arg(t->shared))) == Int32GetDatum(-1)) { work_busy_worker(t, "could not find empty slot", "pg_conf.max"); return; }
+    if ((worker.bgw_main_arg = Int32GetDatum(init_arg(t->shared))) == Int32GetDatum(-1)) { work_later(t, "could not find empty slot", "pg_conf.max"); return; }
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = BGW_NEVER_RESTART;
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -1159,7 +1165,7 @@ static void work_task(Task *t) {
     MemoryContextSwitchTo(oldMemoryContext);
     if (!registered) {
         init_free(worker.bgw_main_arg);
-        work_busy_worker(t, "could not register background worker", "max_worker_processes");
+        work_later(t, "could not register background worker", "max_worker_processes");
     } else switch (WaitForBackgroundWorkerStartup(handle, &t->pid)) {
         case BGWH_NOT_YET_STARTED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
         case BGWH_POSTMASTER_DIED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
@@ -1419,7 +1425,7 @@ void work_main(Datum main_arg) {
     while (!ShutdownRequestPending) {
         int nevents = work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(WaitEvent));
-        WaitEventSet *set = CreateWaitEventSetMy(nevents);
+        WaitEventSet *set = CreateWaitEventSetMy(nevents); // from 13 on it takes a file descriptor of those for others than files, as the connections of remote tasks do, and errors with none left: they are made, by work_sleep(), only while the set before it holds one, which it gives back for this one to take
         long deadline;
         long timeout;
 #ifdef LIBPQ_HAS_ASYNC_CANCEL

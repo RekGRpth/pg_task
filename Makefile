@@ -79,6 +79,7 @@ endif
 test.conf:
 	echo "shared_preload_libraries = 'pg_task'" >$@
 	echo "max_worker_processes = 20" >>$@
+	echo "max_files_per_process = 64" >>$@
 	echo "pg_conf.restart = 1" >>$@
 	echo "pg_work.restart = 1" >>$@
 	echo "pg_task.json = '[{\"data\":\"$(CONTRIB_TESTDB)\",\"user\":\"$(PG_TASK_TEST_USER)\"}]'" >>$@
