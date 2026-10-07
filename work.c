@@ -1154,7 +1154,16 @@ static void work_sleep(Work *w) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfoString(&src, "WITH ");
-#ifndef GP_VERSION_NUM
+#if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
+        // only the rows no one else holds, for a while, say, as the taking of tasks does: or pg_work would wait for them, taking no task, running no remote one meanwhile, or fail on a deadlock, with every remote task it runs; those go GONE on a later pass
+        appendStringInfo(&src, SQL(
+            n AS (
+                UPDATE %1$s AS t SET "state" = 'GONE', "start" = %2$s, "stop" = %2$s, "error" = 'ERROR:  task not active' FROM (
+                    SELECT "id" FROM %1$s WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) %2$s AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0 FOR NO KEY UPDATE SKIP LOCKED
+                ) AS g WHERE t.id OPERATOR(pg_catalog.=) g.id RETURNING t.id
+            ),
+        ), w->schema_table, init_plan());
+#elif !defined(GP_VERSION_NUM)
         appendStringInfo(&src, SQL(
             n AS (
                 UPDATE %1$s SET "state" = 'GONE', "start" = %2$s, "stop" = %2$s, "error" = 'ERROR:  task not active' WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.+) "active" OPERATOR(pg_catalog.<=) %2$s AND "repeat" OPERATOR(pg_catalog.=) '0 sec' AND "max" OPERATOR(pg_catalog.>=) 0 RETURNING "id"

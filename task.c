@@ -154,10 +154,18 @@ static void task_update(const Task *t, TimestampTz done) {
             ELSE $2 OPERATOR(pg_catalog.+) ((pg_catalog.floor(EXTRACT(epoch FROM %1$s OPERATOR(pg_catalog.-) $2)::pg_catalog.float8 OPERATOR(pg_catalog.*) 1000 OPERATOR(pg_catalog./) (OPERATOR(pg_catalog.-) "max"::pg_catalog.float8)) OPERATOR(pg_catalog.+) 1) OPERATOR(pg_catalog.*) (OPERATOR(pg_catalog.-) "max"::pg_catalog.float8) OPERATOR(pg_catalog.*) '1 msec'::pg_catalog.interval) END
         ), init_plan());
         initStringInfoMy(&src);
+        // only the rows no one else holds, for a while, say, as the taking of tasks does, rather than wait for them, the worker, or pg_work for a remote task, with every remote task it runs: the one held is changed by whoever holds it
         appendStringInfo(&src, SQL(
-            UPDATE %1$s AS t SET "plan" = %2$s
-            WHERE "plan" OPERATOR(pg_catalog.<) %2$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) OPERATOR(pg_catalog.=) $1 AND "group" OPERATOR(pg_catalog.=) $3 AND ("remote" OPERATOR(pg_catalog.=) $4 OR ("remote" IS NULL AND $4 IS NULL)) AND "max" OPERATOR(pg_catalog.<) 0 RETURNING t.id
-        ), t->work->schema_table, until, "");
+            UPDATE %1$s AS t SET "plan" = %2$s FROM (
+                SELECT "id" FROM %1$s WHERE "plan" OPERATOR(pg_catalog.<) %2$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) OPERATOR(pg_catalog.=) $1 AND "group" OPERATOR(pg_catalog.=) $3 AND ("remote" OPERATOR(pg_catalog.=) $4 OR ("remote" IS NULL AND $4 IS NULL)) AND "max" OPERATOR(pg_catalog.<) 0 FOR NO KEY UPDATE %4$s
+            ) AS u WHERE t.id OPERATOR(pg_catalog.=) u.id RETURNING t.id
+        ), t->work->schema_table, until, "",
+#if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
+        "SKIP LOCKED"
+#else
+        ""
+#endif
+        );
         pfree(until);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
