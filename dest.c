@@ -9,6 +9,7 @@
 #include <replication/slot.h>
 #include <storage/ipc.h>
 #include <storage/proc.h>
+#include <tcop/pquery.h>
 #include <tcop/tcopprot.h>
 #include <tcop/utility.h>
 #include <unistd.h>
@@ -486,8 +487,9 @@ static void dest_shmem_exit(int code, Datum arg) {
 }
 
 // a termination right after the input committed, at the first check for interrupts, as the end of any message logged has, the duration of the statement, say, would leave the task done in WORK, to run again on reset: hold interrupts from its commit on, in local mode, where exec_simple_query() commits it, till the bookkeeping is done, or the next statement of the input starts, see dest_resume()
+// not one a utility command makes within itself, as VACUUM does, before it gets to its first table even, or CREATE INDEX CONCURRENTLY, while its portal runs still (exec_simple_query() drops it before its own commit, ActivePortal back to none at the top level): the rest of the command, a lock waited for say, would go on with no timeout, cancel or termination let through, a shutdown waiting for it, and the cost of a VACUUM no longer delayed from 16 on, an interrupt pending
 static void dest_xact(XactEvent event, void *arg) {
-    if (event != XACT_EVENT_COMMIT || !running || held) return;
+    if (event != XACT_EVENT_COMMIT || !running || held || ActivePortal) return;
 #ifdef HAVE_SPI_INSIDE_NONATOMIC_CONTEXT
     if (SPI_inside_nonatomic_context()) return; // not the commit of a COMMIT a procedure or a DO block runs, the rest of which, no statement of the input starting till its end, would go on with no interrupts, no timeout, cancel or termination let through
 #endif

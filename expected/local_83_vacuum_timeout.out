@@ -1,0 +1,34 @@
+-- a utility command that commits within itself, as VACUUM does before it gets to its first table, runs on with its timeout, cancel and termination let through, rather than with interrupts held off from that commit on, as for the commit of a command of the input, waiting for a lock past its timeout say
+DELETE FROM task WHERE "group" LIKE 'vacuum_timeout_%';
+CREATE TABLE vacuum_timeout (i int);
+INSERT INTO task ("group", input) VALUES ('vacuum_timeout_lock', 'LOCK TABLE vacuum_timeout IN SHARE UPDATE EXCLUSIVE MODE; SELECT pg_sleep(6)');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'vacuum_timeout_lock' AND state = 'WORK') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task in group ''vacuum_timeout_lock'' to start'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pg_sleep(0.5);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+INSERT INTO task ("group", timeout, input) VALUES ('vacuum_timeout_vacuum', '1 sec', 'VACUUM vacuum_timeout');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" LIKE 'vacuum_timeout_%' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''vacuum_timeout_%%'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", state, error LIKE '%statement timeout%' AS timed_out, CASE WHEN "group" = 'vacuum_timeout_vacuum' THEN stop - start < interval '4 sec' END AS in_time FROM task WHERE "group" LIKE 'vacuum_timeout_%' ORDER BY "group";
+         group         | state | timed_out | in_time 
+-----------------------+-------+-----------+---------
+ vacuum_timeout_lock   | DONE  |           | 
+ vacuum_timeout_vacuum | FAIL  | t         | t
+(2 rows)
+
+DELETE FROM task WHERE "group" LIKE 'vacuum_timeout_%';
+DROP TABLE vacuum_timeout;
