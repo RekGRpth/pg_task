@@ -176,7 +176,6 @@ const char *init_plan(void);
 const char *task_search_path(void);
 void task_search_path_save(void);
 void task_search_path_reset(void);
-Datum CStringGetTextDatumMy(const char *s);
 Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid);
 int init_arg(const Shared *ws);
 int init_conf_fetch(void);

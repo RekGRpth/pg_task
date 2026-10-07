@@ -538,9 +538,6 @@ static void work_reset(const Work *w) {
     dlist_foreach(iter, &remote) appendStringInfo(&ids, "%s%li", ids.len > 1 ? "," : "", dlist_container(Task, node, iter.cur)->shared->id);
     init_task_ids(&ids, w->shared->data, w->shared->oid); // and those of task workers an earlier pg_work started, before it was restarted, which hold the lock of their task no longer, if an input let go of it
     appendStringInfoChar(&ids, '}');
-    values[0] = CStringGetTextDatumMy(ids.data);
-    values[1] = CStringGetTextDatumMy(found);
-    pfree(found);
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
@@ -557,6 +554,9 @@ static void work_reset(const Work *w) {
         );
     }
     SPI_connect_my(src.data, InvalidOid);
+    values[0] = CStringGetTextDatum(ids.data); // in the memory of SPI, freed with it
+    values[1] = CStringGetTextDatum(found);
+    pfree(found);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL, false);
     do {
@@ -569,8 +569,6 @@ static void work_reset(const Work *w) {
     } while (SPI_processed);
     SPI_cursor_close_my(portal);
     SPI_finish_my();
-    pfree((void *)values[0]);
-    pfree((void *)values[1]);
     pfree(ids.data);
     set_ps_display_my("idle");
 }
@@ -1045,7 +1043,7 @@ static void work_stop(const Work *w) {
 }
 
 static bool work_superuser(const char *user) {
-    Datum values[] = {CStringGetTextDatumMy(user)};
+    Datum values[1];
     static Oid argtypes[] = {TEXTOID};
     bool result;
     StringInfoData src;
@@ -1054,11 +1052,11 @@ static bool work_superuser(const char *user) {
         SELECT COALESCE((SELECT "rolsuper" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) $1), false) AS "test"
     ));
     SPI_connect_my(src.data, InvalidOid);
+    values[0] = CStringGetTextDatum(user); // in the memory of SPI, freed with it
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
     result = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "test", false, BOOLOID));
     SPI_finish_my();
     pfree(src.data);
-    pfree((void *)values[0]);
     return result;
 }
 
@@ -1227,7 +1225,7 @@ static void work_remote(Task *t) {
 // the task worker connects as the task owner: check here that pg_task.user may act as that role at all, the same as SET ROLE to it would require (the user column alone isn't enough, since its trigger doesn't bind the table owner), and fail the task with a proper error instead of letting its connection die with FATAL and the task hang in TAKE until reset
 static bool work_owner(Task *t) {
     bool act = false, login = false, connect = false;
-    Datum values[] = {CStringGetTextDatumMy(t->user)};
+    Datum values[1];
     static Oid argtypes[] = {TEXTOID};
     uint64 processed;
     StringInfoData src;
@@ -1242,6 +1240,7 @@ static bool work_owner(Task *t) {
 #endif
     );
     SPI_connect_my(src.data, InvalidOid);
+    values[0] = CStringGetTextDatum(t->user); // in the memory of SPI, freed with it
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
     if ((processed = SPI_processed) == 1) {
         act = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "act", false, BOOLOID));
@@ -1250,7 +1249,6 @@ static bool work_owner(Task *t) {
     }
     SPI_finish_my();
     pfree(src.data);
-    pfree((void *)values[0]);
 #if PG_VERSION_NUM >= 170000
     login = true; // BGWORKER_BYPASS_ROLELOGINCHECK
 #endif
@@ -1352,16 +1350,10 @@ static void work_sleep(Work *w) {
     init_task_pids(w->shared->data, w->shared->oid, &pids, &hashes);
     appendStringInfoChar(&pids, '}');
     appendStringInfoChar(&hashes, '}');
-    values[3] = CStringGetTextDatumMy(pids.data);
-    values[4] = CStringGetTextDatumMy(hashes.data);
-    pfree(pids.data);
-    pfree(hashes.data);
     initStringInfoMy(&pauses);
     appendStringInfoChar(&pauses, '{');
     (void)init_pauses(w->shared->oid, &pauses);
     appendStringInfoChar(&pauses, '}');
-    values[5] = CStringGetTextDatumMy(pauses.data);
-    pfree(pauses.data);
     dlist_init(&head);
 #ifdef GP_VERSION_NUM
     if (true) {
@@ -1432,11 +1424,14 @@ static void work_sleep(Work *w) {
         init_plan(), "");
     }
     SPI_connect_my(src.data, InvalidOid);
+    values[3] = CStringGetTextDatum(pids.data); // in the memory of SPI, freed with it
+    values[4] = CStringGetTextDatum(hashes.data);
+    values[5] = CStringGetTextDatum(pauses.data);
+    pfree(pids.data);
+    pfree(hashes.data);
+    pfree(pauses.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, NULL, false);
-    pfree((void *)values[3]);
-    pfree((void *)values[4]);
-    pfree((void *)values[5]);
     do {
         SPI_cursor_fetch_my(src.data, portal, true, init_work_fetch());
         for (uint64 row = 0; row < SPI_processed; row++) {
@@ -1638,7 +1633,6 @@ void work_main(Datum main_arg) {
             else if (event->events & WL_SOCKET_WRITEABLE) work_writeable(event->user_data);
         }
         work_expire();
-        work_pending();
         // an idle pg_work waits only for tasks planned ahead, not for those due already that wait for a slot of their group, which a task done frees: back to passes every sleep, for them to be taken
         if (work_reap(&work)) idle_count = 0;
         work_latch(&work);
@@ -1649,7 +1643,10 @@ void work_main(Datum main_arg) {
         INSTR_TIME_SET_CURRENT(current_time_sleep);
         INSTR_TIME_SUBTRACT(current_time_sleep, start_time_sleep);
         current_sleep = work.shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_time_sleep);
-        if (current_sleep <= 0) work_sleep(&work);
+        if (current_sleep <= 0) {
+            work_pending(); // once a sleep, as a pass, rather than on every wake-up, of a row of another remote task readable say, each a query
+            work_sleep(&work);
+        }
         FreeWaitEventSet(set);
         pfree(events);
     }

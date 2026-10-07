@@ -33,7 +33,7 @@ static Oid userid = InvalidOid; // pg_task.user, whose rights the task table boo
 // and one that fits in its group by its own max, as work_sleep() takes them, with no more than max others running: those of a higher max, taken since the one just done, may well fill the group past it; counted by their rows in TAKE or WORK, rather than by pg_locks, too much to read after every task, which count no fewer of them, only maybe more, those left by a pg_work gone, until the reset, or those whose bookkeeping is put off, see work_defer(): the next one is left to work_sleep() then
 static bool task_live(const Task *t) {
     char nulls[] = {' ', ' ', ' ', ' ', ' ', ' ', t->remote ? ' ' : 'n', ' '};
-    Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start), CStringGetTextDatumMy(t->shared->owner), CStringGetTextDatumMy(t->group), CStringGetTextDatumMy(t->remote), Int64GetDatum(t->shared->id)};
+    Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start), (Datum)0, (Datum)0, (Datum)0, Int64GetDatum(t->shared->id)};
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID, TEXTOID, TEXTOID, TEXTOID, INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
@@ -56,14 +56,14 @@ static bool task_live(const Task *t) {
         init_plan(), "", t->work->schema_type);
     }
     SPI_connect_my(src.data, userid);
+    values[4] = CStringGetTextDatum(t->shared->owner); // in the memory of SPI, freed with it, the bookkeeping failing too
+    values[5] = CStringGetTextDatum(t->group);
+    if (t->remote) values[6] = CStringGetTextDatum(t->remote);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
     t->shared->id = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)) : 0;
     elog(DEBUG1, "id = %li", t->shared->id);
     SPI_finish_my();
-    pfree((void *)values[4]);
-    pfree((void *)values[5]);
-    if (values[6]) pfree((void *)values[6]);
     set_ps_display_my("idle");
     return ShutdownRequestPending || !t->shared->id;
 }
@@ -148,7 +148,7 @@ static void task_insert(const Task *t) {
 // the pause of a negative max holds every task of the group planned within it, not only those already due: with drift until |max| after now, as of the end of the task just done; without, as repeat does, until the first time after now that is a multiple of |max| after the plan of that task, so that the group keeps its pace
 static void task_update(const Task *t, TimestampTz done) {
     char nulls[] = {' ', ' ', ' ', t->remote ? ' ' : 'n'};
-    Datum values[] = {Int32GetDatum(t->shared->hash), TimestampTzGetDatum(done), CStringGetTextDatumMy(t->group), CStringGetTextDatumMy(t->remote)};
+    Datum values[] = {Int32GetDatum(t->shared->hash), TimestampTzGetDatum(done), CStringGetTextDatum(t->group), t->remote ? CStringGetTextDatum(t->remote) : (Datum)0}; // in the memory of SPI, within task_done(), freed with it, the bookkeeping failing too
     Portal portal;
     static Oid argtypes[] = {INT4OID, TIMESTAMPTZOID, TEXTOID, TEXTOID};
     static SPIPlanPtr plan = NULL;
@@ -186,8 +186,6 @@ static void task_update(const Task *t, TimestampTz done) {
         }
     } while (SPI_processed);
     SPI_cursor_close_my(portal);
-    pfree((void *)values[2]);
-    if (values[3]) pfree((void *)values[3]);
     set_ps_display_my("idle");
 }
 
@@ -228,8 +226,6 @@ bool task_done(Task *t, bool live) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     task_fit(t);
-    values[1] = CStringGetTextDatumMy(t->output.data);
-    values[2] = CStringGetTextDatumMy(t->error.data);
     elog(DEBUG1, "id = %li, output = %s, error = %s", t->shared->id, t->output.data ? t->output.data : init_null(), t->error.data ? t->error.data : init_null());
     HOLD_INTERRUPTS(); // the input done, no termination is to fail its bookkeeping, leaving the task in WORK, to run again on reset, as in pg_work for a remote one
     set_ps_display_my("done");
@@ -243,6 +239,9 @@ bool task_done(Task *t, bool live) {
         ), t->work->schema_table, t->work->schema_type, init_plan());
     }
     SPI_connect_my(src.data, userid);
+    // in the memory of SPI, freed with it, the bookkeeping failing too, on a row someone else holds say, put off and tried again, see work_bookkeeping(), rather than a copy of up to a gigabyte of output kept in pg_work every time
+    if (t->output.data) values[1] = CStringGetTextDatum(t->output.data);
+    if (t->error.data) values[2] = CStringGetTextDatum(t->error.data);
     // a remote task's, in pg_work, which waits for no row someone else holds, every other remote task, the taking of tasks and their cancels waiting with it, or pg_work failing on a deadlock, with all of them: an error at once, rather, for pg_work to put the bookkeeping off, see work_bookkeeping(), as a lock timeout, an interrupt, wouldn't come through the interrupts held off above
     if (t->remote) {
         static SPIPlanPtr nowait_plan = NULL;

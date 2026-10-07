@@ -236,16 +236,6 @@ char *TextDatumGetCStringMy(Datum datum) {
     return datum ? text_to_cstring_my((text *)DatumGetPointer(datum)) : NULL;
 }
 
-static text *cstring_to_text_my(const char *s) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
-    text *result = cstring_to_text(s);
-    MemoryContextSwitchTo(oldMemoryContext);
-    return result;
-}
-
-Datum CStringGetTextDatumMy(const char *s) {
-    return s ? PointerGetDatum(cstring_to_text_my(s)) : (Datum)NULL;
-}
 
 void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len, bool string, char escape, char quote) {
     if (!string && quote) appendStringInfoChar(buf, quote);
