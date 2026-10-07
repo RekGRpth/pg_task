@@ -612,9 +612,9 @@ static void work_headers(Task *t, const PGresult *result) {
     }
 }
 
-static void work_success(Task *t, const PGresult *result, int row) {
+static void work_success(Task *t, const PGresult *result, int row, bool first) {
     if (!t->output.data) initStringInfoMy(&t->output);
-    if (t->header && !row && PQnfields(result) > 1) work_headers(t, result);
+    if (t->header && first && PQnfields(result) > 1) work_headers(t, result);
     task_line(t);
     for (int col = 0; col < PQnfields(result); col++) {
         if (col > 0 && t->delimiter) appendStringInfoChar(&t->output, t->delimiter); // none for an empty one, as for quote and escape, rather than a NUL ending the output there
@@ -678,7 +678,8 @@ static void work_result(Task *t) {
                 case PGRES_COPY_IN: if (PQputCopyEnd(t->conn, "COPY FROM STDIN is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
                 case PGRES_COPY_OUT: copy = true; break;
                 case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
-                case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) { work_success(t, result, row); work_output(t); } break;
+                case PGRES_SINGLE_TUPLE: work_success(t, result, 0, !t->rows++); break; // a row at a time, as single-row mode has them, see work_input(), then their result with none
+                case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) { work_success(t, result, row, !row && !t->rows); work_output(t); } t->rows = 0; break;
                 default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
             }
             work_output(t);
@@ -706,6 +707,9 @@ static void work_input(Task *t) {
     }
     if (t->error.data) { work_done(t); return; }
     if (!PQsendQuery(t->conn, t->input)) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
+    // the rows one by one, each looked at against the most of output a task may keep, see work_output(), rather than all of a result in libpq's memory first, many more than that, gigabytes of a remote SELECT, with pg_work and every remote task it runs taken down by running out of it
+    if (!PQsetSingleRowMode(t->conn)) ereport(WARNING, (errmsg("id = %li, PQsetSingleRowMode failed", t->shared->id)));
+    t->rows = 0;
     t->socket = work_result;
     t->event = WL_SOCKET_READABLE;
 }

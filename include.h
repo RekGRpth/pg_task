@@ -117,6 +117,7 @@ typedef struct Task {
     int count;
     int event;
     int key; // of the lock a remote task holds the slot of its group by, see work_connect()
+    uint64 rows; // of the result a remote task gets in single-row mode so far, its headers before the first, see work_result()
     int pid;
     int skip;
     int timeout;
