@@ -272,9 +272,6 @@ bool task_done(Task *t, bool live) {
         ), t->work->schema_table, t->work->schema_type, init_plan());
     }
     SPI_connect_my(src.data, userid);
-    // in the memory of SPI, freed with it, the bookkeeping failing too, on a row someone else holds say, put off and tried again, see work_bookkeeping(), rather than a copy of up to a gigabyte of output kept in pg_work every time
-    if (t->output.data) values[1] = CStringGetTextDatum(t->output.data);
-    if (t->error.data) values[2] = CStringGetTextDatum(t->error.data);
     // in pg_work, a remote task's, or a local one's that failed before it ran, waiting for no row someone else holds, every other remote task, the taking of tasks and their cancels waiting with it, or pg_work failing on a deadlock, with all of them: none done, rather, held, for pg_work to put the bookkeeping off, see work_bookkeeping(), as a lock timeout, an interrupt, wouldn't come through the interrupts held off above; before 9.5, and in Greengage, a remote task's only, by NOWAIT, its error caught
     if ((t->remote || (TASK_SKIP_LOCKED && t != get_task())) && (t->held = task_held(t))) {
         SPI_finish_my();
@@ -282,6 +279,9 @@ bool task_done(Task *t, bool live) {
         RESUME_INTERRUPTS();
         return true;
     }
+    // in the memory of SPI, freed with it, the bookkeeping failing too, rather than a copy of up to a gigabyte of output kept in pg_work every time; and only once the row is found not held, see above, rather than copied on every try of the bookkeeping put off, see work_pending()
+    if (t->output.data) values[1] = CStringGetTextDatum(t->output.data);
+    if (t->error.data) values[2] = CStringGetTextDatum(t->error.data);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) { ereport(WARNING, (errmsg("id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed))); exit = true; } else {
