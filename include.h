@@ -101,6 +101,7 @@ typedef struct Work {
 typedef struct Task {
     bool header;
     bool line; // of the output, the first one taken already: see task_line()
+    bool held; // of a remote task, its row held by someone else, its bookkeeping not done, see task_done()
     bool lock;
     bool reserve;
     bool save;

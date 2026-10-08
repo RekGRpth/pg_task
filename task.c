@@ -242,19 +242,31 @@ bool task_done(Task *t, bool live) {
     // in the memory of SPI, freed with it, the bookkeeping failing too, on a row someone else holds say, put off and tried again, see work_bookkeeping(), rather than a copy of up to a gigabyte of output kept in pg_work every time
     if (t->output.data) values[1] = CStringGetTextDatum(t->output.data);
     if (t->error.data) values[2] = CStringGetTextDatum(t->error.data);
-    // a remote task's, in pg_work, which waits for no row someone else holds, every other remote task, the taking of tasks and their cancels waiting with it, or pg_work failing on a deadlock, with all of them: an error at once, rather, for pg_work to put the bookkeeping off, see work_bookkeeping(), as a lock timeout, an interrupt, wouldn't come through the interrupts held off above
+    // a remote task's, in pg_work, which waits for no row someone else holds, every other remote task, the taking of tasks and their cancels waiting with it, or pg_work failing on a deadlock, with all of them: none done, rather, held, for pg_work to put the bookkeeping off, see work_bookkeeping(), as a lock timeout, an interrupt, wouldn't come through the interrupts held off above; from 9.5 on by SKIP LOCKED, with no error, which, on the exit of pg_work, would be FATAL, see work_shmem_exit(), and a row gone not held; before, and in Greengage, by NOWAIT, its error caught
     if (t->remote) {
-        static SPIPlanPtr nowait_plan = NULL;
-        static StringInfoData nowait_src = {0};
-        static Oid nowait_argtypes[] = {INT8OID};
-        if (!nowait_src.data) {
-            initStringInfoMy(&nowait_src);
-            appendStringInfo(&nowait_src, SQL(
-                SELECT "id" FROM %1$s WHERE "id" OPERATOR(pg_catalog.=) $1 FOR NO KEY UPDATE NOWAIT
-            ), t->work->schema_table);
+        static SPIPlanPtr held_plan = NULL;
+        static StringInfoData held_src = {0};
+        static Oid held_argtypes[] = {INT8OID};
+        if (!held_src.data) {
+            initStringInfoMy(&held_src);
+            appendStringInfo(&held_src,
+#if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
+                SQL(SELECT (SELECT "id" FROM %1$s WHERE "id" OPERATOR(pg_catalog.=) $1 FOR NO KEY UPDATE SKIP LOCKED) IS NULL AND EXISTS (SELECT 1 FROM %1$s WHERE "id" OPERATOR(pg_catalog.=) $1) AS "held")
+#else
+                SQL(SELECT "id" FROM %1$s WHERE "id" OPERATOR(pg_catalog.=) $1 FOR NO KEY UPDATE NOWAIT)
+#endif
+            , t->work->schema_table);
         }
-        if (!nowait_plan) nowait_plan = SPI_prepare_my(nowait_src.data, countof(nowait_argtypes), nowait_argtypes);
-        SPI_execute_plan_my(nowait_src.data, nowait_plan, values, NULL, SPI_OK_SELECT);
+        if (!held_plan) held_plan = SPI_prepare_my(held_src.data, countof(held_argtypes), held_argtypes);
+        SPI_execute_plan_my(held_src.data, held_plan, values, NULL, SPI_OK_SELECT);
+#if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
+        if ((t->held = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "held", false, BOOLOID)))) {
+            SPI_finish_my();
+            set_ps_display_my("idle");
+            RESUME_INTERRUPTS();
+            return true;
+        }
+#endif
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);

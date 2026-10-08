@@ -1,6 +1,7 @@
 #include "include.h"
 
 #include <signal.h>
+#include <access/xact.h>
 #include <catalog/namespace.h>
 #include <catalog/pg_authid.h>
 #include <catalog/pg_collation.h>
@@ -9,6 +10,7 @@
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
+#include <storage/pmsignal.h>
 #include <storage/proc.h>
 #include <tcop/tcopprot.h>
 #include <tcop/utility.h>
@@ -101,6 +103,7 @@ typedef struct Cancel {
 static dlist_head cancels;
 #define WORK_CANCEL_TIMEOUT 10000 // milliseconds a cancel request, a single packet, may take to get through
 #endif
+#define WORK_PENDING_TIMEOUT 5000 // milliseconds the bookkeeping put off may take on the exit of pg_work, see work_shmem_exit()
 static volatile uint64 idle_count = 0;
 static volatile sig_atomic_t woken = false; // by the wake-up trigger, see work_idle()
 static Work work = {0};
@@ -382,6 +385,7 @@ static bool work_bookkeeping(Task *t, bool live, bool *exit) {
     volatile bool done = true;
     PG_TRY();
         *exit = task_done(t, live);
+        if (t->held) { t->held = false; done = false; } // its row held, see task_done()
     PG_CATCH();
         MemoryContextSwitchTo(oldMemoryContext);
         edata = CopyErrorData();
@@ -973,10 +977,19 @@ static bool work_cancel(Task *t) {
     return true;
 }
 
+// the bookkeeping put off, of a remote task done whose row someone else holds, not to be lost, the task left in WORK, for the next pg_work to run it again on its reset, a second time on its remote server: tried again till done, for a while, as on a shutdown whoever holds the row is terminated too, from 9.5 on, where it fails on such a row with no error, see task_done(), which, on the way out, would be FATAL
 static void work_shmem_exit(int code, Datum arg) {
     dlist_mutable_iter iter;
     elog(DEBUG1, "code = %i", code);
     if (!code) init_free(DatumGetInt32(arg));
+#if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
+    if (!dlist_is_empty(&pending)) {
+        TimestampTz end = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), WORK_PENDING_TIMEOUT);
+        AbortOutOfAnyTransaction(); // of a query that a termination cut short, say
+        for (work_pending(); !dlist_is_empty(&pending) && PostmasterIsAlive() && GetCurrentTimestamp() < end; work_pending()) pg_usleep(100 * 1000L);
+    }
+#endif
+    dlist_foreach_modify(iter, &pending) ereport(WARNING, (errmsg("id = %li, its bookkeeping put off is lost, the task to run again on reset", dlist_container(Task, node, iter.cur)->shared->id)));
     dlist_foreach_modify(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
         work_cancel(t);
