@@ -534,6 +534,7 @@ void init_task_pids(const char *data, Oid oid, StringInfo pids, StringInfo hashe
 void init_pause(Oid oid, int hash, TimestampTz until) {
     int slot = -1;
     TimestampTz now = GetCurrentTimestamp();
+    if (until <= now) return; // over already, not to put off one still on in its place
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
     for (int i = 0; i < init.conf.max; i++) if (pauses[i].until > now && pauses[i].database == MyDatabaseId && pauses[i].oid == oid && pauses[i].hash == hash) { slot = i; break; }
     if (slot >= 0) { if (pauses[slot].until < until) pauses[slot].until = until; } else {

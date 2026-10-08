@@ -1,0 +1,20 @@
+-- the pause a task of a negative max schedules as it's done is of its own max and drift, for the tasks of the group planned then, whose plans are put off, as for those planned later, held, rather than of the max and drift of each task put off, which the pause held for later ones disagreed with
+DELETE FROM task WHERE "group" = 'pause_mixed_max';
+INSERT INTO task ("group", max, drift, input) VALUES ('pause_mixed_max', -4000, true, 'SELECT pg_sleep(1)');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'pause_mixed_max' AND state = 'WORK') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the first task in group ''pause_mixed_max'' to start'; END IF;
+END;$body$ LANGUAGE plpgsql;
+INSERT INTO task ("group", max, drift, input) VALUES ('pause_mixed_max', -1000, false, 'SELECT 2');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'pause_mixed_max' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''pause_mixed_max'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT b.state, b.plan - a.stop >= interval '4 sec' AS put_off_by_first, b.start - a.stop >= interval '4 sec' AS held_by_first FROM task AS a, task AS b WHERE a."group" = 'pause_mixed_max' AND a.input LIKE 'SELECT pg_sleep%' AND b."group" = 'pause_mixed_max' AND b.input = 'SELECT 2';
+DELETE FROM task WHERE "group" = 'pause_mixed_max';

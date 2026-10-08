@@ -413,10 +413,9 @@ static void work_finish(Task *t) {
     work_free(t);
 }
 
-// the bookkeeping put off: the connection closed, the task done with it, and the slot of its group freed, but the task kept, with the lock of its id, for work_reset() to leave it be, till work_pending() records it
+// the bookkeeping put off: the connection closed, the task done with it, and the slot of its group freed, but for a negative max, but the task kept, with the lock of its id, for work_reset() to leave it be, till work_pending() records it
 static void work_defer(Task *t) {
     ereport(WARNING, (errmsg("id = %li, its row held by someone else, its bookkeeping put off", t->shared->id)));
-    work_unreserve(t);
     if (t->conn) {
         PQfinish(t->conn);
 #if PG_VERSION_NUM >= 130000
@@ -424,9 +423,13 @@ static void work_defer(Task *t) {
 #endif
         t->conn = NULL;
     }
-    if (t->key && !unlock_table_pid_hash(t->shared->oid, t->key, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->key, t->shared->hash)));
-    t->key = 0;
-    idle_count = 0;
+    // a pause, of a negative max, scheduled by the bookkeeping only, see task_done(): the slot of the group held till then, by the locks of the connection gone, for no next task of the group to be taken before the pause, see work_pending()
+    if (t->shared->max >= 0) {
+        work_unreserve(t);
+        if (t->key && !unlock_table_pid_hash(t->shared->oid, t->key, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->key, t->shared->hash)));
+        t->key = 0;
+        idle_count = 0;
+    }
     dlist_delete(&t->node);
     dlist_push_tail(&pending, &t->node);
 }
@@ -456,7 +459,7 @@ static void work_pending(void) {
     dlist_foreach_modify(iter, &pending) {
         Task *t = dlist_container(Task, node, iter.cur);
         bool exit;
-        if (work_bookkeeping(t, false, &exit)) work_free(t);
+        if (work_bookkeeping(t, false, &exit)) work_finish(t); // the slot of its group freed too, if still held, see work_defer()
     }
 }
 
