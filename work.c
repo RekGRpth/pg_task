@@ -653,6 +653,11 @@ static void work_notice(void *arg, const PGresult *result) {
     const Task *t = arg;
     int elevel = severity_error(work_severity(result));
     if (elevel >= ERROR) elevel = WARNING;
+    // in the client_encoding of the connection, which an input may have set to another one than that of this database, as work_verify() has it for the output: not to go into the log as it is then
+    for (int i = 0; i < 3; i++) {
+        const char *field = i == 0 ? message : PQresultErrorField(result, i == 1 ? PG_DIAG_MESSAGE_DETAIL : PG_DIAG_MESSAGE_HINT);
+        if (field && !pg_verifymbstr(field, strlen(field), true)) { ereport(elevel, (errmsg("id = %li, a notice of the remote server not in the encoding of this database", t->shared->id))); return; }
+    }
     ereport(elevel, (errcode(sqlstate && strlen(sqlstate) == 5 ? MAKE_SQLSTATE(sqlstate[0], sqlstate[1], sqlstate[2], sqlstate[3], sqlstate[4]) : ERRCODE_WARNING), errmsg_internal("id = %li, %s", t->shared->id, message ? message : PQresultErrorMessage(result)), work_errdetail(PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL)), work_errhint(PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))));
 }
 

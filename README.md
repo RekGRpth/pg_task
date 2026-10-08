@@ -62,7 +62,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | pg_task.drift | bool | false | config, database, user, session | Compute next repeat time by stop time instead by plan time |
 | pg_task.header | bool | true | config, database, user, session | Show columns headers in output (only when the query returns at least one row and more than one column) |
 | pg_task.save | bool | false | config, database, user, session | Save session state between tasks |
-| pg_task.spi | bool | false | config, database, user, session | SPI (or local) execution? Also affects `input` containing multiple `;`-separated statements: SPI mode runs each statement separately and appends all results, same as local mode |
+| pg_task.spi | bool | false | config, database, user | SPI (or local) execution? Also affects `input` containing multiple `;`-separated statements: SPI mode runs each statement separately and appends all results, same as local mode |
 | pg_task.string | bool | true | config, database, user, session | Quote only strings |
 | pg_conf.fetch | int | 10 | config, database, superuser | Fetch conf rows at once |
 | pg_conf.max | int | max_worker_processes | config | Maximum task and work workers |
@@ -72,9 +72,9 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | pg_task.id | bigint | 0 | session | Current task id (for read only) |
 | pg_task.limit | int | 1000 | config, database, user | Limit task rows at once |
 | pg_task.max | int | 0 | config, database, user, session | Maximum count of additional concurrently executing tasks in group (total concurrency = max + 1), negative value means pause between tasks in milliseconds |
-| pg_task.run | int | 2147483647 | config, database, user, session | Maximum count of concurrently executing tasks in work |
+| pg_task.run | int | 2147483647 | config, database, user | Maximum count of concurrently executing tasks in work |
 | pg_task.sleep | int | 1000 | config, database, user | Check tasks every sleep milliseconds |
-| pg_work.fetch | int | 100 | config, database, superuser | Fetch work rows at once |
+| pg_work.fetch | int | 100 | config, database, user | Fetch work rows at once |
 | pg_work.idle | int | 60 | config, database, user | Empty passes after which pg_work goes idle: waits for the next task planned or a wake-up rather than polling every `sleep`, though no longer than `idle` × `sleep`, for a task it may have missed |
 | pg_work.restart | int | 60 | config, database, user | Restart pg_work after it crashed in that many seconds (that of the role and database of its entry, read when pg_conf starts it) |
 | pg_task.active | interval | 1 hour | config, database, user, session | Positive period after plan time, when task is active for executing |
@@ -188,9 +188,9 @@ On first connect, `pg_work` walks through a series of idempotent `SELECT EXISTS 
 - the **`user`-immutability trigger** (`BEFORE INSERT OR UPDATE OF "user"`) forces `NEW."user"` to `current_user` on insert unless the inserting role is a member of the claimed role or of the table's owner (`pg_task.user`, which inserts the repeats of tasks), and rejects any later change — this is what makes the `user` column trustworthy for the Security considerations below.
 - the **wake-up trigger** (`AFTER INSERT OR DELETE OR UPDATE OF plan`) is the mechanism described above; it does not use `NOTIFY`.
 - the **`STOP` trigger** (`AFTER UPDATE OF "state"`) is what makes setting `state = 'STOP'` on a `WORK` row actually cancel it, as described in [Task state machine](#task-state-machine) above.
-- the **validity trigger** (`BEFORE INSERT OR UPDATE OF plan, active, live, repeat, timeout`, `<table>_valid`) adds `active`, `live`, `repeat` and `timeout` up and to `plan` and to the current time, the way `pg_work` does later on, so that values out of range (an interval of hundreds of thousands of years, say) fail the insert or update with `timestamp out of range`, rather than `pg_work` itself. A `timeout` longer than about 24.8 days (`INT_MAX` milliseconds) works as that long. It also refuses an `active`, `live`, `repeat` or `timeout` with a part less than 0, of parts of both signs (`'-1 mon 31 days'`, more than nothing as it is), which may take the plan nowhere or back on some days, as inserted or changed — not as kept in a row from before this check, which other updates, of its `state` by `pg_work` say, leave be, nor in the copy of a `repeat` that `pg_work` inserts with the intervals of the task before it.
+- the **validity trigger** (`BEFORE INSERT OR UPDATE OF plan, active, live, repeat, timeout`, `<table>_valid`) adds `active`, `live`, `repeat` and `timeout` up and to `plan` and to the current time, the way `pg_work` does later on, so that values out of range (an interval of hundreds of thousands of years, say) fail the insert or update with `timestamp out of range`, rather than `pg_work` itself. A `timeout` longer than about 24.8 days (`INT_MAX` milliseconds) works as that long. It also refuses an `active`, `live`, `repeat` or `timeout` with a part less than 0, of parts of both signs (`'-1 mon 31 days'`, more than nothing as it is), which may take the plan nowhere or back on some days, as inserted or changed — not as kept in a row from before this check, which other updates, of its `state` by `pg_work` say, leave be, nor in a row inserted with a `parent` of the same interval, as the copy of a `repeat` that `pg_work` inserts is, by a role that may read that row.
 
-The other 22 are plain `BEFORE UPDATE OF "<column>"` guards, one per remaining column, and fall into three groups:
+The other 23 are plain `BEFORE UPDATE OF "<column>"` guards, one per remaining column, and fall into three groups:
 
 - `state` is governed by the transition-validation trigger described in [Task state machine](#task-state-machine) above, rather than by immutability.
 - `id`, `group`, `remote` and `parent` are immutable unconditionally, from the moment of insert — a task's routing and ancestry can't be edited after the fact, only fixed by inserting a new row instead (see Patterns).
