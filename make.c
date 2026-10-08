@@ -221,12 +221,12 @@ static void make_function(const Work *w, const char *name, const char *source, b
 // type is made of the TRIGGER_TYPE_* bits, and column is the one of UPDATE OF, if any: both are checked against the trigger by that name, which is re-created when it fires otherwise, as one made by an earlier version may
 static void make_trigger(const Work *w, const char *name, int16 type, const char *column) {
     Datum values[] = {CStringGetTextDatum(name), ObjectIdGetDatum(w->shared->oid), Int16GetDatum(type), column ? CStringGetTextDatum(column) : (Datum)0};
-    char nulls[] = {' ', ' ', ' ', column ? ' ' : 'n'};
+    char nulls[] = {' ', ' ', ' ', column ? ' ' : 'n'}; // column: those of UPDATE OF, in order, separated by commas
     static Oid argtypes[] = {TEXTOID, OIDOID, INT2OID, TEXTOID};
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT COALESCE((SELECT tgtype OPERATOR(pg_catalog.=) $3 AND tgattr::pg_catalog.text OPERATOR(pg_catalog.=) pg_catalog.array_to_string(ARRAY(SELECT attnum FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) $2 AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) $4), ' ') FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) $1 AND tgrelid OPERATOR(pg_catalog.=) $2), false) AS "test"
+        SELECT COALESCE((SELECT tgtype OPERATOR(pg_catalog.=) $3 AND tgattr::pg_catalog.text OPERATOR(pg_catalog.=) pg_catalog.array_to_string(ARRAY(SELECT attnum FROM pg_catalog.unnest(pg_catalog.string_to_array($4, ',')) WITH ORDINALITY AS c ("name", "i") JOIN pg_catalog.pg_attribute ON attname OPERATOR(pg_catalog.=) c."name" WHERE attrelid OPERATOR(pg_catalog.=) $2 AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped ORDER BY c."i"), ' ') FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) $1 AND tgrelid OPERATOR(pg_catalog.=) $2), false) AS "test"
     ));
     if (!make_test(src.data, countof(argtypes), argtypes, values, nulls)) {
         const char *quote = quote_identifier(name);
@@ -237,7 +237,12 @@ static void make_trigger(const Work *w, const char *name, int16 type, const char
         if (TRIGGER_FOR_INSERT(type)) { appendStringInfo(&when, "%sINSERT", sep); sep = " OR "; }
         if (TRIGGER_FOR_DELETE(type)) { appendStringInfo(&when, "%sDELETE", sep); sep = " OR "; }
         if (TRIGGER_FOR_UPDATE(type)) appendStringInfo(&when, "%sUPDATE", sep);
-        if (column) appendStringInfo(&when, " OF \"%s\"", column);
+        if (column) for (const char *c = column, *of = " OF "; *c; of = ", ") { // the columns, in the order tgattr keeps them in, see above
+            const char *end = strchr(c, ',');
+            int len = end ? end - c : strlen(c);
+            appendStringInfo(&when, "%s\"%.*s\"", of, len, c);
+            c += len + (end ? 1 : 0);
+        }
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             DROP TRIGGER IF EXISTS %1$s ON %3$s;
@@ -314,6 +319,19 @@ static void make_stop(const Work *w) {
     pfree(source.data);
 }
 
+// the owner of the table, pg_task.user or a superuser, see make_owner(), into the bodies of the trigger functions that check for it, as they are made, rather than looked up by a query of their own for every row, which, executed through SPI, takes most of what the triggers cost, as much as the rest of an update of a row of its state: one changed, its functions are made anew by the next pg_work, its trigger functions compared by their bodies, see make_function(), the one before keeping what the owner may till then, pg_task.user or a superuser, which may anyway
+static Oid make_relowner(const Work *w) {
+    Datum values[] = {ObjectIdGetDatum(w->shared->oid)};
+    static Oid argtypes[] = {OIDOID};
+    Oid owner = InvalidOid;
+    static const char *src = SQL(SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) $1);
+    SPI_connect_my(src, InvalidOid);
+    SPI_execute_with_args_my(src, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
+    if (SPI_processed == 1) owner = DatumGetObjectId(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "relowner", false, OIDOID));
+    SPI_finish_my();
+    return owner;
+}
+
 // the table owner (pg_task.user) keeps the user it inserts, for the repeats it copies: it isn't bound by this trigger anyway, being able to change its own table's triggers, and pg_work checks it may act as the user before running a local task
 static void make_user_immutable(const Work *w) {
     StringInfoData name;
@@ -325,14 +343,14 @@ static void make_user_immutable(const Work *w) {
         BEGIN
             IF TG_OP OPERATOR(pg_catalog.=) 'INSERT' THEN
                 BEGIN
-                    IF NOT pg_catalog.pg_has_role(current_user, NEW."user", '%1$s') AND NOT pg_catalog.pg_has_role(current_user, (SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) TG_RELID), '%1$s') THEN NEW."user" := current_user; END IF;
+                    IF NOT pg_catalog.pg_has_role(current_user, NEW."user", '%1$s') AND NOT pg_catalog.pg_has_role(current_user, %2$u::pg_catalog.oid, '%1$s') THEN NEW."user" := current_user; END IF;
                 EXCEPTION WHEN undefined_object THEN NEW."user" := current_user;
                 END;
             ELSIF NEW."user" IS DISTINCT FROM OLD."user" THEN RAISE EXCEPTION 'user column is immutable';
             END IF;
             RETURN NEW;
         END;
-    ), MAKE_ACT);
+    ), MAKE_ACT, make_relowner(w));
     make_function(w, name.data, source.data, false);
     make_trigger(w, name.data, TRIGGER_TYPE_BEFORE | TRIGGER_TYPE_INSERT | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, "user");
     pfree(name.data);
@@ -348,7 +366,7 @@ static void make_state_machine(const Work *w) {
     initStringInfoMy(&source);
     appendStringInfo(&source, SQL(
         BEGIN
-            IF NEW."state" OPERATOR(pg_catalog.<>) OLD."state" AND NEW."state" OPERATOR(pg_catalog.<>) ALL (CASE WHEN pg_catalog.pg_has_role(current_user, (SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) TG_RELID), '%2$s') THEN CASE OLD."state"
+            IF NEW."state" OPERATOR(pg_catalog.<>) OLD."state" AND NEW."state" OPERATOR(pg_catalog.<>) ALL (CASE WHEN pg_catalog.pg_has_role(current_user, %3$u::pg_catalog.oid, '%2$s') THEN CASE OLD."state"
                 WHEN 'PLAN'::%1$s THEN ARRAY['TAKE', 'GONE', 'STOP']::%1$s[]
                 WHEN 'TAKE'::%1$s THEN ARRAY['WORK', 'PLAN', 'DONE', 'FAIL']::%1$s[]
                 WHEN 'WORK'::%1$s THEN ARRAY['DONE', 'FAIL', 'PLAN', 'STOP']::%1$s[]
@@ -357,7 +375,7 @@ static void make_state_machine(const Work *w) {
             END IF;
             RETURN NEW;
         END;
-    ), w->schema_type, MAKE_ACT);
+    ), w->schema_type, MAKE_ACT, make_relowner(w));
     make_function(w, name.data, source.data, false);
     make_trigger(w, name.data, TRIGGER_TYPE_BEFORE | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, "state");
     pfree(name.data);
@@ -397,7 +415,7 @@ static void make_valid(const Work *w) {
         END;
     ));
     make_function(w, name.data, source.data, false);
-    make_trigger(w, name.data, TRIGGER_TYPE_BEFORE | TRIGGER_TYPE_INSERT | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, NULL);
+    make_trigger(w, name.data, TRIGGER_TYPE_BEFORE | TRIGGER_TYPE_INSERT | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, "plan,active,live,repeat,timeout"); // not for an update of its state by pg_work, say, a call of the function for each row: the only columns it checks
     pfree(name.data);
     pfree(source.data);
 }
