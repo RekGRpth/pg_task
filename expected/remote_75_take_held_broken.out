@@ -1,0 +1,52 @@
+-- a remote task waiting to start, its row held by someone else, whose connection breaks meanwhile, never run, doesn't fail for it, but goes back to PLAN, or, its row held still, is left in TAKE for the next reset, its connection closed and the slot of its group freed: here the reset comes every second, the connection takes a while, its first host answering nothing (192.0.2.1 is reserved for documentation), which libpq knows of no lists of before 10, and is terminated as the row is held
+DELETE FROM task WHERE "group" LIKE 'take_held_broken_%';
+ALTER DATABASE :DBNAME SET pg_task.reset = '1 sec';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+INSERT INTO task ("group", input, remote) SELECT 'take_held_broken_r', 'SELECT 1 AS a', 'host=192.0.2.1,' || split_part(current_setting('unix_socket_directories'), ',', 1) || ' port=5432,' || current_setting('port') || ' dbname=' || :'DBNAME' || ' connect_timeout=2' WHERE current_setting('server_version_num')::int >= 100000;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'take_held_broken_r' AND state = 'PLAN') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task in group ''take_held_broken_r'' to be taken'; END IF;
+END;$body$ LANGUAGE plpgsql;
+INSERT INTO task ("group", input) SELECT 'take_held_broken_l', 'SELECT 1 FROM task WHERE "group" = ''take_held_broken_r'' FOR UPDATE; SELECT pg_sleep(6)' WHERE EXISTS (SELECT 1 FROM task WHERE "group" = 'take_held_broken_r');
+DO $body$ DECLARE ok boolean := NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'take_held_broken_r'); BEGIN
+    FOR i IN 1..300 LOOP
+        EXIT WHEN ok;
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name = 'pg_task public task take_held_broken_r') THEN
+            PERFORM pg_sleep(0.5);
+            PERFORM pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = 'pg_task public task take_held_broken_r';
+            ok := true;
+        ELSE PERFORM pg_sleep(0.1);
+        END IF;
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the connection of the task in group ''take_held_broken_r'''; END IF;
+END;$body$ LANGUAGE plpgsql;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" LIKE 'take_held_broken_%' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''take_held_broken_%%'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+ALTER DATABASE :DBNAME RESET pg_task.reset;
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+SELECT bool_and(state = 'DONE' AND error IS NULL) IS NOT FALSE AS done FROM task WHERE "group" LIKE 'take_held_broken_%';
+ done 
+------
+ t
+(1 row)
+
+DELETE FROM task WHERE "group" LIKE 'take_held_broken_%';

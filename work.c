@@ -132,7 +132,7 @@ static bool work_verify(Task *t);
 
 #define work_error(...) do { \
     bool work_error_exit PG_USED_FOR_ASSERTS_ONLY; \
-    bool work_error_remote = t->remote != NULL; \
+    bool work_error_remote = t->remote != NULL || t->conn != NULL; /* the next task of a connection, taken by task_live(), its remote freed by task_free() and not read anew yet, see task_work(), its row held, say */ \
     MemoryContext work_error_context = CurrentMemoryContext; \
     PG_TRY(); \
         ereport(ERROR, __VA_ARGS__); \
@@ -148,9 +148,9 @@ static bool work_verify(Task *t);
     else work_defer(t); \
 } while(0)
 
-// the connection of a remote task broke: on its way from the task done to the next one, which task_done() took into TAKE already, as work_discard() is, the next one, never run, isn't to fail for it but to go back to PLAN, as work_discard() has it when DISCARD ALL fails
+// the connection of a remote task broke: on its way from the task done to the next one, which task_done() took into TAKE already, as work_discard() is, or before its start, its row held by someone else, see task_work(), as work_query() is, the task, never run, isn't to fail for it but to go back to PLAN, as work_discard() has it when DISCARD ALL fails, or, its row held still, to be left in TAKE for the next reset, its connection closed and the slot of its group freed either way
 #define work_broken(...) do { \
-    if (t->socket == work_discard) { \
+    if (t->socket == work_discard || t->socket == work_query) { \
         ereport(WARNING, __VA_ARGS__); \
         task_untake(t); \
         work_finish(t); \
