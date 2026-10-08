@@ -1009,19 +1009,11 @@ static bool work_cancel(Task *t) {
     return true;
 }
 
-// the bookkeeping put off, of a remote task done whose row someone else holds, not to be lost, the task left in WORK, for the next pg_work to run it again on its reset, a second time on its remote server: tried again till done, for a while, as on a shutdown whoever holds the row is terminated too, from 9.5 on, where it fails on such a row with no error, see task_done(), which, on the way out, would be FATAL
-static void work_shmem_exit(int code, Datum arg) {
+// on the way out, while the session of pg_work and its locks still are, as this runs before the one ending the session, which lets go of them all, see work_main(): the remote tasks running cancelled first, not to wait for what follows, and the bookkeeping put off, of a remote task done whose row someone else holds, tried again, not to be lost, the task left in WORK, for the next pg_work to run it again on its reset, a second time on its remote server, which the lock of its id, and that of the entry of pg_task.json, keeping the next pg_work from starting, see init_work(), still keep from it meanwhile: till done, for a while, as on a shutdown whoever holds the row is terminated too, from 9.5 on, where it fails on such a row with no error, see task_done(), which, on the way out, would be FATAL
+static void work_exit(int code, Datum arg) {
     dlist_mutable_iter iter;
     elog(DEBUG1, "code = %i", code);
-    if (!code) init_free(DatumGetInt32(arg));
-#if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
-    if (!dlist_is_empty(&pending)) {
-        TimestampTz end = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), WORK_PENDING_TIMEOUT);
-        AbortOutOfAnyTransaction(); // of a query that a termination cut short, say
-        for (work_pending(); !dlist_is_empty(&pending) && PostmasterIsAlive() && GetCurrentTimestamp() < end; work_pending()) pg_usleep(100 * 1000L);
-    }
-#endif
-    dlist_foreach_modify(iter, &pending) ereport(WARNING, (errmsg("id = %li, its bookkeeping put off is lost, the task to run again on reset", dlist_container(Task, node, iter.cur)->shared->id)));
+    AbortOutOfAnyTransaction(); // of a query that a termination cut short, say
     dlist_foreach_modify(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
         work_cancel(t);
@@ -1030,6 +1022,19 @@ static void work_shmem_exit(int code, Datum arg) {
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
     work_cancel_drain(1000);
 #endif
+#if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
+    if (!dlist_is_empty(&pending)) {
+        TimestampTz end = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), WORK_PENDING_TIMEOUT);
+        for (work_pending(); !dlist_is_empty(&pending) && PostmasterIsAlive() && GetCurrentTimestamp() < end; work_pending()) pg_usleep(100 * 1000L);
+    }
+#endif
+    dlist_foreach_modify(iter, &pending) ereport(WARNING, (errmsg("id = %li, its bookkeeping put off is lost, the task to run again on reset", dlist_container(Task, node, iter.cur)->shared->id)));
+}
+
+// the slot of pg_work, last, see work_exit()
+static void work_shmem_exit(int code, Datum arg) {
+    elog(DEBUG1, "code = %i", code);
+    if (!code) init_free(DatumGetInt32(arg));
 }
 
 static void work_stop(const Work *w) {
@@ -1569,6 +1574,7 @@ void work_main(Datum main_arg) {
     InitializeLatchSupportMy();
 #endif
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user);
+    before_shmem_exit(work_exit, (Datum)0); // registered after the one ending the session, so as to run before it
     initStringInfoMy(&application_name);
     appendStringInfo(&application_name, "pg_work %s %s %li", work.shared->schema, work.shared->table, work.shared->sleep);
     SetConfigOption("application_name", application_name.data, PGC_USERSET, PGC_S_SESSION);
