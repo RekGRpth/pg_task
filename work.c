@@ -101,8 +101,8 @@ typedef struct Cancel {
 } Cancel;
 
 static dlist_head cancels;
-#define WORK_CANCEL_TIMEOUT 10000 // milliseconds a cancel request, a single packet, may take to get through
 #endif
+#define WORK_CANCEL_TIMEOUT 10000 // milliseconds a cancel request, a single packet, may take to get through, or, sent, to take effect, see work_failed()
 #define WORK_PENDING_TIMEOUT 5000 // milliseconds the bookkeeping put off may take on the exit of pg_work, see work_shmem_exit()
 static volatile uint64 idle_count = 0;
 static volatile sig_atomic_t woken = false; // by the wake-up trigger, see work_idle()
@@ -115,6 +115,8 @@ Work *get_work(void) {
 static bool work_bookkeeping(Task *t, bool live, bool *exit);
 static void work_defer(Task *t);
 static void work_discard(Task *t);
+static void work_drain(Task *t);
+static void work_fail(Task *t);
 static void work_later(Task *t, const char *message, const char *setting);
 static bool work_cancel(Task *t);
 static bool work_next(Task *t, const char *error);
@@ -512,6 +514,8 @@ static void work_expire(void) {
         Task *t = dlist_container(Task, node, iter.cur);
         char *error;
         if (!t->deadline || t->deadline > now) continue;
+        // the cancel of the rest of its input, past the most of output, see work_failed(), not through, or not taking effect, sent to another server behind a balancer say: the rest left unread, its connection closed, rather than drained for as long as it runs
+        if (t->socket == work_drain) { ereport(WARNING, (errmsg("id = %li, the rest of its input not cancelled in time, its connection closed", t->shared->id))); t->deadline = 0; work_fail(t); continue; }
         error = t->hosts ? psprintf("connection to server at \"%s\", port %s failed: timeout expired", PQhost(t->conn), PQport(t->conn)) : NULL;
         if (work_next(t, error)) { pfree(error); continue; }
         if (error) pfree(error);
@@ -791,7 +795,7 @@ static void work_drain(Task *t) {
 static void work_failed(Task *t) {
     bool drain = PQstatus(t->conn) == CONNECTION_OK && PQtransactionStatus(t->conn) == PQTRANS_ACTIVE && work_cancel(t); // the input still running on the remote server, cancelled before anything else, the cut of a gigabyte of output to the most of it a task may keep say
     if (t->output.data && t->output.len > (int)TASK_OUTPUT_MAX) t->output.data[t->output.len = pg_mbcliplen(t->output.data, t->output.len, TASK_OUTPUT_MAX)] = '\0';
-    if (drain) work_drain(t); else work_fail(t);
+    if (drain) { t->deadline = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), WORK_CANCEL_TIMEOUT); work_drain(t); } else work_fail(t); // the rest drained for no longer than the cancel may take to get through and take effect, see work_expire()
 }
 
 static void work_copy(Task *t) {
