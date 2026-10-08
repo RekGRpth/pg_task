@@ -454,6 +454,18 @@ int init_arg(const Shared *s) {
     return -1;
 }
 
+// an int setting of a database or a role, as the text it's kept in there, of a column of a query of pg_conf or pg_work, parsed as the setting parses it, rather than cast, which takes neither 1.5 nor 1e3, nor 0x10 before 16, failing that query for every entry of pg_task.json, and takes 010 for 10, the setting for 8: one that doesn't parse, as none should, the setting checked as it was set, goes by the setting of this session
+int init_int(HeapTuple val, TupleDesc tupdesc, const char *column, const char *name) {
+    char *value = TextDatumGetCString(SPI_getbinval_my(val, tupdesc, column, false, TEXTOID));
+    int result;
+    if (!parse_int(value, &result, 0, NULL)) {
+        ereport(WARNING, (errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("invalid value for parameter \"%s\": \"%s\"", name, value)));
+        if (!parse_int(GetConfigOption(name, false, false), &result, 0, NULL)) result = 0;
+    }
+    pfree(value);
+    return result;
+}
+
 // the slots free for task workers now, one each, to take no more local tasks than that: only a guess, others taking some meanwhile
 int init_free_slots(void) {
     int free = 0;

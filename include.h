@@ -200,6 +200,7 @@ void initStringInfoMy(StringInfo buf);
 void _PG_init(void);
 void init_free(int slot);
 int init_free_slots(void);
+int init_int(HeapTuple val, TupleDesc tupdesc, const char *column, const char *name);
 void SPI_abort_my(void);
 void SPI_connect_my(const char *src, Oid userid);
 void SPI_cursor_close_my(Portal portal);
