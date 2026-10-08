@@ -1,0 +1,32 @@
+-- the row of a remote task held by someone else as the task is to start, connected, a transaction left open while it connected say, isn't waited for, with every other remote task, the taking of tasks and their cancels, but the start is tried again once a sleep, the connection kept, till the row is let go of: the connection takes a while here, its first host answering nothing (192.0.2.1 is reserved for documentation), which libpq knows of no lists of before 10
+DELETE FROM task WHERE "group" LIKE 'take_held_%';
+INSERT INTO task ("group", input, remote) SELECT 'take_held_r', 'SELECT 1 AS a', 'host=192.0.2.1,' || split_part(current_setting('unix_socket_directories'), ',', 1) || ' port=5432,' || current_setting('port') || ' dbname=' || :'DBNAME' || ' connect_timeout=2' WHERE current_setting('server_version_num')::int >= 100000;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'take_held_r' AND state = 'PLAN') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task in group ''take_held_r'' to be taken'; END IF;
+END;$body$ LANGUAGE plpgsql;
+INSERT INTO task ("group", input) SELECT 'take_held_l', 'SELECT 1 FROM task WHERE "group" = ''take_held_r'' FOR UPDATE; SELECT pg_sleep(6)' WHERE EXISTS (SELECT 1 FROM task WHERE "group" = 'take_held_r');
+SELECT pg_sleep(3);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+INSERT INTO task ("group", input, remote) VALUES ('take_held_c', 'SELECT 3', 'host=' || split_part(current_setting('unix_socket_directories'), ',', 1) || ' port=' || current_setting('port') || ' dbname=' || :'DBNAME');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" LIKE 'take_held_%' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''take_held_%%'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT bool_and(state = 'DONE') AS done, bool_and(CASE WHEN "group" = 'take_held_c' THEN start - plan < interval '2 sec' ELSE true END) AS in_time FROM task WHERE "group" LIKE 'take_held_%';
+ done | in_time 
+------+---------
+ t    | t
+(1 row)
+
+DELETE FROM task WHERE "group" LIKE 'take_held_%';

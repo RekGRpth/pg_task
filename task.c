@@ -24,6 +24,12 @@
 #include <utils/timestamp.h>
 #endif
 
+#if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
+#define TASK_SKIP_LOCKED 1
+#else
+#define TASK_SKIP_LOCKED 0
+#endif
+
 static const char *search_path;
 static const char *search_path_start; // that of the worker's start, which a reset of the session takes it back to, see task_search_path_reset()
 static bool search_path_saved = false;
@@ -201,12 +207,13 @@ void task_untake(Task *t) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            UPDATE %1$s SET "state" = 'PLAN' WHERE "id" OPERATOR(pg_catalog.=) $1 AND "state" OPERATOR(pg_catalog.=) 'TAKE'
-        ), t->work->schema_table);
+            UPDATE %1$s AS t SET "state" = 'PLAN' FROM (SELECT "id" FROM %1$s WHERE "id" OPERATOR(pg_catalog.=) $1 AND "state" OPERATOR(pg_catalog.=) 'TAKE' FOR NO KEY UPDATE %2$s) AS u WHERE t.id OPERATOR(pg_catalog.=) u.id
+        ), t->work->schema_table, TASK_SKIP_LOCKED ? "SKIP LOCKED" : ""); // in pg_work, which waits for no row someone else holds, see task_done(): one held left in TAKE, for the next reset to put back to PLAN
     }
     SPI_connect_my(src.data, userid);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_UPDATE);
+    if (!SPI_processed) ereport(WARNING, (errmsg("id = %li, not put back to PLAN, its row held by someone else, or it's not in TAKE", t->shared->id)));
     SPI_finish_my();
 }
 
@@ -215,6 +222,31 @@ static void task_fit(Task *t) {
     int error = t->error.data ? t->error.len : 0;
     if (error >= (int)TASK_OUTPUT_MAX) t->error.data[t->error.len = error = pg_mbcliplen(t->error.data, error, TASK_OUTPUT_MAX)] = '\0'; // at it too, where append_with_tabs() stops, maybe within a character, which pg_mbcliplen() leaves out
     if (t->output.data && t->output.len > (int)TASK_OUTPUT_MAX - error) t->output.data[t->output.len = pg_mbcliplen(t->output.data, t->output.len, TASK_OUTPUT_MAX - error)] = '\0';
+}
+
+// whether someone else holds the row of the task, within the transaction of a query of pg_work about to change it: from 9.5 on by SKIP LOCKED, with no error, which, on the exit of pg_work, would be FATAL, see work_shmem_exit(), and a row gone not held, the row taken by the transaction otherwise, to change it with no wait; before, and in Greengage, by NOWAIT, an error for a row held
+static bool task_held(const Task *t) {
+    Datum values[] = {Int64GetDatum(t->shared->id)};
+    static Oid argtypes[] = {INT8OID};
+    static SPIPlanPtr plan = NULL;
+    static StringInfoData src = {0};
+    if (!src.data) {
+        initStringInfoMy(&src);
+        appendStringInfo(&src,
+#if TASK_SKIP_LOCKED
+            SQL(SELECT (SELECT "id" FROM %1$s WHERE "id" OPERATOR(pg_catalog.=) $1 FOR NO KEY UPDATE SKIP LOCKED) IS NULL AND EXISTS (SELECT 1 FROM %1$s WHERE "id" OPERATOR(pg_catalog.=) $1) AS "held")
+#else
+            SQL(SELECT "id" FROM %1$s WHERE "id" OPERATOR(pg_catalog.=) $1 FOR NO KEY UPDATE NOWAIT)
+#endif
+        , t->work->schema_table);
+    }
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_SELECT);
+#if TASK_SKIP_LOCKED
+    return DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "held", false, BOOLOID));
+#else
+    return false;
+#endif
 }
 
 bool task_done(Task *t, bool live) {
@@ -242,31 +274,12 @@ bool task_done(Task *t, bool live) {
     // in the memory of SPI, freed with it, the bookkeeping failing too, on a row someone else holds say, put off and tried again, see work_bookkeeping(), rather than a copy of up to a gigabyte of output kept in pg_work every time
     if (t->output.data) values[1] = CStringGetTextDatum(t->output.data);
     if (t->error.data) values[2] = CStringGetTextDatum(t->error.data);
-    // a remote task's, in pg_work, which waits for no row someone else holds, every other remote task, the taking of tasks and their cancels waiting with it, or pg_work failing on a deadlock, with all of them: none done, rather, held, for pg_work to put the bookkeeping off, see work_bookkeeping(), as a lock timeout, an interrupt, wouldn't come through the interrupts held off above; from 9.5 on by SKIP LOCKED, with no error, which, on the exit of pg_work, would be FATAL, see work_shmem_exit(), and a row gone not held; before, and in Greengage, by NOWAIT, its error caught
-    if (t->remote) {
-        static SPIPlanPtr held_plan = NULL;
-        static StringInfoData held_src = {0};
-        static Oid held_argtypes[] = {INT8OID};
-        if (!held_src.data) {
-            initStringInfoMy(&held_src);
-            appendStringInfo(&held_src,
-#if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
-                SQL(SELECT (SELECT "id" FROM %1$s WHERE "id" OPERATOR(pg_catalog.=) $1 FOR NO KEY UPDATE SKIP LOCKED) IS NULL AND EXISTS (SELECT 1 FROM %1$s WHERE "id" OPERATOR(pg_catalog.=) $1) AS "held")
-#else
-                SQL(SELECT "id" FROM %1$s WHERE "id" OPERATOR(pg_catalog.=) $1 FOR NO KEY UPDATE NOWAIT)
-#endif
-            , t->work->schema_table);
-        }
-        if (!held_plan) held_plan = SPI_prepare_my(held_src.data, countof(held_argtypes), held_argtypes);
-        SPI_execute_plan_my(held_src.data, held_plan, values, NULL, SPI_OK_SELECT);
-#if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
-        if ((t->held = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "held", false, BOOLOID)))) {
-            SPI_finish_my();
-            set_ps_display_my("idle");
-            RESUME_INTERRUPTS();
-            return true;
-        }
-#endif
+    // in pg_work, a remote task's, or a local one's that failed before it ran, waiting for no row someone else holds, every other remote task, the taking of tasks and their cancels waiting with it, or pg_work failing on a deadlock, with all of them: none done, rather, held, for pg_work to put the bookkeeping off, see work_bookkeeping(), as a lock timeout, an interrupt, wouldn't come through the interrupts held off above; before 9.5, and in Greengage, a remote task's only, by NOWAIT, its error caught
+    if ((t->remote || (TASK_SKIP_LOCKED && t != get_task())) && (t->held = task_held(t))) {
+        SPI_finish_my();
+        set_ps_display_my("idle");
+        RESUME_INTERRUPTS();
+        return true;
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
@@ -328,6 +341,15 @@ bool task_work(Task *t) {
         ), t->work->schema_table, init_plan(), "");
     }
     SPI_connect_my(src.data, userid);
+    // a remote task in pg_work, from 9.5 on: its row held by someone else, a transaction of theirs left open while it connected say, not waited for, with every other remote task, the taking of tasks and their cancels, but tried again, see work_query()
+    if (TASK_SKIP_LOCKED && t->conn && (t->held = task_held(t))) {
+        SPI_finish_my();
+        if (!unlock_table_id(t->shared->oid, t->shared->id)) ereport(WARNING, (errmsg("!unlock_table_id(%i, %li)", t->shared->oid, t->shared->id)));
+        t->lock = false;
+        t->count--;
+        set_ps_display_my("idle");
+        return true;
+    }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) {

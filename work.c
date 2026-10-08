@@ -141,7 +141,7 @@ static bool work_verify(Task *t);
         FlushErrorState(); \
     PG_END_TRY(); \
     (void)work_verify(t); /* as a task done would have them, see work_encoding(): a remote task's output so far, and the server's messages, its connection broken say */ \
-    if (!work_error_remote) { work_error_exit = task_done(t, false); /* with live = false nothing new is taken into t, so it can be dropped */ work_free(t); } \
+    if (!work_error_remote) { work_error_exit = task_done(t, false); /* with live = false nothing new is taken into t, so it can be dropped */ if (t->held) ereport(WARNING, (errmsg("id = %li, its row held by someone else, its error not recorded, the task left in TAKE for the next reset", t->shared->id))); work_free(t); } \
     else if (work_bookkeeping(t, false, &work_error_exit)) work_finish(t); \
     else work_defer(t); \
 } while(0)
@@ -427,6 +427,25 @@ static void work_defer(Task *t) {
     idle_count = 0;
     dlist_delete(&t->node);
     dlist_push_tail(&pending, &t->node);
+}
+
+// the remote tasks connected whose rows someone else held as they were to start, see task_work(), tried again
+static void work_held(void) {
+    dlist_mutable_iter iter;
+    dlist_foreach_modify(iter, &remote) {
+        Task *t = dlist_container(Task, node, iter.cur);
+        if (!t->held || t->socket != work_query) continue;
+        t->held = false;
+        work_query(t);
+    }
+}
+
+// whether a remote task waits for its row, its bookkeeping put off, or its start, see work_held(), for the loop to wake up for it once a sleep
+static bool work_waiting(void) {
+    dlist_iter iter;
+    if (!dlist_is_empty(&pending)) return true;
+    dlist_foreach(iter, &remote) if (dlist_container(Task, node, iter.cur)->held) return true;
+    return false;
 }
 
 // the bookkeeping put off tried again, with no next task to take, the connection gone
@@ -862,7 +881,8 @@ static void work_query(Task *t) {
     const char *quote_group, *quote_schema, *quote_table;
     if (ShutdownRequestPending) return;
     t->socket = work_query;
-    if (task_work(t)) { work_finish(t); return; }
+    if (task_work(t)) { if (t->held) t->event = WL_SOCKET_READABLE; else work_finish(t); return; } // its row held by someone else, tried again once a sleep, see work_held(), on the connection kept
+
     initStringInfoMy(&preamble);
     t->skip = 0;
     appendStringInfo(&preamble, SQL(SET SESSION "pg_task.id" = %li;), t->shared->id);
@@ -1628,7 +1648,7 @@ void work_main(Datum main_arg) {
             if (timeout < current_sleep) timeout = current_sleep;
         }
         if ((deadline = work_deadline()) >= 0 && (timeout < 0 || deadline < timeout)) timeout = deadline;
-        if (!dlist_is_empty(&pending) && (timeout < 0 || timeout > work.shared->sleep)) timeout = work.shared->sleep; // to try the bookkeeping put off again
+        if (work_waiting() && (timeout < 0 || timeout > work.shared->sleep)) timeout = work.shared->sleep; // to try the bookkeeping put off, or the start of a task whose row was held, again
 #if PG_VERSION_NUM < 90600
         // the copy of 9.6's latch.c waits on a self-pipe of its own, which the server's SetLatch(), the one called, from the signal handlers too, never writes to: a signal coming between its check of the latch and its wait wakes it no sooner than its timeout, which, then, is a sleep at most, idle or not
         if (timeout < 0 || timeout > work.shared->sleep) timeout = work.shared->sleep;
@@ -1658,6 +1678,7 @@ void work_main(Datum main_arg) {
         current_sleep = work.shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_time_sleep);
         if (current_sleep <= 0) {
             work_pending(); // once a sleep, as a pass, rather than on every wake-up, of a row of another remote task readable say, each a query
+            work_held();
             work_sleep(&work);
         }
         FreeWaitEventSet(set);
