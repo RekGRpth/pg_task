@@ -566,6 +566,7 @@ static void work_reset(const Work *w) {
     appendStringInfoChar(&ids, '{');
     dlist_foreach(iter, &local) appendStringInfo(&ids, "%s%li", ids.len > 1 ? "," : "", dlist_container(Local, node, iter.cur)->id);
     dlist_foreach(iter, &remote) appendStringInfo(&ids, "%s%li", ids.len > 1 ? "," : "", dlist_container(Task, node, iter.cur)->shared->id);
+    dlist_foreach(iter, &pending) appendStringInfo(&ids, "%s%li", ids.len > 1 ? "," : "", dlist_container(Task, node, iter.cur)->shared->id); // and those whose bookkeeping is put off, one that failed connecting with no lock of its id yet, see task_work(), say, not to be taken again before its bookkeeping, which would fail the task taken by its error then
     init_task_ids(&ids, w->shared->data, w->shared->oid); // and those of task workers an earlier pg_work started, before it was restarted, which hold the lock of their task no longer, if an input let go of it
     appendStringInfoChar(&ids, '}');
     if (!src.data) {
