@@ -1,0 +1,29 @@
+-- a worker kept alive by live counts a task of its group in STOP still running, its cancel on its way, as one in WORK, rather than take the next task of the group past its max alongside it: here one that catches its cancel and runs on
+DELETE FROM task WHERE "group" = 'live_group_stop';
+INSERT INTO task ("group", max, live, input) VALUES ('live_group_stop', 0, '10 sec', 'SELECT ''a''; SELECT pg_sleep(3)');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'live_group_stop' AND state = 'WORK') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the first task in group ''live_group_stop'' to start'; END IF;
+END;$body$ LANGUAGE plpgsql;
+INSERT INTO task ("group", max, input) VALUES ('live_group_stop', 1, 'DO $x$BEGIN PERFORM pg_sleep(10); EXCEPTION WHEN query_canceled THEN PERFORM pg_sleep(4); END$x$');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'live_group_stop' AND state = 'WORK') = 2 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the second task in group ''live_group_stop'' to start'; END IF;
+END;$body$ LANGUAGE plpgsql;
+UPDATE task SET state = 'STOP' WHERE "group" = 'live_group_stop' AND input LIKE 'DO %';
+INSERT INTO task ("group", max, live, input) VALUES ('live_group_stop', 0, '10 sec', 'SELECT ''c''');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'live_group_stop' AND (state NOT IN ('DONE', 'GONE', 'FAIL', 'STOP') OR (state = 'STOP' AND stop IS NULL))) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''live_group_stop'' to finish'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT b.state AS b_state, c.state AS c_state, c.start >= b.stop AS after_b, c.pid <> a.pid AS own_worker FROM task AS a, task AS b, task AS c WHERE a."group" = 'live_group_stop' AND a.input LIKE 'SELECT ''a''%' AND b."group" = 'live_group_stop' AND b.input LIKE 'DO %' AND c."group" = 'live_group_stop' AND c.input = 'SELECT ''c''';
+DELETE FROM task WHERE "group" = 'live_group_stop';
