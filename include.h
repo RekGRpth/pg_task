@@ -121,6 +121,7 @@ typedef struct Task {
     int host; // of them, the one tried now, in the order of hosts
     int *hosts; // the order the hosts of the connection string are tried in, one at a time, for the connect_timeout of each, see work_remote(), or NULL for libpq to try them itself
     int nhosts;
+    int standby; // of the tries of the hosts, the first ones for a standby only, of target_session_attrs=prefer-standby, see work_remote()
     int key; // of the lock a remote task holds the slot of its group by, see work_connect()
     uint64 rows; // of the result a remote task gets in single-row mode so far, its headers before the first, see work_result()
     int pid;

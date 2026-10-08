@@ -1165,6 +1165,7 @@ static void work_start(Task *t) {
             if (!strcmp(opt->keyword, "host")) values[arg] = entry[0] = work_entry(opt->val, t->hosts[t->host]);
             if (!strcmp(opt->keyword, "hostaddr")) values[arg] = entry[1] = work_entry(opt->val, t->hosts[t->host]);
             if (!strcmp(opt->keyword, "port") && work_count(opt->val) > 1) values[arg] = entry[2] = work_entry(opt->val, t->hosts[t->host]);
+            if (!strcmp(opt->keyword, "target_session_attrs") && t->standby) values[arg] = t->host < t->standby ? "standby" : "any"; // of prefer-standby, in two rounds, see work_remote()
         }
     }
     arg++;
@@ -1218,6 +1219,7 @@ static bool work_next(Task *t, const char *error) {
 
 static void work_remote(Task *t) {
     bool password = false;
+    bool prefer_standby = false;
     bool shuffle = false;
     char *err;
     const char *host = NULL, *hostaddr = NULL, *port = NULL;
@@ -1246,15 +1248,19 @@ static void work_remote(Task *t) {
         if (!strcmp(opt->keyword, "hostaddr")) hostaddr = opt->val;
         if (!strcmp(opt->keyword, "port")) port = opt->val;
         if (!strcmp(opt->keyword, "load_balance_hosts") && !strcmp(opt->val, "random")) shuffle = true;
+        if (!strcmp(opt->keyword, "target_session_attrs") && !strcmp(opt->val, "prefer-standby")) prefer_standby = true;
     }
     if (!work_superuser(t->user) && !password) { work_error((errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superusers must provide a password in the connection string."))); PQconninfoFree(opts); return; }
     // libpq doesn't enforce the connect_timeout of an asynchronous connection, which pg_work does then, while a synchronous one applies it to each host, going on to the next one once it's up, as pg_work can't make libpq do: try them one at a time, for a connect_timeout of each, with lists libpq would take, from 10 on, which has none before, in the order it would, random or not, leaving the addresses of a host name to libpq still, within the connect_timeout of the host then rather than of each
     nhosts = Max(work_count(host), work_count(hostaddr));
     if (connect_timeout > 0 && nhosts > 1 && PQlibVersion() >= 100000 && (!host || work_count(host) == nhosts) && (!hostaddr || work_count(hostaddr) == nhosts) && (work_count(port) <= 1 || work_count(port) == nhosts)) {
-        t->hosts = MemoryContextAlloc(TopMemoryContext, nhosts * sizeof(*t->hosts));
+        // with target_session_attrs=prefer-standby in two rounds, as libpq has it, for a standby first, and only then for any, which libpq, given a single host, would take in its second round at once, a primary before a standby further on
+        t->hosts = MemoryContextAlloc(TopMemoryContext, (prefer_standby ? 2 : 1) * nhosts * sizeof(*t->hosts));
         for (int i = 0; i < nhosts; i++) t->hosts[i] = i;
         if (shuffle) for (int i = nhosts - 1; i > 0; i--) { int j = random() % (i + 1); int swap = t->hosts[i]; t->hosts[i] = t->hosts[j]; t->hosts[j] = swap; }
-        t->nhosts = nhosts;
+        if (prefer_standby) for (int i = 0; i < nhosts; i++) t->hosts[nhosts + i] = t->hosts[i];
+        t->standby = prefer_standby ? nhosts : 0;
+        t->nhosts = (prefer_standby ? 2 : 1) * nhosts;
         t->host = 0;
     }
     PQconninfoFree(opts);
