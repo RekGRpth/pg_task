@@ -255,6 +255,7 @@ bool task_done(Task *t, bool live) {
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID, BOOLOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
+    t->booked = false;
     task_fit(t);
     elog(DEBUG1, "id = %li, output = %s, error = %s", t->shared->id, t->output.data ? t->output.data : init_null(), t->error.data ? t->error.data : init_null());
     HOLD_INTERRUPTS(); // the input done, no termination is to fail its bookkeeping, leaving the task in WORK, to run again on reset, as in pg_work for a remote one
@@ -301,6 +302,7 @@ bool task_done(Task *t, bool live) {
     if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) { ereport(WARNING, (errmsg("!unlock_table_id(%i, %li)", t->shared->oid, t->shared->id))); exit = true; }
     t->lock = false;
     SPI_finish_my();
+    t->booked = true; // for an error of task_live() not to be taken for one of the bookkeeping, before 9.5 and in Greengage, where it waits for the row of the next task, see work_bookkeeping()
     if (pause) init_pause(t->shared->oid, t->shared->hash, pause);
     set_ps_display_my("idle");
     exit = ShutdownRequestPending || exit || task_live(t); // with the group and remote of the task just done still there to match the next one by

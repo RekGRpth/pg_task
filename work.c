@@ -357,9 +357,10 @@ static bool work_bookkeeping(Task *t, bool live, bool *exit) {
         edata = CopyErrorData();
         if (edata->sqlerrcode != ERRCODE_LOCK_NOT_AVAILABLE && edata->sqlerrcode != ERRCODE_T_R_DEADLOCK_DETECTED) ReThrowError(edata);
         FlushErrorState();
-        FreeErrorData(edata);
         SPI_abort_my();
-        done = false;
+        // the bookkeeping committed, the taking of the next task failed, without SKIP LOCKED waiting for its row, see task_live(): no row of the task held, nothing to put off, only no next task taken
+        if (t->booked) { ereport(WARNING, (errmsg("id = %li, no next task taken", t->shared->id), errdetail("%s", edata->message))); *exit = true; } else done = false;
+        FreeErrorData(edata);
     PG_END_TRY();
     return done;
 }
