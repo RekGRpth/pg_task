@@ -529,13 +529,13 @@ bool dest_timeout(void) {
     set_ps_display_my("timeout");
     StatementTimeout = task.timeout ? task.timeout : StatementTimeoutMy; // a task without a timeout of its own still runs under the server's statement_timeout, as a remote one does, and as a timeout of its own is capped by it
     StatementTimeoutTask = StatementTimeout;
+    QueryCancelPending = false; // a cancel that came in between tasks, held off meanwhile, is for no task, as one coming to an idle backend: before the statement timeout is armed, by SPI_connect_my() in spi mode, not to take its cancel for one, the timeout of the task lost then, its input run with none
     if (task.shared->spi) {
         SPI_connect_my(task.input, InvalidOid);
         BeginInternalSubTransaction(NULL);
     }
     PG_TRY();
         SetConfigOption("search_path", task_search_path(), PGC_USERSET, PGC_S_SESSION);
-        QueryCancelPending = false; // a cancel that came in between tasks, held off meanwhile, is for no task, as one coming to an idle backend
         dest_loud();
         running = true;
         dest_execute();
