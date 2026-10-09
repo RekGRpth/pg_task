@@ -54,7 +54,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 
 ## Configuration (GUCs)
 
-`pg_task` creates the following GUCs. `Level` lists where each one can be set; when a GUC is settable at more than one level, the most specific value wins — a per-session `SET` beats a per-role/database default, which beats the config file. Several `task` columns (see [Task table](#task-table) below) default to the matching GUC's current value at insert time, so setting the GUC once is often enough without repeating it on every row.
+`pg_task` creates the following GUCs. `Level` lists where each one can be set; when a GUC is settable at more than one level, the most specific value wins — a per-session `SET` beats a per-role/database default, which beats the config file. Several `task` columns (see [Task table](#task-table) below) default to the matching GUC's current value at insert time, so setting the GUC once is often enough without repeating it on every row. The settings of an entry of `pg_task.json` (`pg_task.sleep`, `run`, `reset`, `limit` and the like, by its keys, its role in its database, its role, its database, or the server) are read by `pg_conf` and `pg_work`: a setting given on the postmaster command line rather than in the configuration files is lost for the other entries when the database or role of `pg_conf`, or of a `pg_work`, sets it too, as PostgreSQL keeps no trace of it then — set it in `postgresql.conf` or with `ALTER SYSTEM` instead.
 
 | Name | Type | Default | Level | Description |
 | --- | --- | --- | --- | --- |
