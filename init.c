@@ -584,6 +584,7 @@ void init_pause(Oid oid, int hash, TimestampTz until) {
     for (int i = 0; i < init.conf.max; i++) if (pauses[i].until > now && pauses[i].database == MyDatabaseId && pauses[i].oid == oid && pauses[i].hash == hash) { slot = i; break; }
     if (slot >= 0) { if (pauses[slot].until < until) pauses[slot].until = until; } else {
         for (int i = 0; i < init.conf.max; i++) if (slot < 0 || pauses[i].until < pauses[slot].until) slot = i; // an ended one, never used say, sooner than any other
+        if (pauses[slot].until > now && pauses[slot].until >= until) { LWLockRelease(BackgroundWorkerLock); return; } // every one on still, none of them to end sooner than this one, which is the one dropped then, as the soonest to end of them all
         pauses[slot].database = MyDatabaseId;
         pauses[slot].oid = oid;
         pauses[slot].hash = hash;
