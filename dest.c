@@ -475,6 +475,15 @@ static void dest_quiet(void) {
 
 // on the way out after such a FATAL, before the connection's own exit callback, as the one removing temporary tables does: abort the input's transaction and fail the task
 static void dest_shmem_exit(int code, Datum arg) {
+#if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
+    // a task taken and not started, the next one task_live() took, a termination right after the bookkeeping say, or the first one pg_work gave: back to PLAN, rather than left in TAKE till the next reset; by SKIP LOCKED, its row held by someone else left so, with no error, which, on the way out, would be FATAL
+    if (!fatal && !running && task.shared && task.shared->id && !task.lock) {
+        HOLD_INTERRUPTS();
+        AbortOutOfAnyTransaction();
+        task_untake(&task);
+        RESUME_INTERRUPTS();
+    }
+#endif
     if (!code || !fatal) return;
     fatal = false;
     running = false;
@@ -576,7 +585,11 @@ bool dest_timeout(void) {
     pgstat_report_activity(STATE_IDLE, NULL);
     set_ps_display_my("idle");
     dest_relock(); // the input may have failed, or run in SPI as a whole, after letting go of them
-    exit = task_done(&task, true);
+    {
+        int64 done = task.shared->id;
+        exit = task_done(&task, true);
+        if (task.shared->id == done) task.shared->id = 0; // none taken next, task_live() not called, the task done not to be given back on the way out, see dest_shmem_exit()
+    }
     if (!exit && !task.save) {
         // the next task, which task_done() took into TAKE already, mustn't stay there, counted against the max of its group, until reset, for a worker that can't reset its session for it and goes: give it back, cleaning up after the error first, as after one of an input
         PG_TRY();
@@ -589,10 +602,11 @@ bool dest_timeout(void) {
                 SPI_abort_my();
             } else dest_catch();
             task_untake(&task);
+            task.shared->id = 0; // back to PLAN already, not to be again on the way out, see dest_shmem_exit()
             exit = true;
         PG_END_TRY();
     }
-    if (!exit && ProcDiePending) { task_untake(&task); exit = true; } // to be terminated, now that its interrupts come through: the next task, taken for nothing, back to PLAN
+    if (!exit && ProcDiePending) { task_untake(&task); task.shared->id = 0; exit = true; } // to be terminated, now that its interrupts come through: the next task, taken for nothing, back to PLAN
     RESUME_INTERRUPTS();
     return exit;
 }
