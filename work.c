@@ -1546,7 +1546,7 @@ void work_main(Datum main_arg) {
     initStringInfoMy(&application_name);
     appendStringInfo(&application_name, "pg_work %s %s %li", work.shared->schema, work.shared->table, work.shared->sleep);
     SetConfigOption("application_name", application_name.data, PGC_USERSET, PGC_S_SESSION);
-    SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
+    SetConfigOption("search_path", "pg_catalog, pg_temp", PGC_USERSET, PGC_S_SESSION); // pg_temp last, which an empty one would search first for tables and types
 #if PG_VERSION_NUM >= 170000
     SetConfigOption("transaction_timeout", "0", PGC_USERSET, PGC_S_SESSION); // that of the settings of the database or the role, for the transactions of tasks, ends any longer one with FATAL, taking pg_work, with every remote task it runs, down: none for its own, which run no code of others, unlike a task's input
 #endif

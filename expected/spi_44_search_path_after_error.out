@@ -1,4 +1,4 @@
--- the task's bookkeeping runs as pg_task.user with an empty search_path, after a failed task too, rather than with the author's one, which the author's own functions could shadow the ones of a trigger on the task table with
+-- the task's bookkeeping runs as pg_task.user with a search_path of pg_catalog and pg_temp, last, after a failed task too, rather than with the author's one, which the author's own functions could shadow the ones of a trigger on the task table with
 DELETE FROM task WHERE "group" = 'search_path_after_error';
 CREATE TABLE search_path_after_error_log (input text, state text, search_path text);
 CREATE FUNCTION search_path_after_error_log() RETURNS trigger AS $function$BEGIN INSERT INTO public.search_path_after_error_log VALUES (NEW.input, NEW.state, pg_catalog.current_setting('search_path')); RETURN NULL; END;$function$ LANGUAGE plpgsql;
@@ -12,10 +12,10 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''search_path_after_error'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT input, state, quote_literal(search_path) AS search_path FROM search_path_after_error_log ORDER BY input;
-   input    | state | search_path 
-------------+-------+-------------
- SELECT 1   | DONE  | ''
- SELECT 1/0 | FAIL  | ''
+   input    | state |      search_path      
+------------+-------+-----------------------
+ SELECT 1   | DONE  | 'pg_catalog, pg_temp'
+ SELECT 1/0 | FAIL  | 'pg_catalog, pg_temp'
 (2 rows)
 
 DROP TRIGGER search_path_after_error_log ON task;

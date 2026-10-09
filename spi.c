@@ -166,10 +166,10 @@ void SPI_connect_my(const char *src, Oid userid) {
         GetUserIdAndSecContext(&save_userid, &save_sec_context);
         SetUserIdAndSecContext(userid, save_sec_context | SECURITY_LOCAL_USERID_CHANGE | SECURITY_RESTRICTED_OPERATION);
     }
-    // and an empty search_path, for no object of the author's schemas, or of pg_temp, to take part in it, no lock_timeout, nor transaction_timeout, which would fail it, the task left to run again on reset, as SET of a security definer function has them: for its transaction only, taken back by its commit, deferred triggers on the table run then included, or its abort, the session's settings, the author's, left as they are, for the input of the next task, as save has it
+    // and a search_path of pg_catalog and pg_temp, last, for no object of the author's schemas to take part in it, nor of pg_temp, which an empty one would search first for tables and types, as triggers made by make_function() have it, no lock_timeout, nor transaction_timeout, which would fail it, the task left to run again on reset, as SET of a security definer function has them: for its transaction only, taken back by its commit, deferred triggers on the table run then included, or its abort, the session's settings, the author's, left as they are, for the input of the next task, as save has it
     if (bookkeeping) {
         (void)NewGUCNestLevel();
-        SPI_set_config_my("search_path", "");
+        SPI_set_config_my("search_path", "pg_catalog, pg_temp");
         SPI_set_config_my("lock_timeout", "0");
 #if PG_VERSION_NUM >= 170000
         SPI_set_config_my("transaction_timeout", "0"); // its timer, armed as the transaction started, disarmed by its assign hook

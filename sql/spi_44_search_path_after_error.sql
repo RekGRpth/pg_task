@@ -1,4 +1,4 @@
--- the task's bookkeeping runs as pg_task.user with an empty search_path, after a failed task too, rather than with the author's one, which the author's own functions could shadow the ones of a trigger on the task table with
+-- the task's bookkeeping runs as pg_task.user with a search_path of pg_catalog and pg_temp, last, after a failed task too, rather than with the author's one, which the author's own functions could shadow the ones of a trigger on the task table with
 DELETE FROM task WHERE "group" = 'search_path_after_error';
 CREATE TABLE search_path_after_error_log (input text, state text, search_path text);
 CREATE FUNCTION search_path_after_error_log() RETURNS trigger AS $function$BEGIN INSERT INTO public.search_path_after_error_log VALUES (NEW.input, NEW.state, pg_catalog.current_setting('search_path')); RETURN NULL; END;$function$ LANGUAGE plpgsql;
