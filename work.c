@@ -404,6 +404,8 @@ static void work_held(void) {
     dlist_foreach_modify(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
         if (!t->held || t->socket != work_query) continue;
+        // its connection closed meanwhile by the server, idle_session_timeout say, its FATAL read already maybe, and the end of it now: back to PLAN, see work_broken(), rather than started on it, to fail, never run
+        if (PQstatus(t->conn) != CONNECTION_OK || !PQconsumeInput(t->conn)) { work_broken((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("!PQconsumeInput"), work_errdetail(PQerrorMessage(t->conn)))); continue; }
         t->held = false;
         work_query(t);
     }
@@ -630,6 +632,7 @@ static void work_readable(Task *t) {
     if (PQstatus(t->conn) == CONNECTION_OK && !PQconsumeInput(t->conn)) { work_broken((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("!PQconsumeInput"), work_errdetail(PQerrorMessage(t->conn)))); return; }
     // the notifications of a LISTEN of the task, which libpq would keep for as long as the connection lives, with save say, a task having nowhere to take them: logged for debug and dropped
     for (PGnotify *notify; (notify = PQnotifies(t->conn)); PQfreemem(notify)) elog(DEBUG1, "id = %li, notification \"%s\" from %i: %s", t->shared->id, notify->relname, notify->be_pid, notify->extra);
+    if (t->held && t->socket == work_query) return; // waiting for its row to start, see task_work(), which it does once a sleep only, see work_held(), not on what its connection got, the FATAL of a server closing it say, the end of which comes next
     t->socket(t);
 }
 
