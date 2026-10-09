@@ -535,6 +535,7 @@ bool dest_timeout(void) {
     PG_TRY();
         dest_loud();
         running = true;
+        if (task.shared->stop && task.shared->stop == task.shared->id) { InterruptPending = true; QueryCancelPending = true; } // a STOP that came between its start and now, which dest_cancel() dropped, not running yet, and work_stop() sends no more: the input cancelled at once, as the signal would have it
         dest_execute();
         if (task.shared->spi) {
             ReleaseCurrentSubTransaction();
