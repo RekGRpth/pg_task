@@ -431,8 +431,6 @@ static void dest_discard(void) {
 #endif
     task.shared = shared;
     unlock_advisory_all();
-    task_search_path_reset();
-    SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("pg_task.schema", task.shared->schema, PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("pg_task.table", task.shared->table, PGC_USERSET, PGC_S_SESSION);
     initStringInfoMy(&oid);
@@ -535,7 +533,6 @@ bool dest_timeout(void) {
         BeginInternalSubTransaction(NULL);
     }
     PG_TRY();
-        SetConfigOption("search_path", task_search_path(), PGC_USERSET, PGC_S_SESSION);
         dest_loud();
         running = true;
         dest_execute();
@@ -550,8 +547,6 @@ bool dest_timeout(void) {
         dest_quiet();
         if (held) held = false; else HOLD_INTERRUPTS(); // the input done, no termination is to come in between it and its bookkeeping, which would leave the task in WORK, to run again on reset: until the end, see below, if not since its commit already, see dest_xact()
         QueryCancelPending = false; // a cancel that came too late for the input, after its last CHECK_FOR_INTERRUPTS(), isn't meant for the bookkeeping, outside any PG_TRY()
-        if (task.save) task_search_path_save();
-        SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     PG_CATCH();
         held = false;
         HOLD_INTERRUPTS(); // as above, the error's errfinish() having let them through again
@@ -572,9 +567,6 @@ bool dest_timeout(void) {
                 finished = true;
             }
         }
-        // only once the failed (sub)transaction is gone, whose abort would take it back to the author's search_path, for the task's bookkeeping to run with: in local mode kept as it's left then, what the input committed itself kept (SET search_path = ...; COMMIT; SELECT 1/0), the rest taken back, as statement_timeout below, and as on a remote connection; in spi mode, where an input commits nothing itself, and where the search_path of the task was set within its subtransaction, which the abort takes back too, to the empty one of the bookkeeping, the one saved before kept
-        if (task.save && !task.shared->spi) task_search_path_save();
-        SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     PG_END_TRY();
     if (task.shared->spi && !finished) SPI_finish_my();
     if (task.save && StatementTimeout != StatementTimeoutTask) StatementTimeoutMy = StatementTimeout; // the input set statement_timeout itself, and committed it, a failed one taking it back: the session's for the next tasks now, as save = true keeps the rest of it, and as SHOW tells

@@ -29,6 +29,7 @@ static bool bookkeeping;
 static bool held;
 static int save_lock_timeout;
 static bool switched;
+static int nestlevel; // of the settings of the bookkeeping, see SPI_connect_my()
 static int save_sec_context;
 static Oid save_userid;
 
@@ -163,6 +164,15 @@ void SPI_connect_my(const char *src, Oid userid) {
         GetUserIdAndSecContext(&save_userid, &save_sec_context);
         SetUserIdAndSecContext(userid, save_sec_context | SECURITY_LOCAL_USERID_CHANGE | SECURITY_RESTRICTED_OPERATION);
     }
+    // and an empty search_path, for no object of the author's schemas, or of pg_temp, to take part in it, as SET search_path of a security definer function has it: for its transaction only, taken back by its commit, see SPI_finish_my(), or its abort, the session's search_path, the author's, left as it is, for the input of the next task, as save has it
+    if (bookkeeping) {
+        nestlevel = NewGUCNestLevel();
+        (void)set_config_option("search_path", "", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SAVE, true, 0
+#if PG_VERSION_NUM >= 90500
+            , false
+#endif
+        );
+    }
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
     PushActiveSnapshot(GetTransactionSnapshot());
     !bookkeeping && StatementTimeout > 0 ? enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout) : disable_timeout(STATEMENT_TIMEOUT, false);
@@ -216,6 +226,7 @@ void SPI_finish_my(void) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     PopActiveSnapshot();
     if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_finish failed"), errdetail("%s", SPI_result_code_string(rc))));
+    if (bookkeeping) AtEOXact_GUC(true, nestlevel); // the search_path of the session back, see SPI_connect_my()
     if (switched) SetUserIdAndSecContext(save_userid, save_sec_context); // only when switched: an unswitched SPI task with save = true may legitimately keep its own SET ROLE
     switched = false;
     CommitTransactionCommand();
