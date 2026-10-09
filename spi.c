@@ -27,9 +27,7 @@ typedef enum STMT_TYPE {
 static bool was_logged;
 static bool bookkeeping;
 static bool held;
-static int save_lock_timeout;
 static bool switched;
-static int nestlevel; // of the settings of the bookkeeping, see SPI_connect_my()
 static int save_sec_context;
 static Oid save_userid;
 
@@ -138,6 +136,15 @@ SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
     return plan;
 }
 
+// a setting of the bookkeeping, for its transaction only, see SPI_connect_my()
+static void SPI_set_config_my(const char *name, const char *value) {
+    (void)set_config_option(name, value, PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SAVE, true, 0
+#if PG_VERSION_NUM >= 90500
+        , false
+#endif
+    );
+}
+
 // a valid userid runs the whole transaction as that user, like a security definer function does, and as a security-restricted operation, as PostgreSQL does when running code as a more privileged user within someone else's session: switched only after the transaction started, so that an abort restores it by itself, and restored before the commit, since no transaction may start with a security context set
 void SPI_connect_my(const char *src, Oid userid) {
     int rc;
@@ -154,24 +161,19 @@ void SPI_connect_my(const char *src, Oid userid) {
         XactReadOnly = false;
         XactIsoLevel = XACT_READ_COMMITTED;
         XactDeferrable = false;
-        save_lock_timeout = LockTimeout;
-        LockTimeout = 0;
-#if PG_VERSION_NUM >= 170000
-        disable_timeout(TRANSACTION_TIMEOUT, false);
-#endif
     }
     if ((switched = OidIsValid(userid))) {
         GetUserIdAndSecContext(&save_userid, &save_sec_context);
         SetUserIdAndSecContext(userid, save_sec_context | SECURITY_LOCAL_USERID_CHANGE | SECURITY_RESTRICTED_OPERATION);
     }
-    // and an empty search_path, for no object of the author's schemas, or of pg_temp, to take part in it, as SET search_path of a security definer function has it: for its transaction only, taken back by its commit, see SPI_finish_my(), or its abort, the session's search_path, the author's, left as it is, for the input of the next task, as save has it
+    // and an empty search_path, for no object of the author's schemas, or of pg_temp, to take part in it, no lock_timeout, nor transaction_timeout, which would fail it, the task left to run again on reset, as SET of a security definer function has them: for its transaction only, taken back by its commit, deferred triggers on the table run then included, or its abort, the session's settings, the author's, left as they are, for the input of the next task, as save has it
     if (bookkeeping) {
-        nestlevel = NewGUCNestLevel();
-        (void)set_config_option("search_path", "", PGC_USERSET, PGC_S_SESSION, GUC_ACTION_SAVE, true, 0
-#if PG_VERSION_NUM >= 90500
-            , false
+        (void)NewGUCNestLevel();
+        SPI_set_config_my("search_path", "");
+        SPI_set_config_my("lock_timeout", "0");
+#if PG_VERSION_NUM >= 170000
+        SPI_set_config_my("transaction_timeout", "0"); // its timer, armed as the transaction started, disarmed by its assign hook
 #endif
-        );
     }
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
     PushActiveSnapshot(GetTransactionSnapshot());
@@ -210,7 +212,6 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_abort_my(void) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     AbortCurrentTransaction();
-    if (bookkeeping) LockTimeout = save_lock_timeout;
     bookkeeping = false;
 #ifdef HOLD_CANCEL_INTERRUPTS
     held = false; // nothing to resume: called only once an error was caught, whose errfinish() let cancels through again by itself
@@ -226,11 +227,9 @@ void SPI_finish_my(void) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     PopActiveSnapshot();
     if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_finish failed"), errdetail("%s", SPI_result_code_string(rc))));
-    if (bookkeeping) AtEOXact_GUC(true, nestlevel); // the search_path of the session back, see SPI_connect_my()
     if (switched) SetUserIdAndSecContext(save_userid, save_sec_context); // only when switched: an unswitched SPI task with save = true may legitimately keep its own SET ROLE
     switched = false;
     CommitTransactionCommand();
-    if (bookkeeping) LockTimeout = save_lock_timeout;
     bookkeeping = false;
 #if PG_VERSION_NUM < 150000
     ProcessCompletedNotifies(); // only now, out of the transaction, as PostgresMain() calls it: before 13 it starts a transaction of its own to signal the listeners of what this one (or a task's input before) notified, which within this one is an error
