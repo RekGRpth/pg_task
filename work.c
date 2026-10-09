@@ -613,7 +613,7 @@ static void work_latch(const Work *w) {
 
 // a notice of the remote server, which libpq would print to stderr as it is, past log_min_messages and the format of the log, a NOTICE as a WARNING: logged as one of pg_work's own instead, at its level, as a local task's is, but no higher than WARNING, so as not to fail anything
 static void work_notice(void *arg, const PGresult *result) {
-    const char *message = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY);
+    const char *message = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY) ? PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY) : PQresultErrorMessage(result); // the whole of it with none of its own, checked as well
     const char *sqlstate = PQresultErrorField(result, PG_DIAG_SQLSTATE);
     const Task *t = arg;
     int elevel = severity_error(work_severity(result));
@@ -623,7 +623,7 @@ static void work_notice(void *arg, const PGresult *result) {
         const char *field = i == 0 ? message : PQresultErrorField(result, i == 1 ? PG_DIAG_MESSAGE_DETAIL : PG_DIAG_MESSAGE_HINT);
         if (field && !pg_verifymbstr(field, strlen(field), true)) { ereport(elevel, (errmsg("id = %li, a notice of the remote server not in the encoding of this database", t->shared->id))); return; }
     }
-    ereport(elevel, (errcode(sqlstate && strlen(sqlstate) == 5 ? MAKE_SQLSTATE(sqlstate[0], sqlstate[1], sqlstate[2], sqlstate[3], sqlstate[4]) : ERRCODE_WARNING), errmsg_internal("id = %li, %s", t->shared->id, message ? message : PQresultErrorMessage(result)), work_errdetail(PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL)), work_errhint(PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))));
+    ereport(elevel, (errcode(sqlstate && strlen(sqlstate) == 5 ? MAKE_SQLSTATE(sqlstate[0], sqlstate[1], sqlstate[2], sqlstate[3], sqlstate[4]) : ERRCODE_WARNING), errmsg_internal("id = %li, %s", t->shared->id, message), work_errdetail(PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL)), work_errhint(PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))));
 }
 
 static void work_readable(Task *t) {

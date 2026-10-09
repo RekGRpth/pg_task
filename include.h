@@ -131,7 +131,7 @@ typedef struct Task {
     Shared *shared;
     StringInfoData error;
     StringInfoData output;
-    TimestampTz deadline; // of connecting to a remote server, or to the host of it tried now, from the connect_timeout of its connection string, which libpq doesn't enforce for an asynchronous connection
+    TimestampTz deadline; // of connecting to a remote server, or to the host of it tried now, from the connect_timeout of its connection string, which libpq doesn't enforce for an asynchronous connection; or, connected, of draining the rest of its input cancelled, see work_failed()
     TimestampTz start;
     uint64 row;
     void (*socket) (struct Task *t);
