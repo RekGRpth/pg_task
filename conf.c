@@ -268,6 +268,10 @@ void conf_main(Datum main_arg) {
     BackgroundWorkerInitializeConnectionMy("postgres", NULL);
     SetConfigOption("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
+    // the transaction characteristics of the settings of the database or the role, for the transactions of tasks, not for its own: read only would fail every one of them, repeatable read or serializable some on a row changed meanwhile
+    SetConfigOption("default_transaction_isolation", "read committed", PGC_USERSET, PGC_S_SESSION);
+    SetConfigOption("default_transaction_read_only", "off", PGC_USERSET, PGC_S_SESSION);
+    SetConfigOption("default_transaction_deferrable", "off", PGC_USERSET, PGC_S_SESSION);
 #if PG_VERSION_NUM >= 170000
     SetConfigOption("transaction_timeout", "0", PGC_USERSET, PGC_S_SESSION); // that of the settings of the database or the role, for the transactions of tasks, ends any longer one with FATAL, taking pg_conf down: none for its own, which run no code of others, unlike a task's input
 #endif

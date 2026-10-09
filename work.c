@@ -1548,6 +1548,10 @@ void work_main(Datum main_arg) {
     appendStringInfo(&application_name, "pg_work %s %s %li", work.shared->schema, work.shared->table, work.shared->sleep);
     SetConfigOption("application_name", application_name.data, PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("search_path", "pg_catalog, pg_temp", PGC_USERSET, PGC_S_SESSION); // pg_temp last, which an empty one would search first for tables and types
+    // the transaction characteristics of the settings of the database or the role, for the transactions of tasks, not for its own, as for the bookkeeping in a task worker, see SPI_connect_my(): read only would fail every pass, repeatable read or serializable the taking of tasks or the bookkeeping of a remote one on a row changed meanwhile, a stop say, taking pg_work, with every remote task it runs, down, those done already to run again on reset
+    SetConfigOption("default_transaction_isolation", "read committed", PGC_USERSET, PGC_S_SESSION);
+    SetConfigOption("default_transaction_read_only", "off", PGC_USERSET, PGC_S_SESSION);
+    SetConfigOption("default_transaction_deferrable", "off", PGC_USERSET, PGC_S_SESSION);
 #if PG_VERSION_NUM >= 170000
     SetConfigOption("transaction_timeout", "0", PGC_USERSET, PGC_S_SESSION); // that of the settings of the database or the role, for the transactions of tasks, ends any longer one with FATAL, taking pg_work, with every remote task it runs, down: none for its own, which run no code of others, unlike a task's input
 #endif
