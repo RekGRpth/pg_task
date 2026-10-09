@@ -173,6 +173,7 @@ void SPI_connect_my(const char *src, Oid userid) {
         SPI_set_config_my("lock_timeout", "0");
 #if PG_VERSION_NUM >= 170000
         SPI_set_config_my("transaction_timeout", "0"); // its timer, armed as the transaction started, disarmed by its assign hook
+        TransactionTimeoutPending = false; // and one it fired already, between, of a millisecond say, which the author's one, back after the commit, would have terminate the worker on its next check for interrupts, idle
 #endif
     }
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
