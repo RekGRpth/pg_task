@@ -848,6 +848,14 @@ static void work_input(Task *t) {
             default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
         }
     }
+    // a stop come between the preamble and the input, whose cancel the server, idle there, ignored, the input to run to the end otherwise, never cancelled again: not sent, the task failed as the cancel would have it, as a local one is, see dest_timeout()
+    if (!t->error.data && t->shared->stop == t->shared->id) {
+        if (!t->output.data) initStringInfoMy(&t->output);
+        initStringInfoMy(&t->error);
+        appendStringInfo(&t->error, "%s:  ", _(error_severity(ERROR)));
+        if (Log_error_verbosity >= PGERROR_VERBOSE) appendStringInfo(&t->error, "%s: ", unpack_sql_state(ERRCODE_QUERY_CANCELED));
+        appendStringInfoString(&t->error, _("canceling statement due to user request"));
+    }
     if (t->error.data) { work_done(t); return; }
     if (!PQsendQuery(t->conn, t->input)) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
     // the rows one by one, each looked at against the most of output a task may keep, see work_output(), rather than all of a result in libpq's memory first, many more than that, gigabytes of a remote SELECT, with pg_work and every remote task it runs taken down by running out of it
@@ -1046,7 +1054,7 @@ static void work_stop(const Work *w) {
         if (pid == MyProcPid) {
             dlist_foreach_modify(iter, &remote) {
                 Task *t = dlist_container(Task, node, iter.cur);
-                if (t->shared->id == id) { work_cancel(t); break; }
+                if (t->shared->id == id) { t->shared->stop = id; work_cancel(t); break; } // marked too, for an input not sent yet not to be, see work_input()
             }
         } else { // a task worker held the lock of this task just now, one that an earlier pg_work may have started too, but may be done with it by now: mark the task in its slot, for it to cancel only that one, along with the processes its input started (see dest_cancel()), with no role checks of pg_cancel_backend() to pass either, as the worker runs as the task author, whom pg_task.user may not signal from SQL
             if (!init_stop(w->shared->data, w->shared->oid, id)) elog(DEBUG1, "id = %li, no longer run by a task worker", id);
