@@ -177,7 +177,7 @@ static void conf_check(void) {
                 { bool isnull; Datum sleep = SPI_getbinval(val, tupdesc, SPI_fnumber(tupdesc, "sleep"), &isnull); w->shared->sleep = Max(isnull ? init_int(val, tupdesc, "sleep_setting", "pg_task.sleep") : DatumGetInt64(sleep), 1); }
                 w->shared->spi = DatumGetBool(SPI_getbinval_my(val, tupdesc, "spi", false, BOOLOID));
                 w->shared->limit = init_int(val, tupdesc, "limit", "pg_task.limit");
-                w->restart = init_int(val, tupdesc, "restart", "pg_work.restart");
+                w->restart = Max(init_int(val, tupdesc, "restart", "pg_work.restart"), 1); // 1 at least, as the setting has it: one set before pg_task was loaded, not checked then, of 0 or below, had the postmaster restart pg_work at once, over and over, or never
                 text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "data", false, TEXTOID)), w->shared->data, sizeof(w->shared->data));
                 text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "schema", false, TEXTOID)), w->shared->schema, sizeof(w->shared->schema));
                 text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false, TEXTOID)), w->shared->table, sizeof(w->shared->table));
