@@ -536,6 +536,15 @@ bool init_free_work(int slot, int64 reg) {
     return freed;
 }
 
+// whether the slot of a pg_work is still held by that registration of it: a pg_work exited cleanly has freed it itself, one that crashed, to be restarted by the postmaster, keeps it, see work_shmem_exit()
+bool init_held_work(int slot, int64 reg) {
+    bool held;
+    LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
+    held = shared[slot].in_use && !shared[slot].id && shared[slot].reg == reg;
+    LWLockRelease(BackgroundWorkerLock);
+    return held;
+}
+
 // the slots of pg_work are what pg_conf knows of the ones it started across its own restarts, which lose its handles of them: one that crashed, or can't connect, its database not allowing connections, say, is restarted by the postmaster after a while with its slot kept, and over and over in the latter case, so a pg_conf restarted meanwhile mustn't add another one for its entry each time, nor leave it restarting once its entry is gone; in one go, for a pg_work restarted meanwhile not to see a state half way: in_use tells of each entry wanted whether a pg_work of it is alive, started and not exited yet, or starting, with no pid yet, for no other one to be started; one that isn't, waiting to be restarted, is gone, taken over by the one pg_conf starts now, as is one whose entry is gone, for either to exit cleanly once restarted, freeing its slot
 void init_work(int n, const char **data, const char **user, const int *hash, bool *in_use) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);

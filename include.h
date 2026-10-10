@@ -143,6 +143,7 @@ bool dest_timeout(void);
 void dest_init(void);
 bool init_free_task(int slot, const char *data, Oid oid, int64 id);
 bool init_free_work(int slot, int64 reg);
+bool init_held_work(int slot, int64 reg);
 void init_work(int n, const char **data, const char **user, const int *hash, bool *in_use);
 bool init_work_gone(Datum main_arg);
 void init_work_wake(const Shared *task);

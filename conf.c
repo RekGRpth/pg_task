@@ -30,6 +30,7 @@
 
 static dlist_head head;
 static dlist_head reg_head;
+static long retry = 0; // the soonest restart, in seconds, of the entries that couldn't be started, to try them again then, rather than only on the next reload, see conf_check()
 
 typedef struct Registered {
     BackgroundWorkerHandle *handle;
@@ -141,6 +142,7 @@ static void conf_check(void) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     set_ps_display_my("check");
+    retry = 0; // set again by the entries that can't be started this time, if any
     dlist_init(&head);
     if (!src.data) {
         initStringInfoMy(&src);
@@ -230,7 +232,7 @@ static void conf_check(void) {
         Work *w = dlist_container(Work, node, iter.cur);
         bool used = in_use[n++];
         if (!w->spawn) { conf_free(w); continue; }
-        // an entry that can't be started, its role not made (a reserved name), its database neither (template1 in use), or no worker to be had, mustn't take pg_conf down, to be restarted into the same error over and over, keeping the entries after it from starting: report it and go on, for it to be tried again on the next reload
+        // an entry that can't be started, its role not made (a reserved name), its database neither (template1 in use), or no worker to be had, mustn't take pg_conf down, to be restarted into the same error over and over, keeping the entries after it from starting: report it and go on, for it to be tried again after its pg_work.restart, as the postmaster would restart its pg_work, see conf_main(), or on the next reload
         PG_TRY();
             conf_work(w, used);
         PG_CATCH();
@@ -241,6 +243,7 @@ static void conf_check(void) {
             // and the state of exec_simple_query() too, which CREATE DATABASE of make_data() runs through, as PostgresMain() resets it after an error, or the next one would take a transaction for started already, and run with none
             xact_started_my(false);
             stmt_timeout_active_my(false);
+            if (!retry || w->restart < retry) retry = w->restart;
             conf_free(w);
         PG_END_TRY();
     }
@@ -253,10 +256,22 @@ static void conf_reload(void) {
     conf_check();
 }
 
+// a pg_work of pg_conf exited cleanly, its slot freed by itself, as it does once it finds its entry gone: its entry, put back meanwhile, by a reload it ignored on its way out, with its lock still held, for conf_check() to start no other one then, is to be started again now; one that crashed keeps its slot, for the postmaster to restart it after its pg_work.restart, not sooner
+static bool conf_exited(void) {
+    dlist_iter iter;
+    dlist_foreach(iter, &reg_head) {
+        Registered *r = dlist_container(Registered, node, iter.cur);
+        pid_t pid;
+        if (GetBackgroundWorkerPid(r->handle, &pid) == BGWH_STOPPED && !init_held_work(r->slot, r->reg)) return true;
+    }
+    return false;
+}
+
 static void conf_latch(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
     if (ConfigReloadPending) conf_reload();
+    else if (conf_exited()) conf_check(); // woken by the notice of a pg_work stopped, see bgw_notify_pid
 }
 
 void conf_main(Datum main_arg) {
@@ -281,9 +296,10 @@ void conf_main(Datum main_arg) {
     if (!lock_data_user(MyDatabaseId, GetUserId())) { ereport(WARNING, (errmsg("!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()))); return; }
     conf_check();
     while (!ShutdownRequestPending) {
-        int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, -1);
+        int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH | (retry ? WL_TIMEOUT : 0), retry ? Min(retry * 1000, INT_MAX) : -1);
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
-        conf_latch();
+        if (rc & WL_TIMEOUT) conf_check(); // the entries that couldn't be started tried again, see conf_check()
+        else conf_latch();
     }
     if (!unlock_data_user(MyDatabaseId, GetUserId())) ereport(WARNING, (errmsg("!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId())));
 }
