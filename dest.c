@@ -339,7 +339,7 @@ static void dest_execute(void) {
             if (IsA(node, CopyStmt) && !((CopyStmt *)node)->filename) ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("COPY %s is not supported", ((CopyStmt *)node)->is_from ? "FROM STDIN" : "TO STDOUT")));
         }
         MemoryContextSwitchTo(oldMemoryContext);
-        whereToSendOutput = DestDebug;
+        whereToSendOutput = DestNone; // as for any background worker: the receiver and the command hooks above take the output, whatever it is, while DestDebug would have every message of the worker written to stderr too, besides the log_destination, csvlog say, see send_message_to_server_log()
         ReadyForQueryMy(whereToSendOutput);
         SetCurrentStatementStartTimestamp();
         exec_simple_query_my(task.input);
