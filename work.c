@@ -849,6 +849,13 @@ static void work_input(Task *t) {
         }
     }
     // a stop come between the preamble and the input, whose cancel the server, idle there, ignored, the input to run to the end otherwise, never cancelled again: not sent, the task failed as the cancel would have it, as a local one is, see dest_timeout()
+    if (!t->error.data && task_char(t)) { // its output made here, see work_output(), as a local one's is: failed before its input runs too, see dest_timeout()
+        if (!t->output.data) initStringInfoMy(&t->output);
+        initStringInfoMy(&t->error);
+        appendStringInfo(&t->error, "%s:  ", _(error_severity(ERROR)));
+        if (Log_error_verbosity >= PGERROR_VERBOSE) appendStringInfo(&t->error, "%s: ", unpack_sql_state(ERRCODE_CHARACTER_NOT_IN_REPERTOIRE));
+        appendStringInfo(&t->error, _("%s is not a single-byte character in encoding \"%s\""), task_char(t), GetDatabaseEncodingName());
+    }
     if (!t->error.data && t->shared->stop == t->shared->id) {
         if (!t->output.data) initStringInfoMy(&t->output);
         initStringInfoMy(&t->error);

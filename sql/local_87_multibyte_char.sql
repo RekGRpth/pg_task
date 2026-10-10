@@ -1,0 +1,16 @@
+-- a delimiter, quote or escape keeping only the first byte of a multibyte character, a "char" as they are, in a database of a multibyte encoding, fails the task before its input runs, rather than have an output invalid in that encoding stored, or fail it once run; in a single-byte one the byte is a character, as it was
+SELECT pg_catalog.pg_encoding_max_length(pg_catalog.pg_char_to_encoding(pg_catalog.getdatabaseencoding())) > 1 AS multibyte
+\gset
+DELETE FROM task WHERE "group" LIKE 'multibyte_%';
+INSERT INTO task ("group", input, delimiter) SELECT 'multibyte_delimiter', 'SELECT 1, 2', '§';
+INSERT INTO task ("group", input, quote) SELECT 'multibyte_quote', 'SELECT 1, 2', '§';
+INSERT INTO task ("group", input, escape) SELECT 'multibyte_escape', 'SELECT 1, 2', '§';
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" LIKE 'multibyte_%' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''multibyte_%%'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", state::text = CASE WHEN :'multibyte' THEN 'FAIL' ELSE 'DONE' END AS state_ok, CASE WHEN :'multibyte' THEN error LIKE '%' || substr("group", 11) || ' is not a single-byte character in encoding%' AND COALESCE(output, '') = '' ELSE error IS NULL END AS result_ok FROM task WHERE "group" LIKE 'multibyte_%' ORDER BY "group";
+DELETE FROM task WHERE "group" LIKE 'multibyte_%';

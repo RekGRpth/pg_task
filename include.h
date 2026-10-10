@@ -159,6 +159,7 @@ bool lock_table_id_hash(Oid table, int64 id, int hash);
 bool lock_table_pid_hash(Oid table, int pid, int hash);
 bool task_done(Task *t, bool live);
 bool task_work(Task *t);
+const char *task_char(const Task *t);
 bool unlock_data_user_hash(Oid data, Oid user, int hash);
 bool unlock_data_make(Oid data);
 bool unlock_data_user(Oid data, Oid user);

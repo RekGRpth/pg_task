@@ -395,6 +395,15 @@ bool task_work(Task *t) {
     return exit;
 }
 
+// the delimiter, quote or escape of a task, a "char", which keeps the first byte of a character only: one of a multibyte character, in a database of a multibyte encoding, would make the output put that byte between values, and find it within characters of them, an invalid one for the encoding: its name then, for the task to fail before its input runs, see dest_timeout() and work_input()
+const char *task_char(const Task *t) {
+    if (pg_database_encoding_max_length() == 1) return NULL;
+    if (IS_HIGHBIT_SET(t->delimiter)) return "delimiter";
+    if (IS_HIGHBIT_SET(t->quote)) return "quote";
+    if (IS_HIGHBIT_SET(t->escape)) return "escape";
+    return NULL;
+}
+
 void task_error(Task *t) {
     MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
     ErrorData *edata = CopyErrorData();
