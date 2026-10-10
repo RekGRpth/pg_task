@@ -148,35 +148,30 @@ static void task_insert(const Task *t) {
     set_ps_display_my("idle");
 }
 
-// the pause of a negative max holds every task of the group planned within it, not only those already due: with drift until |max| after now, as of the end of the task just done; without, as repeat does, until the first time after now that is a multiple of |max| after the plan of that task, so that the group keeps its pace; the max and the drift of that task, which schedules the pause, not of each task held, as the pause of the group kept for those planned later has it too, see init_pause()
-static void task_update(const Task *t, TimestampTz done, int max, bool drift) {
-    char nulls[] = {' ', ' ', ' ', t->remote ? ' ' : 'n', ' ', ' '};
-    Datum values[] = {Int32GetDatum(t->shared->hash), TimestampTzGetDatum(done), CStringGetTextDatum(t->group), t->remote ? CStringGetTextDatum(t->remote) : (Datum)0, Int32GetDatum(max), BoolGetDatum(drift)}; // in the memory of SPI, within task_done(), freed with it, the bookkeeping failing too
+// the pause of a negative max holds every task of the group planned within it, not only those already due: with drift until |max| after now, as of the end of the task just done; without, as repeat does, until the first time after now that is a multiple of |max| after the plan of that task, so that the group keeps its pace; the end of the pause task_done() has the update of that task return, whose max and drift schedule it, not those of each task held, and as of the time of that update, not of this one, which the statements in between, of the bookkeeping, logged with up to a gigabyte of output say, put later, maybe past the next multiple of |max|: the very pause the group keeps for those planned later too, see init_pause()
+static void task_update(const Task *t, TimestampTz until) {
+    char nulls[] = {' ', ' ', ' ', t->remote ? ' ' : 'n'};
+    Datum values[] = {Int32GetDatum(t->shared->hash), TimestampTzGetDatum(until), CStringGetTextDatum(t->group), t->remote ? CStringGetTextDatum(t->remote) : (Datum)0}; // in the memory of SPI, within task_done(), freed with it, the bookkeeping failing too
     Portal portal;
-    static Oid argtypes[] = {INT4OID, TIMESTAMPTZOID, TEXTOID, TEXTOID, INT4OID, BOOLOID};
+    static Oid argtypes[] = {INT4OID, TIMESTAMPTZOID, TEXTOID, TEXTOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     elog(DEBUG1, "hash = %i", t->shared->hash);
     set_ps_display_my("update");
     if (!src.data) {
-        char *until = psprintf(SQL(
-            CASE WHEN $6 THEN %1$s OPERATOR(pg_catalog.+) ((OPERATOR(pg_catalog.-) ($5)::pg_catalog.float8) OPERATOR(pg_catalog.*) '1 msec'::pg_catalog.interval)
-            ELSE $2 OPERATOR(pg_catalog.+) ((pg_catalog.floor(EXTRACT(epoch FROM %1$s OPERATOR(pg_catalog.-) $2)::pg_catalog.float8 OPERATOR(pg_catalog.*) 1000 OPERATOR(pg_catalog./) (OPERATOR(pg_catalog.-) ($5)::pg_catalog.float8)) OPERATOR(pg_catalog.+) 1) OPERATOR(pg_catalog.*) (OPERATOR(pg_catalog.-) ($5)::pg_catalog.float8) OPERATOR(pg_catalog.*) '1 msec'::pg_catalog.interval) END
-        ), init_plan());
         initStringInfoMy(&src);
         // only the rows no one else holds, for a while, say, as the taking of tasks does, rather than wait for them, the worker, or pg_work for a remote task, with every remote task it runs: the one held is changed by whoever holds it
         appendStringInfo(&src, SQL(
-            UPDATE %1$s AS t SET "plan" = %2$s FROM (
-                SELECT "id" FROM %1$s WHERE "plan" OPERATOR(pg_catalog.<) %2$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%3$s')) OPERATOR(pg_catalog.=) $1 AND "group" OPERATOR(pg_catalog.=) $3 AND ("remote" OPERATOR(pg_catalog.=) $4 OR ("remote" IS NULL AND $4 IS NULL)) AND "max" OPERATOR(pg_catalog.<) 0 FOR NO KEY UPDATE %4$s
+            UPDATE %1$s AS t SET "plan" = $2 FROM (
+                SELECT "id" FROM %1$s WHERE "plan" OPERATOR(pg_catalog.<) $2 AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%2$s')) OPERATOR(pg_catalog.=) $1 AND "group" OPERATOR(pg_catalog.=) $3 AND ("remote" OPERATOR(pg_catalog.=) $4 OR ("remote" IS NULL AND $4 IS NULL)) AND "max" OPERATOR(pg_catalog.<) 0 FOR NO KEY UPDATE %3$s
             ) AS u WHERE t.id OPERATOR(pg_catalog.=) u.id RETURNING t.id
-        ), t->work->schema_table, until, "",
+        ), t->work->schema_table, "",
 #if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
         "SKIP LOCKED"
 #else
         ""
 #endif
         );
-        pfree(until);
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     portal = SPI_cursor_open_my(src.data, plan, values, nulls, false);
@@ -247,9 +242,8 @@ static bool task_held(const Task *t) {
 }
 
 bool task_done(Task *t, bool live) {
-    bool delete = false, drift = false, exit = true, insert = false, update = false;
-    int max = 0;
-    TimestampTz done = 0, pause = 0;
+    bool delete = false, exit = true, insert = false, update = false;
+    TimestampTz pause = 0;
     char nulls[] = {' ', t->output.data ? ' ' : 'n', t->error.data ? ' ' : 'n', ' '};
     Datum values[] = {Int64GetDatum(t->shared->id), (Datum)0, (Datum)0, BoolGetDatum(t->lock)};
     static Oid argtypes[] = {INT8OID, TEXTOID, TEXTOID, BOOLOID};
@@ -264,7 +258,7 @@ bool task_done(Task *t, bool live) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             UPDATE %1$s AS t SET "state" = CASE WHEN t."state" OPERATOR(pg_catalog.=) 'STOP' THEN 'STOP' WHEN $3 IS NULL THEN 'DONE' ELSE 'FAIL' END::%2$s, "stop" = %3$s, "output" = $2, "error" = $3 WHERE "id" OPERATOR(pg_catalog.=) $1 AND (t."state" OPERATOR(pg_catalog.=) 'TAKE' OR ($4 AND t."state" OPERATOR(pg_catalog.=) ANY(ARRAY['WORK', 'STOP']::%2$s[])))
-            RETURNING "delete" AND "output" IS NULL AND "error" IS NULL AS "delete", "repeat" OPERATOR(pg_catalog.>) '0 sec' AND t."state" OPERATOR(pg_catalog.<>) 'STOP' AS "insert", "max" OPERATOR(pg_catalog.>=) 0 AND ("count" OPERATOR(pg_catalog.>) 0 OR "live" OPERATOR(pg_catalog.>) '0 sec') AS "live", "max" OPERATOR(pg_catalog.<) 0 AS "update", "plan", "max", "drift",
+            RETURNING "delete" AND "output" IS NULL AND "error" IS NULL AS "delete", "repeat" OPERATOR(pg_catalog.>) '0 sec' AND t."state" OPERATOR(pg_catalog.<>) 'STOP' AS "insert", "max" OPERATOR(pg_catalog.>=) 0 AND ("count" OPERATOR(pg_catalog.>) 0 OR "live" OPERATOR(pg_catalog.>) '0 sec') AS "live", "max" OPERATOR(pg_catalog.<) 0 AS "update",
                 CASE WHEN "max" OPERATOR(pg_catalog.<) 0 AND pg_catalog.isfinite("plan") THEN CASE WHEN "drift" THEN %3$s OPERATOR(pg_catalog.+) ((OPERATOR(pg_catalog.-) "max"::pg_catalog.float8) OPERATOR(pg_catalog.*) '1 msec'::pg_catalog.interval)
                 ELSE "plan" OPERATOR(pg_catalog.+) ((pg_catalog.floor(EXTRACT(epoch FROM %3$s OPERATOR(pg_catalog.-) "plan")::pg_catalog.float8 OPERATOR(pg_catalog.*) 1000 OPERATOR(pg_catalog./) (OPERATOR(pg_catalog.-) "max"::pg_catalog.float8)) OPERATOR(pg_catalog.+) 1) OPERATOR(pg_catalog.*) (OPERATOR(pg_catalog.-) "max"::pg_catalog.float8) OPERATOR(pg_catalog.*) '1 msec'::pg_catalog.interval) END END AS "pause"
         ), t->work->schema_table, t->work->schema_type, init_plan());
@@ -287,9 +281,6 @@ bool task_done(Task *t, bool live) {
         exit = !live || !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false, BOOLOID));
         insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false, BOOLOID));
         update = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "update", false, BOOLOID));
-        done = DatumGetTimestampTz(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "plan", false, TIMESTAMPTZOID));
-        max = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "max", false, INT4OID));
-        drift = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "drift", false, BOOLOID));
         // the end of the pause it schedules, as task_update() has it for the tasks of the group planned now, for those inserted or planned later too, which work_sleep() takes no sooner, see init_pause(): kept once the bookkeeping is committed, not to hold the group for one that failed
         if (update) pause = DatumGetTimestampTz(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "pause", true, TIMESTAMPTZOID));
         elog(DEBUG1, "delete = %s, exit = %s, insert = %s, update = %s", delete ? "true" : "false", exit ? "true" : "false", insert ? "true" : "false", update ? "true" : "false");
@@ -298,7 +289,7 @@ bool task_done(Task *t, bool live) {
     if (values[2]) pfree((void *)values[2]);
     if (insert) task_insert(t);
     if (delete) task_delete(t);
-    if (update && !TIMESTAMP_NOT_FINITE(done)) task_update(t, done, max, drift); // a plan of -infinity, due at once, can't be subtracted from, failing the bookkeeping outside any error handling: no pause then
+    if (pause) task_update(t, pause); // none for a plan of -infinity, due at once, which can't be subtracted from, failing the bookkeeping outside any error handling, see above
     if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) { ereport(WARNING, (errmsg("!unlock_table_id(%i, %li)", t->shared->oid, t->shared->id))); exit = true; }
     t->lock = false;
     SPI_finish_my();
