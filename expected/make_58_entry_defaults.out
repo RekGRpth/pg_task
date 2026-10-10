@@ -1,0 +1,65 @@
+-- an entry of pg_task.json with neither data nor user, the default one say, runs in pg_task.data as pg_task.user, rather than the default one naming postgres, which left both settings unused
+SELECT boot_val FROM pg_catalog.pg_settings WHERE name = 'pg_task.json';
+ boot_val 
+----------
+ [{}]
+(1 row)
+
+SET client_min_messages = warning;
+CREATE ROLE task_entry_defaults SUPERUSER LOGIN;
+RESET client_min_messages;
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+-- an entry of the baseline with neither data nor user, the default one of an existing instance say, kept in its database as its user meanwhile, rather than moved to the role of this test
+SELECT left(replace(:'json_baseline', '{}', '{"data":"' || current_setting('pg_task.data') || '","user":"' || current_setting('pg_task.user') || '"}'), -1) || ',{"schema":"entry_defaults_schema"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.data = :'DBNAME';
+ALTER SYSTEM SET pg_task."user" = 'task_entry_defaults';
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'entry_defaults_schema' AND c.relname = 'task') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work entry_defaults_schema task %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of entry_defaults_schema.task to become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT usename FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work entry_defaults_schema task %' AND datname = current_database();
+       usename       
+---------------------
+ task_entry_defaults
+(1 row)
+
+SELECT tableowner FROM pg_catalog.pg_tables WHERE schemaname = 'entry_defaults_schema' AND tablename = 'task';
+     tableowner      
+---------------------
+ task_entry_defaults
+(1 row)
+
+ALTER SYSTEM RESET pg_task.data;
+ALTER SYSTEM RESET pg_task."user";
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE usename = 'task_entry_defaults') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for backend(s) connected as role ''task_entry_defaults'' to disconnect'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SET client_min_messages TO WARNING;
+DROP SCHEMA entry_defaults_schema CASCADE;
+RESET client_min_messages;
+DROP ROLE task_entry_defaults;

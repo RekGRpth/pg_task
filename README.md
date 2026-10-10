@@ -82,7 +82,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | pg_task.delimiter | char | \t | config, database, user, session | Results columns delimiter, nothing between them if empty |
 | pg_task.escape | char | | config, database, user, session | Results columns escape |
 | pg_task.group | text | group | config, database, user, session | Task grouping by name |
-| pg_task.json | json | [{"data":"postgres"}] | config | Json configuration, available keys: data, reset, run, schema, sleep, spi, table and user |
+| pg_task.json | json | [{}] | config | Json configuration, available keys: data, reset, run, schema, sleep, spi, table and user |
 | pg_task.live | interval | 0 sec | config, database, user, session | Non-negative maximum time of live of current background worker process before exit |
 | pg_task.null | text | \N | config, database, user, session | Null text value representation |
 | pg_task.plan | timestamptz | statement_timestamp() | config, database, user, session (superuser only) | Default value for plan timestamp, and what the scheduler takes for now: an SQL expression, run as `pg_task.user`, so only a superuser may set it |
@@ -134,9 +134,9 @@ You may freely add your own columns to `task` and/or partition it — `pg_task` 
 
 ## Running in multiple databases
 
-By default `pg_task` runs a single scheduler, on the default database (`postgres`), as the default user (`postgres`), watching the default schema (`public`) and table (`task`), polling every default `sleep` interval.
+By default `pg_task` runs a single scheduler, on the database `pg_task.data` (`postgres`), as the user `pg_task.user` (`postgres`), watching the default schema (`public`) and table (`task`), polling every default `sleep` interval.
 
-To run more than one scheduler — e.g. one per application database, each with its own user/schema/table/poll interval — list them in `pg_task.json`, one object per scheduler; any key you omit falls back to its GUC default:
+To run more than one scheduler — e.g. one per application database, each with its own user/schema/table/poll interval — list them in `pg_task.json`, one object per scheduler; any key you omit falls back to its GUC default, but for `data` and `user`, which fall back to each other first, and to `pg_task.data` and `pg_task.user` only when the entry has neither (so `{"data":"database1"}` runs as the role `database1`, and `{}` as `pg_task.user` in `pg_task.data`); `pg_task.json = '[]'` runs no scheduler at all:
 ```conf
 pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"data":"database3","schema":"schema3"},{"data":"database4","table":"table4"},{"data":"database5","sleep":100}]'
 ```

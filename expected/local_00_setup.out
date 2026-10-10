@@ -1,6 +1,6 @@
 SELECT current_setting('pg_task.json') AS base_json
 \gset
-SELECT :'base_json' NOT LIKE '%"data":"' || :'DBNAME' || '"%' AS base_json_added
+SELECT NOT EXISTS (SELECT 1 FROM pg_catalog.jsonb_array_elements(:'base_json'::pg_catalog.jsonb) AS e WHERE COALESCE(e ->> 'data', e ->> 'user', current_setting('pg_task.data')) = :'DBNAME') AS base_json_added
 \gset
 SELECT CASE WHEN :'base_json_added' = 't' THEN left(:'base_json', -1) || ',{"data":"' || :'DBNAME' || '"}]' ELSE :'base_json' END AS json_val
 \gset
