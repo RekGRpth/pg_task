@@ -1217,6 +1217,11 @@ static void work_remote(Task *t) {
 #if PG_VERSION_NUM >= 130000
     // the file descriptors a process may hold for others than files, connections say, are a third of the safe ones, max_files_per_process at most, those of the other remote tasks taking them all: back to PLAN, rather than fail it, with nothing held yet; the one taken here is given back, to be taken again, sure to be had then, right before connecting
     if (!AcquireExternalFD()) { if (opts) PQconninfoFree(opts); if (err) PQfreemem(err); work_later(t, "too many open files", "max_files_per_process"); return; }
+#if PG_VERSION_NUM < 140000
+    // and one more, left over once connected, for the wait event set of a WaitLatch() of pg_work, which on 13 takes one of these for a set of its own every time, waiting for a task worker to start, or for a lock, say, and errors with none left, taking pg_work down with every remote task it runs; from 14 on it waits on a set made once
+    if (!AcquireExternalFD()) { ReleaseExternalFD(); if (opts) PQconninfoFree(opts); if (err) PQfreemem(err); work_later(t, "too many open files", "max_files_per_process"); return; }
+    ReleaseExternalFD();
+#endif
     ReleaseExternalFD();
 #endif
     dlist_delete(&t->node);
