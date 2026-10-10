@@ -317,6 +317,7 @@ bool task_work(Task *t) {
     static Oid argtypes[] = {INT8OID, INT4OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
+    t->worked = false;
     if (ShutdownRequestPending) return true;
     if (!lock_table_id(t->shared->oid, t->shared->id)) { ereport(WARNING, (errmsg("!lock_table_id(%i, %li)", t->shared->oid, t->shared->id))); return true; }
     t->lock = true;
@@ -389,6 +390,7 @@ bool task_work(Task *t) {
         }
     }
     SPI_finish_my();
+    t->worked = !exit; // only once committed: the lock above is taken before, and a termination within the transaction leaves the task in TAKE
     set_ps_display_my("idle");
     return exit;
 }
@@ -497,6 +499,7 @@ void task_free(Task *t) {
     if (t->null) { pfree(t->null); t->null = NULL; }
     if (t->output.data) { pfree(t->output.data); t->output.data = NULL; t->output.len = 0; }
     t->line = false;
+    t->worked = false; // the next task, task_live() took, in TAKE
     if (t->remote) { pfree(t->remote); t->remote = NULL; }
     if (t->user) { pfree(t->user); t->user = NULL; }
 }

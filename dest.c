@@ -476,8 +476,8 @@ static void dest_quiet(void) {
 // on the way out after such a FATAL, before the connection's own exit callback, as the one removing temporary tables does: abort the input's transaction and fail the task
 static void dest_shmem_exit(int code, Datum arg) {
 #if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
-    // a task taken and not started, the next one task_live() took, a termination right after the bookkeeping say, or the first one pg_work gave: back to PLAN, rather than left in TAKE till the next reset; by SKIP LOCKED, its row held by someone else left so, with no error, which, on the way out, would be FATAL
-    if (!fatal && !running && task.shared && task.shared->id && !task.lock) {
+    // a task taken and not started, the next one task_live() took, a termination right after the bookkeeping say, or the first one pg_work gave, or within the bookkeeping that would start it, task_work(), its lock taken already, but its WORK not committed: back to PLAN, rather than left in TAKE till the next reset; by SKIP LOCKED, its row held by someone else left so, with no error, which, on the way out, would be FATAL
+    if (!fatal && !running && task.shared && task.shared->id && !task.worked) {
         HOLD_INTERRUPTS();
         AbortOutOfAnyTransaction();
         task_untake(&task);

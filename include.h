@@ -105,6 +105,7 @@ typedef struct Task {
     bool held; // of a remote task, its row held by someone else, its bookkeeping not done, see task_done()
     bool lock;
     bool reserve;
+    bool worked; // its row in WORK, committed by task_work(): not to be given back to PLAN on the way out, the input may have started, see dest_shmem_exit()
     bool save;
     bool string;
     char delimiter;
