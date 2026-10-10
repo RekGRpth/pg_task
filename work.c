@@ -179,6 +179,8 @@ work_errdetail(const char *err) {
         return 0;
 #endif
     if (err[len - 1] == '\n') len--;
+    // a message of the remote server, in the client_encoding of the connection, which an input may have set to another one than that of this database, as work_notice() has it: not to go into the log as it is then
+    if (!pg_verifymbstr(err, len, true)) return errdetail("a message of the remote server not in the encoding of this database");
     return errdetail("%.*s", len, err);
 }
 
@@ -195,6 +197,7 @@ work_errhint(const char *hint) {
 #else
         return 0;
 #endif
+    if (!pg_verifymbstr(hint, strlen(hint), true)) return errhint("a hint of the remote server not in the encoding of this database"); // as above
     return errhint("%s", hint);
 }
 
