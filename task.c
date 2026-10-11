@@ -10,6 +10,7 @@
 #include <tcop/utility.h>
 #include <utils/acl.h>
 #include <utils/builtins.h>
+#include <utils/guc.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
 
@@ -367,7 +368,8 @@ bool task_work(Task *t) {
         t->string = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "string", false, BOOLOID));
         t->timeout = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "timeout", false, INT4OID));
         // the server's statement_timeout caps a local task only, which runs here: a remote one runs on its server, SET SESSION statement_timeout = timeout (see work_query()), with that server's in effect for 0, not that of pg_work, here, which isn't the one it runs on
-        if (!t->remote && 0 < StatementTimeout && StatementTimeout < t->timeout) t->timeout = StatementTimeout;
+        // the one of the server, the database and the role, rather than the session's, which a task before with save may have set, for the next tasks with no timeout of their own only
+        if (!t->remote) { int server = atoi(GetConfigOptionResetString("statement_timeout")); if (0 < server && server < t->timeout) t->timeout = server; }
         t->user = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "user", false, TEXTOID));
         elog(DEBUG1, "group = %s, remote = %s, hash = %i, input = %s, timeout = %i, header = %s, save = %s, string = %s, null = %s, delimiter = %c, quote = %c, escape = %c, user = %s", t->group, t->remote ? t->remote : init_null(), t->shared->hash, t->input, t->timeout, t->header ? "true" : "false", t->save ? "true" : "false", t->string ? "true" : "false", t->null, t->delimiter, t->quote ? t->quote : 30, t->escape ? t->escape : 30, t->user);
         // for a local task only: a remote one runs in pg_work, among other remote tasks, which would take the name of pg_work, by which it is found, for that of the last one, while the connection of each has it already (see work_remote())
