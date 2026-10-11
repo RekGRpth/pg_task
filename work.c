@@ -519,11 +519,11 @@ static void work_reset(const Work *w) {
     if (ShutdownRequestPending) return; // as work_sleep() does
     set_ps_display_my("reset");
     work_reap(w);
-    // the lock of a task is tagged by the high and the low 32 bits of its id, unsigned (see lock_table_id()), the low ones as id & 4294967295, here as in work_timeout() and work_stop(): an arithmetic id << 32 >> 32 would extend their sign, into a negative oid for half the ids, and an error taking pg_work down
+    // the lock of a task is tagged by the high and the low 32 bits of its id, unsigned (see lock_table_id()), the low ones as id & 4294967295, and the high ones as id >> 32 & 4294967295, here as in work_timeout() and work_stop(): an arithmetic id << 32 >> 32 would extend their sign, into a negative oid for half the ids, and so would id >> 32 for a negative id, which an author may insert, and an error taking pg_work down
     if (!found_src.data) {
         initStringInfoMy(&found_src);
         appendStringInfo(&found_src, SQL(
-            SELECT pg_catalog.array_agg("id")::pg_catalog.text AS "found" FROM %1$s AS t LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$u AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
+            SELECT pg_catalog.array_agg("id")::pg_catalog.text AS "found" FROM %1$s AS t LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$u AND "classid" OPERATOR(pg_catalog.=) (("id" OPERATOR(pg_catalog.>>) 32) OPERATOR(pg_catalog.&) 4294967295) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
             WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND l.pid IS NULL
         ), w->schema_table, init_table_key(w->shared->oid), w->schema_type);
     }
@@ -543,7 +543,7 @@ static void work_reset(const Work *w) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             WITH s AS (
-                SELECT "id" FROM %1$s AS t LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$u AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
+                SELECT "id" FROM %1$s AS t LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$u AND "classid" OPERATOR(pg_catalog.=) (("id" OPERATOR(pg_catalog.>>) 32) OPERATOR(pg_catalog.&) 4294967295) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
                 WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND "id" OPERATOR(pg_catalog.=) ANY(($2)::pg_catalog.int8[]) AND "id" OPERATOR(pg_catalog.<>) ALL(($1)::pg_catalog.int8[]) AND l.pid IS NULL FOR NO KEY UPDATE OF t %4$s
             ) UPDATE %1$s AS t SET "state" = 'PLAN', "start" = NULL, "stop" = NULL, "pid" = NULL FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id
         ), w->schema_table, init_table_key(w->shared->oid), w->schema_type,
@@ -587,7 +587,7 @@ static long work_timeout(const Work *w, long reset) {
         appendStringInfo(&src, SQL(
            SELECT COALESCE(LEAST((
                 SELECT $1 FROM %1$s AS t
-                LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$u AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
+                LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$u AND "classid" OPERATOR(pg_catalog.=) (("id" OPERATOR(pg_catalog.>>) 32) OPERATOR(pg_catalog.&) 4294967295) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
                 WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND l.pid IS NULL LIMIT 1
            ), pg_catalog.ceil(EXTRACT(epoch FROM ((
                 SELECT "plan" OPERATOR(pg_catalog.-) %4$s AS "plan" FROM %1$s WHERE "state" OPERATOR(pg_catalog.=) 'PLAN' AND "plan" OPERATOR(pg_catalog.>=) %4$s AND pg_catalog.isfinite("plan") ORDER BY 1 LIMIT 1
@@ -1045,7 +1045,7 @@ static void work_stop(const Work *w) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            SELECT "id", l."pid" FROM %1$s AS t JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$u AND "classid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.>>) 32) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
+            SELECT "id", l."pid" FROM %1$s AS t JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 4 AND "database" OPERATOR(pg_catalog.=) %2$u AND "classid" OPERATOR(pg_catalog.=) (("id" OPERATOR(pg_catalog.>>) 32) OPERATOR(pg_catalog.&) 4294967295) AND "objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
             WHERE "state" OPERATOR(pg_catalog.=) 'STOP'
         ), w->schema_table, init_table_key(w->shared->oid));
     }
