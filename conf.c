@@ -10,6 +10,7 @@
 #include <utils/builtins.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
+#include <utils/timestamp.h>
 
 #if PG_VERSION_NUM >= 100000
 #include <utils/regproc.h>
@@ -30,7 +31,7 @@
 
 static dlist_head head;
 static dlist_head reg_head;
-static long retry = 0; // the soonest restart, in seconds, of the entries that couldn't be started, to try them again then, rather than only on the next reload, see conf_check()
+static TimestampTz retry = 0; // when to try the entries that couldn't be started again, the soonest of their pg_work.restart after they failed, rather than only on the next reload, see conf_check(): a time, not a timeout, which every wake-up of pg_conf, a worker started or stopped say, would start over
 
 typedef struct Registered {
     BackgroundWorkerHandle *handle;
@@ -243,7 +244,7 @@ static void conf_check(void) {
             // and the state of exec_simple_query() too, which CREATE DATABASE of make_data() runs through, as PostgresMain() resets it after an error, or the next one would take a transaction for started already, and run with none
             xact_started_my(false);
             stmt_timeout_active_my(false);
-            if (!retry || w->restart < retry) retry = w->restart;
+            { TimestampTz at = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), (int64)w->restart * 1000); if (!retry || at < retry) retry = at; }
             conf_free(w);
         PG_END_TRY();
     }
@@ -296,10 +297,18 @@ void conf_main(Datum main_arg) {
     if (!lock_data_user(MyDatabaseId, GetUserId())) { ereport(WARNING, (errmsg("!lock_data_user(%i, %i)", MyDatabaseId, GetUserId()))); return; }
     conf_check();
     while (!ShutdownRequestPending) {
-        int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH | (retry ? WL_TIMEOUT : 0), retry ? Min(retry * 1000, INT_MAX) : -1);
+        long timeout = -1;
+        int rc;
+        if (retry) {
+            long secs;
+            int usecs;
+            TimestampDifference(GetCurrentTimestamp(), retry, &secs, &usecs); // 0 once past
+            timeout = Min(secs * 1000 + usecs / 1000, INT_MAX);
+        }
+        rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH | (retry ? WL_TIMEOUT : 0), timeout);
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
-        if (rc & WL_TIMEOUT) conf_check(); // the entries that couldn't be started tried again, see conf_check()
-        else conf_latch();
+        if (rc & WL_LATCH_SET) conf_latch();
+        if (!ShutdownRequestPending && retry && GetCurrentTimestamp() >= retry) conf_check(); // the entries that couldn't be started tried again, see conf_check()
     }
     if (!unlock_data_user(MyDatabaseId, GetUserId())) ereport(WARNING, (errmsg("!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId())));
 }
