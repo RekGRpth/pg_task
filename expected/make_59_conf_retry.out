@@ -1,4 +1,6 @@
 -- an entry pg_conf couldn't start, its database not made as template1 was in use, is tried again after its pg_work.restart, rather than only on the next reload
+-- tried again after its own pg_work.restart, a second here, whatever the earlier tests' ALTER SYSTEM RESET of it left
+ALTER SYSTEM SET pg_work.restart = 1;
 SELECT current_database() AS test_db, current_setting('pg_task.json') AS json_baseline
 \gset
 SELECT left(:'json_baseline', -1) || ',{"data":"conf_retry_data"}]' AS json_val
@@ -27,6 +29,7 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of database conf_retry_data'; END IF;
 END;$body$ LANGUAGE plpgsql;
+ALTER SYSTEM RESET pg_work.restart;
 ALTER SYSTEM SET pg_task.json = :'json_baseline';
 SELECT pg_reload_conf();
  pg_reload_conf 
