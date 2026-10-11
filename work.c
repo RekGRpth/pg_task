@@ -1531,8 +1531,7 @@ static void work_idle(SIGNAL_ARGS) {
         InterruptPending = true;
         QueryCancelPending = true;
     }
-    idle_count = 0;
-    woken = true;
+    woken = true; // and idle_count back to 0 by the main loop, see work_main(), the only one to change it, rather than here, where a reset coming within its increment of the pass would be lost
     SetLatch(MyLatch);
     errno = save_errno;
 }
@@ -1655,6 +1654,7 @@ void work_main(Datum main_arg) {
             INSTR_TIME_SET_CURRENT(start_time_sleep);
             current_sleep = work.shared->sleep;
         }
+        if (woken) idle_count = 0; // woken up, see work_idle(), no longer idle, the pass that tells so not seen yet
         if (idle_count < (uint64)init_work_idle()) timeout = Min(current_reset, current_sleep);
         // idle: till the next task is planned, in milliseconds rounded up, not to wake before it, and not before the pass it takes is due either, or once its plan is past, which work_timeout() leaves out, as it does the tasks that wait for a slot of their group, there'd be no pass and no end to the wait
         else {
