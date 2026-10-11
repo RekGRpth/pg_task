@@ -1,0 +1,27 @@
+-- columns of an author's own in the task table named as those of pg_locks, which the queries of pg_work join it with, are told apart from them, rather than make those queries fail as ambiguous, taking pg_work down on every start
+DELETE FROM task WHERE "group" = 'lock_named_columns';
+SELECT pid AS work_pid FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database()
+\gset
+ALTER TABLE task ADD COLUMN locktype text, ADD COLUMN mode text, ADD COLUMN granted bool, ADD COLUMN database oid, ADD COLUMN classid oid, ADD COLUMN objid oid, ADD COLUMN objsubid int2;
+INSERT INTO task ("group", input) VALUES ('lock_named_columns', 'SELECT 1'), ('lock_named_columns', 'SELECT pg_sleep(30)');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'lock_named_columns' AND input = 'SELECT pg_sleep(30)' AND state = 'WORK') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the long task of group lock_named_columns to start'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- and a stop of it, which work_stop() finds by the lock of its id
+UPDATE task SET state = 'STOP' WHERE "group" = 'lock_named_columns' AND input = 'SELECT pg_sleep(30)';
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'lock_named_columns' AND (state NOT IN ('DONE', 'GONE', 'FAIL', 'STOP') OR stop IS NULL)) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''lock_named_columns'' to finish'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT input, state FROM task WHERE "group" = 'lock_named_columns' ORDER BY id;
+SELECT pg_stat_clear_snapshot();
+SELECT count(*) = 1 AS same_work FROM pg_catalog.pg_stat_activity WHERE pid = :work_pid;
+DELETE FROM task WHERE "group" = 'lock_named_columns';
+ALTER TABLE task DROP COLUMN locktype, DROP COLUMN mode, DROP COLUMN granted, DROP COLUMN database, DROP COLUMN classid, DROP COLUMN objid, DROP COLUMN objsubid;
