@@ -306,6 +306,9 @@ void conf_main(Datum main_arg) {
     SetConfigOption("default_transaction_isolation", "read committed", PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("default_transaction_read_only", "off", PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("default_transaction_deferrable", "off", PGC_USERSET, PGC_S_SESSION);
+    // nor its timeouts: no statement of its own to be cancelled by them, which its SIGINT handler lets through for the lock timeout of make_ddl() only, the one setting a timeout of its own, but a statement timeout fired before it, ignored, would be reported in its place, ending its retries at the first one
+    SetConfigOption("statement_timeout", "0", PGC_USERSET, PGC_S_SESSION);
+    SetConfigOption("lock_timeout", "0", PGC_USERSET, PGC_S_SESSION);
 #if PG_VERSION_NUM >= 170000
     SetConfigOption("transaction_timeout", "0", PGC_USERSET, PGC_S_SESSION); // that of the settings of the database or the role, for the transactions of tasks, ends any longer one with FATAL, taking pg_conf down: none for its own, which run no code of others, unlike a task's input
 #endif
