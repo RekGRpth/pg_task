@@ -859,7 +859,7 @@ static void work_input(Task *t) {
         if (Log_error_verbosity >= PGERROR_VERBOSE) appendStringInfo(&t->error, "%s: ", unpack_sql_state(ERRCODE_CHARACTER_NOT_IN_REPERTOIRE));
         appendStringInfo(&t->error, _("%s is not a single-byte character in encoding \"%s\""), task_char(t), GetDatabaseEncodingName());
     }
-    if (!t->error.data && t->shared->stop == t->shared->id) {
+    if (!t->error.data && t->shared->stop && t->shared->stop == t->shared->id) { // none for a task of id 0, which an author may insert, with no stop either
         if (!t->output.data) initStringInfoMy(&t->output);
         initStringInfoMy(&t->error);
         appendStringInfo(&t->error, "%s:  ", _(error_severity(ERROR)));
