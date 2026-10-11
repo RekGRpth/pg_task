@@ -449,6 +449,7 @@ static void dest_discard(void) {
 static volatile sig_atomic_t running = false; // the task's input, rather than its bookkeeping, which a cancel must not fail
 static int quiet = 0; // the log_min_messages of the server, above FATAL, which dest_loud() let FATAL through for the input instead of
 static bool fatal = false; // the input failed with FATAL, see dest_emit_log()
+static bool failed = false; // the worker going down on an error of its own, out of the input, a trigger of the table refusing its WORK say, rather than terminated, see dest_shmem_exit()
 static emit_log_hook_type emit_log_hook_prev = NULL;
 
 // FATAL takes the worker down right away, with no PG_CATCH() to record the error of the input, as exit_on_error or transaction_timeout make one, and the task stays in WORK, to run again on every reset: take it for the task as it's logged, for dest_shmem_exit() to record, but for a termination, as on a shutdown, which leaves the task, not done, to be run again
@@ -457,6 +458,7 @@ static void dest_emit_log(ErrorData *edata) {
         fatal = true;
         task_error_data(&task, edata);
     }
+    if (!running && edata->elevel >= ERROR) failed = edata->sqlerrcode != ERRCODE_ADMIN_SHUTDOWN; // an error out of any PG_TRY(), reported by the handler of a background worker on its way out, or a termination
     if (quiet && edata->elevel == FATAL) edata->output_to_server = false; // not for the log after all, see dest_loud()
     if (emit_log_hook_prev) emit_log_hook_prev(edata);
 }
@@ -478,7 +480,8 @@ static void dest_quiet(void) {
 static void dest_shmem_exit(int code, Datum arg) {
 #if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
     // a task taken and not started, the next one task_live() took, a termination right after the bookkeeping say, or the first one pg_work gave, or within the bookkeeping that would start it, task_work(), its lock taken already, but its WORK not committed: back to PLAN, rather than left in TAKE till the next reset; by SKIP LOCKED, its row held by someone else left so, with no error, which, on the way out, would be FATAL
-    if (!fatal && !running && task.shared && task.shared->id && !task.worked) {
+    // but not one the worker goes down on an error of its own, of its start say, a trigger of the table refusing its WORK, which would come again on every pass: left in TAKE for the reset, as tried again only then
+    if (!fatal && !failed && !running && task.shared && task.shared->id && !task.worked) {
         HOLD_INTERRUPTS();
         AbortOutOfAnyTransaction();
         task_untake(&task);
@@ -531,6 +534,7 @@ bool dest_timeout(void) {
     int StatementTimeoutMy = StatementTimeout;
     int StatementTimeoutTask;
     volatile bool released = false, finished = false;
+    failed = false; // of this task, see dest_shmem_exit()
     if (task_work(&task)) return true;
     task.skip = 0; // or a task failed before in this worker would hide the command tag of the next one, and with nothing else to output have it deleted
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
