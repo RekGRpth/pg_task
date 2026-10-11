@@ -80,6 +80,7 @@ typedef struct Shared {
     int limit;
     int max;
     int pid; // of a pg_work, once started: see init_work()
+    bool exited; // of a pg_work, gone with an error, its slot kept for the postmaster to restart it, its pid no longer its own, see init_work_wake()
     int run;
     Oid oid;
 } Shared;

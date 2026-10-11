@@ -1021,7 +1021,7 @@ static void work_exit(int code, Datum arg) {
 // the slot of pg_work, last, see work_exit()
 static void work_shmem_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
-    if (!code) init_free(DatumGetInt32(arg));
+    if (!code) init_free(DatumGetInt32(arg)); else work.shared->exited = true; // its pid kept for pg_conf, see init_work(), but not one to wake up any more
 }
 
 static void work_stop(const Work *w) {
@@ -1557,6 +1557,7 @@ void work_main(Datum main_arg) {
     before_shmem_exit(work_shmem_exit, main_arg);
     if (init_work_gone(main_arg)) { ereport(LOG, (errmsg("entry no longer in pg_task.json, or taken over by another pg_work"))); return; } // restarted by the postmaster after its entry is gone, or another pg_work was started for it, which pg_conf, with no handle of it, marked in its slot: exit cleanly, for it not to be restarted again, freeing its slot, before connecting, which may well be why it was restarted
     work.shared->pid = MyProcPid; // alive, for pg_conf not to start another one for its entry, see init_work()
+    work.shared->exited = false; // restarted, its slot kept, see work_shmem_exit()
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGINT, work_idle);
     pqsignal(SIGTERM, die); // terminate at the next CHECK_FOR_INTERRUPTS(), as a backend does, rather than in the default handler of background workers, whose FATAL right there can come in the middle of a commit
