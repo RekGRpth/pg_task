@@ -1,4 +1,12 @@
 -- the transaction_timeout of the settings of the database, from 17 on, is for the transactions of tasks, not for those of pg_work itself, which it ended with FATAL, taking pg_work down with every remote task it runs: pg_work keeps going under one of 1 ms
+-- pg_work restarted after a second, whatever the earlier tests' ALTER SYSTEM RESET of it left, for one pg_conf registers anew meanwhile too
+ALTER SYSTEM SET pg_work.restart = 1;
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
 DO $body$ BEGIN
     IF current_setting('server_version_num')::int >= 170000 THEN EXECUTE format('ALTER DATABASE %I SET transaction_timeout = %L', current_database(), '1ms'); END IF;
 END;$body$ LANGUAGE plpgsql;
@@ -65,3 +73,10 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work to be restarted without the timeout and become idle'; END IF;
 END;$body$ LANGUAGE plpgsql;
+ALTER SYSTEM RESET pg_work.restart;
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+

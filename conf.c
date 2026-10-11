@@ -42,6 +42,7 @@ typedef struct Registered {
     int hash;
     int slot;
     int64 reg;
+    int restart; // the pg_work.restart of its entry, to start it again no sooner after a clean exit, see conf_exited()
 } Registered;
 
 // tells a registration of pg_work from any other, across restarts of pg_conf too, for its slot to be freed only while still its, see init_free_work()
@@ -117,6 +118,7 @@ static void conf_work(Work *w, bool in_use) {
             r->hash = w->shared->hash;
             r->slot = slot;
             r->reg = w->shared->reg;
+            r->restart = w->restart;
             strlcpy(r->data, w->shared->data, sizeof(r->data));
             strlcpy(r->user, w->shared->user, sizeof(r->user));
             dlist_push_tail(&reg_head, &r->node);
@@ -258,22 +260,25 @@ static void conf_reload(void) {
     conf_check();
 }
 
-// a pg_work of pg_conf exited cleanly, its slot freed by itself, as it does once it finds its entry gone: its entry, put back meanwhile, by a reload it ignored on its way out, with its lock still held, for conf_check() to start no other one then, is to be started again now; one that crashed keeps its slot, for the postmaster to restart it after its pg_work.restart, not sooner
-static bool conf_exited(void) {
+// a pg_work of pg_conf exited cleanly, its slot freed by itself, as it does once it finds its entry gone: its entry, put back meanwhile, by a reload it ignored on its way out, with its lock still held, for conf_check() to start no other one then, is to be started again, by conf_check() once its pg_work.restart has passed; one that crashed keeps its slot, for the postmaster to restart it after its pg_work.restart, not sooner
+static void conf_exited(void) {
     dlist_iter iter;
     dlist_foreach(iter, &reg_head) {
         Registered *r = dlist_container(Registered, node, iter.cur);
         pid_t pid;
-        if (GetBackgroundWorkerPid(r->handle, &pid) == BGWH_STOPPED && !init_held_work(r->slot, r->reg)) return true;
+        // after its pg_work.restart, as the postmaster restarts one that crashed, rather than at once: one that exits as soon as it starts, its entry found by pg_conf but not by pg_work, which reads the settings of its own database and role, would be started over and over
+        if (GetBackgroundWorkerPid(r->handle, &pid) == BGWH_STOPPED && !init_held_work(r->slot, r->reg)) {
+            TimestampTz at = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), (int64)r->restart * 1000);
+            if (!retry || at < retry) retry = at;
+        }
     }
-    return false;
 }
 
 static void conf_latch(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
     if (ConfigReloadPending) conf_reload();
-    else if (conf_exited()) conf_check(); // woken by the notice of a pg_work stopped, see bgw_notify_pid
+    else conf_exited(); // woken by the notice of a pg_work stopped, see bgw_notify_pid, maybe
 }
 
 // a cancel, of pg_cancel_backend() or of a statement_timeout of the server, its database or its role, which pg_conf's own queries, a CREATE DATABASE copying a large template say, don't go by, as pg_work's don't, see work_idle(): no more than a wake-up, rather than an error failing its check of the entries, or, out of it, taking pg_conf down, till its pg_conf.restart; but the lock timeout of the DDL that makes a role, see make_ddl()
