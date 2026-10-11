@@ -1507,7 +1507,7 @@ static void work_sleep(Work *w) {
     SPI_finish_my();
     if (dlist_is_empty(&head)) {
         // the wake-up trigger signals from within the transaction that inserts or plans the task, before it commits, so the pass right after may well not see it yet: not one to count towards going idle, which waits with no timeout for a task it doesn't see, but for the next one
-        if (woken) woken = false; else idle_count++;
+        if (woken) { woken = false; idle_count = 0; } else idle_count++; // woken up, not idle, as the reset of the loop's top, see work_main(), comes only after this pass, the one right after a wake-up
     } else {
         idle_count = 0;
         woken = false;

@@ -467,9 +467,10 @@ void task_error_data(Task *t, const ErrorData *edata) {
 }
 
 static void task_shmem_exit(int code, Datum arg) {
+    Shared shared = *get_task()->shared; // a copy, of the table of the task to wake its pg_work by, the slot freed first, for that pg_work, woken, to find it free, see init_task_pids()
     elog(DEBUG1, "code = %i", code);
-    init_work_wake(get_task()->shared);
     init_free(DatumGetInt32(arg));
+    init_work_wake(&shared);
 }
 
 static void task_reload(void) {
