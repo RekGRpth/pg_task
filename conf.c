@@ -10,6 +10,7 @@
 #include <utils/builtins.h>
 #include <utils/memutils.h>
 #include <utils/ps_status.h>
+#include <utils/timeout.h>
 #include <utils/timestamp.h>
 
 #if PG_VERSION_NUM >= 100000
@@ -275,10 +276,22 @@ static void conf_latch(void) {
     else if (conf_exited()) conf_check(); // woken by the notice of a pg_work stopped, see bgw_notify_pid
 }
 
+// a cancel, of pg_cancel_backend() or of a statement_timeout of the server, its database or its role, which pg_conf's own queries, a CREATE DATABASE copying a large template say, don't go by, as pg_work's don't, see work_idle(): no more than a wake-up, rather than an error failing its check of the entries, or, out of it, taking pg_conf down, till its pg_conf.restart; but the lock timeout of the DDL that makes a role, see make_ddl()
+static void conf_cancel(SIGNAL_ARGS) {
+    int save_errno = errno;
+    if (make_lock_timeout && get_timeout_indicator(LOCK_TIMEOUT, false)) {
+        InterruptPending = true;
+        QueryCancelPending = true;
+    }
+    SetLatch(MyLatch);
+    errno = save_errno;
+}
+
 void conf_main(Datum main_arg) {
     dlist_init(&reg_head);
     before_shmem_exit(conf_exit, main_arg);
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
+    pqsignal(SIGINT, conf_cancel);
     pqsignal(SIGTERM, die); // terminate at the next CHECK_FOR_INTERRUPTS(), as a backend does, rather than in the default handler of background workers, whose FATAL right there can come in the middle of a commit
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL);

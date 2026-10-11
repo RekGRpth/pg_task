@@ -1,0 +1,68 @@
+-- a cancel of pg_conf, of pg_cancel_backend() or of a statement_timeout, only wakes it up: pg_conf stays, rather than go down till its pg_conf.restart, and an entry whose CREATE DATABASE takes longer than the statement_timeout of the server is started still
+SELECT pid AS conf_pid FROM pg_catalog.pg_stat_activity WHERE application_name = 'pg_conf'
+\gset
+SELECT pg_cancel_backend(:conf_pid) AS cancelled;
+ cancelled 
+-----------
+ t
+(1 row)
+
+SELECT pg_sleep(1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+SELECT pg_stat_clear_snapshot();
+ pg_stat_clear_snapshot 
+------------------------
+ 
+(1 row)
+
+SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE pid = :conf_pid AND application_name = 'pg_conf') AS conf_stays;
+ conf_stays 
+------------
+ t
+(1 row)
+
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT left(:'json_baseline', -1) || ',{"data":"conf_cancel_data"}]' AS json_val
+\gset
+-- for the server, not for this session
+SET statement_timeout = 0;
+ALTER SYSTEM SET statement_timeout = '5ms';
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = 'conf_cancel_data') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of database conf_cancel_data'; END IF;
+END;$body$ LANGUAGE plpgsql;
+ALTER SYSTEM RESET statement_timeout;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE datname = 'conf_cancel_data' OR usename = 'conf_cancel_data') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for backend(s) of database or role conf_cancel_data to disconnect'; END IF;
+END;$body$ LANGUAGE plpgsql;
+DROP DATABASE IF EXISTS conf_cancel_data;
+DROP ROLE IF EXISTS conf_cancel_data;
+RESET statement_timeout;
