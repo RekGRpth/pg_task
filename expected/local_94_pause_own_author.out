@@ -1,0 +1,26 @@
+-- the pause of a task of a negative max holds the whole of its group, the tasks of other authors too, but puts off the plan of only those of its own author: the rows of another, which row level security keeps it from changing itself, are left as they are
+SET client_min_messages = warning;
+CREATE ROLE task_pause_a LOGIN;
+CREATE ROLE task_pause_b LOGIN;
+RESET client_min_messages;
+DELETE FROM task WHERE "group" = 'pause_own_author';
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct, quote_literal(CURRENT_TIMESTAMP + interval '1 s') AS ct1
+\gset
+INSERT INTO task ("group", input, max, plan, "user") VALUES ('pause_own_author', 'SELECT 1', -2000, :ct, 'task_pause_a'), ('pause_own_author', 'SELECT 2', -2000, :ct1, 'task_pause_a'), ('pause_own_author', 'SELECT 3', -2000, :ct1, 'task_pause_b');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'pause_own_author' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''pause_own_author'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT input, "user", state, output, plan = :ct1::timestamptz AS plan_left, start >= :ct::timestamptz + interval '2 s' AS held_by_pause FROM task WHERE "group" = 'pause_own_author' AND input <> 'SELECT 1' ORDER BY input;
+  input   |     user     | state | output | plan_left | held_by_pause 
+----------+--------------+-------+--------+-----------+---------------
+ SELECT 2 | task_pause_a | DONE  | 2      | f         | t
+ SELECT 3 | task_pause_b | DONE  | 3      | t         | t
+(2 rows)
+
+DELETE FROM task WHERE "group" = 'pause_own_author';
+DROP ROLE task_pause_a;
+DROP ROLE task_pause_b;

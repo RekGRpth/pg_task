@@ -152,10 +152,10 @@ static void task_insert(const Task *t) {
 
 // the pause of a negative max holds every task of the group planned within it, not only those already due: with drift until |max| after now, as of the end of the task just done; without, as repeat does, until the first time after now that is a multiple of |max| after the plan of that task, so that the group keeps its pace; the end of the pause task_done() has the update of that task return, whose max and drift schedule it, not those of each task held, and as of the time of that update, not of this one, which the statements in between, of the bookkeeping, logged with up to a gigabyte of output say, put later, maybe past the next multiple of |max|: the very pause the group keeps for those planned later too, see init_pause()
 static void task_update(const Task *t, TimestampTz until) {
-    char nulls[] = {' ', ' ', ' ', t->remote ? ' ' : 'n'};
-    Datum values[] = {Int32GetDatum(t->shared->hash), TimestampTzGetDatum(until), CStringGetTextDatum(t->group), t->remote ? CStringGetTextDatum(t->remote) : (Datum)0}; // in the memory of SPI, within task_done(), freed with it, the bookkeeping failing too
+    char nulls[] = {' ', ' ', ' ', t->remote ? ' ' : 'n', ' '};
+    Datum values[] = {Int32GetDatum(t->shared->hash), TimestampTzGetDatum(until), CStringGetTextDatum(t->group), t->remote ? CStringGetTextDatum(t->remote) : (Datum)0, CStringGetTextDatum(t->shared->owner)}; // in the memory of SPI, within task_done(), freed with it, the bookkeeping failing too
     Portal portal;
-    static Oid argtypes[] = {INT4OID, TIMESTAMPTZOID, TEXTOID, TEXTOID};
+    static Oid argtypes[] = {INT4OID, TIMESTAMPTZOID, TEXTOID, TEXTOID, TEXTOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     elog(DEBUG1, "hash = %i", t->shared->hash);
@@ -163,9 +163,10 @@ static void task_update(const Task *t, TimestampTz until) {
     if (!src.data) {
         initStringInfoMy(&src);
         // only the rows no one else holds, for a while, say, as the taking of tasks does, rather than wait for them, the worker, or pg_work for a remote task, with every remote task it runs: the one held is changed by whoever holds it
+        // and only those of the author of the task done, as task_live() takes the next one: the rows of another, which row level security keeps it from changing itself, are held by the pause of the group all the same, see init_pause(), their plans left as they are
         appendStringInfo(&src, SQL(
             UPDATE %1$s AS t SET "plan" = $2 FROM (
-                SELECT "id" FROM %1$s WHERE "plan" OPERATOR(pg_catalog.<) $2 AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%2$s')) OPERATOR(pg_catalog.=) $1 AND "group" OPERATOR(pg_catalog.=) $3 AND ("remote" OPERATOR(pg_catalog.=) $4 OR ("remote" IS NULL AND $4 IS NULL)) AND "max" OPERATOR(pg_catalog.<) 0 FOR NO KEY UPDATE %3$s
+                SELECT "id" FROM %1$s WHERE "plan" OPERATOR(pg_catalog.<) $2 AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%2$s')) OPERATOR(pg_catalog.=) $1 AND "group" OPERATOR(pg_catalog.=) $3 AND ("remote" OPERATOR(pg_catalog.=) $4 OR ("remote" IS NULL AND $4 IS NULL)) AND ("user")::pg_catalog.text OPERATOR(pg_catalog.=) $5 AND "max" OPERATOR(pg_catalog.<) 0 FOR NO KEY UPDATE %3$s
             ) AS u WHERE t.id OPERATOR(pg_catalog.=) u.id RETURNING t.id
         ), t->work->schema_table, "",
 #if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
