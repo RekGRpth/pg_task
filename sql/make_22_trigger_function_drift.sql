@@ -4,7 +4,8 @@ SELECT current_user AS test_user
 \gset
 -- a table left by an earlier version: a trigger firing on other events (wake_up before it woke pg_work up on DELETE and UPDATE OF plan too), a trigger on another column, and a function with the right body but neither security nor search_path right
 CREATE SCHEMA task_trigger_drift_test_schema;
-CREATE TABLE task_trigger_drift_test_schema.task_trigger_drift_test ("id" serial8 PRIMARY KEY, "plan" timestamptz);
+CREATE TYPE task_trigger_drift_test_schema.state AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');
+CREATE TABLE task_trigger_drift_test_schema.task_trigger_drift_test ("id" serial8 PRIMARY KEY, "plan" timestamptz, "state" task_trigger_drift_test_schema.state);
 CREATE FUNCTION task_trigger_drift_test_schema.task_trigger_drift_test_wake_up() RETURNS trigger AS $function$BEGIN RETURN NULL; END;$function$ LANGUAGE plpgsql;
 CREATE TRIGGER task_trigger_drift_test_wake_up AFTER INSERT ON task_trigger_drift_test_schema.task_trigger_drift_test FOR EACH STATEMENT EXECUTE PROCEDURE task_trigger_drift_test_schema.task_trigger_drift_test_wake_up();
 DO $body$ BEGIN EXECUTE format('CREATE FUNCTION task_trigger_drift_test_schema.task_trigger_drift_test_group() RETURNS trigger SECURITY DEFINER AS %L LANGUAGE plpgsql', (SELECT prosrc FROM pg_catalog.pg_proc WHERE oid = (SELECT tgfoid FROM pg_catalog.pg_trigger WHERE tgrelid = 'task'::regclass AND tgname = 'task_group'))); END;$body$ LANGUAGE plpgsql;

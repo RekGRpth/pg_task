@@ -721,6 +721,12 @@ void make_table(const Work *w) {
         SELECT pg_catalog.pg_class.oid FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) relnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND relname OPERATOR(pg_catalog.=) $2 AND relkind OPERATOR(pg_catalog.=) ANY(ARRAY['r', 'p']::"char"[])
     ));
     w->shared->oid = make_oid(src.data, countof(argtypes), argtypes, values, NULL);
+    // a table of a superuser's that is not one of pg_task's, which pg_task.table of the database's owner may name, is not for pg_work to add its columns, triggers and policy to: one of pg_task's has the state column of the enum of states pg_work made in its schema
+    resetStringInfo(&src);
+    appendStringInfo(&src, SQL(
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_attribute JOIN pg_catalog.pg_type ON pg_catalog.pg_type.oid OPERATOR(pg_catalog.=) atttypid JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) 'state' AND nspname OPERATOR(pg_catalog.=) $1 AND typname OPERATOR(pg_catalog.=) 'state') AS "test"
+    ), w->shared->oid);
+    if (!make_test(src.data, 1, argtypes, values, NULL)) ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE), errmsg("table %s exists and is not a task table of pg_task", w->schema_table), errdetail("It has no column \"state\" of type %s.", w->schema_type), errhint("Have pg_task.table name another table, or drop this one, for pg_work to make its own.")));
     pfree(src.data);
     pfree((void *)values[0]);
     pfree((void *)values[1]);
