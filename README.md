@@ -239,7 +239,7 @@ Each path has its own restrictions on what `input` can contain:
 
 ## Patterns
 
-`pg_task` is intentionally minimal — no built-in retry, backoff or conditional repeat. Both of the recipes below build the missing behavior entirely in SQL, on top of mechanics already described above: the atomicity of running `input` (see Three ways to run `input`), and the fact that `pg_task` only ever touches the columns it created (see Self-provisioning and the helper triggers), so your own columns and triggers on `task` compose freely with it. No core code changes needed for either.
+`pg_task` is intentionally minimal — no built-in retry, backoff or conditional repeat. Both of the recipes below build the missing behavior entirely in SQL, on top of mechanics already described above: the atomicity of running `input` (see Three ways to run `input`), and the fact that `pg_task` only ever touches the columns it created (see Self-provisioning and the helper triggers), so your own columns and triggers on `task` compose freely with it. No core code changes needed for either. The trigger functions below fire within `pg_task`'s own queries too, its bookkeeping inserting a repeat or setting a task `DONE`, which run with a `search_path` of `pg_catalog, pg_temp` (see Security considerations): each carries `SET search_path FROM CURRENT`, the `search_path` of the session that creates it, for the task table and the other objects it names unqualified to be found there too — create them with a `search_path` that has the task table's schema, or qualify the names instead.
 
 ### Retry until success
 
@@ -288,7 +288,7 @@ BEGIN
     ) USING NEW.id;
     RETURN NEW;
 END;
-$f$ LANGUAGE plpgsql;
+$f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 
 CREATE TRIGGER task_retry_trigger AFTER UPDATE OF state ON task
 FOR EACH ROW WHEN (NEW.state = 'FAIL') EXECUTE FUNCTION task_retry();
@@ -317,7 +317,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$f$ LANGUAGE plpgsql;
+$f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 CREATE TRIGGER task_depend_insert BEFORE INSERT ON task
 FOR EACH ROW EXECUTE FUNCTION task_depend_insert();
 
@@ -333,7 +333,7 @@ BEGIN
             OR (NEW.state = 'FAIL' AND depend IN ('failure', 'always')));
     RETURN NEW;
 END;
-$f$ LANGUAGE plpgsql;
+$f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 CREATE TRIGGER task_depend_update AFTER UPDATE OF state ON task
 FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE FUNCTION task_depend_update();
 ```
@@ -424,7 +424,7 @@ BEGIN
     ) USING NEW.id;
     RETURN NEW;
 END;
-$f$ LANGUAGE plpgsql;
+$f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 
 CREATE TRIGGER task_cron_trigger AFTER UPDATE OF state ON task
 FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE FUNCTION task_cron();
@@ -449,7 +449,7 @@ BEGIN
     )::text);
     RETURN NEW;
 END;
-$f$ LANGUAGE plpgsql;
+$f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 
 CREATE TRIGGER task_notify_trigger AFTER UPDATE OF state ON task
 FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE FUNCTION task_notify();
@@ -479,7 +479,7 @@ BEGIN
     END;
     RETURN NEW;
 END;
-$f$ LANGUAGE plpgsql;
+$f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 
 CREATE TRIGGER task_hook_trigger AFTER UPDATE OF state ON task
 FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE FUNCTION task_hook();
@@ -506,7 +506,7 @@ BEGIN
     END;
     RETURN OLD;
 END;
-$f$ LANGUAGE plpgsql;
+$f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 
 CREATE TRIGGER task_archive_trigger AFTER DELETE ON task
 FOR EACH ROW EXECUTE FUNCTION task_archive();
@@ -590,7 +590,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$f$ LANGUAGE plpgsql;
+$f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 
 CREATE TRIGGER task_trace_insert_trigger BEFORE INSERT ON task
 FOR EACH ROW EXECUTE FUNCTION task_trace_insert();
@@ -620,7 +620,7 @@ BEGIN
     NEW.state := 'STOP';
     RETURN NEW;
 END;
-$f$ LANGUAGE plpgsql;
+$f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 
 CREATE TRIGGER task_dry_run_trigger BEFORE INSERT ON task
 FOR EACH ROW WHEN (NEW.dry_run) EXECUTE FUNCTION task_dry_run();
