@@ -279,6 +279,18 @@ static void task_insert_step(Task *t, TimestampTz pause) { task_insert(t); }
 static void task_delete_step(Task *t, TimestampTz pause) { task_delete(t); }
 static void task_update_step(Task *t, TimestampTz pause) { task_update(t, pause); }
 
+// a string buffer as a text in place, its data moved past the header of a varlena, rather than a copy of it, of up to a gigabyte, the output of a task say, see task_done(): task_untext() moves it back, for the bookkeeping put off to be tried again with it, see work_bookkeeping()
+static Datum task_text(StringInfo buf) {
+    enlargeStringInfo(buf, VARHDRSZ);
+    memmove(buf->data + VARHDRSZ, buf->data, buf->len + 1);
+    SET_VARSIZE(buf->data, buf->len + VARHDRSZ);
+    return PointerGetDatum(buf->data);
+}
+
+static void task_untext(StringInfo buf) {
+    memmove(buf->data, buf->data + VARHDRSZ, buf->len + 1);
+}
+
 bool task_done(Task *t, bool live) {
     bool delete = false, exit = true, insert = false, update = false;
     TimestampTz pause = 0;
@@ -309,11 +321,19 @@ bool task_done(Task *t, bool live) {
         RESUME_INTERRUPTS();
         return true;
     }
-    // in the memory of SPI, freed with it, the bookkeeping failing too, rather than a copy of up to a gigabyte of output kept in pg_work every time; and only once the row is found not held, see above, rather than copied on every try of the bookkeeping put off, see work_pending()
-    if (t->output.data) values[1] = CStringGetTextDatum(t->output.data);
-    if (t->error.data) values[2] = CStringGetTextDatum(t->error.data);
-    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
+    // the output and the error as they are, no copy of up to a gigabyte of either, see task_text(), and only once the row is found not held, see above, rather than on every try of the bookkeeping put off, see work_pending(); with a plan generic from the first, whose planning copies neither, see SPI_prepare_generic_my(): one copy of them still, of the row put together, before TOAST takes them out of it
+    if (t->output.data) values[1] = task_text(&t->output);
+    if (t->error.data) values[2] = task_text(&t->error);
+    if (!plan) plan = SPI_prepare_generic_my(src.data, countof(argtypes), argtypes);
+    PG_TRY();
+        SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
+    PG_CATCH();
+        if (values[1]) task_untext(&t->output);
+        if (values[2]) task_untext(&t->error);
+        PG_RE_THROW();
+    PG_END_TRY();
+    if (values[1]) task_untext(&t->output);
+    if (values[2]) task_untext(&t->error);
     if (SPI_processed != 1) { ereport(WARNING, (errmsg("id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed))); exit = true; } else {
         delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false, BOOLOID));
         exit = !live || !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false, BOOLOID));
@@ -323,8 +343,6 @@ bool task_done(Task *t, bool live) {
         if (update) pause = DatumGetTimestampTz(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "pause", true, TIMESTAMPTZOID));
         elog(DEBUG1, "delete = %s, exit = %s, insert = %s, update = %s", delete ? "true" : "false", exit ? "true" : "false", insert ? "true" : "false", update ? "true" : "false");
     }
-    if (values[1]) pfree((void *)values[1]);
-    if (values[2]) pfree((void *)values[2]);
     if (insert) task_step(t, task_insert_step, 0, "repeat not inserted");
     if (delete) task_step(t, task_delete_step, 0, "not deleted");
     if (pause) task_step(t, task_update_step, pause, "tasks of its group not paused"); // none for a plan of -infinity, due at once, which can't be subtracted from, failing the bookkeeping outside any error handling, see above

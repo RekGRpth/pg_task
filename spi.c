@@ -126,14 +126,23 @@ Portal SPI_cursor_open_my(const char *src, SPIPlanPtr plan, Datum *values, const
     return portal;
 }
 
-SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
+static SPIPlanPtr SPI_prepare_cursor_my(const char *src, int nargs, Oid *argtypes, int cursorOptions) {
     int rc;
     SPIPlanPtr plan;
     check_log_statement_my(STMT_PARSE, src, 0, NULL, NULL, NULL, false);
-    if (!(plan = SPI_prepare(src, nargs, argtypes))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_prepare failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
+    if (!(plan = SPI_prepare_cursor(src, nargs, argtypes, cursorOptions))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_prepare failed"), errdetail("%s", SPI_result_code_string(SPI_result)), errcontext("%s", src)));
     if ((rc = SPI_keepplan(plan))) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_keepplan failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
     check_log_duration_my(STMT_PARSE, src, 0, NULL, NULL, NULL);
     return plan;
+}
+
+SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes) {
+    return SPI_prepare_cursor_my(src, nargs, argtypes, 0);
+}
+
+// a plan generic from the first, rather than one custom for each of the first five, whose planning copies the values of the parameters into it, of up to a gigabyte, the output of a task say, twice, see task_done()
+SPIPlanPtr SPI_prepare_generic_my(const char *src, int nargs, Oid *argtypes) {
+    return SPI_prepare_cursor_my(src, nargs, argtypes, CURSOR_OPT_GENERIC_PLAN);
 }
 
 // a setting of the bookkeeping, for its transaction only, see SPI_connect_my()

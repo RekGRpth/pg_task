@@ -193,6 +193,7 @@ PGDLLEXPORT void work_main(Datum main_arg);
 Portal SPI_cursor_open_my(const char *src, SPIPlanPtr plan, Datum *values, const char *nulls, bool read_only);
 Shared *init_shared(Datum main_arg);
 SPIPlanPtr SPI_prepare_my(const char *src, int nargs, Oid *argtypes);
+SPIPlanPtr SPI_prepare_generic_my(const char *src, int nargs, Oid *argtypes);
 Task *get_task(void);
 void task_line(Task *t);
 void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len, bool string, char escape, char quote);
