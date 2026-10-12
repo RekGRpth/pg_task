@@ -5,9 +5,11 @@ SELECT pid AS work_pid FROM pg_catalog.pg_stat_activity WHERE application_name L
 SELECT set_config('pg_task_test.work_pid', :'work_pid', false) IS NOT NULL AS work_pid_saved;
 INSERT INTO task ("group", input, plan) VALUES ('infinite_plan_held', 'SELECT 1', 'infinity');
 INSERT INTO task ("group", input, plan, max, repeat) VALUES ('infinite_plan_due', 'SELECT 2', '-infinity', -1000, '1 hour');
+-- and one with no repeat, nor a pause, run at once too, rather than gone at once, its active window, from -infinity, taken for one past
+INSERT INTO task ("group", input, plan) VALUES ('infinite_plan_once', 'SELECT 3', '-infinity');
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
-        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'infinite_plan_due' AND state = 'DONE') AND EXISTS (SELECT 1 FROM task WHERE "group" = 'infinite_plan_due' AND state = 'PLAN') THEN ok := true; EXIT; END IF;
+        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'infinite_plan_once' AND state = 'DONE') AND EXISTS (SELECT 1 FROM task WHERE "group" = 'infinite_plan_due' AND state = 'DONE') AND EXISTS (SELECT 1 FROM task WHERE "group" = 'infinite_plan_due' AND state = 'PLAN') THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(0.1);
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task in group ''infinite_plan_due'' to be done and repeated'; END IF;

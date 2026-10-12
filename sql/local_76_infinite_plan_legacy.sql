@@ -1,4 +1,4 @@
--- a plan of infinity from before it was refused, which pg_work's own updates of the row keep, doesn't fail them, as the check of the plan, refused as set, does only for a plan set: the task not to run goes GONE, the one with a repeat runs, its next one planned from now on
+-- a plan of infinity from before it was refused, which pg_work's own updates of the row keep, doesn't fail them, as the check of the plan, refused as set, does only for a plan set: the one with no repeat runs at once, as one of -infinity set now does, and so does the one with a repeat, its next one planned from now on
 DELETE FROM task WHERE "group" LIKE 'infinite_legacy_%';
 SET session_replication_role = replica;
 INSERT INTO task ("group", input, plan) VALUES ('infinite_legacy_once', 'SELECT 1', '-infinity');
