@@ -30,6 +30,9 @@ static bool held;
 static bool switched;
 static int save_sec_context;
 static Oid save_userid;
+#if PG_VERSION_NUM < 180000
+static MemoryContext prior = NULL; // the memory before the transaction SPI_connect_my() started, to go back to once it's over, as PostgreSQL does from 18 on, rather than to TopMemoryContext, where what the caller allocates next, the memory of an attempt of pg_conf, say, see conf_check(), would never be freed
+#endif
 
 static const char *stmt_type(STMT_TYPE stmt) {
     switch (stmt) {
@@ -164,6 +167,9 @@ void SPI_connect_my(const char *src, Oid userid) {
     debug_query_string = src;
     pgstat_report_activity(STATE_RUNNING, src);
     SetCurrentStatementStartTimestamp();
+#if PG_VERSION_NUM < 180000
+    prior = IsTransactionOrTransactionBlock() ? NULL : CurrentMemoryContext; // none within a transaction going on, whose memory may be gone by the end of this one
+#endif
     StartTransactionCommand();
     // the bookkeeping of a task, in its author's session, must not go by the transaction characteristics or the timeouts of that session, which the task's input or the author's role may have set (default_transaction_read_only = on would fail the bookkeeping, and the task run again on reset): read write and read committed, before any snapshot, and no timeouts, as for the scheduler's own queries in pg_work
     if ((bookkeeping = OidIsValid(userid))) {
@@ -222,6 +228,10 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_abort_my(void) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     AbortCurrentTransaction();
+#if PG_VERSION_NUM < 180000
+    if (prior && !IsTransactionOrTransactionBlock()) MemoryContextSwitchTo(prior);
+    prior = NULL;
+#endif
     bookkeeping = false;
 #ifdef HOLD_CANCEL_INTERRUPTS
     held = false; // nothing to resume: called only once an error was caught, whose errfinish() let cancels through again by itself
@@ -247,6 +257,10 @@ void SPI_finish_my(void) {
 #ifdef HOLD_CANCEL_INTERRUPTS
     if (held) RESUME_CANCEL_INTERRUPTS();
     held = false;
+#endif
+#if PG_VERSION_NUM < 180000
+    if (prior && !IsTransactionOrTransactionBlock()) MemoryContextSwitchTo(prior); // and after ProcessCompletedNotifies(), whose transaction of its own before 13 goes to TopMemoryContext too
+    prior = NULL;
 #endif
     was_logged = false;
     pgstat_report_stat(false);
