@@ -1079,15 +1079,22 @@ static void work_stop(const Work *w) {
     set_ps_display_my("idle");
 }
 
+// whether a remote task may go without a password: its user a superuser, as a superuser may connect without one, and one pg_task.user may act as, SET ROLE to, itself a superuser or a member of it, as for a local task, see work_owner(); not one pg_task.user, not a superuser, merely names, which the user column lets the table owner do, to connect as the OS user of the server, by peer or trust, a superuser
 static bool work_superuser(const char *user) {
     Datum values[1];
     static Oid argtypes[] = {TEXTOID};
     bool result;
     StringInfoData src;
     initStringInfoMy(&src);
-    appendStringInfoString(&src, SQL(
-        SELECT COALESCE((SELECT "rolsuper" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) $1), false) AS "test"
-    ));
+    appendStringInfo(&src, SQL(
+        SELECT COALESCE((SELECT "rolsuper" AND pg_catalog.pg_has_role(current_user, "oid", '%s') FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) $1), false) AS "test"
+    ),
+#if PG_VERSION_NUM >= 160000
+        "SET"
+#else
+        "MEMBER"
+#endif
+    );
     SPI_connect_my(src.data, InvalidOid);
     values[0] = CStringGetTextDatum(user); // in the memory of SPI, freed with it
     SPI_execute_with_args_my(src.data, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);

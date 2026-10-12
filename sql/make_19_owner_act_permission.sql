@@ -34,6 +34,15 @@ SELECT "user", state, error LIKE '%permission denied to run task as role "task_a
 -- the repeat is inserted as pg_task.user, and must still run as the author, not as pg_task.user
 SELECT "user", output, state FROM task_act_schema.task WHERE "group" = 'member' AND state::text = 'DONE' ORDER BY id LIMIT 2;
 SELECT "user" FROM task_act_schema.task WHERE "group" = 'stranger_remote' ORDER BY id LIMIT 2;
+-- a remote task pg_task.user, not a superuser, names a superuser for, which the user column lets the table owner do, needs a password still, rather than connect as the OS user of the server, by peer or trust, a superuser
+INSERT INTO task_act_schema.task ("group", input, "user", remote) VALUES ('superuser_remote', 'SELECT current_user', current_user, 'dbname=' || :'DBNAME');
+DO $body$ BEGIN
+    FOR i IN 1..100 LOOP
+        EXIT WHEN (SELECT state FROM task_act_schema.task WHERE "group" = 'superuser_remote')::text NOT IN ('PLAN', 'TAKE', 'WORK');
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, output, error LIKE '%password is required%' AS refused FROM task_act_schema.task WHERE "group" = 'superuser_remote';
 DO $body$ BEGIN
     FOR i IN 1..100 LOOP
         UPDATE task_act_schema.task SET state = 'STOP' WHERE "group" IN ('member', 'stranger_remote') AND state::text = 'PLAN';
