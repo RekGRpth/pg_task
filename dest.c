@@ -220,6 +220,50 @@ static void dest_execute_prepared(const char *src, ExecuteStmt *stmt) {
 }
 
 // alone: src is stmt only, rather than the whole input of several statements, which spi mode before 10 runs at once
+#if PG_VERSION_NUM >= 180000
+#define dest_returning(stmt) ((stmt)->returningClause != NULL)
+#else
+#define dest_returning(stmt) ((stmt)->returningList != NIL)
+#endif
+
+// a statement whose result is rows only, a SELECT, not one INTO a table, or a statement with RETURNING: for a cursor, see dest_execute_spi()
+static bool dest_spi_rows(Node *stmt) {
+    switch (nodeTag(stmt)) {
+        case T_SelectStmt: return !((SelectStmt *)stmt)->intoClause;
+        case T_InsertStmt: return dest_returning((InsertStmt *)stmt);
+        case T_UpdateStmt: return dest_returning((UpdateStmt *)stmt);
+        case T_DeleteStmt: return dest_returning((DeleteStmt *)stmt);
+#if PG_VERSION_NUM >= 170000
+        case T_MergeStmt: return dest_returning((MergeStmt *)stmt);
+#endif
+        default: return false;
+    }
+}
+
+// the statement as the context of an error of its rows fetched, as SPI_execute() has it, see dest_execute_spi()
+static void dest_spi_context(void *arg) {
+    errcontext("SQL statement \"%s\"", (const char *)arg);
+}
+
+// the rows of SPI_tuptable into the output, the first of all, first, after the header, if any, its size checked against the most a task may keep after each
+static void dest_spi_output(uint64 first) {
+    for (uint64 row = 0; row < SPI_processed; row++) {
+        task.skip = 1;
+        if (!task.output.data) initStringInfoMy(&task.output);
+        if (task.header && !first && !row && SPI_tuptable->tupdesc->natts > 1) headers(SPI_tuptable->tupdesc);
+        task_line(&task);
+        for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
+            char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
+            if (col > 1 && task.delimiter) appendStringInfoChar(&task.output, task.delimiter); // none for an empty one, as for quote and escape, rather than a NUL ending the output there
+            if (!value) appendStringInfoString(&task.output, task.null); else {
+                appendBinaryStringInfoEscapeQuote(&task.output, value, strlen(value), !init_oid_is_string(SPI_gettypeid(SPI_tuptable->tupdesc, col)) && task.string, task.escape, task.quote);
+                pfree(value);
+            }
+        }
+        if (task.output.len > (int)TASK_OUTPUT_MAX) ereport(ERROR, (errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED), errmsg("task output exceeds %lu bytes", (unsigned long)TASK_OUTPUT_MAX)));
+    }
+}
+
 static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     bool count = false;
     bool exists = false;
@@ -236,6 +280,32 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     if (IsA(stmt, CreateTableAsStmt) && ((CreateTableAsStmt *)stmt)->if_not_exists) exists = OidIsValid(RangeVarGetRelid(((CreateTableAsStmt *)stmt)->into->rel, NoLock, true));
 #endif
     if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); // for each statement of the input anew, as exec_simple_query() has it from 13 on in local mode, rather than once for all of them, see SPI_connect_my()
+    if (dest_spi_rows(stmt)) {
+        SPIPlanPtr plan = SPI_prepare(src, 0, NULL);
+        if (!plan) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_prepare failed"), errdetail("%s", SPI_result_code_string(SPI_result))));
+        // fetched a few rows at a time, each checked against the most of output a task may keep as it comes, see dest_spi_output(), rather than all of them first, gigabytes of a SELECT, say, in the worker's memory, with the worker, or the whole server, taken down by running out of it, as local mode and remote mode have it; only the rows, as below
+        if (SPI_is_cursor_plan(plan)) {
+            ErrorContextCallback context = {.callback = dest_spi_context, .arg = (void *)src, .previous = error_context_stack};
+            Portal portal;
+            uint64 rows = 0;
+            portal = SPI_cursor_open(NULL, plan, NULL, NULL, false); // which has the statement as the context of an error itself, as the fetches don't
+            error_context_stack = &context;
+            elog(DEBUG1, "id = %li, commandTag = %s, cursor", task.shared->id, tagname);
+            task.skip = 1;
+            do {
+                SPI_cursor_fetch(portal, true, init_task_fetch());
+                dest_spi_output(rows);
+                rows += SPI_processed;
+                SPI_freetuptable(SPI_tuptable);
+            } while (SPI_processed);
+            error_context_stack = context.previous;
+            SPI_cursor_close(portal);
+            SPI_freeplan(plan);
+            task.skip = 0;
+            return;
+        }
+        SPI_freeplan(plan);
+    }
     rc = SPI_execute(src, false, 0);
     switch (rc) {
         case SPI_ERROR_ARGUMENT: ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("invalid arguments"))); break;
@@ -265,21 +335,7 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
         case SPI_OK_UPDATE_RETURNING: task.skip = 1; break;
     }
     elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, tagname);
-    if (SPI_tuptable) for (uint64 row = 0; row < SPI_processed; row++) {
-        task.skip = 1;
-        if (!task.output.data) initStringInfoMy(&task.output);
-        if (task.header && !row && SPI_tuptable->tupdesc->natts > 1) headers(SPI_tuptable->tupdesc);
-        task_line(&task);
-        for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
-            char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
-            if (col > 1 && task.delimiter) appendStringInfoChar(&task.output, task.delimiter); // none for an empty one, as for quote and escape, rather than a NUL ending the output there
-            if (!value) appendStringInfoString(&task.output, task.null); else {
-                appendBinaryStringInfoEscapeQuote(&task.output, value, strlen(value), !init_oid_is_string(SPI_gettypeid(SPI_tuptable->tupdesc, col)) && task.string, task.escape, task.quote);
-                pfree(value);
-            }
-        }
-        if (task.output.len > (int)TASK_OUTPUT_MAX) ereport(ERROR, (errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED), errmsg("task output exceeds %lu bytes", (unsigned long)TASK_OUTPUT_MAX)));
-    }
+    if (SPI_tuptable) dest_spi_output(0);
     if (count) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, !strcmp(tagname, "INSERT") ? "%s 0 %lu" : "%s %lu", tagname, (unsigned long)SPI_processed);
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
     elog(DEBUG1, "id = %li, completionTag = %s", task.shared->id, completionTag);
