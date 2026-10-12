@@ -957,7 +957,7 @@ void make_user(const Work *w) {
     static Oid argtypes[] = {TEXTOID};
     StringInfoData src;
     set_ps_display_my("user");
-    initStringInfoMy(&src);
+    initStringInfo(&src); // in the memory of the attempt of pg_conf, reset after it, see conf_check(), rather than in TopMemoryContext, which an error would leave it in
     appendStringInfo(&src, SQL(
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_roles WHERE rolname OPERATOR(pg_catalog.=) $1) AS "test"
     ));
@@ -978,7 +978,7 @@ void make_data(const Work *w) {
     static Oid argtypes[] = {TEXTOID};
     StringInfoData src;
     set_ps_display_my("data");
-    initStringInfoMy(&src);
+    initStringInfo(&src); // in the memory of the attempt of pg_conf, reset after it, see conf_check(), rather than in TopMemoryContext, which an error would leave it in
     appendStringInfo(&src, SQL(
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_database WHERE datname OPERATOR(pg_catalog.=) $1) AS "test"
     ));

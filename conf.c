@@ -90,7 +90,9 @@ static void conf_free(Work *w) {
 static void conf_work(Work *w, bool in_use) {
     BackgroundWorkerHandle *handle;
     BackgroundWorker worker = {0};
+    bool registered;
     int slot;
+    MemoryContext oldMemoryContext;
     size_t len;
     set_ps_display_my("work");
     w->data = quote_identifier(w->shared->data);
@@ -113,7 +115,10 @@ static void conf_work(Work *w, bool in_use) {
     worker.bgw_notify_pid = MyProcPid;
     worker.bgw_restart_time = w->restart; // that of the role and database of the entry, rather than of pg_conf's own session
     worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-    if (!RegisterDynamicBackgroundWorker(&worker, &handle)) {
+    oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext); // the handle kept with its registration, past the memory of the attempt, see conf_check()
+    registered = RegisterDynamicBackgroundWorker(&worker, &handle);
+    MemoryContextSwitchTo(oldMemoryContext);
+    if (!registered) {
         init_free(slot);
         ereport(ERROR, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("could not register background worker"), errhint("Consider increasing configuration parameter \"max_worker_processes\".")));
     }
@@ -151,6 +156,7 @@ static void conf_check(void) {
     dlist_mutable_iter iter;
     MemoryContext oldMemoryContext = CurrentMemoryContext;
     Portal portal;
+    static MemoryContext workMemoryContext = NULL;
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     set_ps_display_my("check");
@@ -245,6 +251,9 @@ static void conf_check(void) {
         bool used = in_use[n++];
         if (!w->spawn) { conf_free(w); continue; }
         // an entry that can't be started, its role not made (a reserved name), its database neither (template1 in use), or no worker to be had, mustn't take pg_conf down, to be restarted into the same error over and over, keeping the entries after it from starting: report it and go on, for it to be tried again after its pg_work.restart, as the postmaster would restart its pg_work, see conf_main(), or on the next reload
+        // in a memory of its own, reset after every attempt, as what an error skipped the freeing of, the queries of make_user() and make_data(), the quoted names, the error make_ddl() threw again, would be left in the memory of pg_conf, a kilobyte or so on every retry of an entry that keeps failing, for as long as pg_conf runs
+        if (!workMemoryContext) workMemoryContext = AllocSetContextCreate(TopMemoryContext, "conf_work", ALLOCSET_DEFAULT_SIZES);
+        MemoryContextSwitchTo(workMemoryContext);
         PG_TRY();
             conf_work(w, used);
         PG_CATCH();
@@ -257,7 +266,10 @@ static void conf_check(void) {
             stmt_timeout_active_my(false);
             conf_retry_at(w->restart);
             conf_free(w);
+            if (MessageContext) MemoryContextResetAndDeleteChildren(MessageContext); // the parse and plan trees of a CREATE DATABASE of make_data() that failed, which it resets only once done
         PG_END_TRY();
+        MemoryContextSwitchTo(oldMemoryContext); // SPI_abort_my() goes back to the memory SPI was connected in, that of the attempt
+        MemoryContextReset(workMemoryContext);
     }
     pfree(in_use);
 }
