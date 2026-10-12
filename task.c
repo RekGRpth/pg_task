@@ -280,8 +280,7 @@ static void task_delete_step(Task *t, TimestampTz pause) { task_delete(t); }
 static void task_update_step(Task *t, TimestampTz pause) { task_update(t, pause); }
 
 // a string buffer as a text in place, its data moved past the header of a varlena, rather than a copy of it, of up to a gigabyte, the output of a task say, see task_done(): task_untext() moves it back, for the bookkeeping put off to be tried again with it, see work_bookkeeping()
-static Datum task_text(StringInfo buf) {
-    enlargeStringInfo(buf, VARHDRSZ);
+static Datum task_text(StringInfo buf) { // with the room for the header made already, see task_done()
     memmove(buf->data + VARHDRSZ, buf->data, buf->len + 1);
     SET_VARSIZE(buf->data, buf->len + VARHDRSZ);
     return PointerGetDatum(buf->data);
@@ -322,9 +321,12 @@ bool task_done(Task *t, bool live) {
         return true;
     }
     // the output and the error as they are, no copy of up to a gigabyte of either, see task_text(), and only once the row is found not held, see above, rather than on every try of the bookkeeping put off, see work_pending(); with a plan generic from the first, whose planning copies neither, see SPI_prepare_generic_my(): one copy of them still, of the row put together, before TOAST takes them out of it
+    if (!plan) plan = SPI_prepare_generic_my(src.data, countof(argtypes), argtypes);
+    // all that may fail before the shift, the plan, a deadlock on the lock of the table as it's parsed, say, which work_bookkeeping() tries again later, and the room for the header of either, rather than between it and the PG_TRY() that shifts them back, the output shifted once more on the next try then
+    if (t->output.data) enlargeStringInfo(&t->output, VARHDRSZ);
+    if (t->error.data) enlargeStringInfo(&t->error, VARHDRSZ);
     if (t->output.data) values[1] = task_text(&t->output);
     if (t->error.data) values[2] = task_text(&t->error);
-    if (!plan) plan = SPI_prepare_generic_my(src.data, countof(argtypes), argtypes);
     PG_TRY();
         SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
     PG_CATCH();
