@@ -274,12 +274,12 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
 #else
     const char *tagname = CreateCommandTag(stmt);
 #endif
+    if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else disable_timeout(STATEMENT_TIMEOUT, false); // for each statement of the input anew, as exec_simple_query() has it from 13 on in local mode, rather than once for all of them, see SPI_connect_my(); for an EXECUTE too, and none once the input set statement_timeout to 0, rather than the rest of the one of the statement before
     if (alone && IsA(stmt, ExecuteStmt)) { dest_execute_prepared(src, (ExecuteStmt *)stmt); return; }
 #if PG_VERSION_NUM >= 90500
     // CREATE TABLE AS with IF NOT EXISTS of a table that exists does nothing, which SPI tells only as no rows stored
     if (IsA(stmt, CreateTableAsStmt) && ((CreateTableAsStmt *)stmt)->if_not_exists) exists = OidIsValid(RangeVarGetRelid(((CreateTableAsStmt *)stmt)->into->rel, NoLock, true));
 #endif
-    if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); // for each statement of the input anew, as exec_simple_query() has it from 13 on in local mode, rather than once for all of them, see SPI_connect_my()
     if (dest_spi_rows(stmt)) {
         SPIPlanPtr plan = SPI_prepare(src, 0, NULL);
         if (!plan) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_prepare failed"), errdetail("%s", SPI_result_code_string(SPI_result))));

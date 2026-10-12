@@ -1,0 +1,18 @@
+-- in spi mode the timeout of a task bounds an EXECUTE anew too, not with what the statement before left of it, and goes once the input sets statement_timeout to 0, as in local mode: both done
+DELETE FROM task WHERE "group" = 'timeout_execute_reset';
+INSERT INTO task ("group", input, timeout) VALUES ('timeout_execute_reset', 'PREPARE timeout_execute_reset AS SELECT pg_sleep(0.6); SELECT pg_sleep(0.6); EXECUTE timeout_execute_reset', '1 sec'), ('timeout_execute_reset', 'SET statement_timeout = 0; SELECT pg_sleep(1.5)', '1 sec');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'timeout_execute_reset' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''timeout_execute_reset'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT left(input, 7) AS input, state, error FROM task WHERE "group" = 'timeout_execute_reset' ORDER BY id;
+  input  | state | error 
+---------+-------+-------
+ PREPARE | DONE  | 
+ SET sta | DONE  | 
+(2 rows)
+
+DELETE FROM task WHERE "group" = 'timeout_execute_reset';
