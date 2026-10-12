@@ -505,7 +505,7 @@ static void dest_discard(void) {
 static volatile sig_atomic_t running = false; // the task's input, rather than its bookkeeping, which a cancel must not fail
 static int quiet = 0; // the log_min_messages of the server, above FATAL, which dest_loud() let FATAL through for the input instead of
 static bool fatal = false; // the input failed with FATAL, see dest_emit_log()
-static bool failed = false; // the worker going down on an error of its own, out of the input, a trigger of the table refusing its WORK say, rather than terminated, see dest_shmem_exit()
+static bool failed = false; // the worker going down on an error of its own starting the task, a trigger of the table refusing its WORK say, rather than terminated, see dest_shmem_exit() and dest_timeout()
 static emit_log_hook_type emit_log_hook_prev = NULL;
 
 // FATAL takes the worker down right away, with no PG_CATCH() to record the error of the input, as exit_on_error or transaction_timeout make one, and the task stays in WORK, to run again on every reset: take it for the task as it's logged, for dest_shmem_exit() to record, but for a termination, as on a shutdown, which leaves the task, not done, to be run again
@@ -514,7 +514,6 @@ static void dest_emit_log(ErrorData *edata) {
         fatal = true;
         task_error_data(&task, edata);
     }
-    if (!running && edata->elevel >= ERROR) failed = edata->sqlerrcode != ERRCODE_ADMIN_SHUTDOWN; // an error out of any PG_TRY(), reported by the handler of a background worker on its way out, or a termination
     if (quiet && edata->elevel == FATAL) edata->output_to_server = false; // not for the log after all, see dest_loud()
     if (emit_log_hook_prev) emit_log_hook_prev(edata);
 }
@@ -591,7 +590,14 @@ bool dest_timeout(void) {
     int StatementTimeoutTask;
     volatile bool released = false, finished = false;
     failed = false; // of this task, see dest_shmem_exit()
-    if (task_work(&task)) return true;
+    // an error starting it, rather than a termination, which is FATAL, which no PG_CATCH() sees: told by the error itself, not by the log, which with log_min_messages = panic has none of it
+    PG_TRY();
+        exit = task_work(&task);
+    PG_CATCH();
+        failed = true;
+        PG_RE_THROW();
+    PG_END_TRY();
+    if (exit) return true;
     task.skip = 0; // or a task failed before in this worker would hide the command tag of the next one, and with nothing else to output have it deleted
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");

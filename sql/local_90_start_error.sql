@@ -13,6 +13,23 @@ END;$body$ LANGUAGE plpgsql;
 -- some passes of pg_work, of pg_task.sleep each, for it to start the task again, were it given back
 SELECT pg_sleep(2);
 SELECT state, (SELECT last_value FROM start_error_seq) AS attempts FROM task WHERE "group" = 'start_error';
+-- and so with log_min_messages = panic, the error of the start not logged, as the worker tells it by the error itself, not by the log
+DELETE FROM task WHERE "group" = 'start_error';
+SELECT setval('start_error_seq', 1, false) IS NOT NULL AS reset;
+ALTER SYSTEM SET log_min_messages = panic;
+SELECT pg_reload_conf();
+INSERT INTO task ("group", input) VALUES ('start_error', 'SELECT 1');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT is_called FROM start_error_seq) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the start of the task of group start_error to fail again'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pg_sleep(2);
+SELECT state, (SELECT last_value FROM start_error_seq) AS attempts FROM task WHERE "group" = 'start_error';
+ALTER SYSTEM RESET log_min_messages;
+SELECT pg_reload_conf();
 DROP TRIGGER start_error_refuse ON task;
 DROP FUNCTION start_error_refuse();
 DROP SEQUENCE start_error_seq;
