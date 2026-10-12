@@ -268,6 +268,8 @@ static void task_step(Task *t, void (*step)(Task *t, TimestampTz pause), Timesta
 #if PG_VERSION_NUM < 100000
         SPI_restore_connection();
 #endif
+        // but a lock of a row someone else holds, or a deadlock over it, before 9.5 and in Greengage, with no SKIP LOCKED, by the bookkeeping of a remote task in pg_work, which work_bookkeeping() tries again later, the whole of it, rather than leave the repeat of the task out for good, as it did before steps were apart: as the error came, with interrupts held off no more, see errfinish()
+        if (t->remote && t != get_task() && (edata->sqlerrcode == ERRCODE_LOCK_NOT_AVAILABLE || edata->sqlerrcode == ERRCODE_T_R_DEADLOCK_DETECTED)) ReThrowError(edata);
         InterruptHoldoffCount = holdoff;
         QueryCancelHoldoffCount = cancel_holdoff;
         ereport(WARNING, (errcode(edata->sqlerrcode), errmsg("id = %li, %s: %s", t->shared->id, what, edata->message)));
