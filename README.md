@@ -48,7 +48,7 @@ Requirements: matching `-dev`/`-devel` package with `pg_config` on `PATH`, a C c
 make USE_PGXS=1 install
 ```
 
-Before compiling, the build auto-generates `postgres.c` (and `exec.c` from it) by detecting the installed server's flavor and version (`postgres --version`, `pg_config --version`/`--gp_version`) and downloading the matching `src/backend/tcop/postgres.c` from the corresponding upstream repository (`postgres/postgres` or `GreengageDB/greengage`) on GitHub.
+Before compiling, the build auto-generates `postgres.c` (and `exec.c` from it) by detecting the flavor and version of the server it builds for, by the `pg_config` the Makefile uses (`PG_CONFIG`, `--version`/`--gp_version`) rather than whichever comes first in `PATH`, and downloading the matching `src/backend/tcop/postgres.c` from the corresponding upstream repository (`postgres/postgres` or `GreengageDB/greengage`) on GitHub: that of its release tag, or else of its stable branch, or else of `master` (`7.x`).
 
 If you already have the exact source tree the server was built from (e.g. a custom/unreleased build), you can skip the network fetch: place a symlink named `postgres.c` pointing at `src/backend/tcop/postgres.c` in that tree before running `make` — an existing `postgres.c` is used as-is.
 
@@ -107,7 +107,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | stop | timestamptz | NULL | | Actual date and time of stop |
 | active | interval | NOT NULL | pg_task.active | Positive period after plan time, when task is active for executing |
 | live | interval | NOT NULL | pg_task.live | Non-negative maximum time of live of current background worker process before exit |
-| repeat | interval | NOT NULL | pg_task.repeat | Non-negative auto repeat tasks interval |
+| repeat | interval | NOT NULL | pg_task.repeat | Non-negative auto repeat tasks interval; a repeat whose plan, with the intervals of the task, would be out of range is left uninserted, with a warning, the task done |
 | timeout | interval | NOT NULL | pg_task.timeout | Non-negative allowed time for task run; one that passes the check, which counts a month as 30 days, but is less than nothing in milliseconds, which count a year as 365.25 days (`'-60 mon 1800 days'`, say), is taken as none, as 0 is |
 | count | int | NOT NULL | pg_task.count | Non-negative maximum count of tasks, are executed by current background worker process before exit |
 | max | int | NOT NULL | pg_task.max | Maximum count of additional concurrently executing tasks in group (total concurrency = max + 1), negative value means pause between tasks in milliseconds |
@@ -118,7 +118,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | header | bool | NOT NULL | pg_task.header | Show columns headers in output (only when the query returns at least one row and more than one column) |
 | save | bool | NOT NULL | pg_task.save | Save session state between tasks; with false, it's reset before the next task of the worker as `DISCARD ALL` does, the session's advisory locks let go of too; with true, the `search_path` a task sets carries over too, and in local and spi mode its `statement_timeout` (for the next tasks with no `timeout` of their own), while that of a remote task is set anew for each from its `timeout` |
 | string | bool | NOT NULL | pg_task.string | Quote only strings |
-| delimiter | char | NOT NULL | pg_task.delimiter | Results columns delimiter, nothing between them if empty |
+| delimiter | char | NOT NULL | pg_task.delimiter | Results columns delimiter, nothing between them if empty; a single byte, as are `escape` and `quote`: in a database of a multibyte encoding one of a multibyte character fails the task before its input runs |
 | escape | char | NOT NULL | pg_task.escape | Results columns escape |
 | quote | char | NOT NULL | pg_task.quote | Results columns quote |
 | data | text | NULL | | Some user data |
@@ -142,7 +142,7 @@ pg_task.json = '[{"data":"database1"},{"data":"database2","user":"username2"},{"
 ```
 `pg_task` creates whichever of the referenced database, user, schema or table don't already exist — you don't need to provision them by hand first.
 
-Each of an entry's scheduler settings — `sleep`, `reset`, `run`, `spi`, `limit`, `schema` and `table`, and `pg_work.restart` (which has no key in `pg_task.json`) — comes from the first of: its key in the entry's `pg_task.json` object, `ALTER ROLE <user> IN DATABASE <data> SET pg_task.…`, `ALTER ROLE <user> SET pg_task.…`, `ALTER DATABASE <data> SET pg_task.…`, and the server's configuration (`postgresql.conf`, `ALTER SYSTEM`) — the order PostgreSQL itself applies them in to a session of that role in that database. Settings of other roles in that database don't apply to it, and neither, on PostgreSQL 9.5+, do those of the database and role `pg_conf` itself runs in (`postgres` and the bootstrap superuser). `pg_conf` and the entry's `pg_work` read them again on every reload (`SIGHUP`), so an `ALTER ROLE`/`ALTER DATABASE ... SET` or `RESET` of one takes effect without a restart — except, before 9.5, a `RESET` on the role or database `pg_work` itself runs in, whose session keeps the value it got on connecting until it restarts.
+Each of an entry's scheduler settings — `sleep`, `reset`, `run`, `spi`, `schema` and `table`, and `limit` and `pg_work.restart` (which have no key in `pg_task.json`) — comes from the first of: its key in the entry's `pg_task.json` object, `ALTER ROLE <user> IN DATABASE <data> SET pg_task.…`, `ALTER ROLE <user> SET pg_task.…`, `ALTER DATABASE <data> SET pg_task.…`, and the server's configuration (`postgresql.conf`, `ALTER SYSTEM`) — the order PostgreSQL itself applies them in to a session of that role in that database. Settings of other roles in that database don't apply to it, and neither, on PostgreSQL 9.5+, do those of the database and role `pg_conf` itself runs in (`postgres` and the bootstrap superuser). `pg_conf` and the entry's `pg_work` read them again on every reload (`SIGHUP`), so an `ALTER ROLE`/`ALTER DATABASE ... SET` or `RESET` of one takes effect without a restart — except, before 9.5, a `RESET` on the role or database `pg_work` itself runs in, whose session keeps the value it got on connecting until it restarts.
 
 A `pg_task.json` that doesn't parse, or whose values don't fit the types of their keys, is logged and left unapplied: `pg_conf` and the running `pg_work` workers carry on with the configuration they have until it's fixed.
 
@@ -179,13 +179,13 @@ This diagram is enforced, not just documented: a `BEFORE UPDATE OF "state"` trig
 
 Instead of `LISTEN`/`NOTIFY`, `pg_task` wakes idle workers with session-level locks of the advisory kind plus `pg_cancel_backend()`. Each `pg_work` process holds such a lock (in `pg_locks`, `locktype` `userlock`, `objsubid` 3), tagged with its database, its role and the hash of its entry (over its schema and table), for as long as it's alive; the `AFTER INSERT OR DELETE OR UPDATE OF plan` trigger (see below) looks up the holder of that lock in `pg_locks` — any `pg_work` of that table, whatever its role — and cancels it directly. `pg_work` installs its own `SIGINT` handler — instead of the default query-cancel one — that just sets the latch, so the wait-event loop returns immediately instead of waiting out the rest of `pg_task.sleep`. The `STOP` trigger (see [Task state machine](#task-state-machine)) reuses this exact same wake-up: once woken, `pg_work` checks, at most once per `pg_task.sleep`, whether any still running task now has `state = 'STOP'`, and cancels it once — a remote one with a cancel request on its connection, a local one through its worker's slot and `SIGUSR2`, as described there.
 
-A second, per-task lock of that kind (tagged by the task's own `id`) is used to detect a crashed executor: every `pg_task.reset` interval, `pg_work` looks for rows still in `TAKE`/`WORK` whose `id`-tagged lock nobody currently holds, and resets them to `PLAN` — unless a live task worker still has the task in its shared memory slot, which an input can't let go of, as `pg_advisory_unlock_all()` or `DISCARD ALL` in it let go of the locks of `pg_task` too (user locks, not advisory ones, but in the same lock method); those the worker takes back after each command of the input. That's the crash-recovery mechanism. A crashed `pg_work` itself is restarted by the postmaster after `pg_work.restart` seconds; it first checks `pg_task.json` again, and exits for good if its entry has been removed meanwhile.
+A second, per-task lock of that kind (tagged by the task's own `id`) is used to detect a crashed executor: every `pg_task.reset` interval, `pg_work` looks for rows still in `TAKE`/`WORK` whose `id`-tagged lock nobody currently holds, and resets them to `PLAN` — unless a live task worker still has the task in its shared memory slot, which an input can't let go of, as `pg_advisory_unlock_all()` or `DISCARD ALL` in it let go of the locks of `pg_task` too (user locks, not advisory ones, but in the same lock method); those the worker takes back after each command of the input. That's the crash-recovery mechanism. A task worker that goes away before its task started, terminated with the task taken, say, gives it back to `PLAN` itself on the way out (PostgreSQL 9.5+, not Greenplum), but not one whose start failed on an error of its own, a trigger refusing its `WORK` say, which it leaves in `TAKE` for that reset, rather than have it started over on every pass. A crashed `pg_work` itself is restarted by the postmaster after `pg_work.restart` seconds; it first checks `pg_task.json` again, and exits for good if its entry has been removed meanwhile.
 
 When there's genuinely nothing to do, `pg_work` doesn't poll in a tight loop: it computes, in one query, the soonest moment something will actually need attention — the closer of the next `active`/`timeout` deadline among running tasks and the next `PLAN` task's `plan` — and sleeps exactly until then (at most about 24.8 days, `INT_MAX` milliseconds, at a time, after which it works the moment out again; before PostgreSQL 9.6, where a wake-up of its own copy of the 9.6 latch code may be lost, a `pg_task.sleep` at most). `pg_task.sleep` is a floor on responsiveness for a busy queue, not a fixed polling interval.
 
 ### Self-provisioning and the helper triggers
 
-On first connect, `pg_work` walks through a series of idempotent `SELECT EXISTS ...` checks against `pg_catalog` and issues the matching `CREATE`/`ALTER` only for what's missing: schema, the `state` enum, the table (with all columns, `current_setting('pg_task.…')`-backed defaults, `NOT NULL`/`CHECK` constraints), and indexes — including a functional index on the hash of `group`/`remote` that the concurrency accounting above relies on — plus 27 trigger functions and their triggers, named `<table>_<suffix>` (e.g. `task_state`); for a table name too long for that to fit in `NAMEDATALEN`, the table part is shortened and followed by the hash of the entry, over its schema and table, e.g. `…_365fef26_state`, so that the names stay distinct (see below for when that hash changes). A trigger function or trigger that exists but differs from what this version of `pg_task` makes — a function's body, `SECURITY DEFINER` or `search_path`, a trigger's timing, events, `FOR EACH ROW`/`STATEMENT` or `UPDATE OF` column — is re-created too, so that a table made by an earlier version is brought up to date. Each such statement waits for a table busy with long transactions of others (writing to it, say) 2 seconds at most, a `lock_timeout` for its own transaction only, retried five times, after which `pg_work` exits, to be restarted after `pg_work.restart`; apart from that, the own queries of `pg_work` and of `pg_conf` don't go by the server's `lock_timeout` and `statement_timeout`, nor by those of their database or role, as the scheduler stays running however long others hold its table, and a `CREATE DATABASE` of `pg_conf` copying a large template isn't cut short; a `pg_cancel_backend()` of either only wakes it up. Constraints, defaults and indexes are recognized by comparing their text, as `pg_get_expr()` deparses it, with `pg_task`'s own, so `pg_work` first sets `IntervalStyle` and `quote_all_identifiers` to their defaults in its own session, whatever the server, its database or its role sets. Four of them do something beyond plain immutability and are worth calling out individually:
+On first connect, `pg_work` walks through a series of idempotent `SELECT EXISTS ...` checks against `pg_catalog` and issues the matching `CREATE`/`ALTER` only for what's missing: schema, the `state` enum, the table (with all columns, `current_setting('pg_task.…')`-backed defaults, `NOT NULL`/`CHECK` constraints), and indexes — including a functional index on the hash of `group`/`remote` that the concurrency accounting above relies on — plus 27 trigger functions and their triggers, named `<table>_<suffix>` (e.g. `task_state`); for a table name too long for that to fit in `NAMEDATALEN`, the table part is shortened and followed by the hash of the entry, over its schema and table, e.g. `…_365fef26_state`, so that the names stay distinct (see below for when that hash changes). A trigger function or trigger that exists but differs from what this version of `pg_task` makes — a function's body, `SECURITY DEFINER` or `search_path`, a trigger's timing, events, `FOR EACH ROW`/`STATEMENT` or `UPDATE OF` column — is re-created too, so that a table made by an earlier version is brought up to date. Each such statement waits for a table busy with long transactions of others (writing to it, say) 2 seconds at most, a `lock_timeout` for its own transaction only, retried five times, after which `pg_work` exits, to be restarted after `pg_work.restart`; apart from that, the own queries of `pg_work` and of `pg_conf` don't go by the server's `lock_timeout` and `statement_timeout`, nor by those of their database or role, as the scheduler stays running however long others hold its table, and run read committed and read write, whatever `default_transaction_isolation` or `default_transaction_read_only` those set, and a `CREATE DATABASE` of `pg_conf` copying a large template isn't cut short; a `pg_cancel_backend()` of either only wakes it up. Constraints, defaults and indexes are recognized by comparing their text, as `pg_get_expr()` deparses it, with `pg_task`'s own, so `pg_work` first sets `IntervalStyle` and `quote_all_identifiers` to their defaults in its own session, whatever the server, its database or its role sets. Four of them do something beyond plain immutability and are worth calling out individually:
 
 - the **`user`-immutability trigger** (`BEFORE INSERT OR UPDATE OF "user"`) forces `NEW."user"` to `current_user` on insert unless the inserting role is a member of the claimed role or of the table's owner (`pg_task.user`, which inserts the repeats of tasks), and rejects any later change — this is what makes the `user` column trustworthy for the Security considerations below.
 - the **wake-up trigger** (`AFTER INSERT OR DELETE OR UPDATE OF plan`) is the mechanism described above; it does not use `NOTIFY`.
@@ -291,7 +291,7 @@ END;
 $f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 
 CREATE TRIGGER task_retry_trigger AFTER UPDATE OF state ON task
-FOR EACH ROW WHEN (NEW.state = 'FAIL') EXECUTE FUNCTION task_retry();
+FOR EACH ROW WHEN (NEW.state = 'FAIL') EXECUTE PROCEDURE task_retry();
 ```
 
 The column list is looked up dynamically (the same trick `pg_task` itself uses in `task_columns()` to clone a row for `repeat`), so the trigger keeps working as you add more columns of your own. `parent` is set to the id of the attempt that just failed, so the whole retry chain stays visible through `parent`. `retry_interval * power(2, retry)` doubles the delay each attempt (`1 min`, `2 min`, `4 min`, ...); once `retry` reaches `retry_max` no new row is inserted and the last attempt is left at `FAIL`. `FAIL` rows are never auto-deleted by `pg_task.delete`, since that only fires when both `output` and `error` are null — a `FAIL` row always has `error` set — so the trigger always gets to see it.
@@ -319,7 +319,7 @@ BEGIN
 END;
 $f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 CREATE TRIGGER task_depend_insert BEFORE INSERT ON task
-FOR EACH ROW EXECUTE FUNCTION task_depend_insert();
+FOR EACH ROW EXECUTE PROCEDURE task_depend_insert();
 
 CREATE OR REPLACE FUNCTION task_depend_update() RETURNS trigger AS $f$
 BEGIN
@@ -335,10 +335,10 @@ BEGIN
 END;
 $f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 CREATE TRIGGER task_depend_update AFTER UPDATE OF state ON task
-FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE FUNCTION task_depend_update();
+FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE PROCEDURE task_depend_update();
 ```
 
-This relies on two more of `pg_task`'s own self-provisioned triggers, beyond the three named in Self-provisioning and the helper triggers above: `plan` is only frozen *after* a task leaves `PLAN` (`BEFORE UPDATE OF "plan"`, conditional on `OLD.state <> 'PLAN'`), so a still-`PLAN` child's `plan` remains freely updatable — and updating it fires the existing wake-up trigger for free, so a released child is picked up immediately rather than on the next poll. `plan = 'infinity'` also keeps the child out of reach of the `active`-window `GONE` transition (`plan + active` stays `infinity` too), so it can wait indefinitely without expiring. Moving an unsatisfied child straight to `STOP` is the one transition the built-in state-machine trigger allows out of `PLAN` besides `TAKE`/`GONE`.
+This relies on two more of `pg_task`'s own self-provisioned triggers, beyond the four named in Self-provisioning and the helper triggers above: `plan` is only frozen *after* a task leaves `PLAN` (`BEFORE UPDATE OF "plan"`, conditional on `OLD.state <> 'PLAN'`), so a still-`PLAN` child's `plan` remains freely updatable — and updating it fires the existing wake-up trigger for free, so a released child is picked up immediately rather than on the next poll. `plan = 'infinity'` also keeps the child out of reach of the `active`-window `GONE` transition (`plan + active` stays `infinity` too), so it can wait indefinitely without expiring. Moving an unsatisfied child straight to `STOP` is the one transition the built-in state-machine trigger allows out of `PLAN` besides `TAKE`/`GONE`.
 
 This only expresses a single upstream dependency (one `depend` per `parent`, matching the column's own cardinality), not a multi-parent join.
 
@@ -427,7 +427,7 @@ END;
 $f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 
 CREATE TRIGGER task_cron_trigger AFTER UPDATE OF state ON task
-FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE FUNCTION task_cron();
+FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE PROCEDURE task_cron();
 ```
 
 `cron_field()` expands one field (`*`, `a-b`, `*/n`, `a-b/n`, comma-separated lists of any of those) into a sorted array of matching values; `cron_next()` walks forward day by day (bounded to roughly four years, long enough to land on a Feb-29-only schedule) and, on a day that matches month/day-of-month/day-of-week, returns the first hour:minute in the field sets that's after `from_ts`. Both are ordinary `IMMUTABLE`/`STABLE` SQL functions, so you can also call `cron_next()` directly to sanity-check an expression before using it. `task_cron()` reuses the same dynamic column-clone trick as the retry trigger above; only rows with `cron IS NOT NULL` are affected, so it's safe to add alongside tasks that use plain `repeat`.
@@ -452,7 +452,7 @@ END;
 $f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 
 CREATE TRIGGER task_notify_trigger AFTER UPDATE OF state ON task
-FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE FUNCTION task_notify();
+FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE PROCEDURE task_notify();
 ```
 
 Webhook, opt-in per row via its own `hook` column (`NULL` — no call), via `pg_curl`:
@@ -482,7 +482,7 @@ END;
 $f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 
 CREATE TRIGGER task_hook_trigger AFTER UPDATE OF state ON task
-FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE FUNCTION task_hook();
+FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE PROCEDURE task_hook();
 ```
 
 Tested against a real local listener: both `DONE` and `FAIL` rows produced a correctly-formed JSON POST. The one thing to get right: this trigger runs synchronously, inside the same transaction that `task_done()`/`task_error()` (`task.c`) use to record the result — a webhook call that hangs or errors would otherwise hang or fail that write too, which is why the call is wrapped in its own `EXCEPTION WHEN OTHERS` and given an explicit `timeout_ms` rather than left to block indefinitely.
@@ -509,7 +509,7 @@ END;
 $f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 
 CREATE TRIGGER task_archive_trigger AFTER DELETE ON task
-FOR EACH ROW EXECUTE FUNCTION task_archive();
+FOR EACH ROW EXECUTE PROCEDURE task_archive();
 ```
 
 Two things confirmed by testing this end to end: a partitioned table's unique/primary key must include the partition key, so this is `PRIMARY KEY (id, stop)`, not just `(id)` — `LIKE task INCLUDING ALL` would carry over `task`'s own `(id)` primary key and fail with `PRIMARY KEY constraint ... must include all partitioning columns`. And the `DEFAULT` partition and the `EXCEPTION WHEN OTHERS` are both load-bearing, not redundant: like the webhook trigger above, this one runs inside the same transaction `task_done()`/`task_error()` use to delete the row, so an archive insert failing outright (no partition covers this `stop`, some constraint, ...) would otherwise take that deletion — and the task's own bookkeeping — down with it. With the `DEFAULT` partition in place a row with no dedicated partition still lands somewhere; with neither, the deletion still succeeds and only a `WARNING` is logged, verified by deliberately deleting both safety nets and confirming the row failed to archive but `DELETE FROM task` still returned normally.
@@ -593,7 +593,7 @@ END;
 $f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 
 CREATE TRIGGER task_trace_insert_trigger BEFORE INSERT ON task
-FOR EACH ROW EXECUTE FUNCTION task_trace_insert();
+FOR EACH ROW EXECUTE PROCEDURE task_trace_insert();
 ```
 
 This only populates the columns; actually exporting them as OTLP spans needs a process outside `pg_task` itself, since none of the three execution paths (see Three ways to run `input`) can make an arbitrary HTTP/gRPC call — `remote` only speaks the PostgreSQL protocol. A periodic `pg_task` job (or an external poller) reading newly-`DONE`/`FAIL` rows and pushing them to a collector, e.g. via [`pg_curl`](https://github.com/RekGRpth/pg_curl) against an OTLP/HTTP endpoint the same way the webhook pattern above posts JSON, is one way to close that gap.
@@ -623,7 +623,7 @@ END;
 $f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 
 CREATE TRIGGER task_dry_run_trigger BEFORE INSERT ON task
-FOR EACH ROW WHEN (NEW.dry_run) EXECUTE FUNCTION task_dry_run();
+FOR EACH ROW WHEN (NEW.dry_run) EXECUTE PROCEDURE task_dry_run();
 ```
 
 The `BEGIN ... EXCEPTION ... END` block is an implicit savepoint, so raising the sentinel exception right after `EXECUTE` unconditionally discards whatever `input` just did, real side effects included — this is closer to actually validating the statement than `EXPLAIN` would be (which rejects DDL and most utility statements outright), at the cost of genuinely executing `input` once. This does not reproduce all three execution paths equally: PL/pgSQL's `EXECUTE` runs through SPI regardless of the task's own `spi` setting, so a `dry_run` task using `COPY ... TO/FROM` a file or program — allowed for a real `spi = off` run — is rejected here (`SPI_ERROR_COPY`) even though it would have succeeded for real. Treat a clean dry run as "no syntax/permission/missing-object errors caught this way", not as a full guarantee.
