@@ -1600,6 +1600,9 @@ void work_main(Datum main_arg) {
 #if PG_VERSION_NUM >= 170000
     SetConfigOption("transaction_timeout", "0", PGC_USERSET, PGC_S_SESSION); // that of the settings of the database or the role, for the transactions of tasks, ends any longer one with FATAL, taking pg_work, with every remote task it runs, down: none for its own, which run no code of others, unlike a task's input
 #endif
+#if PG_VERSION_NUM >= 120000
+    SetConfigOption("plan_cache_mode", "auto", PGC_USERSET, PGC_S_SESSION); // nor the plans: force_custom_plan would plan the bookkeeping of a remote task anew each time, its output copied into it twice, see SPI_prepare_generic_my()
+#endif
     // make_*() compare what pg_get_expr() deparses with the expressions they make, which these two change, from the server's configuration or the role's and database's settings, and so does quote_identifier() with the names below: once connected, as no GUC can be set before
     SetConfigOption("IntervalStyle", "postgres", PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("quote_all_identifiers", "off", PGC_USERSET, PGC_S_SESSION);
