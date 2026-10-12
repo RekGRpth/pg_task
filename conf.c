@@ -283,7 +283,7 @@ static void conf_latch(void) {
     ResetLatch(MyLatch);
     CHECK_FOR_INTERRUPTS();
     if (ConfigReloadPending) conf_reload();
-    else conf_exited(); // woken by the notice of a pg_work stopped, see bgw_notify_pid, maybe
+    conf_exited(); // woken by the notice of a pg_work stopped, see bgw_notify_pid, maybe, or one a wait within conf_check() took, as it took the latch
 }
 
 // a cancel, of pg_cancel_backend() or of a statement_timeout of the server, its database or its role, which pg_conf's own queries, a CREATE DATABASE copying a large template say, don't go by, as pg_work's don't, see work_idle(): no more than a wake-up, rather than an error failing its check of the entries, or, out of it, taking pg_conf down, till its pg_conf.restart; but the lock timeout of the DDL that makes a role, see make_ddl()
@@ -325,15 +325,16 @@ void conf_main(Datum main_arg) {
     while (!ShutdownRequestPending) {
         long timeout = -1;
         int rc;
-        if (retry) {
+        if (ConfigReloadPending) timeout = 0; // a reload come within conf_check(), whose waits, for a pg_work to start, for a lock, or for a checkpoint of CREATE DATABASE, took the latch it set, not to wait for another wake-up to be applied
+        else if (retry) {
             long secs;
             int usecs;
             TimestampDifference(GetCurrentTimestamp(), retry, &secs, &usecs); // 0 once past
             timeout = Min(secs * 1000 + usecs / 1000, INT_MAX);
         }
-        rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH | (retry ? WL_TIMEOUT : 0), timeout);
+        rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH | (timeout >= 0 ? WL_TIMEOUT : 0), timeout);
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
-        if (rc & WL_LATCH_SET) conf_latch();
+        if ((rc & WL_LATCH_SET) || ConfigReloadPending) conf_latch();
         if (!ShutdownRequestPending && retry && GetCurrentTimestamp() >= retry) conf_check(); // the entries that couldn't be started tried again, see conf_check()
     }
     if (!unlock_data_user(MyDatabaseId, GetUserId())) ereport(WARNING, (errmsg("!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId())));
