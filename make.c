@@ -939,6 +939,13 @@ void make_type(const Work *w) {
             CREATE TYPE %s AS ENUM ('PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP');
         ), w->schema_type);
         make_ddl(src.data, SPI_OK_UTILITY);
+    } else {
+        // a type of that name that isn't one of pg_task's, the row type of a table state, say, or an enum of the application's own, is not for pg_work to add its states to, nor to take a table with a column of it for its task table, see make_table(): one of pg_task's is an enum of no other states than its own, those of earlier versions fewer of them
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            SELECT EXISTS (SELECT * FROM pg_catalog.pg_type AS t JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND typname OPERATOR(pg_catalog.=) 'state' AND typtype OPERATOR(pg_catalog.=) 'e' AND NOT EXISTS (SELECT * FROM pg_catalog.pg_enum WHERE enumtypid OPERATOR(pg_catalog.=) t.oid AND enumlabel OPERATOR(pg_catalog.<>) ALL (ARRAY['PLAN', 'GONE', 'TAKE', 'WORK', 'DONE', 'FAIL', 'STOP']::pg_catalog.name[]))) AS "test"
+        ));
+        if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE), errmsg("type %s exists and is not the state type of pg_task", w->schema_type), errdetail("It is not an enum of no other labels than PLAN, GONE, TAKE, WORK, DONE, FAIL and STOP."), errhint("Have pg_task.schema name another schema, or rename or drop this type.")));
     }
     pfree(src.data);
     pfree((void *)values[0]);

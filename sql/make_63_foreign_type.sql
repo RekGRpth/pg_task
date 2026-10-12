@@ -1,0 +1,47 @@
+-- a type state of the schema that is not the enum of states of pg_task, an enum of the application's own, or the row type of a table state, pg_work refuses, adding no states to the one, nor taking a table with a column of it for its task table, nor making its own enum where the other one is, rather than fail on it over and over
+SET client_min_messages = warning;
+DROP SCHEMA IF EXISTS foreign_type_schema, foreign_rowtype_schema, foreign_sync_schema CASCADE;
+RESET client_min_messages;
+CREATE SCHEMA foreign_type_schema;
+CREATE TYPE foreign_type_schema.state AS ENUM ('on', 'off');
+CREATE TABLE foreign_type_schema.task (id int PRIMARY KEY, state foreign_type_schema.state);
+INSERT INTO foreign_type_schema.task VALUES (1, 'on');
+CREATE SCHEMA foreign_rowtype_schema;
+CREATE TABLE foreign_rowtype_schema.state (code text PRIMARY KEY);
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || current_user || '","schema":"foreign_type_schema"},{"data":"' || :'DBNAME' || '","user":"' || current_user || '","schema":"foreign_rowtype_schema"},{"data":"' || :'DBNAME' || '","user":"' || current_user || '","schema":"foreign_sync_schema"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_work.restart = 1;
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'foreign_sync_schema' AND c.relname = 'task') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work foreign_sync_schema task %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of foreign_sync_schema.task to become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- for the other one to have had its go at it, once and again
+SELECT pg_sleep(2);
+SELECT array_agg(enumlabel::text ORDER BY enumsortorder) AS labels FROM pg_catalog.pg_enum WHERE enumtypid = 'foreign_type_schema.state'::regtype;
+SELECT array_agg(attname::text ORDER BY attnum) AS columns FROM pg_catalog.pg_attribute WHERE attrelid = 'foreign_type_schema.task'::regclass AND attnum > 0 AND NOT attisdropped;
+SELECT count(*) AS triggers FROM pg_catalog.pg_trigger WHERE tgrelid = 'foreign_type_schema.task'::regclass;
+SELECT * FROM foreign_type_schema.task;
+SELECT array_agg(c.relname::text ORDER BY c.relname) AS relations FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'foreign_rowtype_schema';
+SELECT NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work foreign_%type_schema %' AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) AS not_working;
+ALTER SYSTEM RESET pg_work.restart;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work foreign_%') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work workers of the foreign schemas to go away'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SET client_min_messages TO WARNING;
+DROP SCHEMA foreign_type_schema, foreign_rowtype_schema, foreign_sync_schema CASCADE;
+RESET client_min_messages;
