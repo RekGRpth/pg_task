@@ -488,6 +488,7 @@ static void dest_discard(void) {
 #endif
     task.shared = shared;
     unlock_advisory_all();
+    dest_relock(); // the locks of pg_task, let go of with the advisory ones
     SetConfigOption("pg_task.schema", task.shared->schema, PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("pg_task.table", task.shared->table, PGC_USERSET, PGC_S_SESSION);
     initStringInfoMy(&oid);
