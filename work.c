@@ -106,6 +106,7 @@ static dlist_head cancels;
 #define WORK_PENDING_TIMEOUT 5000 // milliseconds the bookkeeping put off may take on the exit of pg_work, see work_shmem_exit()
 static volatile uint64 idle_count = 0;
 static volatile sig_atomic_t woken = false; // by the wake-up trigger, see work_idle()
+static bool later_local = false, later_remote = false; // no worker, or no file descriptor for a connection, to be had for the last task of its kind, see work_later()
 static Work work = {0};
 
 Work *get_work(void) {
@@ -1241,6 +1242,7 @@ static void work_remote(Task *t) {
 #endif
     ReleaseExternalFD();
 #endif
+    later_remote = false; // a file descriptor for it, see work_later()
     dlist_delete(&t->node);
     dlist_push_tail(&remote, &t->node);
     // hold the slot of the group from now on, not only once connected, or the next work_sleep() doesn't count it and takes another task of the group over its max
@@ -1344,8 +1346,11 @@ static bool work_reap(const Work *w) {
 }
 
 // no worker to be had for the task now, every one in use, or no file descriptor for the connection of a remote one, see work_remote(), which is no error of the task: back to PLAN, for a pass to take it once one is free, as a task worker exiting or a remote task done wakes pg_work, rather than fail it
+// and, till one is had again, a pass takes no more than one task of its kind, which it tries to run as a probe, rather than as many as it would, all of them given back, every pass, as the slots free for task workers, see init_free_slots(), counts no background worker of others, pg_conf, the logical replication launcher, parallel workers, whose end wakes no pg_work, and the remote tasks are limited by pg_task.limit only: one warning for all of them, not one for each of them every pass
 static void work_later(Task *t, const char *message, const char *setting) {
-    ereport(WARNING, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("id = %li, %s, to be run later", t->shared->id, message), errhint("Consider increasing configuration parameter \"%s\".", setting)));
+    bool *later = t->remote ? &later_remote : &later_local;
+    ereport(*later ? DEBUG1 : WARNING, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("id = %li, %s, to be run later", t->shared->id, message), errhint("Consider increasing configuration parameter \"%s\".", setting)));
+    *later = true;
     task_untake(t);
     work_free(t);
 }
@@ -1378,18 +1383,18 @@ static void work_task(Task *t) {
     } else switch (WaitForBackgroundWorkerStartup(handle, &t->pid)) {
         case BGWH_NOT_YET_STARTED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
         case BGWH_POSTMASTER_DIED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
-        case BGWH_STARTED: elog(DEBUG1, "started id = %li", t->shared->id); init_task_pid(DatumGetInt32(worker.bgw_main_arg), t->shared->data, t->shared->oid, t->shared->id, t->pid); work_local(t, handle); handle = NULL; work_free(t); break;
+        case BGWH_STARTED: elog(DEBUG1, "started id = %li", t->shared->id); later_local = false; /* a worker for it, see work_later() */ init_task_pid(DatumGetInt32(worker.bgw_main_arg), t->shared->data, t->shared->oid, t->shared->id, t->pid); work_local(t, handle); handle = NULL; work_free(t); break;
         case BGWH_STOPPED: init_free_task(DatumGetInt32(worker.bgw_main_arg), t->shared->data, t->shared->oid, t->shared->id); work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     if (handle) pfree(handle);
 }
 
 static void work_sleep(Work *w) {
-    Datum values[] = {Int32GetDatum(w->shared->run), Int32GetDatum(w->shared->limit), Int32GetDatum(0), (Datum)0, (Datum)0, (Datum)0};
+    Datum values[] = {Int32GetDatum(w->shared->run), Int32GetDatum(w->shared->limit), Int32GetDatum(0), (Datum)0, (Datum)0, (Datum)0, Int32GetDatum(later_remote ? 1 : INT_MAX)};
     dlist_head head;
     dlist_mutable_iter iter;
     Portal portal;
-    static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TEXTOID, TEXTOID, TEXTOID};
+    static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TEXTOID, TEXTOID, TEXTOID, INT4OID};
     StringInfoData pids, hashes, pauses;
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
@@ -1397,7 +1402,7 @@ static void work_sleep(Work *w) {
     elog(DEBUG1, "idle_count = %lu", idle_count);
     set_ps_display_my("sleep");
     work_reap(w);
-    values[2] = Int32GetDatum(init_free_slots());
+    values[2] = Int32GetDatum(later_local ? Min(init_free_slots(), 1) : init_free_slots()); // one at most, as a probe, see work_later()
     initStringInfoMy(&pids);
     initStringInfoMy(&hashes);
     appendStringInfoChar(&pids, '{');
@@ -1459,9 +1464,9 @@ static void work_sleep(Work *w) {
                     %4$s
                 ) AS c
             ), r AS (
-                SELECT "id", "priority", CASE WHEN "local" THEN pg_catalog.row_number() OVER (PARTITION BY "local" ORDER BY "priority" DESC, "id") END AS "slot" FROM c WHERE "count" OPERATOR(pg_catalog.>=) 0
+                SELECT "id", "priority", "local", pg_catalog.row_number() OVER (PARTITION BY "local" ORDER BY "priority" DESC, "id") AS "slot" FROM c WHERE "count" OPERATOR(pg_catalog.>=) 0
             ), s AS (
-                SELECT t.id FROM %1$s AS t JOIN r ON t.id OPERATOR(pg_catalog.=) r.id WHERE COALESCE(r.slot OPERATOR(pg_catalog.<=) $3, true) AND t.state OPERATOR(pg_catalog.=) 'PLAN'
+                SELECT t.id FROM %1$s AS t JOIN r ON t.id OPERATOR(pg_catalog.=) r.id WHERE r.slot OPERATOR(pg_catalog.<=) CASE WHEN r.local THEN $3 ELSE $7 END AND t.state OPERATOR(pg_catalog.=) 'PLAN'
                 ORDER BY r.priority DESC, t.id LIMIT GREATEST(LEAST($1 OPERATOR(pg_catalog.-) (SELECT COALESCE(pg_catalog.sum("classid"), 0) FROM l), $2), 0) FOR NO KEY UPDATE OF t %3$s
             ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id, pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) AS "hash", "group", "remote", "max", ("user")::pg_catalog.text AS "user"
         ), w->schema_table, init_table_key(w->shared->oid),
