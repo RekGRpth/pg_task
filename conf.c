@@ -55,6 +55,12 @@ static void conf_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
 }
 
+// the entries to be checked again no sooner than restart seconds from now, the soonest of those set kept
+static void conf_retry_at(int restart) {
+    TimestampTz at = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), (int64)restart * 1000);
+    if (!retry || at < retry) retry = at;
+}
+
 static void conf_reconcile(void) {
     dlist_mutable_iter iter;
     dlist_foreach_modify(iter, &reg_head) {
@@ -64,6 +70,8 @@ static void conf_reconcile(void) {
         if (GetBackgroundWorkerPid(r->handle, &pid) != BGWH_STOPPED) continue;
         // stopped, and either no longer wanted, taken over by another pg_work of its entry, or about to be spawned anew by conf_work(): drop it either way, so no stale registration is left to be restarted, or to free a slot that a later pg_work has taken
         elog(DEBUG1, "reaping stopped worker, data = %s, user = %s, hash = %i, slot = %i", r->data, r->user, r->hash, r->slot);
+        // exited cleanly, its slot freed by itself, maybe only after the query of conf_check() saw its lock held still, its entry put back meanwhile started by none then: checked again after its pg_work.restart, as conf_exited() has it, its notice of the stop to find no registration of it any more
+        if (!init_held_work(r->slot, r->reg)) conf_retry_at(r->restart);
         TerminateBackgroundWorker(r->handle); // cancel a pending crash restart
         init_free_work(r->slot, r->reg);
         pfree(r->handle);
@@ -247,7 +255,7 @@ static void conf_check(void) {
             // and the state of exec_simple_query() too, which CREATE DATABASE of make_data() runs through, as PostgresMain() resets it after an error, or the next one would take a transaction for started already, and run with none
             xact_started_my(false);
             stmt_timeout_active_my(false);
-            { TimestampTz at = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), (int64)w->restart * 1000); if (!retry || at < retry) retry = at; }
+            conf_retry_at(w->restart);
             conf_free(w);
         PG_END_TRY();
     }
@@ -267,10 +275,7 @@ static void conf_exited(void) {
         Registered *r = dlist_container(Registered, node, iter.cur);
         pid_t pid;
         // after its pg_work.restart, as the postmaster restarts one that crashed, rather than at once: one that exits as soon as it starts, its entry found by pg_conf but not by pg_work, which reads the settings of its own database and role, would be started over and over
-        if (GetBackgroundWorkerPid(r->handle, &pid) == BGWH_STOPPED && !init_held_work(r->slot, r->reg)) {
-            TimestampTz at = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), (int64)r->restart * 1000);
-            if (!retry || at < retry) retry = at;
-        }
+        if (GetBackgroundWorkerPid(r->handle, &pid) == BGWH_STOPPED && !init_held_work(r->slot, r->reg)) conf_retry_at(r->restart);
     }
 }
 
