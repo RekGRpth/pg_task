@@ -3,6 +3,7 @@
 #include <access/xact.h>
 #include <catalog/namespace.h>
 #include <mb/pg_wchar.h>
+#include <commands/portalcmds.h>
 #include <commands/prepare.h>
 #include <miscadmin.h>
 #include <pgstat.h>
@@ -219,6 +220,24 @@ static void dest_execute_prepared(const char *src, ExecuteStmt *stmt) {
 #endif
 }
 
+// SPI tells of MOVE no row count, only UTILITY, and of a FETCH of no rows that it returns rows, whose tag local mode leaves out then, not at all: run it as exec_simple_query() does, into the receiver and with the completion of the fetch, as of EXECUTE above
+static void dest_execute_fetch(FetchStmt *stmt) {
+#if PG_VERSION_NUM >= 130000
+    QueryCompletion qc;
+    InitializeQueryCompletion(&qc);
+#else
+    char completionTag[COMPLETION_TAG_BUFSIZE] = "";
+#endif
+    CommandCounterIncrement();
+#if PG_VERSION_NUM >= 130000
+    PerformPortalFetch(stmt, CreateDestReceiverMy(DestDebug), &qc);
+    EndCommandMy(&qc, DestDebug, false);
+#else
+    PerformPortalFetch(stmt, CreateDestReceiverMy(DestDebug), completionTag);
+    EndCommandMy(completionTag, DestDebug);
+#endif
+}
+
 // alone: src is stmt only, rather than the whole input of several statements, which spi mode before 10 runs at once
 #if PG_VERSION_NUM >= 180000
 #define dest_returning(stmt) ((stmt)->returningClause != NULL)
@@ -276,6 +295,7 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
 #endif
     if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else disable_timeout(STATEMENT_TIMEOUT, false); // for each statement of the input anew, as exec_simple_query() has it from 13 on in local mode, rather than once for all of them, see SPI_connect_my(); for an EXECUTE too, and none once the input set statement_timeout to 0, rather than the rest of the one of the statement before
     if (alone && IsA(stmt, ExecuteStmt)) { dest_execute_prepared(src, (ExecuteStmt *)stmt); return; }
+    if (alone && IsA(stmt, FetchStmt)) { dest_execute_fetch((FetchStmt *)stmt); return; }
 #if PG_VERSION_NUM >= 90500
     // CREATE TABLE AS with IF NOT EXISTS of a table that exists does nothing, which SPI tells only as no rows stored
     if (IsA(stmt, CreateTableAsStmt) && ((CreateTableAsStmt *)stmt)->if_not_exists) exists = OidIsValid(RangeVarGetRelid(((CreateTableAsStmt *)stmt)->into->rel, NoLock, true));
