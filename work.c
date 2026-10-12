@@ -1452,7 +1452,7 @@ static void work_sleep(Work *w) {
 #endif
         // the slots taken in each group: one per pid holding the slot lock (a task worker and we for it hold the same one), or per key and holder for the key of a remote connection, of the high bit set, which two pg_work of a table, of entries of two roles, number alike, see work_connect(),, or having a slot of a task worker of the group, which its input can't let go of, as it can of its lock, with pg_advisory_unlock_all() say, and which an earlier pg_work, restarted since, held no more, plus one per remote task not yet connected; the tasks that fit in the slots left in their group, cut there before the limit, not after it, or a group with more tasks due than it has slots for would take up the whole limit and keep the others waiting for the next pass, and of them, locked, as a window function can't be, the local ones that fit in the slots of pg_task free now, each needing a task worker in one, as a remote one doesn't, for no more of them to be taken only to go back to PLAN, and the remote ones, one each as a probe while none could be run, see work_later(), counted once locked, not before, or a row someone else holds, its author editing it, say, would take the place of one free, and, the one probe of its kind, keep every other task of that kind waiting for as long as it's held
         appendStringInfo(&src, SQL(
-            l AS (
+            %7$s l AS (
                 SELECT pg_catalog.count(DISTINCT CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 5 THEN CASE WHEN "classid" OPERATOR(pg_catalog.>=) 2147483648::pg_catalog.oid THEN "classid"::pg_catalog.int8 OPERATOR(pg_catalog.+) ("pid"::pg_catalog.int8 OPERATOR(pg_catalog.<<) 32) ELSE "classid"::pg_catalog.int8 END END) OPERATOR(pg_catalog.+) pg_catalog.count(CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 7 THEN "classid" END) AS "classid", "objid" FROM (
                     SELECT "classid", "objid", "objsubid", "pid" FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessShareLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) ANY(ARRAY[5, 7]) AND "database" OPERATOR(pg_catalog.=) %2$u
                     UNION ALL SELECT ((($4)::pg_catalog.int4[])["i"])::pg_catalog.oid, ((($5)::pg_catalog.int4[])["i"])::pg_catalog.oid, 5::pg_catalog.int2, 0::pg_catalog.int4 FROM pg_catalog.generate_subscripts(($4)::pg_catalog.int4[], 1) AS w ("i")
@@ -1461,7 +1461,7 @@ static void work_sleep(Work *w) {
                 SELECT "id", "local", "hash", "count" AS "priority", "count" OPERATOR(pg_catalog.-) pg_catalog.row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM (
                     SELECT "id", "remote" IS NULL AS "local", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) AS "hash", CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE(l."classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON l."objid" OPERATOR(pg_catalog.=) pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s'))
                     WHERE "plan" OPERATOR(pg_catalog.<=) %5$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE(l."classid", 0) OPERATOR(pg_catalog.>=) 0 AND ("max" OPERATOR(pg_catalog.>=) 0 OR pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) OPERATOR(pg_catalog.<>) ALL(($6)::pg_catalog.int4[]))
-                    %4$s
+                    %4$s %8$s
                 ) AS c
             ), r AS (
                 SELECT "id", "priority", "local" FROM c WHERE "count" OPERATOR(pg_catalog.>=) 0
@@ -1488,7 +1488,18 @@ static void work_sleep(Work *w) {
 #else
         SQL(AND "id" NOT IN (SELECT "id" FROM n)),
 #endif
-        init_plan(), "");
+        init_plan(), "",
+#if PG_VERSION_NUM < 90600
+        // before 9.6 a task worker counts against the connection limit of the task's author and of the database, and one over it fails to connect, with FATAL, leaving its task in TAKE till the reset: none of the local tasks of the roles with no connection left, theirs or the database's, a superuser not bound by them, taken till one is, rather than taken only to fail so; one more of a role than it has left, taken at once, or one someone else connected meanwhile, may still
+        SQL(f AS (
+            SELECT r."rolname" FROM "pg_catalog"."pg_roles" AS r WHERE NOT r."rolsuper" AND ((r."rolconnlimit" OPERATOR(pg_catalog.>=) 0 AND (SELECT pg_catalog.count(*) FROM "pg_catalog"."pg_stat_activity" AS a WHERE a."usesysid" OPERATOR(pg_catalog.=) r."oid") OPERATOR(pg_catalog.>=) r."rolconnlimit")
+            OR EXISTS (SELECT 1 FROM "pg_catalog"."pg_database" AS d WHERE d."datname" OPERATOR(pg_catalog.=) current_catalog AND d."datconnlimit" OPERATOR(pg_catalog.>=) 0 AND (SELECT pg_catalog.count(*) FROM "pg_catalog"."pg_stat_activity" AS a WHERE a."datid" OPERATOR(pg_catalog.=) d."oid") OPERATOR(pg_catalog.>=) d."datconnlimit"))
+        ),),
+        SQL(AND ("remote" IS NOT NULL OR NOT EXISTS (SELECT 1 FROM f WHERE f."rolname" OPERATOR(pg_catalog.=) t."user")))
+#else
+        "", ""
+#endif
+        );
     }
     SPI_connect_my(src.data, InvalidOid);
     values[3] = CStringGetTextDatum(pids.data); // in the memory of SPI, freed with it
