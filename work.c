@@ -1396,6 +1396,7 @@ static void work_sleep(Work *w) {
     Portal portal;
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TEXTOID, TEXTOID, TEXTOID, INT4OID};
     StringInfoData pids, hashes, pauses;
+    char *take;
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return; // its entry gone from pg_task.json, found by the reload in this very turn of its loop, say: take no task it won't run, to be left in TAKE once it's gone
@@ -1450,39 +1451,48 @@ static void work_sleep(Work *w) {
             ),
         ), w->schema_table, init_plan());
 #endif
+        // with SKIP LOCKED, the local and the remote ones apart, each with its cap as the limit over the locking, see below; without, before 9.5 and in Greengage, where a row someone else holds is waited for, not skipped, numbered before they are locked, by one limit over the locking of them all, not to lock, and wait for, any row more than the pass takes, as the caps of each kind over a union would
+#if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
+        take = psprintf(SQL(
+            r AS (
+                SELECT "id", "priority", "local" FROM c WHERE "count" OPERATOR(pg_catalog.>=) 0
+            ), m AS (
+                SELECT GREATEST(LEAST($1 OPERATOR(pg_catalog.-) (SELECT COALESCE(pg_catalog.sum("classid"), 0) FROM l), $2), 0) AS "limit"
+            ), sl AS (
+                SELECT t.id, r.priority FROM %1$s AS t JOIN r ON t.id OPERATOR(pg_catalog.=) r.id WHERE r.local AND t.state OPERATOR(pg_catalog.=) 'PLAN'
+                ORDER BY r.priority DESC, t.id LIMIT LEAST($3, (SELECT "limit" FROM m)) FOR NO KEY UPDATE OF t SKIP LOCKED
+            ), sr AS (
+                SELECT t.id, r.priority FROM %1$s AS t JOIN r ON t.id OPERATOR(pg_catalog.=) r.id WHERE NOT r.local AND t.state OPERATOR(pg_catalog.=) 'PLAN'
+                ORDER BY r.priority DESC, t.id LIMIT LEAST($7, (SELECT "limit" FROM m)) FOR NO KEY UPDATE OF t SKIP LOCKED
+            ), s AS (
+                SELECT "id" FROM (SELECT "id", "priority" FROM sl UNION ALL SELECT "id", "priority" FROM sr) AS s ORDER BY "priority" DESC, "id" LIMIT (SELECT "limit" FROM m)
+            )
+        ), w->schema_table);
+#else
+        take = psprintf(SQL(
+            r AS (
+                SELECT "id", "priority", "local", pg_catalog.row_number() OVER (PARTITION BY "local" ORDER BY "priority" DESC, "id") AS "slot" FROM c WHERE "count" OPERATOR(pg_catalog.>=) 0
+            ), s AS (
+                SELECT t.id FROM %1$s AS t JOIN r ON t.id OPERATOR(pg_catalog.=) r.id WHERE r.slot OPERATOR(pg_catalog.<=) CASE WHEN r.local THEN $3 ELSE $7 END AND t.state OPERATOR(pg_catalog.=) 'PLAN'
+                ORDER BY r.priority DESC, t.id LIMIT GREATEST(LEAST($1 OPERATOR(pg_catalog.-) (SELECT COALESCE(pg_catalog.sum("classid"), 0) FROM l), $2), 0) FOR NO KEY UPDATE OF t
+            )
+        ), w->schema_table);
+#endif
         // the slots taken in each group: one per pid holding the slot lock (a task worker and we for it hold the same one), or per key and holder for the key of a remote connection, of the high bit set, which two pg_work of a table, of entries of two roles, number alike, see work_connect(),, or having a slot of a task worker of the group, which its input can't let go of, as it can of its lock, with pg_advisory_unlock_all() say, and which an earlier pg_work, restarted since, held no more, plus one per remote task not yet connected; the tasks that fit in the slots left in their group, cut there before the limit, not after it, or a group with more tasks due than it has slots for would take up the whole limit and keep the others waiting for the next pass, and of them, locked, as a window function can't be, the local ones that fit in the slots of pg_task free now, each needing a task worker in one, as a remote one doesn't, for no more of them to be taken only to go back to PLAN, and the remote ones, one each as a probe while none could be run, see work_later(), counted once locked, not before, or a row someone else holds, its author editing it, say, would take the place of one free, and, the one probe of its kind, keep every other task of that kind waiting for as long as it's held
         appendStringInfo(&src, SQL(
-            %7$s l AS (
+            %6$s l AS (
                 SELECT pg_catalog.count(DISTINCT CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 5 THEN CASE WHEN "classid" OPERATOR(pg_catalog.>=) 2147483648::pg_catalog.oid THEN "classid"::pg_catalog.int8 OPERATOR(pg_catalog.+) ("pid"::pg_catalog.int8 OPERATOR(pg_catalog.<<) 32) ELSE "classid"::pg_catalog.int8 END END) OPERATOR(pg_catalog.+) pg_catalog.count(CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 7 THEN "classid" END) AS "classid", "objid" FROM (
                     SELECT "classid", "objid", "objsubid", "pid" FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessShareLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) ANY(ARRAY[5, 7]) AND "database" OPERATOR(pg_catalog.=) %2$u
                     UNION ALL SELECT ((($4)::pg_catalog.int4[])["i"])::pg_catalog.oid, ((($5)::pg_catalog.int4[])["i"])::pg_catalog.oid, 5::pg_catalog.int2, 0::pg_catalog.int4 FROM pg_catalog.generate_subscripts(($4)::pg_catalog.int4[], 1) AS w ("i")
                 ) AS l GROUP BY "objid"
             ), c AS (
                 SELECT "id", "local", "hash", "count" AS "priority", "count" OPERATOR(pg_catalog.-) pg_catalog.row_number() OVER (PARTITION BY "hash" ORDER BY "count" DESC, "id") OPERATOR(pg_catalog.+) 1 AS "count" FROM (
-                    SELECT "id", "remote" IS NULL AS "local", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) AS "hash", CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE(l."classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON l."objid" OPERATOR(pg_catalog.=) pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s'))
-                    WHERE "plan" OPERATOR(pg_catalog.<=) %5$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE(l."classid", 0) OPERATOR(pg_catalog.>=) 0 AND ("max" OPERATOR(pg_catalog.>=) 0 OR pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) OPERATOR(pg_catalog.<>) ALL(($6)::pg_catalog.int4[]))
-                    %4$s %8$s
+                    SELECT "id", "remote" IS NULL AS "local", pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%5$s')) AS "hash", CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE(l."classid", 0) AS "count" FROM %1$s AS t LEFT JOIN l ON l."objid" OPERATOR(pg_catalog.=) pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%5$s'))
+                    WHERE "plan" OPERATOR(pg_catalog.<=) %4$s AND "state" OPERATOR(pg_catalog.=) 'PLAN' AND CASE WHEN "max" OPERATOR(pg_catalog.>=) 0 THEN "max" ELSE 0 END OPERATOR(pg_catalog.-) COALESCE(l."classid", 0) OPERATOR(pg_catalog.>=) 0 AND ("max" OPERATOR(pg_catalog.>=) 0 OR pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%5$s')) OPERATOR(pg_catalog.<>) ALL(($6)::pg_catalog.int4[]))
+                    %3$s %7$s
                 ) AS c
-            ), r AS (
-                SELECT "id", "priority", "local" FROM c WHERE "count" OPERATOR(pg_catalog.>=) 0
-            ), m AS (
-                SELECT GREATEST(LEAST($1 OPERATOR(pg_catalog.-) (SELECT COALESCE(pg_catalog.sum("classid"), 0) FROM l), $2), 0) AS "limit"
-            ), sl AS (
-                SELECT t.id, r.priority FROM %1$s AS t JOIN r ON t.id OPERATOR(pg_catalog.=) r.id WHERE r.local AND t.state OPERATOR(pg_catalog.=) 'PLAN'
-                ORDER BY r.priority DESC, t.id LIMIT LEAST($3, (SELECT "limit" FROM m)) FOR NO KEY UPDATE OF t %3$s
-            ), sr AS (
-                SELECT t.id, r.priority FROM %1$s AS t JOIN r ON t.id OPERATOR(pg_catalog.=) r.id WHERE NOT r.local AND t.state OPERATOR(pg_catalog.=) 'PLAN'
-                ORDER BY r.priority DESC, t.id LIMIT LEAST($7, (SELECT "limit" FROM m)) FOR NO KEY UPDATE OF t %3$s
-            ), s AS (
-                SELECT "id" FROM (SELECT "id", "priority" FROM sl UNION ALL SELECT "id", "priority" FROM sr) AS s ORDER BY "priority" DESC, "id" LIMIT (SELECT "limit" FROM m)
-            ) UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id, pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%6$s')) AS "hash", "group", "remote", "max", ("user")::pg_catalog.text AS "user"
+            ), %8$s UPDATE %1$s AS t SET "state" = 'TAKE' FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id, pg_catalog.hashtext("group" OPERATOR(pg_catalog.||) COALESCE("remote", '%5$s')) AS "hash", "group", "remote", "max", ("user")::pg_catalog.text AS "user"
         ), w->schema_table, init_table_key(w->shared->oid),
-#if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
-        "SKIP LOCKED"
-#else
-        ""
-#endif
-        ,
 #ifdef GP_VERSION_NUM
         "",
 #else
@@ -1499,7 +1509,8 @@ static void work_sleep(Work *w) {
 #else
         "", ""
 #endif
-        );
+        , take);
+        pfree(take);
     }
     SPI_connect_my(src.data, InvalidOid);
     values[3] = CStringGetTextDatum(pids.data); // in the memory of SPI, freed with it
