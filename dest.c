@@ -55,6 +55,11 @@ static void headers(TupleDesc tupdesc) {
     }
 }
 
+// whether a value of the type goes unquoted, see appendBinaryStringInfoEscapeQuote(), as string = false has it: a domain by its base type, a number say, as the server sends it to a client, and remote mode has it
+static bool dest_is_string(Oid type) {
+    return init_oid_is_string(type) && init_oid_is_string(getBaseType(type));
+}
+
 static
 #if PG_VERSION_NUM >= 90600
 bool
@@ -76,7 +81,7 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
         char *value = SPI_getvalue_my(slot, tupdesc, col);
         if (col > 1 && task.delimiter) appendStringInfoChar(&task.output, task.delimiter); // none for an empty one, as for quote and escape, rather than a NUL ending the output there
         if (!value) appendStringInfoString(&task.output, task.null); else {
-            appendBinaryStringInfoEscapeQuote(&task.output, value, strlen(value), !init_oid_is_string(SPI_gettypeid(tupdesc, col)) && task.string, task.escape, task.quote);
+            appendBinaryStringInfoEscapeQuote(&task.output, value, strlen(value), !dest_is_string(SPI_gettypeid(tupdesc, col)) && task.string, task.escape, task.quote);
             pfree(value);
         }
     }
@@ -275,7 +280,7 @@ static void dest_spi_output(uint64 first) {
             char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
             if (col > 1 && task.delimiter) appendStringInfoChar(&task.output, task.delimiter); // none for an empty one, as for quote and escape, rather than a NUL ending the output there
             if (!value) appendStringInfoString(&task.output, task.null); else {
-                appendBinaryStringInfoEscapeQuote(&task.output, value, strlen(value), !init_oid_is_string(SPI_gettypeid(SPI_tuptable->tupdesc, col)) && task.string, task.escape, task.quote);
+                appendBinaryStringInfoEscapeQuote(&task.output, value, strlen(value), !dest_is_string(SPI_gettypeid(SPI_tuptable->tupdesc, col)) && task.string, task.escape, task.quote);
                 pfree(value);
             }
         }
