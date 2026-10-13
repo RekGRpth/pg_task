@@ -307,17 +307,11 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
         if (SPI_is_cursor_plan(plan)) {
             ErrorContextCallback context = {.callback = dest_spi_context, .arg = (void *)src, .previous = error_context_stack};
             Portal portal;
-            uint64 rows = 0;
             portal = SPI_cursor_open(NULL, plan, NULL, NULL, false); // which has the statement as the context of an error itself, as the fetches don't
             error_context_stack = &context;
             elog(DEBUG1, "id = %li, commandTag = %s, cursor", task.shared->id, tagname);
-            task.skip = 1;
-            do {
-                SPI_cursor_fetch(portal, true, init_task_fetch());
-                dest_spi_output(rows);
-                rows += SPI_processed;
-                SPI_freetuptable(SPI_tuptable);
-            } while (SPI_processed);
+            // into the receiver of local mode, each row into the output as it comes, rather than by SPI_cursor_fetch() a few at a time, those of a fetch an error, a timeout or a STOP, came within lost with it; in one go, as each run of the portal starts the receiver anew, with the header again
+            (void)PortalRunFetch(portal, FETCH_FORWARD, FETCH_ALL, CreateDestReceiverMy(DestDebug));
             error_context_stack = context.previous;
             SPI_cursor_close(portal);
             SPI_freeplan(plan);
