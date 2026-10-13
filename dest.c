@@ -364,6 +364,31 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     }
 }
 
+// the statement of the input at location, in bytes, an error at a position in it at that position in the whole input, as local mode reports it, the input its STATEMENT, rather than within the text of the statement alone, which SPI reports as its QUERY then
+static void dest_execute_spi_at(const char *src, Node *stmt, bool alone, int location) {
+    MemoryContext oldcontext = CurrentMemoryContext;
+    PG_TRY();
+        dest_execute_spi(src, stmt, alone);
+    PG_CATCH();
+        {
+            ErrorData *edata;
+            MemoryContextSwitchTo(oldcontext);
+            edata = CopyErrorData();
+            // only that of SPI for the statement itself, not of a query of a function it called, say, which local mode reports so too
+            if (edata->cursorpos <= 0 && edata->internalpos > 0 && edata->internalquery && !strcmp(edata->internalquery, src)) {
+                FlushErrorState();
+                edata->cursorpos = pg_mbstrlen_with_len(task.input, location) + edata->internalpos;
+                edata->internalpos = 0;
+                pfree(edata->internalquery);
+                edata->internalquery = NULL;
+                ReThrowError(edata);
+            }
+            FreeErrorData(edata);
+            PG_RE_THROW();
+        }
+    PG_END_TRY();
+}
+
 #if PG_VERSION_NUM < 100000
 // no stmt_location before 10 to slice the input by, into the text of each statement, as from 10 on: up to each ; outside parentheses, those of the actions of CREATE RULE say, by the tokens of the server's own scanner, which takes quotes and dollar quotes as the parser did, a statement of no tokens, an empty one, giving no parse tree
 static void dest_execute_split(const char *src, List *parsetree_list) {
@@ -373,6 +398,8 @@ static void dest_execute_split(const char *src, List *parsetree_list) {
     core_YYSTYPE yylval;
     int depth = 0, start = 0, token;
     List *stmts = NIL; // all of them first, then run, as an error of one would leave the scanner unfinished
+    List *locations = NIL; // and where each starts in src
+    int i = 0;
     ListCell *stmt, *tree;
     YYLTYPE yylloc;
 #if PG_VERSION_NUM >= 90500
@@ -380,7 +407,7 @@ static void dest_execute_split(const char *src, List *parsetree_list) {
 #endif
     while ((token = core_yylex(&yylval, &yylloc, scanner))) {
         if (token == ';' && depth <= 0) {
-            if (tokens) stmts = lappend(stmts, pnstrdup(src + start, yylloc + 1 - start));
+            if (tokens) { stmts = lappend(stmts, pnstrdup(src + start, yylloc + 1 - start)); locations = lappend_int(locations, start); }
             start = yylloc + 1;
             tokens = false;
             continue;
@@ -389,14 +416,15 @@ static void dest_execute_split(const char *src, List *parsetree_list) {
         tokens = true;
     }
     scanner_finish(scanner);
-    if (tokens) stmts = lappend(stmts, pstrdup(src + start));
+    if (tokens) { stmts = lappend(stmts, pstrdup(src + start)); locations = lappend_int(locations, start); }
     if (list_length(stmts) != list_length(parsetree_list)) { // not to be, but rather than run a statement by the parse tree of another: as SPI_execute() runs them all, reporting the last statement only
         elog(WARNING, "%i statements of %i parse trees", list_length(stmts), list_length(parsetree_list));
         dest_execute_spi(src, (Node *)llast(parsetree_list), false);
         return;
     }
-    forboth(stmt, stmts, tree, parsetree_list) dest_execute_spi(lfirst(stmt), (Node *)lfirst(tree), true);
+    forboth(stmt, stmts, tree, parsetree_list) dest_execute_spi_at(lfirst(stmt), (Node *)lfirst(tree), true, list_nth_int(locations, i++));
     list_free_deep(stmts);
+    list_free(locations);
 }
 #endif
 
@@ -430,7 +458,7 @@ static void dest_execute(void) {
         // RawStmt.stmt_location lets us slice task.input into the text of each individual
         // statement and run them through SPI one by one, the same way exec_simple_query and
         // the remote libpq path already report a result per statement instead of just the last.
-        if (list_length(parsetree_list) <= 1) dest_execute_spi(task.input, linitial_node(RawStmt, parsetree_list)->stmt, true); else {
+        if (list_length(parsetree_list) <= 1) dest_execute_spi_at(task.input, linitial_node(RawStmt, parsetree_list)->stmt, true, 0); else {
             ListCell *cell;
             int prev_start = -1;
             Node *prev_stmt = NULL;
@@ -438,16 +466,16 @@ static void dest_execute(void) {
                 int start = lfirst_node(RawStmt, cell)->stmt_location;
                 if (prev_start >= 0) {
                     char *stmt = pnstrdup(task.input + prev_start, start - prev_start);
-                    dest_execute_spi(stmt, prev_stmt, true);
+                    dest_execute_spi_at(stmt, prev_stmt, true, prev_start);
                     pfree(stmt);
                 }
                 prev_start = start;
                 prev_stmt = lfirst_node(RawStmt, cell)->stmt;
             }
-            dest_execute_spi(task.input + prev_start, prev_stmt, true);
+            dest_execute_spi_at(task.input + prev_start, prev_stmt, true, prev_start);
         }
 #else
-        if (list_length(parsetree_list) <= 1) dest_execute_spi(task.input, (Node *)linitial(parsetree_list), true); else dest_execute_split(task.input, parsetree_list);
+        if (list_length(parsetree_list) <= 1) dest_execute_spi_at(task.input, (Node *)linitial(parsetree_list), true, 0); else dest_execute_split(task.input, parsetree_list);
 #endif
     }
 }

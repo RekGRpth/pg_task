@@ -1,0 +1,12 @@
+-- an error at a position in a statement is reported at that position in the whole input, alike in local mode, spi mode and remote mode, not within the text of the statement alone, with it as a QUERY, as SPI has it
+DELETE FROM task WHERE "group" = 'error_position';
+INSERT INTO task ("group", input) SELECT 'error_position', 'SELECT 1; SELECT error_position_column FROM pg_class' UNION ALL SELECT 'error_position', 'SELECT error_position_column';
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'error_position' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''error_position'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT state, error FROM task WHERE "group" = 'error_position' ORDER BY id;
+DELETE FROM task WHERE "group" = 'error_position';
