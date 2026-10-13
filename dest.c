@@ -355,6 +355,10 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     }
     elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, tagname);
     if (SPI_tuptable) dest_spi_output(0);
+#if PG_VERSION_NUM < 120000
+    // the oid of the one row inserted into a table WITH OIDS before 12, as local mode and remote mode report it, 0 for none or several
+    if (count && !strcmp(tagname, "INSERT")) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s %u %lu", tagname, SPI_processed == 1 ? SPI_lastoid : InvalidOid, (unsigned long)SPI_processed); else
+#endif
     if (count) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, !strcmp(tagname, "INSERT") ? "%s 0 %lu" : "%s %lu", tagname, (unsigned long)SPI_processed);
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
     elog(DEBUG1, "id = %li, completionTag = %s", task.shared->id, completionTag);
