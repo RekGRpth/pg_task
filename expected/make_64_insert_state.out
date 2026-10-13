@@ -1,0 +1,33 @@
+-- a task author inserts a task in PLAN only, as the state machine lets it change one to STOP only: one in STOP, with a start and no stop, would be counted as running in its group for good; the owner of the table, pg_task.user, and its members may insert one in any state
+SET client_min_messages = warning;
+DROP ROLE IF EXISTS task_insert_state;
+CREATE ROLE task_insert_state;
+RESET client_min_messages;
+GRANT SELECT, INSERT, DELETE ON task TO task_insert_state;
+GRANT USAGE ON SEQUENCE task_id_seq TO task_insert_state;
+DELETE FROM task WHERE "group" = 'insert_state';
+SET ROLE task_insert_state;
+\set VERBOSITY terse
+INSERT INTO task ("group", input, plan, state, start) VALUES ('insert_state', 'SELECT 1', 'infinity', 'STOP', now());
+ERROR:  invalid state transition
+\set VERBOSITY default
+INSERT INTO task ("group", input, plan) VALUES ('insert_state', 'SELECT 1', 'infinity');
+SELECT state FROM task WHERE "group" = 'insert_state';
+ state 
+-------
+ PLAN
+(1 row)
+
+RESET ROLE;
+INSERT INTO task ("group", input, plan, state) VALUES ('insert_state', 'SELECT 1', 'infinity', 'STOP');
+SELECT state FROM task WHERE "group" = 'insert_state' ORDER BY id;
+ state 
+-------
+ PLAN
+ STOP
+(2 rows)
+
+DELETE FROM task WHERE "group" = 'insert_state';
+REVOKE ALL ON task FROM task_insert_state;
+REVOKE ALL ON SEQUENCE task_id_seq FROM task_insert_state;
+DROP ROLE task_insert_state;
