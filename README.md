@@ -130,7 +130,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | remote | text | NULL | | Connect to remote database (if need) |
 | user | name | NOT NULL | current_user | Role that inserted the task; input is executed as this role, and the column is immutable after insert |
 
-You may freely add your own columns to `task` and/or partition it — `pg_task` only ever touches the columns it created (see [Self-provisioning and the helper triggers](#self-provisioning-and-the-helper-triggers)). The repeat of a task copies your columns too, as the table has them at that moment, except generated and identity ones, which it leaves to the table to fill; your own `CHECK` constraints, on `pg_task`'s columns too, are left alone; and a column named `hash` is dropped only if it's the legacy one earlier versions of `pg_task` made, not one of yours.
+You may freely add your own columns to `task` and/or partition it (on PostgreSQL 13+: before that a partitioned table can't have the row triggers `pg_task` puts on it before an insert or an update, and `pg_work` refuses one with `table ... is partitioned`) — `pg_task` only ever touches the columns it created (see [Self-provisioning and the helper triggers](#self-provisioning-and-the-helper-triggers)). The repeat of a task copies your columns too, as the table has them at that moment, except generated and identity ones, which it leaves to the table to fill; your own `CHECK` constraints, on `pg_task`'s columns too, are left alone; and a column named `hash` is dropped only if it's the legacy one earlier versions of `pg_task` made, not one of yours.
 
 ## Running in multiple databases
 

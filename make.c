@@ -721,6 +721,14 @@ void make_table(const Work *w) {
         SELECT pg_catalog.pg_class.oid FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) relnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND relname OPERATOR(pg_catalog.=) $2 AND relkind OPERATOR(pg_catalog.=) ANY(ARRAY['r', 'p']::"char"[])
     ));
     w->shared->oid = make_oid(src.data, countof(argtypes), argtypes, values, NULL);
+#if PG_VERSION_NUM >= 100000 && PG_VERSION_NUM < 130000
+    // a partitioned one, which the README lets one make of it, takes the row triggers before an update or an insert of pg_task only from 13 on, before which pg_work would fail on them over and over, having changed some of it already: refused at once rather
+    resetStringInfo(&src);
+    appendStringInfo(&src, SQL(
+        SELECT relkind OPERATOR(pg_catalog.=) 'p' AS "test" FROM pg_catalog.pg_class WHERE oid OPERATOR(pg_catalog.=) %1$i
+    ), w->shared->oid);
+    if (make_test(src.data, 0, NULL, NULL, NULL)) ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("table %s is partitioned", w->schema_table), errdetail("A partitioned task table takes the triggers of pg_task from PostgreSQL 13 on."), errhint("Have pg_task.table name a table not partitioned.")));
+#endif
     // a table of a superuser's that is not one of pg_task's, which pg_task.table of the database's owner may name, is not for pg_work to add its columns, triggers and policy to: one of pg_task's has the state column of the enum of states pg_work made in its schema
     resetStringInfo(&src);
     appendStringInfo(&src, SQL(
