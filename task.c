@@ -37,6 +37,7 @@ static Oid userid = InvalidOid; // pg_task.user, whose rights the task table boo
 // the next task of the very group and remote of the task just done, not only of their hash, which "group" || "remote" of others may give too, and which this worker would then run as if it were of its own: a remote one locally, a local one or one of another server on its connection
 // and one that fits in its group by its own max, as work_sleep() takes them, with no more than max others running: those of a higher max, taken since the one just done, may well fill the group past it; counted by their rows in TAKE or WORK, or in STOP still running, its cancel on its way, started and not done, which keeps STOP, rather than by pg_locks, too much to read after every task, which count no fewer of them, only maybe more, those left by a pg_work gone, until the reset, or those whose bookkeeping is put off, see work_defer(), or one in STOP whose worker went down before it was done, which no reset puts back: the next one is left to work_sleep() then
 static bool task_live(const Task *t) {
+    bool taken;
     char nulls[] = {' ', ' ', ' ', ' ', ' ', ' ', t->remote ? ' ' : 'n', ' '};
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start), (Datum)0, (Datum)0, (Datum)0, Int64GetDatum(t->shared->id)};
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID, TEXTOID, TEXTOID, TEXTOID, INT8OID};
@@ -66,11 +67,11 @@ static bool task_live(const Task *t) {
     if (t->remote) values[6] = CStringGetTextDatum(t->remote);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
-    t->shared->id = SPI_processed == 1 ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)) : 0;
+    t->shared->id = (taken = SPI_processed == 1) ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)) : 0;
     elog(DEBUG1, "id = %li", t->shared->id);
     SPI_finish_my();
     set_ps_display_my("idle");
-    return ShutdownRequestPending || !t->shared->id;
+    return ShutdownRequestPending || !taken; // by the row taken, not by its id, which may be 0, an author inserting it, its row in TAKE then to run, not to be left there till the reset
 }
 
 static char *task_columns(const Task *t) {
