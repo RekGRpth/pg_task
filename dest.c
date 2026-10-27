@@ -7,6 +7,8 @@
 #include <commands/portalcmds.h>
 #include <commands/prepare.h>
 #include <miscadmin.h>
+#include <parser/analyze.h>
+#include <parser/parser.h>
 #include <pgstat.h>
 #include <replication/slot.h>
 #include <storage/ipc.h>
@@ -289,6 +291,58 @@ static void dest_spi_output(uint64 first) {
     }
 }
 
+// the settings of the lexer the input was read by at first, by pg_parse_query() in dest_execute(), as local mode and remote mode read all of its statements at once, for SPI to read each statement again by them, its text sliced by that reading, rather than by those the statements before it set: backslash_quote = off failing E'\'' then, or, before 19, standard_conforming_strings = off ending a string with a backslash elsewhere; from right before SPI reads it till its parse analysis, see dest_analyze(), which comes before anything of it runs, a SET of them say, those of the session kept aside meanwhile
+static bool lexer_read = false;
+static int backslash_quote_input, backslash_quote_session;
+#if PG_VERSION_NUM < 190000
+static bool standard_conforming_strings_input, standard_conforming_strings_session;
+#endif
+static post_parse_analyze_hook_type post_parse_analyze_hook_prev = NULL;
+
+static void dest_lexer_input(void) {
+    backslash_quote_input = backslash_quote;
+#if PG_VERSION_NUM < 190000
+    standard_conforming_strings_input = standard_conforming_strings;
+#endif
+}
+
+static void dest_lexer_read(void) {
+    backslash_quote_session = backslash_quote;
+    backslash_quote = backslash_quote_input;
+#if PG_VERSION_NUM < 190000
+    standard_conforming_strings_session = standard_conforming_strings;
+    standard_conforming_strings = standard_conforming_strings_input;
+#endif
+    lexer_read = true;
+}
+
+// those of the session back, once read, before anything runs, or on an error, before the abort of the subtransaction, which knows nothing of them
+static void dest_lexer_back(void) {
+    if (!lexer_read) return;
+    backslash_quote = backslash_quote_session;
+#if PG_VERSION_NUM < 190000
+    standard_conforming_strings = standard_conforming_strings_session;
+#endif
+    lexer_read = false;
+}
+
+#if PG_VERSION_NUM >= 190000
+static void dest_analyze(ParseState *pstate, Query *query, const JumbleState *jstate) {
+    dest_lexer_back();
+    if (post_parse_analyze_hook_prev) post_parse_analyze_hook_prev(pstate, query, jstate);
+}
+#elif PG_VERSION_NUM >= 140000
+static void dest_analyze(ParseState *pstate, Query *query, JumbleState *jstate) {
+    dest_lexer_back();
+    if (post_parse_analyze_hook_prev) post_parse_analyze_hook_prev(pstate, query, jstate);
+}
+#else
+static void dest_analyze(ParseState *pstate, Query *query) {
+    dest_lexer_back();
+    if (post_parse_analyze_hook_prev) post_parse_analyze_hook_prev(pstate, query);
+}
+#endif
+
 static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     bool count = false;
     bool exists = false;
@@ -315,7 +369,10 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     }
 #endif
     if (dest_spi_rows(stmt)) {
-        SPIPlanPtr plan = SPI_prepare(src, 0, NULL);
+        SPIPlanPtr plan;
+        dest_lexer_read();
+        plan = SPI_prepare(src, 0, NULL);
+        dest_lexer_back();
         if (!plan) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_prepare failed"), errdetail("%s", SPI_result_code_string(SPI_result))));
         // fetched a few rows at a time, each checked against the most of output a task may keep as it comes, see dest_spi_output(), rather than all of them first, gigabytes of a SELECT, say, in the worker's memory, with the worker, or the whole server, taken down by running out of it, as local mode and remote mode have it; only the rows, as below
         if (SPI_is_cursor_plan(plan)) {
@@ -334,7 +391,9 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
         }
         SPI_freeplan(plan);
     }
+    dest_lexer_read();
     rc = SPI_execute(src, false, 0);
+    dest_lexer_back();
     switch (rc) {
         case SPI_ERROR_ARGUMENT: ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("invalid arguments"))); break;
         case SPI_ERROR_COPY: ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("COPY is not supported"))); break;
@@ -386,6 +445,7 @@ static void dest_execute_spi_at(const char *src, Node *stmt, bool alone, int loc
         {
             ErrorData *edata;
             MemoryContextSwitchTo(oldcontext);
+            dest_lexer_back(); // an error of SPI reading the statement, see dest_lexer_read()
             edata = CopyErrorData();
             // only that of SPI for the statement itself, not of a query of a function it called, say, which local mode reports so too
             if (edata->cursorpos <= 0 && edata->internalpos > 0 && edata->internalquery && !strcmp(edata->internalquery, src)) {
@@ -465,7 +525,9 @@ static void dest_execute(void) {
             if (IsTransactionState()) ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION), errmsg("still active sql transaction")));
         }
     } else {
-        List *parsetree_list = pg_parse_query(task.input);
+        List *parsetree_list;
+        dest_lexer_input();
+        parsetree_list = pg_parse_query(task.input);
         if (!parsetree_list) return; // no statement at all: nothing to run and no output, as NullCommand in local mode, rather than SPI_execute()'s SPI_OK_REWRITTEN tag
 #if PG_VERSION_NUM >= 100000
         // RawStmt.stmt_location lets us slice task.input into the text of each individual
@@ -628,6 +690,8 @@ void dest_init(void) {
     RegisterXactCallback(dest_xact, NULL);
     emit_log_hook_prev = emit_log_hook;
     emit_log_hook = dest_emit_log;
+    post_parse_analyze_hook_prev = post_parse_analyze_hook;
+    post_parse_analyze_hook = dest_analyze;
     before_shmem_exit(dest_shmem_exit, (Datum)0);
 }
 
@@ -687,6 +751,7 @@ bool dest_timeout(void) {
         if (held) held = false; else HOLD_INTERRUPTS(); // the input done, no termination is to come in between it and its bookkeeping, which would leave the task in WORK, to run again on reset: until the end, see below, if not since its commit already, see dest_xact()
         QueryCancelPending = false; // a cancel that came too late for the input, after its last CHECK_FOR_INTERRUPTS(), isn't meant for the bookkeeping, outside any PG_TRY()
     PG_CATCH();
+        dest_lexer_back(); // before the abort of the subtransaction, see dest_lexer_read()
         held = false;
         HOLD_INTERRUPTS(); // as above, the error's errfinish() having let them through again
         running = false;
