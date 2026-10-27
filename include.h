@@ -72,7 +72,7 @@ typedef struct Shared {
     char table[NAMEDATALEN];
     char user[NAMEDATALEN];
     int64 id;
-    int64 reg; // of a pg_work: the registration of it, which a restart of it keeps, see init_free_work()
+    int64 reg; // of a pg_work: the registration of it, which a restart of it keeps, see init_free_work() and init_work_start()
     int64 reset;
     int64 sleep;
     int64 stop;
@@ -80,7 +80,7 @@ typedef struct Shared {
     int limit;
     int max;
     int pid; // of a pg_work, once started: see init_work()
-    bool exited; // of a pg_work, gone with an error, its slot kept for the postmaster to restart it, its pid no longer its own, see init_work_wake()
+    bool exited; // of a pg_work, gone with an error, its slot kept for the postmaster to restart it, its pid no longer its own, see init_work_exited()
     int run;
     Oid oid;
 } Shared;
@@ -147,7 +147,8 @@ bool init_free_task(int slot, const char *data, Oid oid, int64 id);
 bool init_free_work(int slot, int64 reg);
 bool init_held_work(int slot, int64 reg);
 void init_work(int n, const char **data, const char **user, const int *hash, bool *in_use);
-bool init_work_gone(Datum main_arg);
+int init_work_start(int slot, int64 reg, int pid);
+void init_work_exited(int slot, int64 reg);
 void init_work_kept(Shared *ws);
 void init_work_wake(const Shared *task);
 bool init_oid_is_string(Oid oid);

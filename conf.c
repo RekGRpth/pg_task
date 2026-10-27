@@ -110,6 +110,9 @@ static void conf_work(Work *w, bool in_use) {
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     w->shared->reg = conf_reg();
+#if PG_VERSION_NUM >= 90500
+    memcpy(worker.bgw_extra, &w->shared->reg, sizeof(w->shared->reg)); // for the pg_work to tell its slot by, see init_work_start()
+#endif
     if ((slot = init_arg(w->shared)) == -1) ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not find empty slot")));
     worker.bgw_main_arg = Int32GetDatum(slot);
     worker.bgw_notify_pid = MyProcPid;

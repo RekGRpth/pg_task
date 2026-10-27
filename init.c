@@ -613,12 +613,26 @@ void init_task_pid(int slot, const char *data, Oid oid, int64 id, int pid) {
     LWLockRelease(BackgroundWorkerLock);
 }
 
-bool init_work_gone(Datum main_arg) {
-    bool gone;
-    LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
-    gone = shared[DatumGetInt32(main_arg)].gone;
+// a pg_work started, or restarted by the postmaster with its slot kept: whether the slot is still of its very registration, see conf_work(), rather than of another one, handed it by a pg_conf restarted meanwhile, after a crash of the server say, which zeroes the slots, the pg_work registered still, to be restarted with the slot it had; 1 if so, and alive by its pid then, not to be taken for one waiting to be restarted, see init_work(), -1 if so but gone, see init_work(), 0 if not, for it to go without touching the slot; in one go, for no pg_conf to free the slot, or hand it to another one, in between
+int init_work_start(int slot, int64 reg, int pid) {
+    int own = 0;
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    if (reg && shared[slot].in_use && !shared[slot].id && shared[slot].reg == reg) {
+        if (shared[slot].gone) own = -1; else {
+            own = 1;
+            shared[slot].pid = pid;
+            shared[slot].exited = false; // restarted, its slot kept, see init_work_exited()
+        }
+    }
     LWLockRelease(BackgroundWorkerLock);
-    return gone;
+    return own;
+}
+
+// a pg_work gone with an error, its slot kept for the postmaster to restart it, with its pid for pg_conf, see init_work(), but not one to wake up any more, see init_work_wake(): only while the slot is still of its registration, not of another one, given it once pg_conf freed it, see conf_reconcile()
+void init_work_exited(int slot, int64 reg) {
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    if (shared[slot].in_use && !shared[slot].id && shared[slot].reg == reg) shared[slot].exited = true;
+    LWLockRelease(BackgroundWorkerLock);
 }
 
 // a pg_work that finds its entry, holding its lock, see work_check(), is the one of it: not gone, as pg_conf may have marked it by a reload removing the entry, put back by the next one before the pg_work saw either, for it to be woken still, see init_work_wake(), and, crashed later, to be restarted rather than exit for good, with no pg_conf restarted since to start it again

@@ -108,6 +108,7 @@ static volatile uint64 idle_count = 0;
 static volatile sig_atomic_t woken = false; // by the wake-up trigger, see work_idle()
 static bool later_local = false, later_remote = false; // no worker, or no file descriptor for a connection, to be had for the last task of its kind, see work_later()
 static Work work = {0};
+static int64 reg = 0; // the registration of this pg_work, see conf_work(), whose slot is its own only while of it, see init_work_start()
 
 Work *get_work(void) {
     return &work;
@@ -1025,7 +1026,7 @@ static void work_exit(int code, Datum arg) {
 // the slot of pg_work, last, see work_exit()
 static void work_shmem_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
-    if (!code) init_free(DatumGetInt32(arg)); else work.shared->exited = true; // its pid kept for pg_conf, see init_work(), but not one to wake up any more
+    if (!code) init_free_work(DatumGetInt32(arg), reg); else init_work_exited(DatumGetInt32(arg), reg); // either only while the slot is of its registration still, see init_work_start()
 }
 
 static void work_stop(const Work *w) {
@@ -1587,6 +1588,7 @@ void work_main(Datum main_arg) {
     instr_time start_time_sleep;
     long current_reset = -1;
     long current_sleep = -1;
+    int own;
     StringInfoData application_name, schema_table, schema_type;
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
     work.shared = init_shared(main_arg);
@@ -1597,11 +1599,14 @@ void work_main(Datum main_arg) {
     Gp_session_role = GP_ROLE_DISPATCH;
 #endif
 #endif
-    if (!work.shared->in_use) { ereport(LOG, (errmsg("shared slot not in use, waiting for pg_conf to reinitialize"))); return; } // before registering work_shmem_exit, so that a slot that isn't ours never gets freed
+#if PG_VERSION_NUM >= 90500
+    memcpy(&reg, MyBgworkerEntry->bgw_extra, sizeof(reg)); // as pg_conf passed it, see conf_work()
+#else
+    reg = work.shared->reg; // with no bgw_extra to pass it by, that of its slot as it finds it: not telling it from the slot of another one on its start, but for it not to free one given to another one later, on its way out
+#endif
+    if (!(own = init_work_start(DatumGetInt32(main_arg), reg, MyProcPid))) { ereport(LOG, (errmsg("shared slot not of this pg_work, waiting for pg_conf to reinitialize"))); return; } // before registering work_shmem_exit, so that a slot that isn't ours never gets freed: exiting cleanly, for it not to be restarted again
     before_shmem_exit(work_shmem_exit, main_arg);
-    if (init_work_gone(main_arg)) { ereport(LOG, (errmsg("entry no longer in pg_task.json, or taken over by another pg_work"))); return; } // restarted by the postmaster after its entry is gone, or another pg_work was started for it, which pg_conf, with no handle of it, marked in its slot: exit cleanly, for it not to be restarted again, freeing its slot, before connecting, which may well be why it was restarted
-    work.shared->pid = MyProcPid; // alive, for pg_conf not to start another one for its entry, see init_work()
-    work.shared->exited = false; // restarted, its slot kept, see work_shmem_exit()
+    if (own < 0) { ereport(LOG, (errmsg("entry no longer in pg_task.json, or taken over by another pg_work"))); return; } // restarted by the postmaster after its entry is gone, or another pg_work was started for it, which pg_conf, with no handle of it, marked in its slot: exit cleanly, for it not to be restarted again, freeing its slot, before connecting, which may well be why it was restarted
     pqsignal(SIGHUP, SignalHandlerForConfigReload);
     pqsignal(SIGINT, work_idle);
     pqsignal(SIGTERM, die); // terminate at the next CHECK_FOR_INTERRUPTS(), as a backend does, rather than in the default handler of background workers, whose FATAL right there can come in the middle of a commit
