@@ -715,6 +715,9 @@ bool dest_timeout(void) {
     int StatementTimeoutTask;
     volatile bool released = false, finished = false;
     failed = false; // of this task, see dest_shmem_exit()
+#ifdef HOLD_CANCEL_INTERRUPTS
+    HOLD_CANCEL_INTERRUPTS(); // a cancel coming from here up to its reset below, after the bookkeeping that starts the task, is for no task, as one coming in between tasks, rather than one failing that start, or, once its WORK is committed, the worker, outside any PG_TRY(), the task left in WORK, to run again on reset, as an elog() of DEBUG1 would let it through, see errfinish(), with log_min_messages that low
+#endif
     // an error starting it, rather than a termination, which is FATAL, which no PG_CATCH() sees: told by the error itself, not by the log, which with log_min_messages = panic has none of it
     PG_TRY();
         exit = task_work(&task);
@@ -722,13 +725,21 @@ bool dest_timeout(void) {
         failed = true;
         PG_RE_THROW();
     PG_END_TRY();
-    if (exit) return true;
+    if (exit) {
+#ifdef HOLD_CANCEL_INTERRUPTS
+        RESUME_CANCEL_INTERRUPTS();
+#endif
+        return true;
+    }
     task.skip = 0; // or a task failed before in this worker would hide the command tag of the next one, and with nothing else to output have it deleted
     elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
     StatementTimeout = task.timeout ? task.timeout : StatementTimeoutMy; // a task without a timeout of its own still runs under the server's statement_timeout, as a remote one does, and as a timeout of its own is capped by it
     StatementTimeoutTask = StatementTimeout;
     QueryCancelPending = false; // a cancel that came in between tasks, held off meanwhile, is for no task, as one coming to an idle backend: before the statement timeout is armed, by SPI_connect_my() in spi mode, not to take its cancel for one, the timeout of the task lost then, its input run with none
+#ifdef HOLD_CANCEL_INTERRUPTS
+    RESUME_CANCEL_INTERRUPTS(); // see above
+#endif
     if (task.shared->spi) {
         SPI_connect_my(task.input, InvalidOid);
         BeginInternalSubTransaction(NULL);

@@ -613,12 +613,21 @@ void task_main(Datum main_arg) {
     task->shared->pid = MyProcPid; // for pg_work to count this worker in its group by its slot, see init_task_pids(), once, with its lock
     task->start = GetCurrentTimestamp();
     set_ps_display_my("idle");
+#ifdef HOLD_CANCEL_INTERRUPTS
+    HOLD_CANCEL_INTERRUPTS(); // a cancel before the first task or after the last one is for no task, as one in between them, see task_latch(), rather than an error of the worker, in an elog() of DEBUG1, which would let it through, see dest_timeout()
+#endif
     if (!lock_table_pid_hash(task->shared->oid, task->pid, task->shared->hash)) { ereport(WARNING, (errmsg("!lock_table_pid_hash(%i, %i, %i)", task->shared->oid, task->pid, task->shared->hash))); return; }
+#ifdef HOLD_CANCEL_INTERRUPTS
+    RESUME_CANCEL_INTERRUPTS();
+#endif
     while (!ShutdownRequestPending) {
         int rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0);
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
         task_latch();
         if (rc & WL_TIMEOUT) if (dest_timeout()) ShutdownRequestPending = true;
     }
+#ifdef HOLD_CANCEL_INTERRUPTS
+    HOLD_CANCEL_INTERRUPTS(); // see above
+#endif
     if (!unlock_table_pid_hash(task->shared->oid, task->pid, task->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", task->shared->oid, task->pid, task->shared->hash)));
 }
