@@ -69,7 +69,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | pg_conf.restart | int | 60 | config | Restart pg_conf after it crashed in that many seconds (read once, at server start) |
 | pg_task.count | int | 0 | config, database, user, session | Non-negative maximum count of tasks, are executed by current background worker process before exit |
 | pg_task.fetch | int | 100 | config, database, user | Fetch task rows at once |
-| pg_task.id | bigint | 0 | session | Current task id (for read only) |
+| pg_task.id | bigint | | session | Current task id (for read only), empty out of a task, as a task may have id 0 |
 | pg_task.limit | int | 1000 | config, database, user | Limit task rows at once |
 | pg_task.max | int | 0 | config, database, user, session | Maximum count of additional concurrently executing tasks in group (total concurrency = max + 1), negative value means pause between tasks in milliseconds |
 | pg_task.run | int | 2147483647 | config, database, user | Maximum count of concurrently executing tasks in work |

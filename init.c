@@ -331,7 +331,7 @@ void _PG_init(void) {
     DefineCustomStringVariable("pg_task.delimiter", "pg_task delimiter", "Results columns delimiter", &init.task.delimiter, "\t", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.escape", "pg_task escape", "Results columns escape", &init.task.escape, "", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.group", "pg_task group", "Task grouping by name", &init.task.group, "group", PGC_USERSET, 0, NULL, NULL, NULL);
-    DefineCustomStringVariable("pg_task.id", "pg_task id", "Current task id", &init.task.id, "0", PGC_USERSET, 0, NULL, NULL, NULL);
+    DefineCustomStringVariable("pg_task.id", "pg_task id", "Current task id", &init.task.id, "", PGC_USERSET, 0, NULL, NULL, NULL); // empty out of a task, rather than 0, which the id of a task may be too, an author inserting it, see the default of parent
     DefineCustomStringVariable("pg_task.json", "pg_task json", "Json configuration, available keys: data, reset, run, schema, sleep, spi, table and user", &init.task.json, SQL([{}]), PGC_SIGHUP, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.live", "pg_task live", "Non-negative maximum time of live of current background worker process before exit", &init.task.live, "0 sec", PGC_USERSET, 0, NULL, NULL, NULL);
     DefineCustomStringVariable("pg_task.null", "pg_task null", "Null text value representation", &init.null, "\\N", PGC_USERSET, 0, NULL, NULL, NULL);

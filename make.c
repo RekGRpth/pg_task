@@ -200,7 +200,8 @@ static bool make_default_cooked(const Work *w, const char *name, const char *val
 }
 
 // the value, which has the names of the schema in it, those of its type, as a parameter, not in the text of the query, as anything in the name of the schema would end a quote, $$ say, which pg_task.schema may come with from the settings of the database, which its owner may change
-static void make_default(const Work *w, const char *name, const char *value) {
+// fill: the rows with none in the column given the default too, for a column of NOT NULL, rather than for one that may well be NULL, as parent is out of a task, in pg_work too, all of them updated for nothing
+static void make_default_fill(const Work *w, const char *name, const char *value, bool fill) {
     Datum values[] = {CStringGetTextDatum(value)};
     static Oid argtypes[] = {TEXTOID};
     StringInfoData src;
@@ -212,12 +213,18 @@ static void make_default(const Work *w, const char *name, const char *value) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             ALTER TABLE %1$s ALTER COLUMN "%2$s" SET DEFAULT %3$s;
-            UPDATE %1$s SET "%2$s" = DEFAULT WHERE "%2$s" IS NULL;
         ), w->schema_table, name, value);
-        make_ddl(src.data, SPI_OK_UPDATE);
+        if (fill) appendStringInfo(&src, SQL(
+            UPDATE %1$s SET "%2$s" = DEFAULT WHERE "%2$s" IS NULL;
+        ), w->schema_table, name);
+        make_ddl(src.data, fill ? SPI_OK_UPDATE : SPI_OK_UTILITY);
     }
     pfree(src.data);
     pfree((void *)values[0]);
+}
+
+static void make_default(const Work *w, const char *name, const char *value) {
+    make_default_fill(w, name, value, true);
 }
 
 // whether the column has a check of ours, not just any: one of the user's own on the column too must neither break the lookup nor pass for ours
@@ -869,7 +876,7 @@ void make_table(const Work *w) {
     make_comment(w, "output", "Received result(s)");
     make_comment(w, "remote", "Connect to remote database (if need)");
     make_comment(w, "user", "Role that inserted the task; input is executed as this role");
-    make_default(w, "parent", "NULLIF((current_setting('pg_task.id'::text))::bigint, 0)");
+    make_default_fill(w, "parent", "(NULLIF(current_setting('pg_task.id'::text), ''::text))::bigint", false); // the task inserting it, if any, by pg_task.id, empty out of a task, rather than 0, which the id of a task may be too, an author inserting it
     make_default(w, "plan", init_plan());
     make_default(w, "active", "(current_setting('pg_task.active'::text))::interval");
     make_default(w, "live", "(current_setting('pg_task.live'::text))::interval");
