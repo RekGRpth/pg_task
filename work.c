@@ -784,7 +784,10 @@ static void work_failed(Task *t) {
     if (drain) { t->deadline = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), WORK_CANCEL_TIMEOUT); work_drain(t); } else work_fail(t); // the rest drained for no longer than the cancel may take to get through and take effect, see work_expire()
 }
 
-static void work_copy(Task *t) {
+static void work_copy_socket(Task *t);
+
+// true once the whole COPY OUT is drained, for work_result() to go on to the next result in its own loop, rather than have work_copy() call it and work_result() call work_copy() again, a frame of each per COPY OUT whose result is in libpq's buffer already, the stack overflowed by an input of enough of them back to back; false while it waits for the socket, or the task is done with, work_result() to return then
+static bool work_copy(Task *t) {
     static char *buffer = NULL; // not to be clobbered by an error
     int len = 0;
     volatile bool failed = false;
@@ -807,13 +810,18 @@ static void work_copy(Task *t) {
         FlushErrorState();
         failed = true;
     PG_END_TRY();
-    if (failed) { if (buffer) PQfreemem(buffer); buffer = NULL; work_failed(t); return; }
+    if (failed) { if (buffer) PQfreemem(buffer); buffer = NULL; work_failed(t); return false; }
     if (copied) t->line = false; // its rows end with a newline each, the last one included, for the next line to go on from
     switch (len) {
-        case 0: t->event = WL_SOCKET_READABLE; t->socket = work_copy; break;
-        case -2: work_error((errmsg("id = " INT64_FORMAT ", PQgetCopyData == -2", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
-        default: t->skip++; work_result(t); break;
+        case 0: t->event = WL_SOCKET_READABLE; t->socket = work_copy_socket; return false; // the rest of it once the socket is readable again, see work_copy_socket()
+        case -2: work_error((errmsg("id = " INT64_FORMAT ", PQgetCopyData == -2", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); return false;
+        default: t->skip++; return true; // the COPY OUT drained, on to the next result
     }
+}
+
+// work_copy() on from the wait for the socket, see its case 0, not from work_result()'s loop: on to the next result, as that loop does, once the rest is drained
+static void work_copy_socket(Task *t) {
+    if (work_copy(t)) work_result(t);
 }
 
 static void work_result(Task *t) {
@@ -842,7 +850,7 @@ static void work_result(Task *t) {
             failed = true;
         PG_END_TRY();
         if (failed) { PQclear(result); work_failed(t); return; }
-        if (copy) { PQclear(result); work_copy(t); return; }
+        if (copy) { if (!work_copy(t)) { PQclear(result); return; } continue; } // the result freed by the loop then, as for any other, going on to the next one, with no recursion, see work_copy()
     }
     work_done(t);
 }
