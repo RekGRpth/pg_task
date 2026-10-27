@@ -67,7 +67,7 @@ static bool task_live(Task *t) {
     if (t->remote) values[6] = CStringGetTextDatum(t->remote);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
-    t->shared->id = (t->taken = taken = SPI_processed == 1) ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)) : 0;
+    t->shared->id = (t->shared->taken = taken = SPI_processed == 1) ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)) : 0;
     elog(DEBUG1, "id = " INT64_FORMAT, t->shared->id);
     SPI_finish_my();
     set_ps_display_my("idle");
@@ -357,7 +357,7 @@ bool task_done(Task *t, bool live) {
     t->booked = true; // for an error of task_live() not to be taken for one of the bookkeeping, before 9.5 and in Greengage, where it waits for the row of the next task, see work_bookkeeping()
     if (pause) init_pause(t->shared->oid, t->shared->hash, pause);
     set_ps_display_my("idle");
-    t->taken = false; // the task done, till task_live() takes the next one, if called at all
+    t->shared->taken = false; // the task done, till task_live() takes the next one, if called at all
     exit = ShutdownRequestPending || exit || task_live(t); // with the group and remote of the task just done still there to match the next one by
     task_free(t);
     RESUME_INTERRUPTS();
@@ -590,7 +590,6 @@ void task_main(Datum main_arg) {
 #else
     BackgroundWorkerInitializeConnectionMy(task->shared->data, task->shared->owner);
 #endif
-    task->taken = true; // the task pg_work took for it, see dest_shmem_exit()
     dest_init(); // once connected, for its exit callback to run before the one of the connection
     StartTransactionCommand();
     userid = get_role_oid(task->shared->user, false);

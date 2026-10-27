@@ -1549,6 +1549,7 @@ static void work_sleep(Work *w) {
             *t->shared = *w->shared;
             t->shared->pid = 0; // ours, rather than that of the task worker, which sets it itself, see init_task_pids()
             t->shared->reg = 0; // ours, which tells the slot of a pg_work, rather than of a task worker, see init_work_wake()
+            t->shared->taken = true; // for its task worker, by its slot, see Shared.taken
             t->work = w;
             t->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
             t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false, INT8OID));

@@ -517,14 +517,14 @@ void init_free(int slot) {
     LWLockRelease(BackgroundWorkerLock);
 }
 
-// free the slot of a stopped pg_work only if it still holds that pg_work: a clean exit has already freed it itself, and by now it may belong to someone else (a task worker has a non-zero id); nor, but for that pg_work itself on its way out, while it runs in it, restarted by the postmaster after pg_conf saw it stopped and before pg_conf terminated it, which its handle can't tell from one waiting for its restart, see conf_reconcile(): not to run in a slot given to another one meanwhile, till it's gone, by the termination
+// free the slot of a stopped pg_work only if it still holds that pg_work: a clean exit has already freed it itself, and by now it may belong to someone else (a task worker has no reg); nor, but for that pg_work itself on its way out, while it runs in it, restarted by the postmaster after pg_conf saw it stopped and before pg_conf terminated it, which its handle can't tell from one waiting for its restart, see conf_reconcile(): not to run in a slot given to another one meanwhile, till it's gone, by the termination
 bool init_free_work(int slot, int64 reg) {
     bool freed;
     int pid;
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
     pid = shared[slot].pid;
     // by its registration rather than its entry: a later pg_work of the same entry may have taken the slot by now
-    if ((freed = shared[slot].in_use && !shared[slot].id && shared[slot].reg == reg && (!pid || pid == MyProcPid || shared[slot].exited || (kill(pid, 0) && errno == ESRCH)))) MemSet(&shared[slot], 0, sizeof(Shared));
+    if ((freed = shared[slot].in_use && shared[slot].reg && shared[slot].reg == reg && (!pid || pid == MyProcPid || shared[slot].exited || (kill(pid, 0) && errno == ESRCH)))) MemSet(&shared[slot], 0, sizeof(Shared));
     LWLockRelease(BackgroundWorkerLock);
     return freed;
 }
@@ -533,7 +533,7 @@ bool init_free_work(int slot, int64 reg) {
 bool init_held_work(int slot, int64 reg) {
     bool held;
     LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
-    held = shared[slot].in_use && !shared[slot].id && shared[slot].reg == reg;
+    held = shared[slot].in_use && shared[slot].reg && shared[slot].reg == reg;
     LWLockRelease(BackgroundWorkerLock);
     return held;
 }
@@ -542,7 +542,7 @@ bool init_held_work(int slot, int64 reg) {
 void init_work(int n, const char **data, const char **user, const int *hash, bool *in_use) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
     for (int i = 0; i < n; i++) in_use[i] = false;
-    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].id && !shared[slot].gone) {
+    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && shared[slot].reg && !shared[slot].gone) { // of pg_work, by its reg, which a task worker has none of, rather than by an id of 0, which a task may have
         int wanted = -1;
         for (int i = 0; i < n; i++) if (shared[slot].hash == hash[i] && !strcmp(shared[slot].data, data[i]) && !strcmp(shared[slot].user, user[i])) { wanted = i; break; }
         if (wanted >= 0 && (!shared[slot].pid || !kill(shared[slot].pid, 0) || errno != ESRCH)) in_use[wanted] = true;
@@ -555,7 +555,7 @@ void init_work(int n, const char **data, const char **user, const int *hash, boo
 void init_work_wake(const Shared *task) {
     int pid = 0;
     LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
-    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].id && shared[slot].reg && !shared[slot].gone && shared[slot].pid && !shared[slot].exited && !strcmp(shared[slot].data, task->data) && !strcmp(shared[slot].user, task->user) && !strcmp(shared[slot].schema, task->schema) && !strcmp(shared[slot].table, task->table)) { pid = shared[slot].pid; break; }
+    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && shared[slot].reg && !shared[slot].gone && shared[slot].pid && !shared[slot].exited && !strcmp(shared[slot].data, task->data) && !strcmp(shared[slot].user, task->user) && !strcmp(shared[slot].schema, task->schema) && !strcmp(shared[slot].table, task->table)) { pid = shared[slot].pid; break; }
     LWLockRelease(BackgroundWorkerLock);
     if (pid && kill(pid, SIGINT)) elog(DEBUG1, "could not wake pg_work %i: %m", pid);
 }
@@ -563,14 +563,14 @@ void init_work_wake(const Shared *task) {
 // the tasks of a table that task workers run, by their slots, which outlive a restart of the pg_work that started them, and which no input can let go of, as it can of the lock of its task, with pg_advisory_unlock_all() say: for work_reset() not to take them for orphaned
 void init_task_ids(StringInfo ids, const char *data, Oid oid) {
     LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
-    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && shared[slot].id && shared[slot].oid == oid && !strcmp(shared[slot].data, data)) appendStringInfo(ids, "%s" INT64_FORMAT, ids->len > 1 ? "," : "", shared[slot].id);
+    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].reg && shared[slot].taken && shared[slot].oid == oid && !strcmp(shared[slot].data, data)) appendStringInfo(ids, "%s" INT64_FORMAT, ids->len > 1 ? "," : "", shared[slot].id);
     LWLockRelease(BackgroundWorkerLock);
 }
 
 // the task workers of a table, by their slots, each with its pid, or a placeholder unlike any for one yet to start, and the hash of its group: for a pass to count the slots of a group taken with them too, which their inputs can't let go of, as they can of their locks, a worker counted once, its lock held still or not (see work_sleep())
 void init_task_pids(const char *data, Oid oid, StringInfo pids, StringInfo hashes) {
     LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
-    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && shared[slot].id && shared[slot].oid == oid && !strcmp(shared[slot].data, data)) {
+    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].reg && shared[slot].taken && shared[slot].oid == oid && !strcmp(shared[slot].data, data)) {
         appendStringInfo(pids, "%s%i", pids->len > 1 ? "," : "", shared[slot].pid ? shared[slot].pid : -1 - slot);
         appendStringInfo(hashes, "%s%i", hashes->len > 1 ? "," : "", shared[slot].hash);
     }
@@ -611,7 +611,7 @@ TimestampTz init_pauses(Oid oid, StringInfo hashes) {
 // the pid of a task worker in its slot, as soon as pg_work knows it started, before it takes the lock of the group's slot by it: till the worker writes it itself, its slot would count apart from that lock, see init_task_pids(), the group a slot short; only while the slot still has the task, the worker gone already and its slot another's maybe
 void init_task_pid(int slot, const char *data, Oid oid, int64 id, int pid) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-    if (shared[slot].in_use && shared[slot].id == id && shared[slot].oid == oid && !strcmp(shared[slot].data, data) && !shared[slot].pid) shared[slot].pid = pid;
+    if (shared[slot].in_use && !shared[slot].reg && shared[slot].id == id && shared[slot].oid == oid && !strcmp(shared[slot].data, data) && !shared[slot].pid) shared[slot].pid = pid;
     LWLockRelease(BackgroundWorkerLock);
 }
 
@@ -619,7 +619,7 @@ void init_task_pid(int slot, const char *data, Oid oid, int64 id, int pid) {
 int init_work_start(int slot, int64 reg, int pid) {
     int own = 0;
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-    if (reg && shared[slot].in_use && !shared[slot].id && shared[slot].reg == reg) {
+    if (reg && shared[slot].in_use && shared[slot].reg == reg) {
         if (shared[slot].gone) own = -1; else {
             own = 1;
             shared[slot].pid = pid;
@@ -633,7 +633,7 @@ int init_work_start(int slot, int64 reg, int pid) {
 // a pg_work gone with an error, its slot kept for the postmaster to restart it, with its pid for pg_conf, see init_work(), but not one to wake up any more, see init_work_wake(): only while the slot is still of its registration, not of another one, given it once pg_conf freed it, see conf_reconcile()
 void init_work_exited(int slot, int64 reg) {
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-    if (shared[slot].in_use && !shared[slot].id && shared[slot].reg == reg) shared[slot].exited = true;
+    if (shared[slot].in_use && shared[slot].reg && shared[slot].reg == reg) shared[slot].exited = true;
     LWLockRelease(BackgroundWorkerLock);
 }
 
@@ -648,7 +648,7 @@ void init_work_kept(Shared *ws) {
 bool init_free_task(int slot, const char *data, Oid oid, int64 id) {
     bool freed;
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-    if ((freed = shared[slot].in_use && shared[slot].id == id && shared[slot].oid == oid && !strcmp(shared[slot].data, data))) MemSet(&shared[slot], 0, sizeof(Shared));
+    if ((freed = shared[slot].in_use && !shared[slot].reg && shared[slot].id == id && shared[slot].oid == oid && !strcmp(shared[slot].data, data))) MemSet(&shared[slot], 0, sizeof(Shared));
     LWLockRelease(BackgroundWorkerLock);
     return freed;
 }
@@ -657,7 +657,7 @@ bool init_free_task(int slot, const char *data, Oid oid, int64 id) {
 bool init_stop(const char *data, Oid oid, int64 id) {
     bool marked = false;
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].reg && shared[slot].id == id && shared[slot].oid == oid && !strcmp(shared[slot].data, data)) {
+    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].reg && shared[slot].taken && shared[slot].id == id && shared[slot].oid == oid && !strcmp(shared[slot].data, data)) {
         shared[slot].stop = id;
         shared[slot].stopped = true;
         marked = true;
