@@ -702,6 +702,8 @@ static void work_done(Task *t) {
     }
     if (!work_encoding(t)) return;
     live = PQstatus(t->conn) == CONNECTION_OK && !work_cancelling(t); // take the next task of the group only for a connection to run it on, and one no cancel is on its way to
+    // nor on a session kept with a client_encoding the input set, for the input of the next one to be sent in, read as that, its text taken amiss with no error, and for its results to come in, which DISCARD ALL resets otherwise, and which can't be set back before it, a query read in the client_encoding it comes in, as the preamble would come with the input: as of the end of the input, which servers from 14 on tell of only then
+    if (t->save && PQclientEncoding(t->conn) != GetDatabaseEncoding()) live = false;
     if (!work_bookkeeping(t, live, &exit)) { work_defer(t); return; }
     if (exit || !live) { work_finish(t); return; }
     if (t->save) { work_query(t); return; }
