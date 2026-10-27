@@ -292,12 +292,18 @@ static void make_trigger(const Work *w, const char *name, int16 type, const char
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT COALESCE((SELECT tgtype OPERATOR(pg_catalog.=) $3 AND tgattr::pg_catalog.text OPERATOR(pg_catalog.=) pg_catalog.array_to_string(ARRAY(SELECT attnum FROM pg_catalog.unnest(pg_catalog.string_to_array($4, ',')) WITH ORDINALITY AS c ("name", "i") JOIN pg_catalog.pg_attribute ON attname OPERATOR(pg_catalog.=) c."name" WHERE attrelid OPERATOR(pg_catalog.=) $2 AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped ORDER BY c."i"), ' ') FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) $1 AND tgrelid OPERATOR(pg_catalog.=) $2), false) AS "test"
-    ));
+        SELECT COALESCE((SELECT tgtype OPERATOR(pg_catalog.=) $3 AND tgattr::pg_catalog.text OPERATOR(pg_catalog.=) pg_catalog.array_to_string(ARRAY(SELECT attnum FROM pg_catalog.unnest(pg_catalog.string_to_array($4, ',')) WITH ORDINALITY AS c ("name", "i") JOIN pg_catalog.pg_attribute ON attname OPERATOR(pg_catalog.=) c."name" WHERE attrelid OPERATOR(pg_catalog.=) $2 AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped ORDER BY c."i"), ' ') AND tgenabled OPERATOR(pg_catalog.=) 'O' AND tgqual IS NULL AND tgnargs OPERATOR(pg_catalog.=) 0 AND tgfoid OPERATOR(pg_catalog.=) (SELECT p.oid FROM pg_catalog.pg_proc AS p JOIN pg_catalog.pg_class AS c ON c.relnamespace OPERATOR(pg_catalog.=) p.pronamespace WHERE c.oid OPERATOR(pg_catalog.=) $2 AND p.proname OPERATOR(pg_catalog.=) $1 AND p.pronargs OPERATOR(pg_catalog.=) 0) FROM pg_catalog.pg_trigger WHERE tgname OPERATOR(pg_catalog.=) $1 AND tgrelid OPERATOR(pg_catalog.=) $2), false) AS "test"
+    )); // and enabled, with no condition, nor arguments, calling its own function: one disabled, of the state machine say, its protections off for good otherwise, enabled again
     if (!make_test(src.data, countof(argtypes), argtypes, values, nulls)) {
         const char *quote = quote_identifier(name);
         const char *sep = " ";
         StringInfoData when;
+        // a trigger of the name not calling the function of pg_task of the same name, in the schema of the table, as every one of pg_task's does, is not pg_task's, but of the owner of the table, say, to be refused, as pg_work changes nothing it didn't make, rather than dropped for one of pg_task's
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            SELECT EXISTS (SELECT * FROM pg_catalog.pg_trigger AS t WHERE tgname OPERATOR(pg_catalog.=) $1 AND tgrelid OPERATOR(pg_catalog.=) $2 AND NOT EXISTS (SELECT * FROM pg_catalog.pg_proc AS p JOIN pg_catalog.pg_class AS c ON c.relnamespace OPERATOR(pg_catalog.=) p.pronamespace WHERE p.oid OPERATOR(pg_catalog.=) t.tgfoid AND p.proname OPERATOR(pg_catalog.=) t.tgname AND c.oid OPERATOR(pg_catalog.=) t.tgrelid)) AS "test"
+        ));
+        if (make_test(src.data, 2, argtypes, values, NULL)) ereport(ERROR, (errcode(ERRCODE_DUPLICATE_OBJECT), errmsg("trigger %s on table %s exists and is not pg_task's", quote, w->schema_table), errdetail("It calls another function than %s.%s(), as each trigger of pg_task does: rename it, or drop it, for pg_work to make its own.", w->schema, quote)));
         initStringInfoMy(&when);
         appendStringInfoString(&when, TRIGGER_FOR_BEFORE(type) ? "BEFORE" : "AFTER");
         if (TRIGGER_FOR_INSERT(type)) { appendStringInfo(&when, "%sINSERT", sep); sep = " OR "; }

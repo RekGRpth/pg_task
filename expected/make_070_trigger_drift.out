@@ -1,0 +1,128 @@
+-- a trigger of pg_task's disabled, with a condition or calling another function is made again on a start of pg_work, enabled, as one of an earlier version is, rather than left with the protections of pg_task, those of the state machine say, off for good; but a trigger of the name of one of pg_task's that is not pg_task's, calling another function than its own of the same name, is the owner's of the table, refused rather than dropped, till it's renamed
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT current_user AS test_user
+\gset
+ALTER SYSTEM SET pg_work.restart = 1;
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || :'test_user' || '","schema":"trigger_drift_schema","table":"trigger_drift"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT set_config('pg_task_test.work_pid', '0', false) IS NOT NULL AS work_pid_reset;
+ work_pid_reset 
+----------------
+ t
+(1 row)
+
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work trigger_drift_schema trigger_drift %' AND datname = current_database() AND pid <> current_setting('pg_task_test.work_pid')::int AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) AND EXISTS (SELECT 1 FROM pg_catalog.pg_trigger WHERE tgname = 'trigger_drift_result') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the table trigger_drift_schema.trigger_drift to be made by pg_work'; END IF;
+END;$body$ LANGUAGE plpgsql;
+ALTER TABLE trigger_drift_schema.trigger_drift DISABLE TRIGGER trigger_drift_state;
+SELECT tgenabled FROM pg_catalog.pg_trigger WHERE tgrelid = 'trigger_drift_schema.trigger_drift'::regclass AND tgname = 'trigger_drift_state';
+ tgenabled 
+-----------
+ D
+(1 row)
+
+SELECT pid AS work_pid FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work trigger_drift_schema trigger_drift %' AND datname = current_database()
+\gset
+SELECT set_config('pg_task_test.work_pid', :'work_pid', false) IS NOT NULL AS work_pid_saved;
+ work_pid_saved 
+----------------
+ t
+(1 row)
+
+SELECT pg_terminate_backend(:work_pid) AS work_terminated;
+ work_terminated 
+-----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work trigger_drift_schema trigger_drift %' AND datname = current_database() AND pid <> current_setting('pg_task_test.work_pid')::int AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work to be restarted and idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT tgenabled FROM pg_catalog.pg_trigger WHERE tgrelid = 'trigger_drift_schema.trigger_drift'::regclass AND tgname = 'trigger_drift_state';
+ tgenabled 
+-----------
+ O
+(1 row)
+
+DROP TRIGGER trigger_drift_result ON trigger_drift_schema.trigger_drift;
+CREATE FUNCTION trigger_drift_schema.my_result() RETURNS trigger LANGUAGE plpgsql AS $function$BEGIN RETURN NEW; END;$function$;
+CREATE TRIGGER trigger_drift_result AFTER INSERT ON trigger_drift_schema.trigger_drift FOR EACH ROW EXECUTE PROCEDURE trigger_drift_schema.my_result();
+SELECT pid AS work_pid FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work trigger_drift_schema trigger_drift %' AND datname = current_database()
+\gset
+SELECT set_config('pg_task_test.work_pid', :'work_pid', false) IS NOT NULL AS work_pid_saved;
+ work_pid_saved 
+----------------
+ t
+(1 row)
+
+SELECT pg_terminate_backend(:work_pid) AS work_terminated;
+ work_terminated 
+-----------------
+ t
+(1 row)
+
+SELECT pg_sleep(3);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+SELECT tgname, tgfoid::regproc AS function FROM pg_catalog.pg_trigger WHERE tgrelid = 'trigger_drift_schema.trigger_drift'::regclass AND tgname = 'trigger_drift_result';
+        tgname        |            function            
+----------------------+--------------------------------
+ trigger_drift_result | trigger_drift_schema.my_result
+(1 row)
+
+ALTER TRIGGER trigger_drift_result ON trigger_drift_schema.trigger_drift RENAME TO my_result;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work trigger_drift_schema trigger_drift %' AND datname = current_database() AND pid <> current_setting('pg_task_test.work_pid')::int AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) AND EXISTS (SELECT 1 FROM pg_catalog.pg_trigger WHERE tgname = 'trigger_drift_result') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work to make its own trigger_drift_result'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT tgname, tgfoid::regproc AS function FROM pg_catalog.pg_trigger WHERE tgrelid = 'trigger_drift_schema.trigger_drift'::regclass AND tgname IN ('trigger_drift_result', 'my_result') ORDER BY tgname;
+        tgname        |                 function                  
+----------------------+-------------------------------------------
+ my_result            | trigger_drift_schema.my_result
+ trigger_drift_result | trigger_drift_schema.trigger_drift_result
+(2 rows)
+
+ALTER SYSTEM RESET pg_work.restart;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work trigger_drift_schema %') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work worker(s) matching ''pg_work trigger_drift_schema %%'' to stop'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SET client_min_messages TO WARNING;
+DROP SCHEMA IF EXISTS trigger_drift_schema CASCADE;
+RESET client_min_messages;
