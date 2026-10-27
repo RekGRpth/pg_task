@@ -526,6 +526,7 @@ static void dest_execute(void) {
         SetCurrentStatementStartTimestamp();
         exec_simple_query_my(task.input);
         if (IsTransactionState()) {
+            task.skip = 1; // the tag of this END, no statement of the input, left out, as remote mode leaves out that of the COMMIT it sends then, see work_done()
             exec_simple_query_my(SQL(END));
             if (IsTransactionState()) ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION), errmsg("still active sql transaction")));
         }

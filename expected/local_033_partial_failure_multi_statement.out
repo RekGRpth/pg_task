@@ -13,7 +13,6 @@ SELECT output, error, state FROM task WHERE "group" = 'partial_failure' AND plan
  output | error | state 
 --------+-------+-------
  BEGIN +|       | DONE
- 1     +|       | 
- COMMIT |       | 
+ 1      |       | 
 (1 row)
 
