@@ -412,10 +412,10 @@ bool task_work(Task *t) {
         t->lock = false;
     } else {
         StringInfoData application_name;
-        // a remote task comes with these from work_sleep(), which it connected by, while a local one had them freed by task_free() after the task before
-        if (t->group) pfree(t->group);
-        if (t->remote) pfree(t->remote);
-        if (t->user) pfree(t->user);
+        // a remote task comes with these from work_sleep(), which it connected by, while a local one had them freed by task_free() after the task before: none left behind, for task_free() not to free them again, on the way out of pg_work, should a read below fail, of a column of a table not made by pg_task say
+        if (t->group) { pfree(t->group); t->group = NULL; }
+        if (t->remote) { pfree(t->remote); t->remote = NULL; }
+        if (t->user) { pfree(t->user); t->user = NULL; }
         t->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false, CHAROID));
         t->escape = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "escape", false, CHAROID));
         t->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "group", false, TEXTOID));
