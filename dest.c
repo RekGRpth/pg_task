@@ -2,6 +2,7 @@
 
 #include <access/xact.h>
 #include <catalog/namespace.h>
+#include <catalog/pg_class.h>
 #include <mb/pg_wchar.h>
 #include <commands/portalcmds.h>
 #include <commands/prepare.h>
@@ -302,8 +303,16 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     if (alone && IsA(stmt, ExecuteStmt)) { dest_execute_prepared(src, (ExecuteStmt *)stmt); return; }
     if (alone && IsA(stmt, FetchStmt)) { dest_execute_fetch((FetchStmt *)stmt); return; }
 #if PG_VERSION_NUM >= 90500
-    // CREATE TABLE AS with IF NOT EXISTS of a table that exists does nothing, which SPI tells only as no rows stored
-    if (IsA(stmt, CreateTableAsStmt) && ((CreateTableAsStmt *)stmt)->if_not_exists) exists = OidIsValid(RangeVarGetRelid(((CreateTableAsStmt *)stmt)->into->rel, NoLock, true));
+    // CREATE TABLE AS with IF NOT EXISTS of a table that exists does nothing, which SPI tells only as no rows stored: of a table in the schema it would be created in, as PostgreSQL looks for it, not of one of the same name elsewhere on the search_path, a temporary one say, which keeps none from being created; for a name of no schema, not temporary, by the schema of creation, whose error, of an empty search_path, PostgreSQL has too, as the statement's own, for a temporary one or one of a schema, as RangeVarGetRelid() finds it there, with no error, of a schema that doesn't exist say, which the statement has then
+    if (IsA(stmt, CreateTableAsStmt) && ((CreateTableAsStmt *)stmt)->if_not_exists) {
+        RangeVar *rel = ((CreateTableAsStmt *)stmt)->into->rel;
+        if (!rel->schemaname && rel->relpersistence != RELPERSISTENCE_TEMP) {
+            ErrorContextCallback context = {.callback = dest_spi_context, .arg = (void *)src, .previous = error_context_stack};
+            error_context_stack = &context;
+            exists = OidIsValid(get_relname_relid(rel->relname, RangeVarGetCreationNamespace(rel)));
+            error_context_stack = context.previous;
+        } else exists = OidIsValid(RangeVarGetRelid(rel, NoLock, true));
+    }
 #endif
     if (dest_spi_rows(stmt)) {
         SPIPlanPtr plan = SPI_prepare(src, 0, NULL);
