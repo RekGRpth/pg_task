@@ -58,6 +58,9 @@ static void headers(TupleDesc tupdesc) {
     }
 }
 
+// the descriptor of the result, as rStartup() has it, whose names are those of the query, as the server sends them to a client, and remote mode has them, rather than those of the slot, which, its projection skipped, is that of the scan, with the names of the table, or none for VALUES
+static TupleDesc result_tupdesc = NULL;
+
 // whether a value of the type goes unquoted, see appendBinaryStringInfoEscapeQuote(), as string = false has it: a domain by its base type, a number say, as the server sends it to a client, and remote mode has it
 static bool dest_is_string(Oid type) {
     return init_oid_is_string(type) && init_oid_is_string(getBaseType(type));
@@ -78,7 +81,7 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
 #endif
     ;
     if (!task.output.data) initStringInfoMy(&task.output);
-    if (task.header && !task.row && tupdesc->natts > 1) headers(tupdesc);
+    if (task.header && !task.row && tupdesc->natts > 1) headers(result_tupdesc && result_tupdesc->natts == tupdesc->natts ? result_tupdesc : tupdesc);
     task_line(&task);
     for (int col = 1; col <= tupdesc->natts; col++) {
         char *value = SPI_getvalue_my(slot, tupdesc, col);
@@ -109,9 +112,11 @@ static void rStartup(DestReceiver *self, int operation, TupleDesc tupdesc) {
     }
     task.row = 0;
     task.skip = operation == CMD_SELECT;
+    result_tupdesc = tupdesc;
 }
 
 static void rShutdown(DestReceiver *self) {
+    result_tupdesc = NULL;
     if (task.shared) elog(DEBUG1, "id = " INT64_FORMAT, task.shared->id);
 }
 

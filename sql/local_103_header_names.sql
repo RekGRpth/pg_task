@@ -1,0 +1,27 @@
+-- the header of the output has the names of the result, as the server sends them to a client, and remote mode has them, not those of the scan whose projection the executor skipped: the names given in the query, of a view, of an alias of the table, or of VALUES
+DELETE FROM task WHERE "group" = 'header_names';
+SET client_min_messages = warning;
+DROP VIEW IF EXISTS header_names_v;
+DROP TABLE IF EXISTS header_names_t;
+RESET client_min_messages;
+CREATE TABLE header_names_t (a int, b int);
+INSERT INTO header_names_t VALUES (1, 2);
+CREATE VIEW header_names_v (va, vb) AS SELECT a, b FROM header_names_t;
+INSERT INTO task (id, "group", input, header) VALUES
+    (-1031, 'header_names', 'SELECT a AS x, b AS y FROM header_names_t', true),
+    (-1032, 'header_names', 'TABLE header_names_v', true),
+    (-1033, 'header_names', 'SELECT x, y FROM header_names_t AS h(x, y)', true),
+    (-1034, 'header_names', 'SELECT * FROM (SELECT a AS x, b AS y FROM header_names_t) AS s', true),
+    (-1035, 'header_names', 'VALUES (1, 2), (3, 4)', true),
+    (-1036, 'header_names', 'SELECT * FROM header_names_t', true);
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'header_names' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the tasks of group header_names to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT -id AS n, state, output, error FROM task WHERE "group" = 'header_names' ORDER BY id DESC;
+DELETE FROM task WHERE "group" = 'header_names';
+DROP VIEW header_names_v;
+DROP TABLE header_names_t;
