@@ -438,6 +438,26 @@ static void make_state_machine(const Work *w) {
     pfree(source.data);
 }
 
+// the columns of a run of a task, which its bookkeeping, as the table owner (pg_task.user), fills, and pg_work clears on reset, changed by it and its members only, as the state machine has it for state: an author setting a start of a task of its own it took to STOP would have it counted as running in its group for good, see task_live(), which groups of others share, and an output, an error or a pid would pass for those of a run; at insert they are the author's to give, a trigger of its own setting an error, as the dry run of the README does, those of a task that runs replaced by its run
+static void make_result(const Work *w) {
+    StringInfoData name;
+    StringInfoData source;
+    initStringInfoMy(&name);
+    make_name(w, &name, "result");
+    initStringInfoMy(&source);
+    appendStringInfo(&source, SQL(
+        BEGIN
+            IF (NEW."start", NEW."stop", NEW."pid", NEW."output", NEW."error") IS DISTINCT FROM (OLD."start", OLD."stop", OLD."pid", OLD."output", OLD."error") AND NOT pg_catalog.pg_has_role(current_user, (SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) TG_RELID), '%1$s') THEN RAISE EXCEPTION 'start, stop, pid, output and error columns are changed by pg_task only';
+            END IF;
+            RETURN NEW;
+        END;
+    ), MAKE_ACT);
+    make_function(w, name.data, source.data, false);
+    make_trigger(w, name.data, TRIGGER_TYPE_BEFORE | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, "start,stop,pid,output,error");
+    pfree(name.data);
+    pfree(source.data);
+}
+
 // pg_work adds up plan, active, live, repeat and timeout, and on values out of range that fails, taking down every task it runs: have the author's own insert or update fail on them instead
 // and on an interval of a part less than 0, of parts of both signs ('-1 mon 31 days'), which, more than 0 as it is, may take the plan nowhere, or back, from some days, a repeat say, see task_insert(): only an interval inserted or changed, compared as text, as '1 mon' is equal to '30 days', not one of a row from before this check, which an update of another column, of the state by pg_work say, would fail on otherwise, nor the copy of a repeat with the intervals of the task before it, which pg_work inserts, its bookkeeping failing on them otherwise; the task before it looked up only then, in a statement of its own, as the author inserting a task may have no right to read the table, which a query is checked for whether it gets to read it or not
 static void make_valid(const Work *w) {
@@ -951,6 +971,7 @@ void make_table(const Work *w) {
     make_stop(w);
     make_user_immutable(w);
     make_state_machine(w);
+    make_result(w);
     make_valid(w);
     make_immutable(w, "id"); // the lock of a running task is by its id, which a change of would leave it for work_reset() to run again, and its bookkeeping without the row
     make_immutable(w, "group");

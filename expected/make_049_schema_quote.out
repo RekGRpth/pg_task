@@ -49,7 +49,7 @@ SELECT format('SELECT state, output FROM %I.quote_task', :'schema_name') AS sele
 SELECT count(*) AS functions FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = :'schema_name';
  functions 
 -----------
-        27
+        28
 (1 row)
 
 ALTER SYSTEM RESET pg_work.restart;

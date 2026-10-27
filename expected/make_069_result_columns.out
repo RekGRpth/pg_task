@@ -1,0 +1,44 @@
+-- the columns of a run of a task, start, stop, pid, output and error, are changed by pg_task's bookkeeping, as the owner of the table, pg_task.user, only, not by a task author: a start set on a task it took to STOP would have it counted as running in its group for good, which groups of others share, and an output, an error or a pid would pass for those of a run; at insert they are the author's to give, as a trigger of its own may set an error
+SET client_min_messages = warning;
+DROP ROLE IF EXISTS task_result_columns;
+CREATE ROLE task_result_columns;
+RESET client_min_messages;
+GRANT SELECT, INSERT, UPDATE, DELETE ON task TO task_result_columns;
+GRANT USAGE ON SEQUENCE task_id_seq TO task_result_columns;
+DELETE FROM task WHERE "group" = 'result_columns';
+SET ROLE task_result_columns;
+INSERT INTO task ("group", input, plan, error) VALUES ('result_columns', 'SELECT 1', 'infinity', 'given at insert');
+\set VERBOSITY terse
+UPDATE task SET start = now() WHERE "group" = 'result_columns';
+ERROR:  start, stop, pid, output and error columns are changed by pg_task only
+UPDATE task SET state = 'STOP', start = now() WHERE "group" = 'result_columns';
+ERROR:  start, stop, pid, output and error columns are changed by pg_task only
+UPDATE task SET stop = now() WHERE "group" = 'result_columns';
+ERROR:  start, stop, pid, output and error columns are changed by pg_task only
+UPDATE task SET pid = 1 WHERE "group" = 'result_columns';
+ERROR:  start, stop, pid, output and error columns are changed by pg_task only
+UPDATE task SET output = 'forged' WHERE "group" = 'result_columns';
+ERROR:  start, stop, pid, output and error columns are changed by pg_task only
+UPDATE task SET error = 'forged' WHERE "group" = 'result_columns';
+ERROR:  start, stop, pid, output and error columns are changed by pg_task only
+\set VERBOSITY default
+UPDATE task SET error = error WHERE "group" = 'result_columns';
+UPDATE task SET state = 'STOP' WHERE "group" = 'result_columns';
+SELECT state, start IS NULL AS no_start, stop IS NULL AS no_stop, pid IS NULL AS no_pid, output, error FROM task WHERE "group" = 'result_columns';
+ state | no_start | no_stop | no_pid | output |      error      
+-------+----------+---------+--------+--------+-----------------
+ STOP  | t        | t       | t      |        | given at insert
+(1 row)
+
+RESET ROLE;
+UPDATE task SET output = 'by the owner' WHERE "group" = 'result_columns';
+SELECT state, output FROM task WHERE "group" = 'result_columns';
+ state |    output    
+-------+--------------
+ STOP  | by the owner
+(1 row)
+
+DELETE FROM task WHERE "group" = 'result_columns';
+REVOKE ALL ON task FROM task_result_columns;
+REVOKE ALL ON SEQUENCE task_id_seq FROM task_result_columns;
+DROP ROLE task_result_columns;
