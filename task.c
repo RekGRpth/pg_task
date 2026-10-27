@@ -36,7 +36,7 @@ static Oid userid = InvalidOid; // pg_task.user, whose rights the task table boo
 
 // the next task of the very group and remote of the task just done, not only of their hash, which "group" || "remote" of others may give too, and which this worker would then run as if it were of its own: a remote one locally, a local one or one of another server on its connection
 // and one that fits in its group by its own max, as work_sleep() takes them, with no more than max others running: those of a higher max, taken since the one just done, may well fill the group past it; counted by their rows in TAKE or WORK, or in STOP still running, its cancel on its way, started and not done, which keeps STOP, rather than by pg_locks, too much to read after every task, which count no fewer of them, only maybe more, those left by a pg_work gone, until the reset, or those whose bookkeeping is put off, see work_defer(), or one in STOP whose worker went down before it was done, which no reset puts back: the next one is left to work_sleep() then
-static bool task_live(const Task *t) {
+static bool task_live(Task *t) {
     bool taken;
     char nulls[] = {' ', ' ', ' ', ' ', ' ', ' ', t->remote ? ' ' : 'n', ' '};
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start), (Datum)0, (Datum)0, (Datum)0, Int64GetDatum(t->shared->id)};
@@ -67,7 +67,7 @@ static bool task_live(const Task *t) {
     if (t->remote) values[6] = CStringGetTextDatum(t->remote);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
-    t->shared->id = (taken = SPI_processed == 1) ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)) : 0;
+    t->shared->id = (t->taken = taken = SPI_processed == 1) ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)) : 0;
     elog(DEBUG1, "id = " INT64_FORMAT, t->shared->id);
     SPI_finish_my();
     set_ps_display_my("idle");
@@ -357,6 +357,7 @@ bool task_done(Task *t, bool live) {
     t->booked = true; // for an error of task_live() not to be taken for one of the bookkeeping, before 9.5 and in Greengage, where it waits for the row of the next task, see work_bookkeeping()
     if (pause) init_pause(t->shared->oid, t->shared->hash, pause);
     set_ps_display_my("idle");
+    t->taken = false; // the task done, till task_live() takes the next one, if called at all
     exit = ShutdownRequestPending || exit || task_live(t); // with the group and remote of the task just done still there to match the next one by
     task_free(t);
     RESUME_INTERRUPTS();
@@ -589,6 +590,7 @@ void task_main(Datum main_arg) {
 #else
     BackgroundWorkerInitializeConnectionMy(task->shared->data, task->shared->owner);
 #endif
+    task->taken = true; // the task pg_work took for it, see dest_shmem_exit()
     dest_init(); // once connected, for its exit callback to run before the one of the connection
     StartTransactionCommand();
     userid = get_role_oid(task->shared->user, false);

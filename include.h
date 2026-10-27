@@ -107,6 +107,7 @@ typedef struct Task {
     bool lost; // of a remote task, a cancel of it given up, timed out or failed, which may get through still, see work_cancel_lost()
     bool lock;
     bool reserve;
+    bool taken; // of a local task, its row taken into TAKE for this worker, by pg_work or by task_live(), till its bookkeeping, or given back: told by this rather than by its id, which may be 0, see dest_shmem_exit()
     bool worked; // its row in WORK, committed by task_work(): not to be given back to PLAN on the way out, the input may have started, see dest_shmem_exit()
     bool save;
     bool string;
