@@ -207,11 +207,11 @@ void EndCommandMy(const char *commandTag, CommandDest dest) {
 
 // stmt is the parse tree of src, whose command tag is the one local mode and remote mode report, rather than SPI's own result code (UTILITY for any utility statement, say)
 // SPI tells of EXECUTE neither the command tag nor the row count of the prepared statement it runs, only UTILITY: run that one as exec_simple_query() does, into the receiver and with the completion of local mode, with a snapshot of its own, as SPI_execute() takes for each statement
-static void dest_execute_prepared(const char *src, ExecuteStmt *stmt) {
+static void dest_execute_prepared(ExecuteStmt *stmt) {
 #if PG_VERSION_NUM >= 130000
     QueryCompletion qc;
     ParseState *pstate = make_parsestate(NULL);
-    pstate->p_sourcetext = src;
+    pstate->p_sourcetext = task.input; // the whole input, which the locations of stmt count from, read from it as a whole, see dest_execute(), as local mode has it, rather than the text of the statement alone, an error in a parameter at a position past it say
     InitializeQueryCompletion(&qc);
 #else
     char completionTag[COMPLETION_TAG_BUFSIZE] = "";
@@ -221,7 +221,7 @@ static void dest_execute_prepared(const char *src, ExecuteStmt *stmt) {
 #if PG_VERSION_NUM >= 130000
     ExecuteQuery(pstate, stmt, NULL, NULL, CreateDestReceiverMy(DestDebug), &qc);
 #else
-    ExecuteQuery(stmt, NULL, src, NULL, CreateDestReceiverMy(DestDebug), completionTag);
+    ExecuteQuery(stmt, NULL, task.input, NULL, CreateDestReceiverMy(DestDebug), completionTag); // see above
 #endif
     PopActiveSnapshot();
     CommandCounterIncrement();
@@ -359,7 +359,7 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     const char *tagname = CreateCommandTag(stmt);
 #endif
     if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else disable_timeout(STATEMENT_TIMEOUT, false); // for each statement of the input anew, as exec_simple_query() has it from 13 on in local mode, rather than once for all of them, see SPI_connect_my(); for an EXECUTE too, and none once the input set statement_timeout to 0, rather than the rest of the one of the statement before
-    if (alone && IsA(stmt, ExecuteStmt)) { dest_execute_prepared(src, (ExecuteStmt *)stmt); return; }
+    if (alone && IsA(stmt, ExecuteStmt)) { dest_execute_prepared((ExecuteStmt *)stmt); return; }
     if (alone && IsA(stmt, FetchStmt)) { dest_execute_fetch((FetchStmt *)stmt); return; }
 #if PG_VERSION_NUM >= 90500
     // CREATE TABLE AS with IF NOT EXISTS of a table that exists does nothing, which SPI tells only as no rows stored: of a table in the schema it would be created in, as PostgreSQL looks for it, not of one of the same name elsewhere on the search_path, a temporary one say, which keeps none from being created; for a name of no schema, not temporary, by the schema of creation, whose error, of an empty search_path, PostgreSQL has too, as the statement's own, for a temporary one or one of a schema, as RangeVarGetRelid() finds it there, with no error, of a schema that doesn't exist say, which the statement has then
