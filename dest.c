@@ -743,13 +743,13 @@ bool dest_timeout(void) {
     StatementTimeout = task.timeout ? task.timeout : StatementTimeoutMy; // a task without a timeout of its own still runs under the server's statement_timeout, as a remote one does, and as a timeout of its own is capped by it
     StatementTimeoutTask = StatementTimeout;
     QueryCancelPending = false; // a cancel that came in between tasks, held off meanwhile, is for no task, as one coming to an idle backend: before the statement timeout is armed, by SPI_connect_my() in spi mode, not to take its cancel for one, the timeout of the task lost then, its input run with none
-#ifdef HOLD_CANCEL_INTERRUPTS
-    RESUME_CANCEL_INTERRUPTS(); // see above
-#endif
     if (task.shared->spi) {
         SPI_connect_my(task.input, InvalidOid);
         BeginInternalSubTransaction(NULL);
     }
+#ifdef HOLD_CANCEL_INTERRUPTS
+    RESUME_CANCEL_INTERRUPTS(); // see above, and past the start of the transaction and the subtransaction of spi mode, outside any PG_TRY(), which log at DEBUG5, a cancel or a statement timeout coming meanwhile, armed by SPI_connect_my(), to come through only within it, as that of the input
+#endif
     PG_TRY();
         dest_loud();
         { const char *name = task_char(&task); if (name) ereport(ERROR, (errcode(ERRCODE_CHARACTER_NOT_IN_REPERTOIRE), errmsg("%s is not a single-byte character in encoding \"%s\"", name, GetDatabaseEncodingName()))); }
