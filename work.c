@@ -865,7 +865,7 @@ static void work_input(Task *t) {
         if (Log_error_verbosity >= PGERROR_VERBOSE) appendStringInfo(&t->error, "%s: ", unpack_sql_state(ERRCODE_CHARACTER_NOT_IN_REPERTOIRE));
         appendStringInfo(&t->error, _("%s is not a single-byte character in encoding \"%s\""), task_char(t), GetDatabaseEncodingName());
     }
-    if (!t->error.data && t->shared->stop && t->shared->stop == t->shared->id) { // none for a task of id 0, which an author may insert, with no stop either
+    if (!t->error.data && t->shared->stopped && t->shared->stop == t->shared->id) { // by the flag, not by an id of 0 for none, which an author may insert
         if (!t->output.data) initStringInfoMy(&t->output);
         initStringInfoMy(&t->error);
         appendStringInfo(&t->error, "%s:  ", _(error_severity(ERROR)));
@@ -1080,7 +1080,7 @@ static void work_stop(const Work *w) {
         if (pid == MyProcPid) {
             dlist_foreach_modify(iter, &remote) {
                 Task *t = dlist_container(Task, node, iter.cur);
-                if (t->shared->id == id) { t->shared->stop = id; work_cancel(t); break; } // marked too, for an input not sent yet not to be, see work_input()
+                if (t->shared->id == id) { t->shared->stop = id; t->shared->stopped = true; work_cancel(t); break; } // marked too, for an input not sent yet not to be, see work_input()
             }
         } else { // a task worker held the lock of this task just now, one that an earlier pg_work may have started too, but may be done with it by now: mark the task in its slot, for it to cancel only that one, along with the processes its input started (see dest_cancel()), with no role checks of pg_cancel_backend() to pass either, as the worker runs as the task author, whom pg_task.user may not signal from SQL
             if (!init_stop(w->shared->data, w->shared->oid, id)) elog(DEBUG1, "id = " INT64_FORMAT ", no longer run by a task worker", id);

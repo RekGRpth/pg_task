@@ -653,12 +653,13 @@ bool init_free_task(int slot, const char *data, Oid oid, int64 id) {
     return freed;
 }
 
-// marks the task work_stop() cancels in the slot of the task worker running it, for that worker to cancel only that one (see dest_cancel()): found by the task itself, as it may be a worker that an earlier pg_work started, before it was restarted
+// marks the task work_stop() cancels in the slot of the task worker running it, for that worker to cancel only that one (see dest_cancel()): found by the task itself, as it may be a worker that an earlier pg_work started, before it was restarted; among the slots of task workers only, of no registration, unlike those of pg_work, whose id is 0 too, as that of a task may be
 bool init_stop(const char *data, Oid oid, int64 id) {
     bool marked = false;
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
-    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && shared[slot].id == id && shared[slot].oid == oid && !strcmp(shared[slot].data, data)) {
+    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].reg && shared[slot].id == id && shared[slot].oid == oid && !strcmp(shared[slot].data, data)) {
         shared[slot].stop = id;
+        shared[slot].stopped = true;
         marked = true;
         break;
     }

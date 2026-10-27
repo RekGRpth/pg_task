@@ -698,7 +698,7 @@ void dest_init(void) {
 // work_stop()'s cancel of a task in STOP, sent as SIGUSR2 rather than the SIGINT of pg_cancel_backend(), which stays as it is: it's for the task work_stop() saw this worker hold the lock of, which this worker may be done with by now and running the next one or recording the result, so cancel the query as StatementCancelHandler() does only while running the input of that very task
 void dest_cancel(SIGNAL_ARGS) {
     int save_errno = errno;
-    if (running && !proc_exit_inprogress && task.shared && task.shared->stop && task.shared->stop == task.shared->id) {
+    if (running && !proc_exit_inprogress && task.shared && task.shared->stopped && task.shared->stop == task.shared->id) {
         InterruptPending = true;
         QueryCancelPending = true;
 #ifdef HAVE_SETSID
@@ -748,7 +748,7 @@ bool dest_timeout(void) {
         dest_loud();
         { const char *name = task_char(&task); if (name) ereport(ERROR, (errcode(ERRCODE_CHARACTER_NOT_IN_REPERTOIRE), errmsg("%s is not a single-byte character in encoding \"%s\"", name, GetDatabaseEncodingName()))); }
         running = true;
-        if (task.shared->stop && task.shared->stop == task.shared->id) { InterruptPending = true; QueryCancelPending = true; } // a STOP that came between its start and now, which dest_cancel() dropped, not running yet, and work_stop() sends no more: the input cancelled at once, as the signal would have it
+        if (task.shared->stopped && task.shared->stop == task.shared->id) { InterruptPending = true; QueryCancelPending = true; } // a STOP that came between its start and now, which dest_cancel() dropped, not running yet, and work_stop() sends no more: the input cancelled at once, as the signal would have it
         dest_execute();
         if (task.shared->spi) {
             ReleaseCurrentSubTransaction();

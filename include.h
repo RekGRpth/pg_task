@@ -66,6 +66,7 @@ typedef struct Shared {
     bool gone; // of a pg_work: its entry is no longer in pg_task.json, or another pg_work took over from it, see init_work(), till it finds its entry there still, see init_work_kept()
     bool in_use;
     bool spi;
+    bool stopped; // stop is set
     char data[NAMEDATALEN];
     char owner[NAMEDATALEN];
     char schema[NAMEDATALEN];
@@ -75,7 +76,7 @@ typedef struct Shared {
     int64 reg; // of a pg_work: the registration of it, which a restart of it keeps, see init_free_work() and init_work_start()
     int64 reset;
     int64 sleep;
-    int64 stop;
+    int64 stop; // the id of the task to cancel, only with stopped, as it may be 0, an author inserting it, see init_stop()
     int hash;
     int limit;
     int max;
