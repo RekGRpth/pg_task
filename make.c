@@ -89,7 +89,7 @@ static Oid make_oid(const char *src, int nargs, Oid *argtypes, Datum *values, co
     Oid oid;
     SPI_connect_my(src, InvalidOid);
     SPI_execute_with_args_my(src, nargs, argtypes, values, nulls, SPI_OK_SELECT);
-    if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed %lu != 1", (long)SPI_processed)));
+    if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed " UINT64_FORMAT " != 1", (uint64)SPI_processed)));
     oid = DatumGetObjectId(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "oid", false, OIDOID));
     SPI_finish_my();
     return oid;
@@ -99,7 +99,7 @@ static bool make_test(const char *src, int nargs, Oid *argtypes, Datum *values, 
     bool test;
     SPI_connect_my(src, InvalidOid);
     SPI_execute_with_args_my(src, nargs, argtypes, values, nulls, SPI_OK_SELECT);
-    if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed %lu != 1", (long)SPI_processed)));
+    if (SPI_processed != 1) ereport(ERROR, (errmsg("SPI_processed " UINT64_FORMAT " != 1", (uint64)SPI_processed)));
     test = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "test", false, BOOLOID));
     SPI_finish_my();
     return test;

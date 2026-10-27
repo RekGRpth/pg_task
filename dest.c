@@ -98,25 +98,25 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
 static void rStartup(DestReceiver *self, int operation, TupleDesc tupdesc) {
     if (!task.shared) return;
     switch (operation) {
-        case CMD_UNKNOWN: elog(DEBUG1, "id = %li, operation = CMD_UNKNOWN", task.shared->id); break;
-        case CMD_SELECT: elog(DEBUG1, "id = %li, operation = CMD_SELECT", task.shared->id); break;
-        case CMD_UPDATE: elog(DEBUG1, "id = %li, operation = CMD_UPDATE", task.shared->id); break;
-        case CMD_INSERT: elog(DEBUG1, "id = %li, operation = CMD_INSERT", task.shared->id); break;
-        case CMD_DELETE: elog(DEBUG1, "id = %li, operation = CMD_DELETE", task.shared->id); break;
-        case CMD_UTILITY: elog(DEBUG1, "id = %li, operation = CMD_UTILITY", task.shared->id); break;
-        case CMD_NOTHING: elog(DEBUG1, "id = %li, operation = CMD_NOTHING", task.shared->id); break;
-        default: elog(DEBUG1, "id = %li, operation = %i", task.shared->id, operation); break;
+        case CMD_UNKNOWN: elog(DEBUG1, "id = " INT64_FORMAT ", operation = CMD_UNKNOWN", task.shared->id); break;
+        case CMD_SELECT: elog(DEBUG1, "id = " INT64_FORMAT ", operation = CMD_SELECT", task.shared->id); break;
+        case CMD_UPDATE: elog(DEBUG1, "id = " INT64_FORMAT ", operation = CMD_UPDATE", task.shared->id); break;
+        case CMD_INSERT: elog(DEBUG1, "id = " INT64_FORMAT ", operation = CMD_INSERT", task.shared->id); break;
+        case CMD_DELETE: elog(DEBUG1, "id = " INT64_FORMAT ", operation = CMD_DELETE", task.shared->id); break;
+        case CMD_UTILITY: elog(DEBUG1, "id = " INT64_FORMAT ", operation = CMD_UTILITY", task.shared->id); break;
+        case CMD_NOTHING: elog(DEBUG1, "id = " INT64_FORMAT ", operation = CMD_NOTHING", task.shared->id); break;
+        default: elog(DEBUG1, "id = " INT64_FORMAT ", operation = %i", task.shared->id, operation); break;
     }
     task.row = 0;
     task.skip = operation == CMD_SELECT;
 }
 
 static void rShutdown(DestReceiver *self) {
-    if (task.shared) elog(DEBUG1, "id = %li", task.shared->id);
+    if (task.shared) elog(DEBUG1, "id = " INT64_FORMAT, task.shared->id);
 }
 
 static void rDestroy(DestReceiver *self) {
-    if (task.shared) elog(DEBUG1, "id = %li", task.shared->id);
+    if (task.shared) elog(DEBUG1, "id = " INT64_FORMAT, task.shared->id);
 }
 
 static
@@ -132,7 +132,7 @@ DestReceiver myDestReceiver = {
 };
 
 DestReceiver *CreateDestReceiverMy(CommandDest dest) {
-    if (task.shared) elog(DEBUG1, "id = %li", task.shared->id);
+    if (task.shared) elog(DEBUG1, "id = " INT64_FORMAT, task.shared->id);
 #if PG_VERSION_NUM >= 120000
     return unconstify(DestReceiver *, &myDestReceiver);
 #else
@@ -141,11 +141,11 @@ DestReceiver *CreateDestReceiverMy(CommandDest dest) {
 }
 
 static void ReadyForQueryMy(CommandDest dest) {
-    if (task.shared) elog(DEBUG1, "id = %li", task.shared->id);
+    if (task.shared) elog(DEBUG1, "id = " INT64_FORMAT, task.shared->id);
 }
 
 void NullCommandMy(CommandDest dest) {
-    if (task.shared) elog(DEBUG1, "id = %li", task.shared->id);
+    if (task.shared) elog(DEBUG1, "id = " INT64_FORMAT, task.shared->id);
 }
 
 static bool held = false; // interrupts held since the input committed, see dest_xact()
@@ -165,7 +165,7 @@ static void dest_resume(void) {
 
 #if PG_VERSION_NUM >= 130000
 void BeginCommandMy(CommandTag commandTag, CommandDest dest) {
-    if (task.shared) elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, GetCommandTagName(commandTag));
+    if (task.shared) elog(DEBUG1, "id = " INT64_FORMAT ", commandTag = %s", task.shared->id, GetCommandTagName(commandTag));
     dest_resume();
 }
 
@@ -175,9 +175,9 @@ void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undeco
     const char *tagname = GetCommandTagName(tag);
     if (!task.shared) return;
     dest_relock();
-    if (command_tag_display_rowcount(tag) && !force_undecorated_output) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, tag == CMDTAG_INSERT ? "%s 0 %lu" : "%s %lu", tagname, qc->nprocessed);
+    if (command_tag_display_rowcount(tag) && !force_undecorated_output) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, tag == CMDTAG_INSERT ? "%s 0 " UINT64_FORMAT : "%s " UINT64_FORMAT, tagname, qc->nprocessed);
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
-    elog(DEBUG1, "id = %li, completionTag = %s", task.shared->id, completionTag);
+    elog(DEBUG1, "id = " INT64_FORMAT ", completionTag = %s", task.shared->id, completionTag);
     if (task.skip) task.skip = 0; else {
         task_line(&task);
         appendStringInfoString(&task.output, completionTag);
@@ -185,14 +185,14 @@ void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undeco
 }
 #else
 void BeginCommandMy(const char *commandTag, CommandDest dest) {
-    if (task.shared) elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, commandTag);
+    if (task.shared) elog(DEBUG1, "id = " INT64_FORMAT ", commandTag = %s", task.shared->id, commandTag);
     dest_resume();
 }
 
 void EndCommandMy(const char *commandTag, CommandDest dest) {
     if (!task.shared) return;
     dest_relock();
-    elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, commandTag);
+    elog(DEBUG1, "id = " INT64_FORMAT ", commandTag = %s", task.shared->id, commandTag);
     if (task.skip) task.skip = 0; else {
         task_line(&task);
         appendStringInfoString(&task.output, commandTag);
@@ -380,7 +380,7 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
             Portal portal;
             portal = SPI_cursor_open(NULL, plan, NULL, NULL, false); // which has the statement as the context of an error itself, as the fetches don't
             error_context_stack = &context;
-            elog(DEBUG1, "id = %li, commandTag = %s, cursor", task.shared->id, tagname);
+            elog(DEBUG1, "id = " INT64_FORMAT ", commandTag = %s, cursor", task.shared->id, tagname);
             // into the receiver of local mode, each row into the output as it comes, rather than by SPI_cursor_fetch() a few at a time, those of a fetch an error, a timeout or a STOP, came within lost with it; in one go, as each run of the portal starts the receiver anew, with the header again
             (void)PortalRunFetch(portal, FETCH_FORWARD, FETCH_ALL, CreateDestReceiverMy(DestDebug));
             error_context_stack = context.previous;
@@ -421,15 +421,15 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
         case SPI_OK_UPDATE: count = true; break;
         case SPI_OK_UPDATE_RETURNING: task.skip = 1; break;
     }
-    elog(DEBUG1, "id = %li, commandTag = %s", task.shared->id, tagname);
+    elog(DEBUG1, "id = " INT64_FORMAT ", commandTag = %s", task.shared->id, tagname);
     if (SPI_tuptable) dest_spi_output(0);
 #if PG_VERSION_NUM < 120000
     // the oid of the one row inserted into a table WITH OIDS before 12, as local mode and remote mode report it, 0 for none or several
-    if (count && !strcmp(tagname, "INSERT")) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s %u %lu", tagname, SPI_processed == 1 ? SPI_lastoid : InvalidOid, (unsigned long)SPI_processed); else
+    if (count && !strcmp(tagname, "INSERT")) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s %u " UINT64_FORMAT, tagname, SPI_processed == 1 ? SPI_lastoid : InvalidOid, (uint64)SPI_processed); else
 #endif
-    if (count) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, !strcmp(tagname, "INSERT") ? "%s 0 %lu" : "%s %lu", tagname, (unsigned long)SPI_processed);
+    if (count) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, !strcmp(tagname, "INSERT") ? "%s 0 " UINT64_FORMAT : "%s " UINT64_FORMAT, tagname, (uint64)SPI_processed);
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
-    elog(DEBUG1, "id = %li, completionTag = %s", task.shared->id, completionTag);
+    elog(DEBUG1, "id = " INT64_FORMAT ", completionTag = %s", task.shared->id, completionTag);
     if (task.skip) task.skip = 0; else {
         task_line(&task);
         appendStringInfoString(&task.output, completionTag);
@@ -732,7 +732,7 @@ bool dest_timeout(void) {
         return true;
     }
     task.skip = 0; // or a task failed before in this worker would hide the command tag of the next one, and with nothing else to output have it deleted
-    elog(DEBUG1, "id = %li, timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
+    elog(DEBUG1, "id = " INT64_FORMAT ", timeout = %i, input = %s, count = %i", task.shared->id, task.timeout, task.input, task.count);
     set_ps_display_my("timeout");
     StatementTimeout = task.timeout ? task.timeout : StatementTimeoutMy; // a task without a timeout of its own still runs under the server's statement_timeout, as a remote one does, and as a timeout of its own is capped by it
     StatementTimeoutTask = StatementTimeout;

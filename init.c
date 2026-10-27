@@ -141,7 +141,7 @@ bool unlock_data_make(Oid data) {
 
 bool lock_table_id(Oid table, int64 id) {
     LOCKTAG tag = {init_table_key(table), (uint32)(id >> 32), (uint32)id, 4, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    elog(DEBUG1, "table = %i, id = %li", table, id);
+    elog(DEBUG1, "table = %i, id = " INT64_FORMAT, table, id);
     return LockAcquire(&tag, AccessExclusiveLock, true, true) == LOCKACQUIRE_OK;
 }
 
@@ -155,7 +155,7 @@ bool lock_table_pid_hash(Oid table, int pid, int hash) {
 // the slot of the group hash a remote task takes before its connection has a pid to lock with lock_table_pid_hash(); only the low half of the id, so already held is fine
 bool lock_table_id_hash(Oid table, int64 id, int hash) {
     LOCKTAG tag = {init_table_key(table), (uint32)id, (uint32)hash, 7, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    elog(DEBUG1, "table = %i, id = %li, hash = %i", table, id, hash);
+    elog(DEBUG1, "table = %i, id = " INT64_FORMAT ", hash = %i", table, id, hash);
     return LockAcquire(&tag, AccessShareLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
 }
 
@@ -173,13 +173,13 @@ bool unlock_data_user(Oid data, Oid user) {
 
 bool unlock_table_id(Oid table, int64 id) {
     LOCKTAG tag = {init_table_key(table), (uint32)(id >> 32), (uint32)id, 4, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    elog(DEBUG1, "table = %i, id = %li", table, id);
+    elog(DEBUG1, "table = %i, id = " INT64_FORMAT, table, id);
     return LockRelease(&tag, AccessExclusiveLock, true);
 }
 
 bool unlock_table_id_hash(Oid table, int64 id, int hash) {
     LOCKTAG tag = {init_table_key(table), (uint32)id, (uint32)hash, 7, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    elog(DEBUG1, "table = %i, id = %li, hash = %i", table, id, hash);
+    elog(DEBUG1, "table = %i, id = " INT64_FORMAT ", hash = %i", table, id, hash);
     return LockRelease(&tag, AccessShareLock, true);
 }
 
@@ -205,7 +205,7 @@ static void relock(const LOCKTAG *tag, LOCKMODE mode) {
 
 void relock_table_id(Oid table, int64 id) {
     LOCKTAG tag = {init_table_key(table), (uint32)(id >> 32), (uint32)id, 4, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    elog(DEBUG1, "table = %i, id = %li", table, id);
+    elog(DEBUG1, "table = %i, id = " INT64_FORMAT, table, id);
     relock(&tag, AccessExclusiveLock);
 }
 
@@ -355,11 +355,11 @@ void _PG_init(void) {
 #else
     RequestAddinShmemSpace(init_shared_memsize());
 #endif
-    if ((len = strlcpy(worker.bgw_function_name, "conf_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name))));
-    if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name))));
-    if ((len = strlcpy(worker.bgw_name, "postgres pg_conf", sizeof(worker.bgw_name))) >= sizeof(worker.bgw_name)) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_name))));
+    if ((len = strlcpy(worker.bgw_function_name, "conf_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %zu >= %zu", len, sizeof(worker.bgw_function_name))));
+    if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %zu >= %zu", len, sizeof(worker.bgw_library_name))));
+    if ((len = strlcpy(worker.bgw_name, "postgres pg_conf", sizeof(worker.bgw_name))) >= sizeof(worker.bgw_name)) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %zu >= %zu", len, sizeof(worker.bgw_name))));
 #if PG_VERSION_NUM >= 110000
-    if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type))));
+    if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %zu >= %zu", len, sizeof(worker.bgw_type))));
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     worker.bgw_restart_time = init.conf.restart;
@@ -563,7 +563,7 @@ void init_work_wake(const Shared *task) {
 // the tasks of a table that task workers run, by their slots, which outlive a restart of the pg_work that started them, and which no input can let go of, as it can of the lock of its task, with pg_advisory_unlock_all() say: for work_reset() not to take them for orphaned
 void init_task_ids(StringInfo ids, const char *data, Oid oid) {
     LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
-    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && shared[slot].id && shared[slot].oid == oid && !strcmp(shared[slot].data, data)) appendStringInfo(ids, "%s%li", ids->len > 1 ? "," : "", shared[slot].id);
+    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && shared[slot].id && shared[slot].oid == oid && !strcmp(shared[slot].data, data)) appendStringInfo(ids, "%s" INT64_FORMAT, ids->len > 1 ? "," : "", shared[slot].id);
     LWLockRelease(BackgroundWorkerLock);
 }
 

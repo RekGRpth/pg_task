@@ -43,7 +43,7 @@ static bool task_live(const Task *t) {
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID, TEXTOID, TEXTOID, TEXTOID, INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    elog(DEBUG1, "id = %li, hash = %i, max = %i, count = %i, start = %s", t->shared->id, t->shared->hash, t->shared->max, t->count, timestamptz_to_str(t->start));
+    elog(DEBUG1, "id = " INT64_FORMAT ", hash = %i, max = %i, count = %i, start = %s", t->shared->id, t->shared->hash, t->shared->max, t->count, timestamptz_to_str(t->start));
     set_ps_display_my("live");
     if (!src.data) {
         initStringInfoMy(&src);
@@ -68,7 +68,7 @@ static bool task_live(const Task *t) {
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
     t->shared->id = (taken = SPI_processed == 1) ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)) : 0;
-    elog(DEBUG1, "id = %li", t->shared->id);
+    elog(DEBUG1, "id = " INT64_FORMAT, t->shared->id);
     SPI_finish_my();
     set_ps_display_my("idle");
     return ShutdownRequestPending || !taken; // by the row taken, not by its id, which may be 0, an author inserting it, its row in TAKE then to run, not to be left there till the reset
@@ -90,9 +90,9 @@ static char *task_columns(const Task *t) {
 #endif
     ;
     SPI_execute_with_args_my(src, countof(argtypes), argtypes, values, NULL, SPI_OK_SELECT);
-    if (SPI_processed != 1) ereport(WARNING, (errmsg("columns id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed))); else {
+    if (SPI_processed != 1) ereport(WARNING, (errmsg("columns id = " INT64_FORMAT ", SPI_processed " UINT64_FORMAT " != 1", t->shared->id, (uint64)SPI_processed))); else {
         columns = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "columns", false, TEXTOID));
-        elog(DEBUG1, "columns id = %li, %s", t->shared->id, columns);
+        elog(DEBUG1, "columns id = " INT64_FORMAT ", %s", t->shared->id, columns);
     }
     return columns;
 }
@@ -102,7 +102,7 @@ static void task_delete(const Task *t) {
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    elog(DEBUG1, "id = %li", t->shared->id);
+    elog(DEBUG1, "id = " INT64_FORMAT, t->shared->id);
     set_ps_display_my("delete");
     if (!src.data) {
         initStringInfoMy(&src);
@@ -112,8 +112,8 @@ static void task_delete(const Task *t) {
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_DELETE_RETURNING);
-    if (SPI_processed != 1) ereport(WARNING, (errmsg("delete id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed)));
-    else elog(DEBUG1, "delete id = %li", DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)));
+    if (SPI_processed != 1) ereport(WARNING, (errmsg("delete id = " INT64_FORMAT ", SPI_processed " UINT64_FORMAT " != 1", t->shared->id, (uint64)SPI_processed)));
+    else elog(DEBUG1, "delete id = " INT64_FORMAT, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)));
     set_ps_display_my("idle");
 }
 
@@ -124,7 +124,7 @@ static void task_insert(const Task *t) {
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    elog(DEBUG1, "id = %li", t->shared->id);
+    elog(DEBUG1, "id = " INT64_FORMAT, t->shared->id);
     set_ps_display_my("insert");
     if (!(columns = task_columns(t))) return;
     // the columns are looked up for every repeat, as the user may have added or dropped one since: a column added would not be copied, and one dropped would fail the plan
@@ -146,8 +146,8 @@ static void task_insert(const Task *t) {
     }
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_INSERT_RETURNING);
-    if (SPI_processed != 1) ereport(WARNING, (errmsg("insert id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed)));
-    else elog(DEBUG1, "insert id = %li", DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)));
+    if (SPI_processed != 1) ereport(WARNING, (errmsg("insert id = " INT64_FORMAT ", SPI_processed " UINT64_FORMAT " != 1", t->shared->id, (uint64)SPI_processed)));
+    else elog(DEBUG1, "insert id = " INT64_FORMAT, DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)));
     set_ps_display_my("idle");
 }
 
@@ -183,7 +183,7 @@ static void task_update(const Task *t, TimestampTz until) {
         SPI_cursor_fetch_my(src.data, portal, true, init_task_fetch());
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
-            elog(DEBUG1, "row = %lu, update id = %li", row, DatumGetInt64(SPI_getbinval_my(val, SPI_tuptable->tupdesc, "id", false, INT8OID)));
+            elog(DEBUG1, "row = " UINT64_FORMAT ", update id = " INT64_FORMAT, row, DatumGetInt64(SPI_getbinval_my(val, SPI_tuptable->tupdesc, "id", false, INT8OID)));
             SPI_freetuple(val);
         }
     } while (SPI_processed);
@@ -199,7 +199,7 @@ void task_untake(Task *t) {
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
-    elog(DEBUG1, "id = %li", t->shared->id);
+    elog(DEBUG1, "id = " INT64_FORMAT, t->shared->id);
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
@@ -209,7 +209,7 @@ void task_untake(Task *t) {
     SPI_connect_my(src.data, userid);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_UPDATE);
-    if (!SPI_processed) ereport(WARNING, (errmsg("id = %li, not put back to PLAN, its row held by someone else, or it's not in TAKE", t->shared->id)));
+    if (!SPI_processed) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", not put back to PLAN, its row held by someone else, or it's not in TAKE", t->shared->id)));
     SPI_finish_my();
 }
 
@@ -273,7 +273,7 @@ static void task_step(Task *t, void (*step)(Task *t, TimestampTz pause), Timesta
         if (t->remote && t != get_task() && (edata->sqlerrcode == ERRCODE_LOCK_NOT_AVAILABLE || edata->sqlerrcode == ERRCODE_T_R_DEADLOCK_DETECTED)) ReThrowError(edata);
         InterruptHoldoffCount = holdoff;
         QueryCancelHoldoffCount = cancel_holdoff;
-        ereport(WARNING, (errcode(edata->sqlerrcode), errmsg("id = %li, %s: %s", t->shared->id, what, edata->message)));
+        ereport(WARNING, (errcode(edata->sqlerrcode), errmsg("id = " INT64_FORMAT ", %s: %s", t->shared->id, what, edata->message)));
         FreeErrorData(edata);
     PG_END_TRY();
 }
@@ -303,7 +303,7 @@ bool task_done(Task *t, bool live) {
     static StringInfoData src = {0};
     t->booked = false;
     task_fit(t);
-    elog(DEBUG1, "id = %li, output = %s, error = %s", t->shared->id, t->output.data ? t->output.data : init_null(), t->error.data ? t->error.data : init_null());
+    elog(DEBUG1, "id = " INT64_FORMAT ", output = %s, error = %s", t->shared->id, t->output.data ? t->output.data : init_null(), t->error.data ? t->error.data : init_null());
     HOLD_INTERRUPTS(); // the input done, no termination is to fail its bookkeeping, leaving the task in WORK, to run again on reset, as in pg_work for a remote one
     set_ps_display_my("done");
     if (!src.data) {
@@ -339,7 +339,7 @@ bool task_done(Task *t, bool live) {
     PG_END_TRY();
     if (values[1]) task_untext(&t->output);
     if (values[2]) task_untext(&t->error);
-    if (SPI_processed != 1) { ereport(WARNING, (errmsg("id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed))); exit = true; } else {
+    if (SPI_processed != 1) { ereport(WARNING, (errmsg("id = " INT64_FORMAT ", SPI_processed " UINT64_FORMAT " != 1", t->shared->id, (uint64)SPI_processed))); exit = true; } else {
         delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false, BOOLOID));
         exit = !live || !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false, BOOLOID));
         insert = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "insert", false, BOOLOID));
@@ -351,7 +351,7 @@ bool task_done(Task *t, bool live) {
     if (insert) task_step(t, task_insert_step, 0, "repeat not inserted");
     if (delete) task_step(t, task_delete_step, 0, "not deleted");
     if (pause) task_step(t, task_update_step, pause, "tasks of its group not paused"); // none for a plan of -infinity, due at once, which can't be subtracted from, failing the bookkeeping outside any error handling, see above
-    if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) { ereport(WARNING, (errmsg("!unlock_table_id(%i, %li)", t->shared->oid, t->shared->id))); exit = true; }
+    if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) { ereport(WARNING, (errmsg("!unlock_table_id(%i, " INT64_FORMAT ")", t->shared->oid, t->shared->id))); exit = true; }
     t->lock = false;
     SPI_finish_my();
     t->booked = true; // for an error of task_live() not to be taken for one of the bookkeeping, before 9.5 and in Greengage, where it waits for the row of the next task, see work_bookkeeping()
@@ -371,15 +371,15 @@ bool task_work(Task *t) {
     static StringInfoData src = {0};
     t->worked = false;
     if (ShutdownRequestPending) return true;
-    if (!lock_table_id(t->shared->oid, t->shared->id)) { ereport(WARNING, (errmsg("!lock_table_id(%i, %li)", t->shared->oid, t->shared->id))); return true; }
+    if (!lock_table_id(t->shared->oid, t->shared->id)) { ereport(WARNING, (errmsg("!lock_table_id(%i, " INT64_FORMAT ")", t->shared->oid, t->shared->id))); return true; }
     t->lock = true;
     t->count++;
-    elog(DEBUG1, "id = %li, max = %i, oid = %i, count = %i, pid = %i", t->shared->id, t->shared->max, t->shared->oid, t->count, t->pid);
+    elog(DEBUG1, "id = " INT64_FORMAT ", max = %i, oid = %i, count = %i, pid = %i", t->shared->id, t->shared->max, t->shared->oid, t->count, t->pid);
     set_ps_display_my("work");
     if (!t->conn) {
         StringInfoData id;
         initStringInfoMy(&id);
-        appendStringInfo(&id, "%li", t->shared->id);
+        appendStringInfo(&id, INT64_FORMAT, t->shared->id);
         SetConfigOption("pg_task.id", id.data, PGC_USERSET, PGC_S_SESSION);
         pfree(id.data);
     }
@@ -396,7 +396,7 @@ bool task_work(Task *t) {
     // a remote task in pg_work, from 9.5 on: its row held by someone else, a transaction of theirs left open while it connected say, not waited for, with every other remote task, the taking of tasks and their cancels, but tried again, see work_query()
     if (TASK_SKIP_LOCKED && t->conn && (t->held = task_held(t))) {
         SPI_finish_my();
-        if (!unlock_table_id(t->shared->oid, t->shared->id)) ereport(WARNING, (errmsg("!unlock_table_id(%i, %li)", t->shared->oid, t->shared->id)));
+        if (!unlock_table_id(t->shared->oid, t->shared->id)) ereport(WARNING, (errmsg("!unlock_table_id(%i, " INT64_FORMAT ")", t->shared->oid, t->shared->id)));
         t->lock = false;
         t->count--;
         set_ps_display_my("idle");
@@ -405,9 +405,9 @@ bool task_work(Task *t) {
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_UPDATE_RETURNING);
     if (SPI_processed != 1) {
-        ereport(WARNING, (errmsg("id = %li, SPI_processed %lu != 1", t->shared->id, (long)SPI_processed)));
+        ereport(WARNING, (errmsg("id = " INT64_FORMAT ", SPI_processed " UINT64_FORMAT " != 1", t->shared->id, (uint64)SPI_processed)));
         exit = true;
-        if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) ereport(WARNING, (errmsg("!unlock_table_id(%i, %li)", t->shared->oid, t->shared->id)));
+        if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) ereport(WARNING, (errmsg("!unlock_table_id(%i, " INT64_FORMAT ")", t->shared->oid, t->shared->id)));
         t->lock = false;
     } else {
         StringInfoData application_name;
@@ -595,7 +595,7 @@ void task_main(Datum main_arg) {
     CommitTransactionCommand();
     set_ps_display_my("main");
     process_session_preload_libraries();
-    elog(DEBUG1, "oid = %i, id = %li, hash = %i, max = %i", task->shared->oid, task->shared->id, task->shared->hash, task->shared->max);
+    elog(DEBUG1, "oid = %i, id = " INT64_FORMAT ", hash = %i, max = %i", task->shared->oid, task->shared->id, task->shared->hash, task->shared->max);
     SetConfigOption("pg_task.schema", task->shared->schema, PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("pg_task.table", task->shared->table, PGC_USERSET, PGC_S_SESSION);
     if (!MessageContext) MessageContext = AllocSetContextCreate(TopMemoryContext, "MessageContext", ALLOCSET_DEFAULT_SIZES);

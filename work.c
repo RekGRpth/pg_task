@@ -146,7 +146,7 @@ static bool work_verify(Task *t);
         FlushErrorState(); \
     PG_END_TRY(); \
     (void)work_verify(t); /* as a task done would have them, see work_encoding(): a remote task's output so far, and the server's messages, its connection broken say */ \
-    if (!work_error_remote) { work_error_exit = task_done(t, false); /* with live = false nothing new is taken into t, so it can be dropped */ if (t->held) ereport(WARNING, (errmsg("id = %li, its row held by someone else, its error not recorded, the task left in TAKE for the next reset", t->shared->id))); work_free(t); } \
+    if (!work_error_remote) { work_error_exit = task_done(t, false); /* with live = false nothing new is taken into t, so it can be dropped */ if (t->held) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", its row held by someone else, its error not recorded, the task left in TAKE for the next reset", t->shared->id))); work_free(t); } \
     else if (work_bookkeeping(t, false, &work_error_exit)) work_finish(t); \
     else work_defer(t); \
 } while(0)
@@ -239,7 +239,7 @@ static void work_check(const Work *w) {
             { bool isnull; Datum sleep = SPI_getbinval(val, tupdesc, SPI_fnumber(tupdesc, "sleep"), &isnull); w->shared->sleep = Max(isnull ? init_int(val, tupdesc, "sleep_setting", "pg_task.sleep") : DatumGetInt64(sleep), 1); }
             w->shared->spi = DatumGetBool(SPI_getbinval_my(val, tupdesc, "spi", false, BOOLOID));
             w->shared->limit = init_int(val, tupdesc, "limit", "pg_task.limit");
-            elog(DEBUG1, "sleep = %li, reset = %li, schema = %s, table = %s, run = %i, spi = %s, limit = %i, SPI_processed = %lu", w->shared->sleep, w->shared->reset, w->shared->schema, w->shared->table, w->shared->run, w->shared->spi ? "true" : "false", w->shared->limit, (long)SPI_processed);
+            elog(DEBUG1, "sleep = " INT64_FORMAT ", reset = " INT64_FORMAT ", schema = %s, table = %s, run = %i, spi = %s, limit = %i, SPI_processed = " UINT64_FORMAT, w->shared->sleep, w->shared->reset, w->shared->schema, w->shared->table, w->shared->run, w->shared->spi ? "true" : "false", w->shared->limit, (uint64)SPI_processed);
             SPI_freetuple(val);
         }
         SPI_finish_my();
@@ -347,7 +347,7 @@ static void work_free(Task *t) {
 }
 
 static void work_unreserve(Task *t) {
-    if (t->reserve && !unlock_table_id_hash(t->shared->oid, t->shared->id, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_id_hash(%i, %li, %i)", t->shared->oid, t->shared->id, t->shared->hash)));
+    if (t->reserve && !unlock_table_id_hash(t->shared->oid, t->shared->id, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_id_hash(%i, " INT64_FORMAT ", %i)", t->shared->oid, t->shared->id, t->shared->hash)));
     t->reserve = false;
 }
 
@@ -366,7 +366,7 @@ static bool work_bookkeeping(Task *t, bool live, bool *exit) {
         FlushErrorState();
         SPI_abort_my();
         // the bookkeeping committed, the taking of the next task failed, without SKIP LOCKED waiting for its row, see task_live(): no row of the task held, nothing to put off, only no next task taken
-        if (t->booked) { ereport(WARNING, (errmsg("id = %li, no next task taken", t->shared->id), errdetail("%s", edata->message))); *exit = true; } else done = false;
+        if (t->booked) { ereport(WARNING, (errmsg("id = " INT64_FORMAT ", no next task taken", t->shared->id), errdetail("%s", edata->message))); *exit = true; } else done = false;
         FreeErrorData(edata);
     PG_END_TRY();
     return done;
@@ -387,7 +387,7 @@ static void work_finish(Task *t) {
 
 // the bookkeeping put off: the connection closed, the task done with it, and the slot of its group freed, but for a negative max, but the task kept, with the lock of its id, for work_reset() to leave it be, till work_pending() records it
 static void work_defer(Task *t) {
-    ereport(WARNING, (errmsg("id = %li, its row held by someone else, its bookkeeping put off", t->shared->id)));
+    ereport(WARNING, (errmsg("id = " INT64_FORMAT ", its row held by someone else, its bookkeeping put off", t->shared->id)));
     if (t->conn) {
         PQfinish(t->conn);
 #if PG_VERSION_NUM >= 130000
@@ -455,7 +455,7 @@ static int work_nevents(void) {
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
     dlist_foreach_modify(iter, &cancels) {
         Cancel *c = dlist_container(Cancel, node, iter.cur);
-        if (PQcancelStatus(c->conn) == CONNECTION_BAD || PQcancelSocket(c->conn) == PGINVALID_SOCKET) { ereport(WARNING, (errmsg("id = %li, cancel failed", c->id), work_errdetail(PQcancelErrorMessage(c->conn)))); work_cancel_lost(c); continue; }
+        if (PQcancelStatus(c->conn) == CONNECTION_BAD || PQcancelSocket(c->conn) == PGINVALID_SOCKET) { ereport(WARNING, (errmsg("id = " INT64_FORMAT ", cancel failed", c->id), work_errdetail(PQcancelErrorMessage(c->conn)))); work_cancel_lost(c); continue; }
         nevents++;
     }
 #endif
@@ -492,7 +492,7 @@ static void work_expire(void) {
         char *error;
         if (!t->deadline || t->deadline > now) continue;
         // the cancel of the rest of its input, past the most of output, see work_failed(), not through, or not taking effect, sent to another server behind a balancer say: the rest left unread, its connection closed, rather than drained for as long as it runs
-        if (t->socket == work_drain) { ereport(WARNING, (errmsg("id = %li, the rest of its input not cancelled in time, its connection closed", t->shared->id))); t->deadline = 0; work_fail(t); continue; }
+        if (t->socket == work_drain) { ereport(WARNING, (errmsg("id = " INT64_FORMAT ", the rest of its input not cancelled in time, its connection closed", t->shared->id))); t->deadline = 0; work_fail(t); continue; }
         error = t->hosts ? psprintf("connection to server at \"%s\", port %s failed: timeout expired", PQhost(t->conn), PQport(t->conn)) : NULL;
         if (work_next(t, error)) { pfree(error); continue; }
         if (error) pfree(error);
@@ -502,7 +502,7 @@ static void work_expire(void) {
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
     dlist_foreach_modify(iter, &cancels) {
         Cancel *c = dlist_container(Cancel, node, iter.cur);
-        if (c->deadline <= now) { ereport(WARNING, (errmsg("id = %li, cancel request timed out", c->id))); work_cancel_lost(c); }
+        if (c->deadline <= now) { ereport(WARNING, (errmsg("id = " INT64_FORMAT ", cancel request timed out", c->id))); work_cancel_lost(c); }
     }
 #endif
 }
@@ -538,9 +538,9 @@ static void work_reset(const Work *w) {
     SPI_finish_my();
     initStringInfoMy(&ids);
     appendStringInfoChar(&ids, '{');
-    dlist_foreach(iter, &local) appendStringInfo(&ids, "%s%li", ids.len > 1 ? "," : "", dlist_container(Local, node, iter.cur)->id);
-    dlist_foreach(iter, &remote) appendStringInfo(&ids, "%s%li", ids.len > 1 ? "," : "", dlist_container(Task, node, iter.cur)->shared->id);
-    dlist_foreach(iter, &pending) appendStringInfo(&ids, "%s%li", ids.len > 1 ? "," : "", dlist_container(Task, node, iter.cur)->shared->id); // and those whose bookkeeping is put off, one that failed connecting with no lock of its id yet, see task_work(), say, not to be taken again before its bookkeeping, which would fail the task taken by its error then
+    dlist_foreach(iter, &local) appendStringInfo(&ids, "%s" INT64_FORMAT, ids.len > 1 ? "," : "", dlist_container(Local, node, iter.cur)->id);
+    dlist_foreach(iter, &remote) appendStringInfo(&ids, "%s" INT64_FORMAT, ids.len > 1 ? "," : "", dlist_container(Task, node, iter.cur)->shared->id);
+    dlist_foreach(iter, &pending) appendStringInfo(&ids, "%s" INT64_FORMAT, ids.len > 1 ? "," : "", dlist_container(Task, node, iter.cur)->shared->id); // and those whose bookkeeping is put off, one that failed connecting with no lock of its id yet, see task_work(), say, not to be taken again before its bookkeeping, which would fail the task taken by its error then
     init_task_ids(&ids, w->shared->data, w->shared->oid); // and those of task workers an earlier pg_work started, before it was restarted, which hold the lock of their task no longer, if an input let go of it
     appendStringInfoChar(&ids, '}');
     if (!src.data) {
@@ -568,7 +568,7 @@ static void work_reset(const Work *w) {
         SPI_cursor_fetch_my(src.data, portal, true, init_work_fetch());
         for (uint64 row = 0; row < SPI_processed; row++) {
             HeapTuple val = SPI_tuptable->vals[row];
-            ereport(WARNING, (errmsg("row = %lu, reset id = %li", row, DatumGetInt64(SPI_getbinval_my(val, SPI_tuptable->tupdesc, "id", false, INT8OID)))));
+            ereport(WARNING, (errmsg("row = " UINT64_FORMAT ", reset id = " INT64_FORMAT, row, DatumGetInt64(SPI_getbinval_my(val, SPI_tuptable->tupdesc, "id", false, INT8OID)))));
             SPI_freetuple(val);
         }
     } while (SPI_processed);
@@ -631,15 +631,15 @@ static void work_notice(void *arg, const PGresult *result) {
     // in the client_encoding of the connection, which an input may have set to another one than that of this database, as work_verify() has it for the output: not to go into the log as it is then
     for (int i = 0; i < 3; i++) {
         const char *field = i == 0 ? message : PQresultErrorField(result, i == 1 ? PG_DIAG_MESSAGE_DETAIL : PG_DIAG_MESSAGE_HINT);
-        if (field && !pg_verifymbstr(field, strlen(field), true)) { ereport(elevel, (errmsg("id = %li, a notice of the remote server not in the encoding of this database", t->shared->id))); return; }
+        if (field && !pg_verifymbstr(field, strlen(field), true)) { ereport(elevel, (errmsg("id = " INT64_FORMAT ", a notice of the remote server not in the encoding of this database", t->shared->id))); return; }
     }
-    ereport(elevel, (errcode(sqlstate && strlen(sqlstate) == 5 ? MAKE_SQLSTATE(sqlstate[0], sqlstate[1], sqlstate[2], sqlstate[3], sqlstate[4]) : ERRCODE_WARNING), errmsg_internal("id = %li, %s", t->shared->id, message), work_errdetail(PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL)), work_errhint(PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))));
+    ereport(elevel, (errcode(sqlstate && strlen(sqlstate) == 5 ? MAKE_SQLSTATE(sqlstate[0], sqlstate[1], sqlstate[2], sqlstate[3], sqlstate[4]) : ERRCODE_WARNING), errmsg_internal("id = " INT64_FORMAT ", %s", t->shared->id, message), work_errdetail(PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL)), work_errhint(PQresultErrorField(result, PG_DIAG_MESSAGE_HINT))));
 }
 
 static void work_readable(Task *t) {
     if (PQstatus(t->conn) == CONNECTION_OK && !PQconsumeInput(t->conn)) { work_broken((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("!PQconsumeInput"), work_errdetail(PQerrorMessage(t->conn)))); return; }
     // the notifications of a LISTEN of the task, which libpq would keep for as long as the connection lives, with save say, a task having nowhere to take them: logged for debug and dropped
-    for (PGnotify *notify; (notify = PQnotifies(t->conn)); PQfreemem(notify)) elog(DEBUG1, "id = %li, notification \"%s\" from %i: %s", t->shared->id, notify->relname, notify->be_pid, notify->extra);
+    for (PGnotify *notify; (notify = PQnotifies(t->conn)); PQfreemem(notify)) elog(DEBUG1, "id = " INT64_FORMAT ", notification \"%s\" from %i: %s", t->shared->id, notify->relname, notify->be_pid, notify->extra);
     if (t->held && t->socket == work_query) return; // waiting for its row to start, see task_work(), which it does once a sleep only, see work_held(), not on what its connection got, the FATAL of a server closing it say, the end of which comes next
     t->socket(t);
 }
@@ -709,7 +709,7 @@ static void work_done(Task *t) {
     if (!work_bookkeeping(t, live, &exit)) { work_defer(t); return; }
     if (exit || !live) { work_finish(t); return; }
     if (t->save) { work_query(t); return; }
-    if (!PQsendQuery(t->conn, SQL(DISCARD ALL;))) { ereport(WARNING, (errmsg("id = %li, PQsendQuery failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); task_untake(t); work_finish(t); return; }
+    if (!PQsendQuery(t->conn, SQL(DISCARD ALL;))) { ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQsendQuery failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); task_untake(t); work_finish(t); return; }
     t->socket = work_discard;
     t->event = WL_SOCKET_READABLE;
 }
@@ -719,9 +719,9 @@ static void work_discard(Task *t) {
         if (work_busy(t, work_discard)) return;
         if (!(result = PQgetResult(t->conn))) break;
         switch (PQresultStatus(result)) {
-            case PGRES_COMMAND_OK: elog(DEBUG1, "id = %li, %s", t->shared->id, PQcmdStatus(result)); break;
-            case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); PQclear(result); task_untake(t); work_finish(t); return; // closes the connection, whatever else it was to read
-            default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
+            case PGRES_COMMAND_OK: elog(DEBUG1, "id = " INT64_FORMAT ", %s", t->shared->id, PQcmdStatus(result)); break;
+            case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); PQclear(result); task_untake(t); work_finish(t); return; // closes the connection, whatever else it was to read
+            default: elog(DEBUG1, "id = " INT64_FORMAT ", %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
         }
     }
     if (PQstatus(t->conn) != CONNECTION_OK) { task_untake(t); work_finish(t); } else work_query(t); // the next task, which task_done() took already, has nothing to run on
@@ -764,15 +764,15 @@ static void work_drain(Task *t) {
         if (work_busy(t, work_drain)) return;
         if (!(result = PQgetResult(t->conn))) break;
         switch (PQresultStatus(result)) {
-            case PGRES_COPY_BOTH: if (PQputCopyEnd(t->conn, "COPY BOTH is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
-            case PGRES_COPY_IN: if (PQputCopyEnd(t->conn, "COPY FROM STDIN is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
+            case PGRES_COPY_BOTH: if (PQputCopyEnd(t->conn, "COPY BOTH is not supported") == -1) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
+            case PGRES_COPY_IN: if (PQputCopyEnd(t->conn, "COPY FROM STDIN is not supported") == -1) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
             case PGRES_COPY_OUT: {
                 char *buffer;
                 int len;
                 while ((len = PQgetCopyData(t->conn, &buffer, true)) > 0) PQfreemem(buffer);
                 if (!len) { PQclear(result); t->event = WL_SOCKET_READABLE; t->socket = work_drain; return; } // the rest of it once the socket is readable again
             } break;
-            default: ereport(DEBUG1, (errmsg("id = %li, dropped %s", t->shared->id, PQresStatus(PQresultStatus(result))), work_errdetail(PQresultErrorMessage(result)))); break;
+            default: ereport(DEBUG1, (errmsg("id = " INT64_FORMAT ", dropped %s", t->shared->id, PQresStatus(PQresultStatus(result))), work_errdetail(PQresultErrorMessage(result)))); break;
         }
     }
     work_fail(t);
@@ -811,7 +811,7 @@ static void work_copy(Task *t) {
     if (copied) t->line = false; // its rows end with a newline each, the last one included, for the next line to go on from
     switch (len) {
         case 0: t->event = WL_SOCKET_READABLE; t->socket = work_copy; break;
-        case -2: work_error((errmsg("id = %li, PQgetCopyData == -2", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
+        case -2: work_error((errmsg("id = " INT64_FORMAT ", PQgetCopyData == -2", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
         default: t->skip++; work_result(t); break;
     }
 }
@@ -825,13 +825,13 @@ static void work_result(Task *t) {
         PG_TRY();
             switch (PQresultStatus(result)) {
                 case PGRES_COMMAND_OK: work_command(t, result); break;
-                case PGRES_COPY_BOTH: if (PQputCopyEnd(t->conn, "COPY BOTH is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
-                case PGRES_COPY_IN: if (PQputCopyEnd(t->conn, "COPY FROM STDIN is not supported") == -1) ereport(WARNING, (errmsg("id = %li, PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
+                case PGRES_COPY_BOTH: if (PQputCopyEnd(t->conn, "COPY BOTH is not supported") == -1) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
+                case PGRES_COPY_IN: if (PQputCopyEnd(t->conn, "COPY FROM STDIN is not supported") == -1) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
                 case PGRES_COPY_OUT: copy = true; break;
-                case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
+                case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
                 case PGRES_SINGLE_TUPLE: work_success(t, result, 0, !t->rows++); break; // a row at a time, as single-row mode has them, see work_input(), then their result with none
                 case PGRES_TUPLES_OK: for (int row = 0; row < PQntuples(result); row++) { work_success(t, result, row, !row && !t->rows); work_output(t); } t->rows = 0; break;
-                default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
+                default: elog(DEBUG1, "id = " INT64_FORMAT ", %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
             }
             work_output(t);
         PG_CATCH();
@@ -852,9 +852,9 @@ static void work_input(Task *t) {
         if (work_busy(t, work_input)) return;
         if (!(result = PQgetResult(t->conn))) break;
         switch (PQresultStatus(result)) {
-            case PGRES_COMMAND_OK: elog(DEBUG1, "id = %li, %s", t->shared->id, PQcmdStatus(result)); break;
-            case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = %li, PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
-            default: elog(DEBUG1, "id = %li, %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
+            case PGRES_COMMAND_OK: elog(DEBUG1, "id = " INT64_FORMAT ", %s", t->shared->id, PQcmdStatus(result)); break;
+            case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
+            default: elog(DEBUG1, "id = " INT64_FORMAT ", %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
         }
     }
     // a stop come between the preamble and the input, whose cancel the server, idle there, ignored, the input to run to the end otherwise, never cancelled again: not sent, the task failed as the cancel would have it, as a local one is, see dest_timeout()
@@ -875,7 +875,7 @@ static void work_input(Task *t) {
     if (t->error.data) { work_done(t); return; }
     if (!PQsendQuery(t->conn, t->input)) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
     // the rows one by one, each looked at against the most of output a task may keep, see work_output(), rather than all of a result in libpq's memory first, many more than that, gigabytes of a remote SELECT, with pg_work and every remote task it runs taken down by running out of it
-    if (!PQsetSingleRowMode(t->conn)) ereport(WARNING, (errmsg("id = %li, PQsetSingleRowMode failed", t->shared->id)));
+    if (!PQsetSingleRowMode(t->conn)) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQsetSingleRowMode failed", t->shared->id)));
     t->rows = 0;
     t->socket = work_result;
     t->event = WL_SOCKET_READABLE;
@@ -890,7 +890,7 @@ static void work_query(Task *t) {
 
     initStringInfoMy(&preamble);
     t->skip = 0;
-    appendStringInfo(&preamble, SQL(SET SESSION "pg_task.id" = %li;), t->shared->id);
+    appendStringInfo(&preamble, "SET SESSION \"pg_task.id\" = " INT64_FORMAT ";", t->shared->id); // not SQL(), which would take INT64_FORMAT for its name
     quote_group = quote_literal_cstr(t->group);
     appendStringInfo(&preamble, SQL(SET SESSION "pg_task.group" = %s;), quote_group);
     if (quote_group != t->group) pfree((void *)quote_group);
@@ -903,7 +903,7 @@ static void work_query(Task *t) {
     pfree((void *)quote_table);
     if (t->timeout) appendStringInfo(&preamble, SQL(SET SESSION "statement_timeout" = %i;), t->timeout);
     else appendStringInfoString(&preamble, SQL(RESET "statement_timeout";));
-    elog(DEBUG1, "id = %li, timeout = %i, preamble = %s, input = %s, count = %i", t->shared->id, t->timeout, preamble.data, t->input, t->count);
+    elog(DEBUG1, "id = " INT64_FORMAT ", timeout = %i, preamble = %s, input = %s, count = %i", t->shared->id, t->timeout, preamble.data, t->input, t->count);
     if (!PQsendQuery(t->conn, preamble.data)) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); pfree(preamble.data); return; }
     pfree(preamble.data);
     t->socket = work_input;
@@ -916,15 +916,15 @@ static void work_connect(Task *t) {
     static uint32 key = 0;
     switch (PQstatus(t->conn)) {
         case CONNECTION_BAD: if (!work_next(t, PQerrorMessage(t->conn))) work_error((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), work_errdetail(t->failed ? t->failed : PQerrorMessage(t->conn)))); return;
-        case CONNECTION_OK: elog(DEBUG1, "id = %li, PQstatus == CONNECTION_OK", t->shared->id); connected = true; break;
+        case CONNECTION_OK: elog(DEBUG1, "id = " INT64_FORMAT ", PQstatus == CONNECTION_OK", t->shared->id); connected = true; break;
         default: break;
     }
     if (!connected) switch (PQconnectPoll(t->conn)) {
-        case PGRES_POLLING_ACTIVE: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_ACTIVE", t->shared->id); break;
+        case PGRES_POLLING_ACTIVE: elog(DEBUG1, "id = " INT64_FORMAT ", PQconnectPoll == PGRES_POLLING_ACTIVE", t->shared->id); break;
         case PGRES_POLLING_FAILED: if (!work_next(t, PQerrorMessage(t->conn))) work_error((errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectPoll failed"), work_errdetail(t->failed ? t->failed : PQerrorMessage(t->conn)))); return;
-        case PGRES_POLLING_OK: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_OK", t->shared->id); connected = true; break;
-        case PGRES_POLLING_READING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_READING", t->shared->id); t->event = WL_SOCKET_READABLE; break;
-        case PGRES_POLLING_WRITING: elog(DEBUG1, "id = %li, PQconnectPoll == PGRES_POLLING_WRITING", t->shared->id); t->event = WL_SOCKET_WRITEABLE; break;
+        case PGRES_POLLING_OK: elog(DEBUG1, "id = " INT64_FORMAT ", PQconnectPoll == PGRES_POLLING_OK", t->shared->id); connected = true; break;
+        case PGRES_POLLING_READING: elog(DEBUG1, "id = " INT64_FORMAT ", PQconnectPoll == PGRES_POLLING_READING", t->shared->id); t->event = WL_SOCKET_READABLE; break;
+        case PGRES_POLLING_WRITING: elog(DEBUG1, "id = " INT64_FORMAT ", PQconnectPoll == PGRES_POLLING_WRITING", t->shared->id); t->event = WL_SOCKET_WRITEABLE; break;
     }
     if (connected) {
         t->deadline = 0;
@@ -962,8 +962,8 @@ static void work_cancel_poll(Cancel *c) {
     switch (PQcancelPoll(c->conn)) {
         case PGRES_POLLING_READING: c->event = WL_SOCKET_READABLE; return;
         case PGRES_POLLING_WRITING: c->event = WL_SOCKET_WRITEABLE; return;
-        case PGRES_POLLING_FAILED: ereport(WARNING, (errmsg("id = %li, PQcancelPoll failed", c->id), work_errdetail(PQcancelErrorMessage(c->conn)))); work_cancel_lost(c); return;
-        default: elog(DEBUG1, "id = %li, cancel sent", c->id); break;
+        case PGRES_POLLING_FAILED: ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQcancelPoll failed", c->id), work_errdetail(PQcancelErrorMessage(c->conn)))); work_cancel_lost(c); return;
+        default: elog(DEBUG1, "id = " INT64_FORMAT ", cancel sent", c->id); break;
     }
     work_cancel_free(c);
 }
@@ -1008,7 +1008,7 @@ static bool work_cancel(Task *t) {
     if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { ereport(WARNING, (errmsg("PQcancel failed"), errdetail("%s", errbuf))); PQfreeCancel(cancel); return false; }
     PQfreeCancel(cancel);
 #endif
-    ereport(WARNING, (errmsg("cancel id = %li", t->shared->id)));
+    ereport(WARNING, (errmsg("cancel id = " INT64_FORMAT, t->shared->id)));
     return true;
 }
 
@@ -1031,7 +1031,7 @@ static void work_exit(int code, Datum arg) {
         for (work_pending(); !dlist_is_empty(&pending) && PostmasterIsAlive() && GetCurrentTimestamp() < end; work_pending()) pg_usleep(100 * 1000L);
     }
 #endif
-    dlist_foreach_modify(iter, &pending) ereport(WARNING, (errmsg("id = %li, its bookkeeping put off is lost, the task to run again on reset", dlist_container(Task, node, iter.cur)->shared->id)));
+    dlist_foreach_modify(iter, &pending) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", its bookkeeping put off is lost, the task to run again on reset", dlist_container(Task, node, iter.cur)->shared->id)));
 }
 
 // the slot of pg_work, last, see work_exit()
@@ -1083,9 +1083,9 @@ static void work_stop(const Work *w) {
                 if (t->shared->id == id) { t->shared->stop = id; work_cancel(t); break; } // marked too, for an input not sent yet not to be, see work_input()
             }
         } else { // a task worker held the lock of this task just now, one that an earlier pg_work may have started too, but may be done with it by now: mark the task in its slot, for it to cancel only that one, along with the processes its input started (see dest_cancel()), with no role checks of pg_cancel_backend() to pass either, as the worker runs as the task author, whom pg_task.user may not signal from SQL
-            if (!init_stop(w->shared->data, w->shared->oid, id)) elog(DEBUG1, "id = %li, no longer run by a task worker", id);
-            else if (kill(pid, SIGUSR2)) ereport(WARNING, (errmsg("id = %li, could not send signal to process %i: %m", id, pid)));
-            else ereport(WARNING, (errmsg("cancel id = %li, pid = %i", id, pid)));
+            if (!init_stop(w->shared->data, w->shared->oid, id)) elog(DEBUG1, "id = " INT64_FORMAT ", no longer run by a task worker", id);
+            else if (kill(pid, SIGUSR2)) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", could not send signal to process %i: %m", id, pid)));
+            else ereport(WARNING, (errmsg("cancel id = " INT64_FORMAT ", pid = %i", id, pid)));
         }
     }
     if (cancelled) pfree(cancelled);
@@ -1246,7 +1246,7 @@ static void work_remote(Task *t) {
     int connect_timeout = 0;
     int nhosts;
     PQconninfoOption *opts = PQconninfoParse(t->remote, &err);
-    elog(DEBUG1, "id = %li, group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : init_null(), t->shared->max, t->shared->oid);
+    elog(DEBUG1, "id = " INT64_FORMAT ", group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : init_null(), t->shared->max, t->shared->oid);
 #if PG_VERSION_NUM >= 130000
     // the file descriptors a process may hold for others than files, connections say, are a third of the safe ones, max_files_per_process at most, those of the other remote tasks taking them all: back to PLAN, rather than fail it, with nothing held yet; the one taken here is given back, to be taken again, sure to be had then, right before connecting
     if (!AcquireExternalFD()) { if (opts) PQconninfoFree(opts); if (err) PQfreemem(err); work_later(t, "too many open files", "max_files_per_process"); return; }
@@ -1261,7 +1261,7 @@ static void work_remote(Task *t) {
     dlist_delete(&t->node);
     dlist_push_tail(&remote, &t->node);
     // hold the slot of the group from now on, not only once connected, or the next work_sleep() doesn't count it and takes another task of the group over its max
-    if (!(t->reserve = lock_table_id_hash(t->shared->oid, t->shared->id, t->shared->hash))) ereport(WARNING, (errmsg("!lock_table_id_hash(%i, %li, %i)", t->shared->oid, t->shared->id, t->shared->hash)));
+    if (!(t->reserve = lock_table_id_hash(t->shared->oid, t->shared->id, t->shared->hash))) ereport(WARNING, (errmsg("!lock_table_id_hash(%i, " INT64_FORMAT ", %i)", t->shared->oid, t->shared->id, t->shared->hash)));
     if (!opts) { work_error((errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), work_errdetail(err))); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
@@ -1364,7 +1364,7 @@ static bool work_reap(const Work *w) {
 // and, till one is had again, a pass takes no more than one task of its kind, which it tries to run as a probe, rather than as many as it would, all of them given back, every pass, as the slots free for task workers, see init_free_slots(), counts no background worker of others, pg_conf, the logical replication launcher, parallel workers, whose end wakes no pg_work, and the remote tasks are limited by pg_task.limit only: one warning for all of them, not one for each of them every pass
 static void work_later(Task *t, const char *message, const char *setting) {
     bool *later = t->remote ? &later_remote : &later_local;
-    ereport(*later ? DEBUG1 : WARNING, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("id = %li, %s, to be run later", t->shared->id, message), errhint("Consider increasing configuration parameter \"%s\".", setting)));
+    ereport(*later ? DEBUG1 : WARNING, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("id = " INT64_FORMAT ", %s, to be run later", t->shared->id, message), errhint("Consider increasing configuration parameter \"%s\".", setting)));
     *later = true;
     task_untake(t);
     work_free(t);
@@ -1376,13 +1376,13 @@ static void work_task(Task *t) {
     bool registered;
     MemoryContext oldMemoryContext;
     size_t len;
-    elog(DEBUG1, "id = %li, group = %s, max = %i, oid = %i", t->shared->id, t->group, t->shared->max, t->shared->oid);
+    elog(DEBUG1, "id = " INT64_FORMAT ", group = %s, max = %i, oid = %i", t->shared->id, t->group, t->shared->max, t->shared->oid);
     if (!work_owner(t)) return;
-    if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) { work_error((errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_function_name)))); return; }
-    if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) { work_error((errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_library_name)))); return; }
-    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", t->shared->user, t->shared->data, t->shared->schema, t->shared->table, t->group)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %li >= %li", len, sizeof(worker.bgw_name) - 1))); // do not error when group is to long
+    if ((len = strlcpy(worker.bgw_function_name, "task_main", sizeof(worker.bgw_function_name))) >= sizeof(worker.bgw_function_name)) { work_error((errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %zu >= %zu", len, sizeof(worker.bgw_function_name)))); return; }
+    if ((len = strlcpy(worker.bgw_library_name, "pg_task", sizeof(worker.bgw_library_name))) >= sizeof(worker.bgw_library_name)) { work_error((errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %zu >= %zu", len, sizeof(worker.bgw_library_name)))); return; }
+    if ((len = snprintf(worker.bgw_name, sizeof(worker.bgw_name) - 1, "%s %s pg_task %s %s %s", t->shared->user, t->shared->data, t->shared->schema, t->shared->table, t->group)) >= sizeof(worker.bgw_name) - 1) ereport(WARNING, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("snprintf %zu >= %zu", len, sizeof(worker.bgw_name) - 1))); // do not error when group is to long
 #if PG_VERSION_NUM >= 110000
-    if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) { work_error((errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %li >= %li", len, sizeof(worker.bgw_type)))); return; }
+    if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) { work_error((errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %zu >= %zu", len, sizeof(worker.bgw_type)))); return; }
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
     if ((worker.bgw_main_arg = Int32GetDatum(init_arg(t->shared))) == Int32GetDatum(-1)) { work_later(t, "could not find empty slot", "pg_conf.max"); return; }
@@ -1398,7 +1398,7 @@ static void work_task(Task *t) {
     } else switch (WaitForBackgroundWorkerStartup(handle, &t->pid)) {
         case BGWH_NOT_YET_STARTED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
         case BGWH_POSTMASTER_DIED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
-        case BGWH_STARTED: elog(DEBUG1, "started id = %li", t->shared->id); later_local = false; /* a worker for it, see work_later() */ init_task_pid(DatumGetInt32(worker.bgw_main_arg), t->shared->data, t->shared->oid, t->shared->id, t->pid); work_local(t, handle); handle = NULL; work_free(t); break;
+        case BGWH_STARTED: elog(DEBUG1, "started id = " INT64_FORMAT, t->shared->id); later_local = false; /* a worker for it, see work_later() */ init_task_pid(DatumGetInt32(worker.bgw_main_arg), t->shared->data, t->shared->oid, t->shared->id, t->pid); work_local(t, handle); handle = NULL; work_free(t); break;
         case BGWH_STOPPED: init_free_task(DatumGetInt32(worker.bgw_main_arg), t->shared->data, t->shared->oid, t->shared->id); work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     if (handle) pfree(handle);
@@ -1415,7 +1415,7 @@ static void work_sleep(Work *w) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     if (ShutdownRequestPending) return; // its entry gone from pg_task.json, found by the reload in this very turn of its loop, say: take no task it won't run, to be left in TAKE once it's gone
-    elog(DEBUG1, "idle_count = %lu", idle_count);
+    elog(DEBUG1, "idle_count = " UINT64_FORMAT, idle_count);
     set_ps_display_my("sleep");
     work_reap(w);
     values[2] = Int32GetDatum(later_local ? Min(init_free_slots(), 1) : init_free_slots()); // one at most, as a probe, see work_later()
@@ -1554,7 +1554,7 @@ static void work_sleep(Work *w) {
             t->shared->id = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "id", false, INT8OID));
             t->shared->max = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "max", false, INT4OID));
             strlcpy(t->shared->owner, t->user, sizeof(t->shared->owner));
-            elog(DEBUG1, "row = %lu, id = %li, hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : init_null(), t->shared->max);
+            elog(DEBUG1, "row = " UINT64_FORMAT ", id = " INT64_FORMAT ", hash = %i, group = %s, remote = %s, max = %i", row, t->shared->id, t->shared->hash, t->group, t->remote ? t->remote : init_null(), t->shared->max);
             dlist_push_tail(&head, &t->node);
             SPI_freetuple(val);
         }
@@ -1628,7 +1628,7 @@ void work_main(Datum main_arg) {
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user);
     before_shmem_exit(work_exit, (Datum)0); // registered after the one ending the session, so as to run before it
     initStringInfoMy(&application_name);
-    appendStringInfo(&application_name, "pg_work %s %s %li", work.shared->schema, work.shared->table, work.shared->sleep);
+    appendStringInfo(&application_name, "pg_work %s %s " INT64_FORMAT, work.shared->schema, work.shared->table, work.shared->sleep);
     SetConfigOption("application_name", application_name.data, PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("search_path", "pg_catalog, pg_temp", PGC_USERSET, PGC_S_SESSION); // pg_temp last, which an empty one would search first for tables and types
     // the transaction characteristics of the settings of the database or the role, for the transactions of tasks, not for its own, as for the bookkeeping in a task worker, see SPI_connect_my(): read only would fail every pass, repeatable read or serializable the taking of tasks or the bookkeeping of a remote one on a row changed meanwhile, a stop say, taking pg_work, with every remote task it runs, down, those done already to run again on reset
@@ -1671,7 +1671,7 @@ void work_main(Datum main_arg) {
     initStringInfoMy(&schema_type);
     appendStringInfo(&schema_type, "%s.state", work.schema);
     work.schema_type = schema_type.data;
-    elog(DEBUG1, "sleep = %li, reset = %li, schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.shared->hash);
+    elog(DEBUG1, "sleep = " INT64_FORMAT ", reset = " INT64_FORMAT ", schema_table = %s, schema_type = %s, hash = %i", work.shared->sleep, work.shared->reset, work.schema_table, work.schema_type, work.shared->hash);
 #ifdef GP_VERSION_NUM
 #ifdef HAVE_CREATING_EXTENSION_LOCAL
     creating_extension_local = true; // force an ENTRY distribution policy without leaving GP_ROLE_DISPATCH, so segments still learn about the relation (see master_only_dispatch_bug)
