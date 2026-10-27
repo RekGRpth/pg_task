@@ -626,6 +626,16 @@ static void make_column(const Work *w, const char *name, const char *schema_type
             ALTER TABLE %1$s %2$s COLUMN "%3$s" %4$s;
         ), w->schema_table, schema_type ? "ADD" : "DROP", name, schema_type ? schema_type : "");
         make_ddl(src.data, SPI_OK_UTILITY);
+    } else if (schema_type) {
+        // there already, of a table made by its owner say, a partitioned one, see the README, but of the very type, as pg_task reads it by, or every task would fail to start, a remote one taking pg_work down with it, again on every reset: not to be changed, rewriting a table pg_work didn't make, but refused, as a table with no state column is, see make_table(); the type by a parameter, which has the name of the schema in it for state, see make_default()
+        Datum values[] = {CStringGetTextDatum(schema_type)};
+        static Oid argtypes[] = {TEXTOID};
+        resetStringInfo(&src);
+        appendStringInfo(&src, SQL(
+            SELECT atttypid OPERATOR(pg_catalog.=) pg_catalog.to_regtype($1) AS "test" FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s'
+        ), w->shared->oid, name);
+        if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) ereport(ERROR, (errcode(ERRCODE_DATATYPE_MISMATCH), errmsg("column \"%s\" of table %s is not of type %s", name, w->schema_table, schema_type), errdetail("pg_task reads the column as of that type, and changes no column of its own type: change its type, or drop it for pg_work to add it.")));
+        pfree((void *)values[0]);
     }
     pfree(src.data);
 }
