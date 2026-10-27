@@ -43,6 +43,7 @@ typedef struct Registered {
     int slot;
     int64 reg;
     int restart; // the pg_work.restart of its entry, to start it again no sooner after a clean exit, see conf_exited()
+    bool terminated; // by pg_conf, restarted by the postmaster since it was seen stopped, its slot left to it till it's gone: checked again every second till then, as its exit, its slot held still, tells conf_exited() nothing otherwise, see conf_reconcile()
 } Registered;
 
 // tells a registration of pg_work from any other, across restarts of pg_conf too, for its slot to be freed only while still its, see init_free_work()
@@ -67,14 +68,14 @@ static void conf_reconcile(void) {
         Registered *r = dlist_container(Registered, node, iter.cur);
         pid_t pid;
         // still running: let it notice the same reload via its own work_check() and self-terminate cleanly; only reap it here once it's confirmed stopped, so we never signal a worker that might be mid-SPI-call
-        if (GetBackgroundWorkerPid(r->handle, &pid) != BGWH_STOPPED) continue;
+        if (GetBackgroundWorkerPid(r->handle, &pid) != BGWH_STOPPED) { if (r->terminated) conf_retry_at(1); continue; } // but one terminated already, going down still
         // stopped, and either no longer wanted, taken over by another pg_work of its entry, or about to be spawned anew by conf_work(): drop it either way, so no stale registration is left to be restarted, or to free a slot that a later pg_work has taken
         elog(DEBUG1, "reaping stopped worker, data = %s, user = %s, hash = %i, slot = %i", r->data, r->user, r->hash, r->slot);
         // exited cleanly, its slot freed by itself, maybe only after the query of conf_check() saw its lock held still, its entry put back meanwhile started by none then: checked again after its pg_work.restart, as conf_exited() has it, its notice of the stop to find no registration of it any more
         if (!init_held_work(r->slot, r->reg)) conf_retry_at(r->restart);
         TerminateBackgroundWorker(r->handle); // cancel a pending crash restart
         // or terminate the pg_work the postmaster restarted since it was seen stopped, its slot left to it till it's gone, freed on the next check, a second on, see init_free_work(), the registration kept for it
-        if (!init_free_work(r->slot, r->reg) && init_held_work(r->slot, r->reg)) { conf_retry_at(1); continue; }
+        if (!init_free_work(r->slot, r->reg) && init_held_work(r->slot, r->reg)) { r->terminated = true; conf_retry_at(1); continue; }
         pfree(r->handle);
         dlist_delete(&r->node);
         pfree(r);
@@ -82,7 +83,7 @@ static void conf_reconcile(void) {
 }
 
 // the registration of a pg_work started, by its handle, kept past the memory of the attempt, see conf_check(), for conf_reconcile() and conf_exited()
-static void conf_registered(BackgroundWorkerHandle *handle, const Work *w, int slot) {
+static Registered *conf_registered(BackgroundWorkerHandle *handle, const Work *w, int slot) {
     Registered *r = MemoryContextAllocZero(TopMemoryContext, sizeof(Registered));
     r->handle = handle;
     r->hash = w->shared->hash;
@@ -92,6 +93,7 @@ static void conf_registered(BackgroundWorkerHandle *handle, const Work *w, int s
     strlcpy(r->data, w->shared->data, sizeof(r->data));
     strlcpy(r->user, w->shared->user, sizeof(r->user));
     dlist_push_tail(&reg_head, &r->node);
+    return r;
 }
 
 static void conf_free(Work *w) {
@@ -150,7 +152,7 @@ static void conf_work(Work *w, bool in_use) {
             break;
         case BGWH_STOPPED: // gone before it was seen to start, with its exit code 1 the postmaster would restart it after a while still, with the slot freed here, by then maybe someone else's: cancel that first, as conf_reconcile() does, and, restarted meanwhile, terminated, leave its slot to conf_reconcile() till it's gone
             TerminateBackgroundWorker(handle);
-            if (!init_free_work(slot, w->shared->reg) && init_held_work(slot, w->shared->reg)) { conf_registered(handle, w, slot); conf_retry_at(1); } else pfree(handle);
+            if (!init_free_work(slot, w->shared->reg) && init_held_work(slot, w->shared->reg)) { conf_registered(handle, w, slot)->terminated = true; conf_retry_at(1); } else pfree(handle);
             handle = NULL;
             ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
@@ -295,7 +297,7 @@ static void conf_exited(void) {
         Registered *r = dlist_container(Registered, node, iter.cur);
         pid_t pid;
         // after its pg_work.restart, as the postmaster restarts one that crashed, rather than at once: one that exits as soon as it starts, its entry found by pg_conf but not by pg_work, which reads the settings of its own database and role, would be started over and over
-        if (GetBackgroundWorkerPid(r->handle, &pid) == BGWH_STOPPED && !init_held_work(r->slot, r->reg)) conf_retry_at(r->restart);
+        if (GetBackgroundWorkerPid(r->handle, &pid) == BGWH_STOPPED && (r->terminated || !init_held_work(r->slot, r->reg))) conf_retry_at(r->terminated ? 1 : r->restart); // one terminated by pg_conf, gone at last, its slot to be freed, and its entry started again, at once
     }
 }
 
