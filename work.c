@@ -125,6 +125,7 @@ static bool work_next(Task *t, const char *error);
 static void work_query(Task *t);
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
 static void work_cancel_free(Cancel *c);
+static void work_cancel_lost(Cancel *c);
 #endif
 static bool work_reap(const Work *w);
 static void work_result(Task *t);
@@ -454,7 +455,7 @@ static int work_nevents(void) {
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
     dlist_foreach_modify(iter, &cancels) {
         Cancel *c = dlist_container(Cancel, node, iter.cur);
-        if (PQcancelStatus(c->conn) == CONNECTION_BAD || PQcancelSocket(c->conn) == PGINVALID_SOCKET) { ereport(WARNING, (errmsg("id = %li, cancel failed", c->id), work_errdetail(PQcancelErrorMessage(c->conn)))); work_cancel_free(c); continue; }
+        if (PQcancelStatus(c->conn) == CONNECTION_BAD || PQcancelSocket(c->conn) == PGINVALID_SOCKET) { ereport(WARNING, (errmsg("id = %li, cancel failed", c->id), work_errdetail(PQcancelErrorMessage(c->conn)))); work_cancel_lost(c); continue; }
         nevents++;
     }
 #endif
@@ -501,7 +502,7 @@ static void work_expire(void) {
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
     dlist_foreach_modify(iter, &cancels) {
         Cancel *c = dlist_container(Cancel, node, iter.cur);
-        if (c->deadline <= now) { ereport(WARNING, (errmsg("id = %li, cancel request timed out", c->id))); work_cancel_free(c); }
+        if (c->deadline <= now) { ereport(WARNING, (errmsg("id = %li, cancel request timed out", c->id))); work_cancel_lost(c); }
     }
 #endif
 }
@@ -702,7 +703,7 @@ static void work_done(Task *t) {
         return;
     }
     if (!work_encoding(t)) return;
-    live = PQstatus(t->conn) == CONNECTION_OK && !work_cancelling(t); // take the next task of the group only for a connection to run it on, and one no cancel is on its way to
+    live = PQstatus(t->conn) == CONNECTION_OK && !work_cancelling(t) && !t->lost; // take the next task of the group only for a connection to run it on, and one no cancel is on its way to, nor one given up, which may get there still
     // nor on a session kept with a client_encoding the input set, for the input of the next one to be sent in, read as that, its text taken amiss with no error, and for its results to come in, which DISCARD ALL resets otherwise, and which can't be set back before it, a query read in the client_encoding it comes in, as the preamble would come with the input: as of the end of the input, which servers from 14 on tell of only then
     if (t->save && PQclientEncoding(t->conn) != GetDatabaseEncoding()) live = false;
     if (!work_bookkeeping(t, live, &exit)) { work_defer(t); return; }
@@ -947,11 +948,21 @@ static void work_cancel_free(Cancel *c) {
     pfree(c);
 }
 
+// a cancel given up, timed out or failed, which, sent already maybe, may get through still, to whatever runs on the connection by then, the next task of the group say: the connection of its task, running still, not to be reused for that, see work_done()
+static void work_cancel_lost(Cancel *c) {
+    dlist_iter iter;
+    dlist_foreach(iter, &remote) {
+        Task *t = dlist_container(Task, node, iter.cur);
+        if (t->shared->id == c->id) { t->lost = true; break; }
+    }
+    work_cancel_free(c);
+}
+
 static void work_cancel_poll(Cancel *c) {
     switch (PQcancelPoll(c->conn)) {
         case PGRES_POLLING_READING: c->event = WL_SOCKET_READABLE; return;
         case PGRES_POLLING_WRITING: c->event = WL_SOCKET_WRITEABLE; return;
-        case PGRES_POLLING_FAILED: ereport(WARNING, (errmsg("id = %li, PQcancelPoll failed", c->id), work_errdetail(PQcancelErrorMessage(c->conn)))); break;
+        case PGRES_POLLING_FAILED: ereport(WARNING, (errmsg("id = %li, PQcancelPoll failed", c->id), work_errdetail(PQcancelErrorMessage(c->conn)))); work_cancel_lost(c); return;
         default: elog(DEBUG1, "id = %li, cancel sent", c->id); break;
     }
     work_cancel_free(c);
