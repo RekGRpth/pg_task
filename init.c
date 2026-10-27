@@ -517,12 +517,14 @@ void init_free(int slot) {
     LWLockRelease(BackgroundWorkerLock);
 }
 
-// free the slot of a stopped pg_work only if it still holds that pg_work: a clean exit has already freed it itself, and by now it may belong to someone else (a task worker has a non-zero id)
+// free the slot of a stopped pg_work only if it still holds that pg_work: a clean exit has already freed it itself, and by now it may belong to someone else (a task worker has a non-zero id); nor, but for that pg_work itself on its way out, while it runs in it, restarted by the postmaster after pg_conf saw it stopped and before pg_conf terminated it, which its handle can't tell from one waiting for its restart, see conf_reconcile(): not to run in a slot given to another one meanwhile, till it's gone, by the termination
 bool init_free_work(int slot, int64 reg) {
     bool freed;
+    int pid;
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    pid = shared[slot].pid;
     // by its registration rather than its entry: a later pg_work of the same entry may have taken the slot by now
-    if ((freed = shared[slot].in_use && !shared[slot].id && shared[slot].reg == reg)) MemSet(&shared[slot], 0, sizeof(Shared));
+    if ((freed = shared[slot].in_use && !shared[slot].id && shared[slot].reg == reg && (!pid || pid == MyProcPid || shared[slot].exited || (kill(pid, 0) && errno == ESRCH)))) MemSet(&shared[slot], 0, sizeof(Shared));
     LWLockRelease(BackgroundWorkerLock);
     return freed;
 }

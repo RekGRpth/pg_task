@@ -73,11 +73,25 @@ static void conf_reconcile(void) {
         // exited cleanly, its slot freed by itself, maybe only after the query of conf_check() saw its lock held still, its entry put back meanwhile started by none then: checked again after its pg_work.restart, as conf_exited() has it, its notice of the stop to find no registration of it any more
         if (!init_held_work(r->slot, r->reg)) conf_retry_at(r->restart);
         TerminateBackgroundWorker(r->handle); // cancel a pending crash restart
-        init_free_work(r->slot, r->reg);
+        // or terminate the pg_work the postmaster restarted since it was seen stopped, its slot left to it till it's gone, freed on the next check, a second on, see init_free_work(), the registration kept for it
+        if (!init_free_work(r->slot, r->reg) && init_held_work(r->slot, r->reg)) { conf_retry_at(1); continue; }
         pfree(r->handle);
         dlist_delete(&r->node);
         pfree(r);
     }
+}
+
+// the registration of a pg_work started, by its handle, kept past the memory of the attempt, see conf_check(), for conf_reconcile() and conf_exited()
+static void conf_registered(BackgroundWorkerHandle *handle, const Work *w, int slot) {
+    Registered *r = MemoryContextAllocZero(TopMemoryContext, sizeof(Registered));
+    r->handle = handle;
+    r->hash = w->shared->hash;
+    r->slot = slot;
+    r->reg = w->shared->reg;
+    r->restart = w->restart;
+    strlcpy(r->data, w->shared->data, sizeof(r->data));
+    strlcpy(r->user, w->shared->user, sizeof(r->user));
+    dlist_push_tail(&reg_head, &r->node);
 }
 
 static void conf_free(Work *w) {
@@ -128,25 +142,16 @@ static void conf_work(Work *w, bool in_use) {
     switch (WaitForBackgroundWorkerStartup(handle, &w->pid)) {
         case BGWH_NOT_YET_STARTED: init_free(slot); ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
         case BGWH_POSTMASTER_DIED: init_free(slot); ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
-        case BGWH_STARTED: {
-            Registered *r = MemoryContextAllocZero(TopMemoryContext, sizeof(Registered));
-            r->handle = handle;
-            r->hash = w->shared->hash;
-            r->slot = slot;
-            r->reg = w->shared->reg;
-            r->restart = w->restart;
-            strlcpy(r->data, w->shared->data, sizeof(r->data));
-            strlcpy(r->user, w->shared->user, sizeof(r->user));
-            dlist_push_tail(&reg_head, &r->node);
+        case BGWH_STARTED:
+            conf_registered(handle, w, slot);
             handle = NULL;
             elog(DEBUG1, "started, slot = %i", slot);
             conf_free(w);
             break;
-        }
-        case BGWH_STOPPED: // gone before it was seen to start, with its exit code 1 the postmaster would restart it after a while still, with the slot freed here, by then maybe someone else's: cancel that first, as conf_reconcile() does
+        case BGWH_STOPPED: // gone before it was seen to start, with its exit code 1 the postmaster would restart it after a while still, with the slot freed here, by then maybe someone else's: cancel that first, as conf_reconcile() does, and, restarted meanwhile, terminated, leave its slot to conf_reconcile() till it's gone
             TerminateBackgroundWorker(handle);
-            pfree(handle);
-            init_free_work(slot, w->shared->reg);
+            if (!init_free_work(slot, w->shared->reg) && init_held_work(slot, w->shared->reg)) { conf_registered(handle, w, slot); conf_retry_at(1); } else pfree(handle);
+            handle = NULL;
             ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
     }
     if (handle) pfree(handle);
