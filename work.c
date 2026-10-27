@@ -231,6 +231,7 @@ static void work_check(const Work *w) {
         if (!SPI_processed) { ereport(LOG, (errmsg("no entry of pg_task.json for database \"%s\", user \"%s\", schema \"%s\" and table \"%s\"", w->shared->data, w->shared->user, w->shared->schema, w->shared->table), errdetail("The entry is gone, or the settings of this database and role give it another schema or table than those pg_conf read, see pg_task.json in the README."))); ShutdownRequestPending = true; } else { // gone, or found by pg_conf only, which reads the settings of its own database and role for those of others, see init_settings(): exiting cleanly, to be started again by pg_conf, if at all, after its pg_work.restart, see conf_exited()
             HeapTuple val = SPI_tuptable->vals[0];
             TupleDesc tupdesc = SPI_tuptable->tupdesc;
+            init_work_kept(w->shared);
             w->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false, INT8OID));
             { bool isnull; Datum run = SPI_getbinval(val, tupdesc, SPI_fnumber(tupdesc, "run"), &isnull); w->shared->run = Max(isnull ? init_int(val, tupdesc, "run_setting", "pg_task.run") : DatumGetInt32(run), 1); } // the key of pg_task.json, or else the setting, 1 at least, as the setting has it, see conf_check()
             { bool isnull; Datum sleep = SPI_getbinval(val, tupdesc, SPI_fnumber(tupdesc, "sleep"), &isnull); w->shared->sleep = Max(isnull ? init_int(val, tupdesc, "sleep_setting", "pg_task.sleep") : DatumGetInt64(sleep), 1); }

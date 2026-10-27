@@ -1,0 +1,83 @@
+-- an entry removed and put back before its pg_work saw either reload keeps that pg_work, which, terminated later, once pg_conf has been restarted meanwhile (so no longer knows of it), is restarted by the postmaster, rather than exit for good as gone, see init_work_kept()
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT current_user AS test_user
+\gset
+ALTER SYSTEM SET pg_work.restart = 2;
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || :'test_user' || '","schema":"put_back_test_schema","table":"put_back_test"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'put_back_test_schema' AND c.relname = 'put_back_test') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work put_back_test_schema put_back_test %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for table put_back_test_schema.put_back_test to be created by the pg_work worker'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pid AS work_pid FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work put_back_test_schema put_back_test %' AND datname = current_database()
+\gset
+SELECT set_config('pg_task_test.work_pid', :'work_pid', false) IS NOT NULL AS work_pid_saved;
+-- its pg_work held up in a pass, by a task of the test table locking its table, not to see the two reloads that follow
+DELETE FROM task WHERE "group" = 'put_back_lock';
+INSERT INTO task ("group", input) VALUES ('put_back_lock', 'LOCK TABLE put_back_test_schema.put_back_test IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(60)');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_locks l JOIN pg_catalog.pg_stat_activity a ON a.pid = l.pid WHERE NOT l.granted AND l.relation = 'put_back_test_schema.put_back_test'::regclass AND a.pid = current_setting('pg_task_test.work_pid')::int) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work to wait for the lock of its table'; END IF;
+END;$body$ LANGUAGE plpgsql;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+SELECT pg_sleep(2);
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+SELECT pg_sleep(2);
+UPDATE task SET state = 'STOP' WHERE "group" = 'put_back_lock';
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'put_back_lock' AND stop IS NOT NULL) AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE pid = current_setting('pg_task_test.work_pid')::int AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the lock to be let go of and pg_work to be idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+DELETE FROM task WHERE "group" = 'put_back_lock';
+SELECT pid AS conf_pid FROM pg_catalog.pg_stat_activity WHERE application_name = 'pg_conf'
+\gset
+SELECT set_config('pg_task_test.conf_pid', :'conf_pid', false) IS NOT NULL AS conf_pid_saved;
+SELECT pg_terminate_backend(:conf_pid) AS conf_terminated;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..1200 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name = 'pg_conf' AND pid <> current_setting('pg_task_test.conf_pid')::int AND state = 'idle') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 1200 x pg_sleep(0.1) waiting for pg_conf to be restarted'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pg_terminate_backend(:work_pid) AS work_terminated;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work put_back_test_schema put_back_test %' AND datname = current_database() AND pid <> current_setting('pg_task_test.work_pid')::int) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work to be restarted'; END IF;
+END;$body$ LANGUAGE plpgsql;
+ALTER SYSTEM RESET pg_work.restart;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work put_back_test_schema %') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work worker(s) matching ''pg_work put_back_test_schema %%'' to stop'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SET client_min_messages TO WARNING;
+DROP SCHEMA IF EXISTS put_back_test_schema CASCADE;
+RESET client_min_messages;

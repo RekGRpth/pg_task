@@ -154,7 +154,7 @@ Each of an entry's scheduler settings — `sleep`, `reset`, `run`, `spi`, `schem
 
 A `pg_task.json` that doesn't parse, or whose values don't fit the types of their keys, is logged and left unapplied: `pg_conf` and the running `pg_work` workers carry on with the configuration they have until it's fixed.
 
-An entry removed has its `pg_work` exit once it has seen so, cleanly, logging the entry it no longer finds. An entry `pg_conf` couldn't start, its database not made as `template1` was in use or no worker to be had, say, is tried again after its `pg_work.restart`, and so is one put back while the `pg_work` of its removal was still on its way out, holding its lock — but not when `pg_conf` itself has been restarted since it started that `pg_work`, whose exit it then isn't told of: such an entry stays without a `pg_work` till the next reload, so reload once more (`SELECT pg_reload_conf()`) if one doesn't show up.
+An entry removed has its `pg_work` exit once it has seen so, cleanly, logging the entry it no longer finds; one put back before its `pg_work` saw it removed keeps that `pg_work`, which, should it crash later, is restarted as any other. An entry `pg_conf` couldn't start, its database not made as `template1` was in use or no worker to be had, say, is tried again after its `pg_work.restart`, and so is one put back while the `pg_work` of its removal was still on its way out, holding its lock — but not when `pg_conf` itself has been restarted since it started that `pg_work`, whose exit it then isn't told of: such an entry stays without a `pg_work` till the next reload, so reload once more (`SELECT pg_reload_conf()`) if one doesn't show up.
 
 ## Architecture
 

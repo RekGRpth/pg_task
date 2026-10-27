@@ -63,7 +63,7 @@ void SignalHandlerForConfigReload(SIGNAL_ARGS);
 #endif
 
 typedef struct Shared {
-    bool gone; // of a pg_work: its entry is no longer in pg_task.json, or another pg_work took over from it, see init_work()
+    bool gone; // of a pg_work: its entry is no longer in pg_task.json, or another pg_work took over from it, see init_work(), till it finds its entry there still, see init_work_kept()
     bool in_use;
     bool spi;
     char data[NAMEDATALEN];
@@ -148,6 +148,7 @@ bool init_free_work(int slot, int64 reg);
 bool init_held_work(int slot, int64 reg);
 void init_work(int n, const char **data, const char **user, const int *hash, bool *in_use);
 bool init_work_gone(Datum main_arg);
+void init_work_kept(Shared *ws);
 void init_work_wake(const Shared *task);
 bool init_oid_is_string(Oid oid);
 bool init_stop(const char *data, Oid oid, int64 id);

@@ -621,6 +621,13 @@ bool init_work_gone(Datum main_arg) {
     return gone;
 }
 
+// a pg_work that finds its entry, holding its lock, see work_check(), is the one of it: not gone, as pg_conf may have marked it by a reload removing the entry, put back by the next one before the pg_work saw either, for it to be woken still, see init_work_wake(), and, crashed later, to be restarted rather than exit for good, with no pg_conf restarted since to start it again
+void init_work_kept(Shared *ws) {
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    ws->gone = false;
+    LWLockRelease(BackgroundWorkerLock);
+}
+
 // the same for the slot of a task worker that stopped before pg_work saw it start: one that ran and exited meanwhile has freed it itself, and by now it may belong to someone else
 bool init_free_task(int slot, const char *data, Oid oid, int64 id) {
     bool freed;
