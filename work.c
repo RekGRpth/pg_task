@@ -372,12 +372,37 @@ static bool work_bookkeeping(Task *t, bool live, bool *exit) {
     return done;
 }
 
+#if PG_VERSION_NUM >= 130000
+// the file descriptors of a remote task connecting: that of its connection, and one more held for the socket of a cancel request on it, sent with no other to be had, every one taken by the other remote tasks, a STOP of them all at once say, see work_cancel(), as one uncounted would go past what the server keeps for the files it opens, failing with too many open files under a ulimit -n below max_files_per_process: both or neither
+static bool work_acquire(Task *t) {
+    if (!AcquireExternalFD()) return false;
+    if (!AcquireExternalFD()) { ReleaseExternalFD(); return false; }
+    t->spare = true;
+    return true;
+}
+
+// whether n file descriptors of those for others than files are to be had, none of them taken
+static bool work_available(int n) {
+    int had = 0;
+    while (had < n && AcquireExternalFD()) had++;
+    for (int i = 0; i < had; i++) ReleaseExternalFD();
+    return had == n;
+}
+
+// those of a remote task, its connection closed: the one held for a cancel request too, unless lent to one on its way, which gives it back itself, see work_cancel_free()
+static void work_release(Task *t) {
+    ReleaseExternalFD();
+    if (t->spare) ReleaseExternalFD();
+    t->spare = false;
+}
+#endif
+
 static void work_finish(Task *t) {
     if (!proc_exit_inprogress) work_unreserve(t);
     if (t->conn) {
         PQfinish(t->conn);
 #if PG_VERSION_NUM >= 130000
-        ReleaseExternalFD();
+        work_release(t);
 #endif
     }
     if (!proc_exit_inprogress && t->key && !unlock_table_pid_hash(t->shared->oid, t->key, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->key, t->shared->hash)));
@@ -391,7 +416,7 @@ static void work_defer(Task *t) {
     if (t->conn) {
         PQfinish(t->conn);
 #if PG_VERSION_NUM >= 130000
-        ReleaseExternalFD();
+        work_release(t);
 #endif
         t->conn = NULL;
     }
@@ -423,7 +448,13 @@ static void work_held(void) {
 static bool work_waiting(void) {
     dlist_iter iter;
     if (!dlist_is_empty(&pending)) return true;
-    dlist_foreach(iter, &remote) if (dlist_container(Task, node, iter.cur)->held) return true;
+    dlist_foreach(iter, &remote) {
+        Task *t = dlist_container(Task, node, iter.cur);
+        if (t->held) return true;
+#if PG_VERSION_NUM >= 130000
+        if (t->conn && !t->spare) return true; // the cancel of a STOP to be sent once a file descriptor for it is back, see work_stop()
+#endif
+    }
     return false;
 }
 
@@ -951,8 +982,20 @@ static void work_connect(Task *t) {
 
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
 static void work_cancel_free(Cancel *c) {
+#if PG_VERSION_NUM >= 130000
+    bool lent = false;
+    dlist_iter iter;
+#endif
     dlist_delete(&c->node);
     PQcancelFinish(c->conn);
+#if PG_VERSION_NUM >= 130000
+    // the file descriptor of its socket, lent by a remote task, see work_cancel(), given to one with none for a cancel, that one or another whose own is still lent, rather than back, for none to be taken by a new connection meanwhile
+    dlist_foreach(iter, &remote) {
+        Task *t = dlist_container(Task, node, iter.cur);
+        if (t->conn && !t->spare) { t->spare = lent = true; break; }
+    }
+    if (!lent) ReleaseExternalFD();
+#endif
     pfree(c);
 }
 
@@ -1003,6 +1046,10 @@ static bool work_cancel(Task *t) {
 #endif
     if (PQstatus(t->conn) != CONNECTION_OK) return false;
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
+#if PG_VERSION_NUM >= 130000
+    // the file descriptor held for it lent to a cancel on its way, of this task or of another, see work_cancel_free(): none sent till it's back, for a STOP to be sent again on the next pass, see work_stop()
+    if (!t->spare) { ereport(WARNING, (errmsg("id = " INT64_FORMAT ", no file descriptor for a cancel request yet", t->shared->id))); return false; }
+#endif
     if (!(conn = PQcancelCreate(t->conn))) { ereport(WARNING, (errmsg("PQcancelCreate failed"))); return false; }
     if (!PQcancelStart(conn)) { ereport(WARNING, (errmsg("PQcancelStart failed"), work_errdetail(PQcancelErrorMessage(conn)))); PQcancelFinish(conn); return false; }
     c = MemoryContextAllocZero(TopMemoryContext, sizeof(*c));
@@ -1011,6 +1058,9 @@ static bool work_cancel(Task *t) {
     c->event = WL_SOCKET_WRITEABLE;
     c->id = t->shared->id;
     dlist_push_tail(&cancels, &c->node);
+#if PG_VERSION_NUM >= 130000
+    t->spare = false; // lent to the cancel till it's through
+#endif
 #else
     if (!(cancel = PQgetCancel(t->conn))) { ereport(WARNING, (errmsg("PQgetCancel failed"), work_errdetail(PQerrorMessage(t->conn)))); return false; }
     if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { ereport(WARNING, (errmsg("PQcancel failed"), errdetail("%s", errbuf))); PQfreeCancel(cancel); return false; }
@@ -1057,6 +1107,7 @@ static void work_stop(const Work *w) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     static uint64 ncancelled = 0;
+    uint64 ncurrent = 0;
     uint64 processed;
     INSTR_TIME_SET_CURRENT(now);
     if (!INSTR_TIME_IS_ZERO(last)) {
@@ -1082,13 +1133,22 @@ static void work_stop(const Work *w) {
         bool again = false;
         int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false, INT8OID));
         int pid = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "pid", false, INT4OID));
-        current[row] = id;
+        current[ncurrent++] = id;
         for (uint64 i = 0; i < ncancelled; i++) if (cancelled[i] == id) { again = true; break; }
         if (again) continue;
         if (pid == MyProcPid) {
             dlist_foreach_modify(iter, &remote) {
                 Task *t = dlist_container(Task, node, iter.cur);
-                if (t->shared->id == id) { t->shared->stop = id; t->shared->stopped = true; work_cancel(t); break; } // marked too, for an input not sent yet not to be, see work_input()
+                if (t->shared->id == id) { // marked too, for an input not sent yet not to be, see work_input()
+                    t->shared->stop = id;
+                    t->shared->stopped = true;
+#if PG_VERSION_NUM >= 130000
+                    if (!work_cancel(t) && PQstatus(t->conn) == CONNECTION_OK && !t->spare) ncurrent--; // no file descriptor for it yet: not cancelled, for the next pass to send it, see work_waiting()
+#else
+                    work_cancel(t);
+#endif
+                    break;
+                }
             }
         } else { // a task worker held the lock of this task just now, one that an earlier pg_work may have started too, but may be done with it by now: mark the task in its slot, for it to cancel only that one, along with the processes its input started (see dest_cancel()), with no role checks of pg_cancel_backend() to pass either, as the worker runs as the task author, whom pg_task.user may not signal from SQL
             if (!init_stop(w->shared->data, w->shared->oid, id)) elog(DEBUG1, "id = " INT64_FORMAT ", no longer run by a task worker", id);
@@ -1098,7 +1158,7 @@ static void work_stop(const Work *w) {
     }
     if (cancelled) pfree(cancelled);
     cancelled = current; // forget the tasks no longer running
-    ncancelled = processed;
+    ncancelled = ncurrent;
     SPI_finish_my();
     set_ps_display_my("idle");
 }
@@ -1203,11 +1263,11 @@ static void work_start(Task *t) {
     t->socket = work_connect;
     t->deadline = connect_timeout > 0 ? TimestampTzPlusMilliseconds(GetCurrentTimestamp(), Max(connect_timeout, 2) * 1000L) : 0; // as libpq takes it, 2 seconds at least, for each host
 #if PG_VERSION_NUM >= 130000
-    if (!AcquireExternalFD()) work_error((errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("could not establish connection"), errdetail("There are too many open files on the local server."), errhint("Raise the server's max_files_per_process and/or \"ulimit -n\" limits."))); else
+    if (!work_acquire(t)) work_error((errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("could not establish connection"), errdetail("There are too many open files on the local server."), errhint("Raise the server's max_files_per_process and/or \"ulimit -n\" limits."))); else
 #endif
     if (!(t->conn = PQconnectStartParams(keywords, values, false))) {
 #if PG_VERSION_NUM >= 130000
-        ReleaseExternalFD();
+        work_release(t);
 #endif
         work_error((errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("PQconnectStartParams failed"), work_errdetail(PQerrorMessage(t->conn))));
     }
@@ -1237,7 +1297,7 @@ static bool work_next(Task *t, const char *error) {
     if (t->conn) {
         PQfinish(t->conn);
 #if PG_VERSION_NUM >= 130000
-        ReleaseExternalFD();
+        work_release(t);
 #endif
         t->conn = NULL;
     }
@@ -1256,14 +1316,9 @@ static void work_remote(Task *t) {
     PQconninfoOption *opts = PQconninfoParse(t->remote, &err);
     elog(DEBUG1, "id = " INT64_FORMAT ", group = %s, remote = %s, max = %i, oid = %i", t->shared->id, t->group, t->remote ? t->remote : init_null(), t->shared->max, t->shared->oid);
 #if PG_VERSION_NUM >= 130000
-    // the file descriptors a process may hold for others than files, connections say, are a third of the safe ones, max_files_per_process at most, those of the other remote tasks taking them all: back to PLAN, rather than fail it, with nothing held yet; the one taken here is given back, to be taken again, sure to be had then, right before connecting
-    if (!AcquireExternalFD()) { if (opts) PQconninfoFree(opts); if (err) PQfreemem(err); work_later(t, "too many open files", "max_files_per_process"); return; }
-#if PG_VERSION_NUM < 140000
-    // and one more, left over once connected, for the wait event set of a WaitLatch() of pg_work, which on 13 takes one of these for a set of its own every time, waiting for a task worker to start, or for a lock, say, and errors with none left, taking pg_work down with every remote task it runs; from 14 on it waits on a set made once
-    if (!AcquireExternalFD()) { ReleaseExternalFD(); if (opts) PQconninfoFree(opts); if (err) PQfreemem(err); work_later(t, "too many open files", "max_files_per_process"); return; }
-    ReleaseExternalFD();
-#endif
-    ReleaseExternalFD();
+    // the file descriptors a process may hold for others than files, connections say, are a third of the safe ones, max_files_per_process at most, those of the other remote tasks taking them all: back to PLAN, rather than fail it, with nothing held yet; the two of a remote task, its connection and a cancel request on it, see work_acquire(), are given back here, to be taken again, sure to be had then, right before connecting
+    // and, on 13, one more, left over once connected, for the wait event set of a WaitLatch() of pg_work, which on 13 takes one of these for a set of its own every time, waiting for a task worker to start, or for a lock, say, and errors with none left, taking pg_work down with every remote task it runs; from 14 on it waits on a set made once
+    if (!work_available(PG_VERSION_NUM < 140000 ? 3 : 2)) { if (opts) PQconninfoFree(opts); if (err) PQfreemem(err); work_later(t, "too many open files", "max_files_per_process"); return; }
 #endif
     later_remote = false; // a file descriptor for it, see work_later()
     dlist_delete(&t->node);

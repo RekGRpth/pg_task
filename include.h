@@ -107,6 +107,7 @@ typedef struct Task {
     bool booked; // its bookkeeping committed, the next task of its group being taken, which may fail on its own, see task_done()
     bool held; // of a remote task, its row held by someone else, its bookkeeping not done, see task_done()
     bool lost; // of a remote task, a cancel of it given up, timed out or failed, which may get through still, see work_cancel_lost()
+    bool spare; // of a remote task, from 13 on, a file descriptor held, along with that of its connection, for the socket of a cancel request on it, see work_acquire()
     bool lock;
     bool reserve;
     bool worked; // its row in WORK, committed by task_work(): not to be given back to PLAN on the way out, the input may have started, see dest_shmem_exit()
