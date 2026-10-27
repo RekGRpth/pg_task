@@ -1,0 +1,98 @@
+-- the patterns of the README that set a task in STOP in a trigger of the author's before insert, conditional launch and dry-run validation, work for a task author too, not only for the owner of the table: the state machine lets an author insert a task in STOP with no start, never to run
+SET client_min_messages = warning;
+DROP ROLE IF EXISTS task_patterns;
+CREATE ROLE task_patterns LOGIN;
+RESET client_min_messages;
+GRANT SELECT, INSERT, UPDATE, DELETE ON task TO task_patterns;
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE task_id_seq TO task_patterns;
+DELETE FROM task WHERE "group" LIKE 'patterns%';
+ALTER TABLE task ADD COLUMN depend text NOT NULL DEFAULT 'always' CHECK (depend IN ('success', 'failure', 'always'));
+
+CREATE OR REPLACE FUNCTION task_depend_insert() RETURNS trigger AS $f$
+DECLARE
+    parent_state state;
+BEGIN
+    IF NEW.parent IS NULL THEN RETURN NEW; END IF;
+    SELECT state INTO parent_state FROM task WHERE id = NEW.parent;
+    IF parent_state IS NULL OR parent_state NOT IN ('DONE', 'FAIL') THEN
+        NEW.plan := 'infinity';                  -- parent hasn't settled yet — wait
+    ELSIF NOT ((parent_state = 'DONE' AND NEW.depend IN ('success', 'always'))
+            OR (parent_state = 'FAIL' AND NEW.depend IN ('failure', 'always'))) THEN
+        NEW.state := 'STOP';                      -- parent already settled the other way — never run
+    END IF;
+    RETURN NEW;
+END;
+$f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
+CREATE TRIGGER task_depend_insert BEFORE INSERT ON task
+FOR EACH ROW EXECUTE PROCEDURE task_depend_insert();
+
+CREATE OR REPLACE FUNCTION task_depend_update() RETURNS trigger AS $f$
+BEGIN
+    UPDATE task SET plan = statement_timestamp()
+    WHERE parent = NEW.id AND state = 'PLAN' AND plan = 'infinity'
+      AND ((NEW.state = 'DONE' AND depend IN ('success', 'always'))
+        OR (NEW.state = 'FAIL' AND depend IN ('failure', 'always')));
+    UPDATE task SET state = 'STOP'
+    WHERE parent = NEW.id AND state = 'PLAN' AND plan = 'infinity'
+      AND NOT ((NEW.state = 'DONE' AND depend IN ('success', 'always'))
+            OR (NEW.state = 'FAIL' AND depend IN ('failure', 'always')));
+    RETURN NEW;
+END;
+$f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
+CREATE TRIGGER task_depend_update AFTER UPDATE OF state ON task
+FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE PROCEDURE task_depend_update();
+ALTER TABLE task ADD COLUMN dry_run bool NOT NULL DEFAULT false;
+
+CREATE OR REPLACE FUNCTION task_dry_run() RETURNS trigger AS $f$
+BEGIN
+    IF NOT NEW.dry_run THEN RETURN NEW; END IF;
+    BEGIN
+        EXECUTE NEW.input;
+        RAISE EXCEPTION 'task_dry_run: rollback sentinel';
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF SQLERRM <> 'task_dry_run: rollback sentinel' THEN
+                NEW.error := SQLERRM;
+            END IF;
+    END;
+    NEW.state := 'STOP';
+    RETURN NEW;
+END;
+$f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
+
+CREATE TRIGGER task_dry_run_trigger BEFORE INSERT ON task
+FOR EACH ROW WHEN (NEW.dry_run) EXECUTE PROCEDURE task_dry_run();
+SET ROLE task_patterns;
+INSERT INTO task ("group", input, dry_run) VALUES ('patterns_dry', 'SELECT 1', true), ('patterns_dry', 'SELECT 1/0', true);
+INSERT INTO task ("group", input) VALUES ('patterns_parent', 'SELECT 1');
+RESET ROLE;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'patterns_parent' AND state NOT IN ('DONE', 'GONE', 'FAIL', 'STOP')) AND EXISTS (SELECT 1 FROM task WHERE "group" = 'patterns_parent') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the tasks of group patterns_parent to finish'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SET ROLE task_patterns;
+INSERT INTO task ("group", input, parent, depend) SELECT 'patterns_failure', 'SELECT 2', id, 'failure' FROM task WHERE "group" = 'patterns_parent';
+INSERT INTO task ("group", input, parent, depend) SELECT 'patterns_success', 'SELECT 3', id, 'success' FROM task WHERE "group" = 'patterns_parent';
+RESET ROLE;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'patterns_success' AND state NOT IN ('DONE', 'GONE', 'FAIL', 'STOP')) AND EXISTS (SELECT 1 FROM task WHERE "group" = 'patterns_success') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the tasks of group patterns_success to finish'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", state, start IS NULL AS no_start, output, error FROM task WHERE "group" LIKE 'patterns%' ORDER BY "group", id;
+DELETE FROM task WHERE "group" LIKE 'patterns%';
+DROP TRIGGER task_dry_run_trigger ON task;
+DROP FUNCTION task_dry_run();
+DROP TRIGGER task_depend_insert ON task;
+DROP TRIGGER task_depend_update ON task;
+DROP FUNCTION task_depend_insert();
+DROP FUNCTION task_depend_update();
+ALTER TABLE task DROP COLUMN dry_run, DROP COLUMN depend;
+REVOKE ALL ON task FROM task_patterns;
+REVOKE ALL ON SEQUENCE task_id_seq FROM task_patterns;
+DROP ROLE task_patterns;

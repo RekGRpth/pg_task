@@ -1,4 +1,4 @@
--- a task author inserts a task in PLAN only, as the state machine lets it change one to STOP only: one in STOP, with a start and no stop, would be counted as running in its group for good; the owner of the table, pg_task.user, and its members may insert one in any state
+-- a task author inserts a task in PLAN, or in STOP with no start, never to run, as a trigger of its own before insert may set it, as the state machine lets it change one to STOP only: one in STOP, with a start and no stop, would be counted as running in its group for good; the owner of the table, pg_task.user, and its members may insert one in any state
 SET client_min_messages = warning;
 DROP ROLE IF EXISTS task_insert_state;
 CREATE ROLE task_insert_state;
@@ -9,9 +9,11 @@ DELETE FROM task WHERE "group" = 'insert_state';
 SET ROLE task_insert_state;
 \set VERBOSITY terse
 INSERT INTO task ("group", input, plan, state, start) VALUES ('insert_state', 'SELECT 1', 'infinity', 'STOP', now());
+INSERT INTO task ("group", input, plan, state) VALUES ('insert_state', 'SELECT 1', 'infinity', 'DONE');
 \set VERBOSITY default
 INSERT INTO task ("group", input, plan) VALUES ('insert_state', 'SELECT 1', 'infinity');
-SELECT state FROM task WHERE "group" = 'insert_state';
+INSERT INTO task ("group", input, state) VALUES ('insert_state', 'SELECT 1', 'STOP');
+SELECT state, start IS NULL AS no_start FROM task WHERE "group" = 'insert_state' ORDER BY id;
 RESET ROLE;
 INSERT INTO task ("group", input, plan, state) VALUES ('insert_state', 'SELECT 1', 'infinity', 'STOP');
 SELECT state FROM task WHERE "group" = 'insert_state' ORDER BY id;

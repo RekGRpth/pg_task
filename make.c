@@ -410,7 +410,7 @@ static void make_user_immutable(const Work *w) {
     pfree(source.data);
 }
 
-// the table owner (pg_task.user), whose bookkeeping drives a task through its states, and its members may make every transition of the state machine; anyone else, a task author, only the one to STOP, of a task still queued or running, and insert one in PLAN only: in STOP, with a start and no stop, say, it would be counted as running in its group for good, see task_live()
+// the table owner (pg_task.user), whose bookkeeping drives a task through its states, and its members may make every transition of the state machine; anyone else, a task author, only the one to STOP, of a task still queued or running, and insert one in PLAN, or in STOP with no start, never to run, as a trigger of the author's own before insert may have it, those of the patterns of the README say: in STOP with a start and no stop it would be counted as running in its group for good, see task_live()
 static void make_state_machine(const Work *w) {
     StringInfoData name;
     StringInfoData source;
@@ -420,7 +420,7 @@ static void make_state_machine(const Work *w) {
     appendStringInfo(&source, SQL(
         BEGIN
             IF TG_OP OPERATOR(pg_catalog.=) 'INSERT' THEN
-                IF NEW."state" OPERATOR(pg_catalog.<>) 'PLAN'::%1$s AND NOT pg_catalog.pg_has_role(current_user, (SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) TG_RELID), '%2$s') THEN RAISE EXCEPTION 'invalid state transition';
+                IF NEW."state" OPERATOR(pg_catalog.<>) 'PLAN'::%1$s AND NOT (NEW."state" OPERATOR(pg_catalog.=) 'STOP'::%1$s AND NEW."start" IS NULL) AND NOT pg_catalog.pg_has_role(current_user, (SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) TG_RELID), '%2$s') THEN RAISE EXCEPTION 'invalid state transition';
                 END IF;
             ELSIF NEW."state" OPERATOR(pg_catalog.<>) OLD."state" AND NEW."state" OPERATOR(pg_catalog.<>) ALL (CASE WHEN pg_catalog.pg_has_role(current_user, (SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) TG_RELID), '%2$s') THEN CASE OLD."state"
                 WHEN 'PLAN'::%1$s THEN ARRAY['TAKE', 'GONE', 'STOP']::%1$s[]
