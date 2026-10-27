@@ -1,0 +1,80 @@
+-- a pg_task.plan written otherwise than pg_get_expr() deparses it, pg_catalog.statement_timestamp() for statement_timestamp() say, is taken for the default of plan as it is, by the expression ALTER TABLE would store, not set again on every start of pg_work, waiting for the lock of the table and updating it whole
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT current_user AS test_user
+\gset
+ALTER SYSTEM SET pg_work.restart = 1;
+ALTER SYSTEM SET pg_task.plan = 'pg_catalog.statement_timestamp()';
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || :'test_user' || '","schema":"plan_not_deparsed_schema","table":"plan_not_deparsed"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'plan_not_deparsed_schema' AND c.relname = 'plan_not_deparsed') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work plan_not_deparsed_schema plan_not_deparsed %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for table plan_not_deparsed_schema.plan_not_deparsed to be created by the pg_work worker'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pg_catalog.pg_get_expr(d.adbin, d.adrelid) AS plan_default, d.xmin::text AS default_xmin FROM pg_catalog.pg_attrdef d JOIN pg_catalog.pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum WHERE a.attrelid = 'plan_not_deparsed_schema.plan_not_deparsed'::regclass AND a.attname = 'plan'
+\gset
+SELECT :'plan_default' AS plan_default;
+     plan_default      
+-----------------------
+ statement_timestamp()
+(1 row)
+
+SELECT pid AS work_pid FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work plan_not_deparsed_schema plan_not_deparsed %' AND datname = current_database()
+\gset
+SELECT set_config('pg_task_test.work_pid', :'work_pid', false) IS NOT NULL AS work_pid_saved;
+ work_pid_saved 
+----------------
+ t
+(1 row)
+
+SELECT pg_terminate_backend(:work_pid) AS work_terminated;
+ work_terminated 
+-----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work plan_not_deparsed_schema plan_not_deparsed %' AND datname = current_database() AND pid <> current_setting('pg_task_test.work_pid')::int AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work to be restarted and idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT d.xmin::text = :'default_xmin' AS default_kept FROM pg_catalog.pg_attrdef d JOIN pg_catalog.pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum WHERE a.attrelid = 'plan_not_deparsed_schema.plan_not_deparsed'::regclass AND a.attname = 'plan';
+ default_kept 
+--------------
+ t
+(1 row)
+
+ALTER SYSTEM RESET pg_work.restart;
+ALTER SYSTEM RESET pg_task.plan;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work plan_not_deparsed_schema %') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work worker(s) matching ''pg_work plan_not_deparsed_schema %%'' to stop'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SET client_min_messages TO WARNING;
+DROP SCHEMA IF EXISTS plan_not_deparsed_schema CASCADE;
+RESET client_min_messages;

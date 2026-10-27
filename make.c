@@ -1,16 +1,19 @@
 #include "include.h"
 
 #include <access/xact.h>
+#include <catalog/heap.h>
 #include <catalog/namespace.h>
 #include <catalog/pg_collation.h>
 #include <catalog/pg_trigger.h>
 #include <libpq/libpq-be.h>
 #include <mb/pg_wchar.h>
+#include <parser/parse_node.h>
 #include <parser/parse_type.h>
 #include <pgstat.h>
 #include <postmaster/bgworker.h>
 #include <storage/ipc.h>
 #include <storage/proc.h>
+#include <tcop/tcopprot.h>
 #include <tcop/utility.h>
 #include <utils/builtins.h>
 #include <utils/memutils.h>
@@ -140,6 +143,62 @@ void make_schema(const Work *w) {
     set_ps_display_my("idle");
 }
 
+// whether the default of the column is the value as ALTER TABLE ... SET DEFAULT would make it, though not as pg_get_expr() deparses it, pg_task.plan as the settings have it, date_trunc('second', now()) say, deparsed as date_trunc('second'::text, now()): read and cooked as that does, and compared by the tree it would store, for no start of pg_work to set it again, waiting for the lock of the table and updating it whole; not on any error, of a value it would refuse too, for make_ddl() to report it then, as before
+static bool make_default_cooked(const Work *w, const char *name, const char *value) {
+    volatile bool same = false;
+    StringInfoData src;
+    initStringInfoMy(&src);
+    appendStringInfo(&src, SQL(
+        SELECT atttypid, atttypmod, adbin::pg_catalog.text AS adbin FROM pg_catalog.pg_attribute JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid AND attnum OPERATOR(pg_catalog.=) adnum WHERE attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s'
+    ), w->shared->oid, name);
+    SPI_connect_my(src.data, InvalidOid);
+    SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_SELECT);
+    if (SPI_processed == 1) {
+        Oid type = DatumGetObjectId(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "atttypid", false, OIDOID));
+        int32 typmod = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "atttypmod", false, INT4OID));
+        char *adbin = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "adbin", false, TEXTOID));
+        MemoryContext oldcontext = CurrentMemoryContext;
+        ResourceOwner oldowner = CurrentResourceOwner;
+        BeginInternalSubTransaction(NULL);
+        MemoryContextSwitchTo(oldcontext);
+        PG_TRY(); {
+            List *list = pg_parse_query(psprintf("SELECT %s", value)); // only read, never run, a value of several statements no default, as ALTER TABLE has it
+#if PG_VERSION_NUM >= 100000
+            Node *stmt = list_length(list) == 1 ? linitial_node(RawStmt, list)->stmt : NULL;
+#else
+            Node *stmt = list_length(list) == 1 ? (Node *)linitial(list) : NULL;
+#endif
+            if (stmt && IsA(stmt, SelectStmt) && list_length(((SelectStmt *)stmt)->targetList) == 1 && !((SelectStmt *)stmt)->fromClause && !((SelectStmt *)stmt)->whereClause) {
+                ParseState *pstate = make_parsestate(NULL);
+                Node *raw = ((ResTarget *)linitial(((SelectStmt *)stmt)->targetList))->val;
+                pstate->p_sourcetext = value;
+#if PG_VERSION_NUM >= 120000
+                same = equal(cookDefault(pstate, raw, type, typmod, name, '\0'), stringToNode(adbin));
+#else
+                same = equal(cookDefault(pstate, raw, type, typmod, (char *)name), stringToNode(adbin));
+#endif
+                free_parsestate(pstate);
+            }
+            ReleaseCurrentSubTransaction();
+            MemoryContextSwitchTo(oldcontext);
+            CurrentResourceOwner = oldowner;
+        } PG_CATCH();
+            MemoryContextSwitchTo(oldcontext);
+            FlushErrorState();
+            RollbackAndReleaseCurrentSubTransaction();
+            MemoryContextSwitchTo(oldcontext);
+            CurrentResourceOwner = oldowner;
+#if PG_VERSION_NUM < 100000
+            SPI_restore_connection();
+#endif
+            same = false;
+        PG_END_TRY();
+    }
+    SPI_finish_my();
+    pfree(src.data);
+    return same;
+}
+
 // the value, which has the names of the schema in it, those of its type, as a parameter, not in the text of the query, as anything in the name of the schema would end a quote, $$ say, which pg_task.schema may come with from the settings of the database, which its owner may change
 static void make_default(const Work *w, const char *name, const char *value) {
     Datum values[] = {CStringGetTextDatum(value)};
@@ -149,7 +208,7 @@ static void make_default(const Work *w, const char *name, const char *value) {
     appendStringInfo(&src, SQL(
         SELECT (SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attribute JOIN pg_catalog.pg_attrdef ON attrelid OPERATOR(pg_catalog.=) adrelid WHERE attnum OPERATOR(pg_catalog.=) adnum AND attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') IS NOT DISTINCT FROM $1 AS "test"
     ), w->shared->oid, name);
-    if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+    if (!make_test(src.data, countof(argtypes), argtypes, values, NULL) && !make_default_cooked(w, name, value)) {
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
             ALTER TABLE %1$s ALTER COLUMN "%2$s" SET DEFAULT %3$s;
