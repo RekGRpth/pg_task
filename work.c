@@ -759,6 +759,8 @@ static bool work_cancelling(const Task *t) {
     return false;
 }
 
+static bool exiting = false; // on the way out, see work_exit(): no next task of a group to be taken, see work_done()
+
 static void work_done(Task *t) {
     bool exit;
     bool live;
@@ -770,7 +772,7 @@ static void work_done(Task *t) {
         return;
     }
     if (!work_encoding(t)) return;
-    live = PQstatus(t->conn) == CONNECTION_OK && !work_cancelling(t) && !t->lost; // take the next task of the group only for a connection to run it on, and one no cancel is on its way to, nor one given up, which may get there still
+    live = !exiting && PQstatus(t->conn) == CONNECTION_OK && !work_cancelling(t) && !t->lost; // take the next task of the group only for a connection to run it on, and one no cancel is on its way to, nor one given up, which may get there still
     // nor on a session kept with a client_encoding the input set, for the input of the next one to be sent in, read as that, its text taken amiss with no error, and for its results to come in, which DISCARD ALL resets otherwise, and which can't be set back before it, a query read in the client_encoding it comes in, as the preamble would come with the input: as of the end of the input, which servers from 14 on tell of only then
     if (t->save && PQclientEncoding(t->conn) != GetDatabaseEncoding()) live = false;
     if (!work_bookkeeping(t, live, &exit)) { work_defer(t); return; }
@@ -1111,6 +1113,21 @@ static void work_exit(int code, Datum arg) {
     dlist_mutable_iter iter;
     elog(DEBUG1, "code = %i", code);
     AbortOutOfAnyTransaction(); // of a query that a termination cut short, say
+    exiting = true;
+    // a remote task whose input is through, its results come already, but not read yet, pg_work held up meanwhile, by a lock, say: read and booked now, rather than cancelled and left in WORK, its input committed, for the next pg_work to reset it and run it again
+    dlist_foreach_modify(iter, &remote) {
+        Task *t = dlist_container(Task, node, iter.cur);
+        MemoryContext oldMemoryContext = CurrentMemoryContext;
+        if (t->socket != work_result || PQstatus(t->conn) != CONNECTION_OK || !PQconsumeInput(t->conn) || PQisBusy(t->conn)) continue;
+        PG_TRY();
+            work_result(t); // which may free t, its bookkeeping done
+        PG_CATCH();
+            MemoryContextSwitchTo(oldMemoryContext);
+            EmitErrorReport();
+            FlushErrorState();
+            SPI_abort_my(); // the task cancelled below, as it was
+        PG_END_TRY();
+    }
     dlist_foreach_modify(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
         work_cancel(t);

@@ -3,6 +3,8 @@ SET client_min_messages = warning;
 DROP ROLE IF EXISTS one_work_other;
 RESET client_min_messages;
 CREATE ROLE one_work_other LOGIN SUPERUSER;
+ALTER SYSTEM SET pg_work.restart = 1; -- a pg_work exited, its entry no longer the first of its table, started again after it, rather than after the default minute
+SELECT pg_reload_conf();
 SELECT current_setting('pg_task.json') AS json_baseline
 \gset
 SELECT pid AS work_pid FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database()
@@ -42,3 +44,5 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work of the table to be the one of the test''s role again'; END IF;
 END;$body$ LANGUAGE plpgsql;
 DROP ROLE one_work_other;
+ALTER SYSTEM RESET pg_work.restart;
+SELECT pg_reload_conf();

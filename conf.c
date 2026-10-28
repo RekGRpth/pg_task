@@ -163,6 +163,7 @@ static void conf_check(void) {
     bool ok = true;
     bool *in_use;
     int n;
+    dlist_iter iter_r, iter_w;
     dlist_mutable_iter iter;
     MemoryContext oldMemoryContext = CurrentMemoryContext;
     Portal portal;
@@ -239,6 +240,14 @@ static void conf_check(void) {
         ereport(WARNING, (errmsg("pg_task.json not applied, keeping the previous configuration")));
         dlist_foreach_modify(iter, &head) conf_free(dlist_container(Work, node, iter.cur));
         return;
+    }
+    // the pg_work.restart of each entry as it is now, rather than as it was when its pg_work was started, for one stopped since to be started again after it, see conf_exited(), not after the one it had then, a minute by default, say
+    dlist_foreach(iter_w, &head) {
+        Work *w = dlist_container(Work, node, iter_w.cur);
+        dlist_foreach(iter_r, &reg_head) {
+            Registered *r = dlist_container(Registered, node, iter_r.cur);
+            if (r->hash == w->shared->hash && !strcmp(r->data, w->shared->data) && !strcmp(r->user, w->shared->user)) r->restart = w->restart;
+        }
     }
     conf_reconcile();
     n = 0;
