@@ -590,6 +590,15 @@ void init_task_running(const char *data, Oid oid, StringInfo ids, StringInfo pid
     LWLockRelease(BackgroundWorkerLock);
 }
 
+// the task workers of a table started for an entry, of its pg_task.user, by their slots, those of an earlier pg_work of the entry too, restarted since: for pg_task.run to cap the tasks of the pg_work of the entry only, not those of another pg_work of the table, of an entry of another role, see work_sleep()
+int init_task_count(const char *data, Oid oid, const char *user) {
+    int count = 0;
+    LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
+    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].reg && shared[slot].taken && shared[slot].oid == oid && !strcmp(shared[slot].data, data) && !strcmp(shared[slot].user, user)) count++;
+    LWLockRelease(BackgroundWorkerLock);
+    return count;
+}
+
 // the task workers of a table, by their slots, each with its pid, or a placeholder unlike any for one yet to start, and the hash of its group: for a pass to count the slots of a group taken with them too, which their inputs can't let go of, as they can of their locks, a worker counted once, its lock held still or not (see work_sleep())
 void init_task_pids(const char *data, Oid oid, StringInfo pids, StringInfo hashes) {
     LWLockAcquire(BackgroundWorkerLock, LW_SHARED);

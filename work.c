@@ -1509,6 +1509,13 @@ static void work_sleep(Work *w) {
     set_ps_display_my("sleep");
     work_reap(w);
     values[2] = Int32GetDatum(later_local ? Min(init_free_slots(), 1) : init_free_slots()); // one at most, as a probe, see work_later()
+    // pg_task.run for the tasks of this pg_work, its remote ones and the task workers of its entry, rather than for all of the table, of another pg_work of an entry of another role too, as the slots of the groups have them
+    {
+        int running = init_task_count(w->shared->data, w->shared->oid, w->shared->user);
+        dlist_iter it;
+        dlist_foreach(it, &remote) running++;
+        values[0] = Int32GetDatum(w->shared->run > running ? w->shared->run - running : 0);
+    }
     initStringInfoMy(&pids);
     initStringInfoMy(&hashes);
     appendStringInfoChar(&pids, '{');
@@ -1562,7 +1569,7 @@ static void work_sleep(Work *w) {
             r AS (
                 SELECT "id", "priority", "local" FROM c WHERE "count" OPERATOR(pg_catalog.>=) 0
             ), m AS (
-                SELECT GREATEST(LEAST($1 OPERATOR(pg_catalog.-) (SELECT COALESCE(pg_catalog.sum("classid"), 0) FROM l), $2), 0) AS "limit"
+                SELECT GREATEST(LEAST($1, $2), 0) AS "limit"
             ), sl AS (
                 SELECT t.id, r.priority FROM %1$s AS t JOIN r ON t.id OPERATOR(pg_catalog.=) r.id WHERE r.local AND t.state OPERATOR(pg_catalog.=) 'PLAN'
                 ORDER BY r.priority DESC, t.id LIMIT LEAST($3, (SELECT "limit" FROM m)) FOR NO KEY UPDATE OF t SKIP LOCKED
@@ -1579,7 +1586,7 @@ static void work_sleep(Work *w) {
                 SELECT "id", "priority", "local", pg_catalog.row_number() OVER (PARTITION BY "local" ORDER BY "priority" DESC, "id") AS "slot" FROM c WHERE "count" OPERATOR(pg_catalog.>=) 0
             ), s AS (
                 SELECT t.id FROM %1$s AS t JOIN r ON t.id OPERATOR(pg_catalog.=) r.id WHERE r.slot OPERATOR(pg_catalog.<=) CASE WHEN r.local THEN $3 ELSE $7 END AND t.state OPERATOR(pg_catalog.=) 'PLAN'
-                ORDER BY r.priority DESC, t.id LIMIT GREATEST(LEAST($1 OPERATOR(pg_catalog.-) (SELECT COALESCE(pg_catalog.sum("classid"), 0) FROM l), $2), 0) FOR NO KEY UPDATE OF t
+                ORDER BY r.priority DESC, t.id LIMIT GREATEST(LEAST($1, $2), 0) FOR NO KEY UPDATE OF t
             )
         ), w->schema_table);
 #endif

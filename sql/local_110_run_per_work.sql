@@ -1,0 +1,53 @@
+-- pg_task.run caps the tasks of each pg_work, not of all pg_work of the table: two of them, of entries of two roles, each with pg_task.run = 1, run a task each at once, two together, rather than one of them only
+DELETE FROM task WHERE "group" LIKE 'run_per_work_%';
+SET client_min_messages = warning;
+DROP ROLE IF EXISTS run_per_work;
+RESET client_min_messages;
+CREATE ROLE run_per_work LOGIN SUPERUSER;
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"run_per_work"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+ALTER SYSTEM SET pg_task.run = 1;
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work public task %' AND usename = 'run_per_work' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work of role run_per_work to be idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+INSERT INTO task ("group", input) SELECT 'run_per_work_' || i, 'SELECT pg_sleep(4)' FROM generate_series(1, 4) AS i;
+-- the most of them in WORK at once, as they run
+SELECT set_config('pg_task_test.most', '0', false) IS NOT NULL AS most_reset;
+DO $body$ DECLARE running int; BEGIN
+    FOR i IN 1..100 LOOP
+        SELECT count(*) INTO running FROM task WHERE "group" LIKE 'run_per_work_%' AND state = 'WORK';
+        IF running > current_setting('pg_task_test.most')::int THEN PERFORM set_config('pg_task_test.most', running::text, false); END IF;
+        EXIT WHEN NOT EXISTS (SELECT 1 FROM task WHERE "group" LIKE 'run_per_work_%' AND state NOT IN ('DONE', 'GONE', 'FAIL'));
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$body$ LANGUAGE plpgsql;
+SELECT current_setting('pg_task_test.most')::int AS most_at_once;
+ALTER SYSTEM RESET pg_task.run;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" LIKE 'run_per_work_%' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the tasks of groups ''run_per_work_%%'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE usename = 'run_per_work') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work of role run_per_work to stop'; END IF;
+END;$body$ LANGUAGE plpgsql;
+DELETE FROM task WHERE "group" LIKE 'run_per_work_%';
+DROP ROLE run_per_work;
