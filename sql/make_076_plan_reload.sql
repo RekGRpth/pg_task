@@ -1,0 +1,42 @@
+-- pg_task.plan, an SQL expression, in the default of the plan column and in the queries of pg_work since its start, changed by the server's configuration or by the settings of the database or the role, is taken by pg_work exiting to be started again with it, on the reload that tells it so, rather than only once it's restarted otherwise
+ALTER SYSTEM SET pg_work.restart = 1;
+SELECT pg_reload_conf();
+CREATE FUNCTION plan_default() RETURNS text LANGUAGE sql AS $function$
+    SELECT pg_catalog.pg_get_expr(adbin, adrelid) FROM pg_catalog.pg_attrdef WHERE adrelid = 'task'::regclass AND adnum = (SELECT attnum FROM pg_catalog.pg_attribute WHERE attrelid = 'task'::regclass AND attname = 'plan')
+$function$;
+SELECT plan_default() NOT LIKE '%1 day%' AS default_before;
+ALTER SYSTEM SET pg_task.plan = 'statement_timestamp() + ''1 day''::interval';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF plan_default() LIKE '%1 day%' THEN ok := true; EXIT; END IF;
+        -- before 9.5 pg_conf, its latch not set by the notice of the exit of pg_work, starts it again on the next reload only
+        IF current_setting('server_version_num')::int < 90500 AND i % 10 = 0 THEN PERFORM pg_reload_conf(); END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the default of plan to be of the new pg_task.plan'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT plan_default() LIKE '%1 day%' AS default_changed;
+ALTER SYSTEM RESET pg_task.plan;
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF plan_default() NOT LIKE '%1 day%' THEN ok := true; EXIT; END IF;
+        IF current_setting('server_version_num')::int < 90500 AND i % 10 = 0 THEN PERFORM pg_reload_conf(); END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the default of plan to be back'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- the pg_work started again idle, for the tests after this one
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work public task %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work of public.task to be idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT plan_default() NOT LIKE '%1 day%' AS default_after;
+DROP FUNCTION plan_default();
+ALTER SYSTEM RESET pg_work.restart;
+SELECT pg_reload_conf();
