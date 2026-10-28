@@ -46,7 +46,14 @@ PG_CPPFLAGS += -DHAVE_LOG_MIN_MESSAGES_ARRAY
 endif
 PGXS = $(shell $(PG_CONFIG) --pgxs)
 REGRESS = $(patsubst sql/%.sql,%,$(TESTS))
-PG_TASK_TEST_INSTANCE ?= temp
+# pg_regress of 9.4, that of Greenplum and Greengage 6 too, has no --temp-instance: only an existing one to test on there
+PG_REGRESS_TEMP = $(shell $(PG_CONFIG) --version | grep -E " 9\.4" > /dev/null && echo no || echo yes)
+PG_TASK_TEST_INSTANCE ?= $(if $(filter yes,$(PG_REGRESS_TEMP)),temp,existing)
+ifneq ($(filter installcheck check,$(MAKECMDGOALS)),)
+ifeq ($(PG_TASK_TEST_INSTANCE)$(PG_REGRESS_TEMP),tempno)
+$(error pg_regress of $(shell $(PG_CONFIG) --version) has no --temp-instance: test on an existing instance, with PG_TASK_TEST_INSTANCE=existing)
+endif
+endif
 PG_TASK_TEST_USER ?= $(shell whoami)
 ifeq ($(PG_TASK_TEST_INSTANCE),existing)
 REGRESS_OPTS = --use-existing --user=$(PG_TASK_TEST_USER)
