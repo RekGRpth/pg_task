@@ -422,7 +422,8 @@ static void make_user_immutable(const Work *w) {
     pfree(source.data);
 }
 
-// the table owner (pg_task.user), whose bookkeeping drives a task through its states, and its members may make every transition of the state machine; anyone else, a task author, only the one to STOP, of a task still queued or running, and insert one in PLAN, or in STOP, never to run, as a trigger of the author's own before insert may have it, those of the patterns of the README say, with no start either way, as one in PLAN with a start, set to STOP then, which the trigger of the columns of a run, on their update only, see make_result(), lets through, would be counted as running in its group for good, as one inserted in STOP with it, see task_live(): in STOP with a start and no stop it would be counted as running in its group for good, see task_live()
+// the table owner (pg_task.user), whose bookkeeping drives a task through its states, and its members may make every transition of the state machine; anyone else, a task author, only the one to STOP, of a task still queued or running, and insert one in PLAN, or in STOP, never to run, as a trigger of the author's own before insert may have it, those of the patterns of the README say, with no start either way, as one in PLAN with a start, set to STOP then, which the trigger of the columns of a run, on their update only, see make_result(), lets through, would be counted as running in its group for good, as one inserted in STOP with it, see task_live()
+// and of an id its sequence gave out already, not of one past its last value, which an author would take ahead of the others, in STOP, never to run, hidden from them, the inserts of theirs, and the repeats of their tasks, see task_insert(), failing on its key then, till the sequence got past them: a negative one, or 0, as before; before 10, with no pg_sequence_last_value(), which needs no privilege to read the sequence but the one to use it, which the default of the id takes too, by a value of its own, the sequence going on by one more on every insert of an author then
 static void make_state_machine(const Work *w) {
     StringInfoData name;
     StringInfoData source;
@@ -430,9 +431,20 @@ static void make_state_machine(const Work *w) {
     make_name(w, &name, "state");
     initStringInfoMy(&source);
     appendStringInfo(&source, SQL(
+        DECLARE
+            "sequence" pg_catalog.text;
+            "last" pg_catalog.int8;
         BEGIN
             IF TG_OP OPERATOR(pg_catalog.=) 'INSERT' THEN
-                IF NOT (NEW."state" OPERATOR(pg_catalog.=) ANY(ARRAY['PLAN', 'STOP']::%1$s[]) AND NEW."start" IS NULL) AND NOT pg_catalog.pg_has_role(current_user, (SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) TG_RELID), '%2$s') THEN RAISE EXCEPTION 'invalid state transition';
+                IF NOT pg_catalog.pg_has_role(current_user, (SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) TG_RELID), '%2$s') THEN
+                    IF NOT (NEW."state" OPERATOR(pg_catalog.=) ANY(ARRAY['PLAN', 'STOP']::%1$s[]) AND NEW."start" IS NULL) THEN RAISE EXCEPTION 'invalid state transition';
+                    END IF;
+                    "sequence" := pg_catalog.pg_get_serial_sequence(TG_RELID::pg_catalog.regclass::pg_catalog.text, 'id');
+                    IF "sequence" IS NOT NULL THEN
+                        %3$s
+                        IF NEW."id" OPERATOR(pg_catalog.>) "last" THEN RAISE EXCEPTION 'id column is given by its sequence, not past its last value';
+                        END IF;
+                    END IF;
                 END IF;
             ELSIF NEW."state" OPERATOR(pg_catalog.<>) OLD."state" AND NEW."state" OPERATOR(pg_catalog.<>) ALL (CASE WHEN pg_catalog.pg_has_role(current_user, (SELECT "relowner" FROM "pg_catalog"."pg_class" WHERE "oid" OPERATOR(pg_catalog.=) TG_RELID), '%2$s') THEN CASE OLD."state"
                 WHEN 'PLAN'::%1$s THEN ARRAY['TAKE', 'GONE', 'STOP']::%1$s[]
@@ -443,7 +455,13 @@ static void make_state_machine(const Work *w) {
             END IF;
             RETURN NEW;
         END;
-    ), w->schema_type, MAKE_ACT);
+    ), w->schema_type, MAKE_ACT,
+#if PG_VERSION_NUM >= 100000
+        SQL("last" := COALESCE(pg_catalog.pg_sequence_last_value("sequence"::pg_catalog.regclass), 0);)
+#else
+        SQL("last" := pg_catalog.nextval("sequence"::pg_catalog.regclass);)
+#endif
+    );
     make_function(w, name.data, source.data, false);
     make_trigger(w, name.data, TRIGGER_TYPE_BEFORE | TRIGGER_TYPE_INSERT | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, "state");
     pfree(name.data);
