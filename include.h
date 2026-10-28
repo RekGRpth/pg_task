@@ -178,7 +178,7 @@ void relock_table_id(Oid table, int64 id);
 void relock_table_pid_hash(Oid table, int pid, int hash);
 void init_task_ids(StringInfo ids, const char *data, Oid oid);
 void init_task_pids(const char *data, Oid oid, StringInfo pids, StringInfo hashes);
-int init_task_count(const char *data, Oid oid, const char *user);
+int init_task_count(const char *data, Oid oid);
 void init_task_running(const char *data, Oid oid, StringInfo ids, StringInfo pids);
 void init_pause(Oid oid, int hash, TimestampTz until);
 TimestampTz init_pauses(Oid oid, StringInfo hashes);

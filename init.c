@@ -594,11 +594,11 @@ void init_task_running(const char *data, Oid oid, StringInfo ids, StringInfo pid
     LWLockRelease(BackgroundWorkerLock);
 }
 
-// the task workers of a table started for an entry, of its pg_task.user, by their slots, those of an earlier pg_work of the entry too, restarted since: for pg_task.run to cap the tasks of the pg_work of the entry only, not those of another pg_work of the table, of an entry of another role, see work_sleep()
-int init_task_count(const char *data, Oid oid, const char *user) {
+// the task workers of a table, by their slots, those of an earlier pg_work of it too, restarted since, or of another role, the entry of the table changed to one of it, whose task workers go on with their tasks: for pg_task.run to cap the tasks of the one pg_work of the table, see work_sleep()
+int init_task_count(const char *data, Oid oid) {
     int count = 0;
     LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
-    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].reg && shared[slot].taken && shared[slot].oid == oid && !strcmp(shared[slot].data, data) && !strcmp(shared[slot].user, user)) count++;
+    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].reg && shared[slot].taken && shared[slot].oid == oid && !strcmp(shared[slot].data, data)) count++;
     LWLockRelease(BackgroundWorkerLock);
     return count;
 }

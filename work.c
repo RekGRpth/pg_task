@@ -1539,9 +1539,9 @@ static void work_sleep(Work *w) {
     set_ps_display_my("sleep");
     work_reap(w);
     values[2] = Int32GetDatum(later_local ? Min(init_free_slots(), 1) : init_free_slots()); // one at most, as a probe, see work_later()
-    // pg_task.run for the tasks of this pg_work, its remote ones and the task workers of its entry, rather than for all of the table, of another pg_work of an entry of another role too, as the slots of the groups have them
+    // pg_task.run for the tasks of this pg_work, its remote ones and the task workers of its table, see init_task_count()
     {
-        int running = init_task_count(w->shared->data, w->shared->oid, w->shared->user);
+        int running = init_task_count(w->shared->data, w->shared->oid);
         dlist_iter it;
         dlist_foreach(it, &remote) running++;
         values[0] = Int32GetDatum(w->shared->run > running ? w->shared->run - running : 0);
