@@ -735,8 +735,9 @@ static void make_table_comment(const Work *w, const char *value) {
     static Oid argtypes[] = {TEXTOID, OIDOID};
     StringInfoData src;
     initStringInfoMy(&src);
+    // of the table only, an object of another catalog, a function say, of the same oid, as oids are unique within a catalog only, after their wraparound, having a comment of its own too, for the subquery not to return two rows, failing every start of pg_work, as make_policy() has it
     appendStringInfo(&src, SQL(
-        SELECT (SELECT "description" FROM pg_catalog.pg_description WHERE objoid OPERATOR(pg_catalog.=) $2 AND objsubid OPERATOR(pg_catalog.=) 0) IS NOT DISTINCT FROM $1 AS "test"
+        SELECT (SELECT "description" FROM pg_catalog.pg_description WHERE objoid OPERATOR(pg_catalog.=) $2 AND classoid OPERATOR(pg_catalog.=) 'pg_catalog.pg_class'::pg_catalog.regclass AND objsubid OPERATOR(pg_catalog.=) 0) IS NOT DISTINCT FROM $1 AS "test"
     ));
     if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         const char *quote_value = quote_literal_cstr(value);

@@ -1,0 +1,15 @@
+-- the comment of the task table is told by the catalog of the table too, not only by its oid, which an object of another catalog, a function say, may have as well, oids being unique within a catalog only, after their wraparound: one with a comment of its own, of the same oid, fails no start of pg_work
+INSERT INTO pg_catalog.pg_description VALUES ('task'::regclass, 'pg_catalog.pg_proc'::regclass, 0, 'a comment of a function of the oid of the task table');
+SELECT pid AS work_pid FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database()
+\gset
+SELECT set_config('pg_task_test.work_pid', :'work_pid', false) IS NOT NULL AS work_pid_saved;
+SELECT pg_terminate_backend(:work_pid) AS work_terminated;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work public task %' AND datname = current_database() AND pid <> current_setting('pg_task_test.work_pid')::int AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work of public.task to be started again and idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+DELETE FROM pg_catalog.pg_description WHERE objoid = 'task'::regclass AND classoid = 'pg_catalog.pg_proc'::regclass;
