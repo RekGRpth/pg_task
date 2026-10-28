@@ -65,7 +65,8 @@ EXTRA_CLEAN += libpq_my.a libpq_my.o libpq_my.sym
 else
 SHLIB_LINK = $(libpq)
 endif
-TESTS = $(wildcard sql/*.sql)
+# in the order of their names, setup first and teardown last, as make from 4.3 on has the wildcard, before it in the order of the directory
+TESTS = $(sort $(wildcard sql/*.sql))
 EXTRA_CLEAN += test.conf
 include $(PGXS)
 .DEFAULT_GOAL := all
