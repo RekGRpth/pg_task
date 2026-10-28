@@ -7,8 +7,10 @@ PG_MAJOR="$("$PG_CONFIG" --version | cut -f 2 -d ' ' | grep -E -o "[[:digit:]]+"
 PG_MINOR="$("$PG_CONFIG" --version | cut -f 2 -d ' ' | grep -E -o "[[:digit:]]+" | sed -n 2p)"
 if [ "$GREEN" = "yes" ]; then
 	REPO=GreengageDB/greengage
-	MAIN=7.x
-	REL="$("$PG_CONFIG" --gp_version | cut -f 2 -d ' ' | cut -f 1 -d '+')"
+	# the version by its first word of a digit, 6.27.1+dev.3.g1234567 of Greengage 6.27.1+dev.3.g1234567 say, or of Greenplum Database 6.26.0 build commit:..., and the branch of its major version, rather than 7.x, of 12, for 6, of 9.4, its tag missing, a build of a clone of no tags say
+	GP_VERSION="$("$PG_CONFIG" --gp_version | tr ' ' '\n' | grep -E -m 1 '^[[:digit:]]+\.')"
+	MAIN="$(echo "$GP_VERSION" | cut -f 1 -d '.').x"
+	REL="$(echo "$GP_VERSION" | cut -f 1 -d '+')"
 else
 	MAIN=master
 	REPO=postgres/postgres
