@@ -246,6 +246,18 @@ static void work_check(const Work *w) {
             { bool isnull; Datum sleep = SPI_getbinval(val, tupdesc, SPI_fnumber(tupdesc, "sleep"), &isnull); w->shared->sleep = Max(isnull ? init_int(val, tupdesc, "sleep_setting", "pg_task.sleep") : DatumGetInt64(sleep), 1); }
             w->shared->spi = DatumGetBool(SPI_getbinval_my(val, tupdesc, "spi", false, BOOLOID));
             w->shared->limit = init_int(val, tupdesc, "limit", "pg_task.limit");
+            // pg_work.idle and pg_work.fetch, read by pg_work as it goes, as the settings of its entry, of the server, of the database or of the role, read again on every reload, rather than as those of this session on its connecting and of the configuration files only on a reload after
+#if PG_VERSION_NUM >= 90500
+            // as of the settings of the database and the role, the source init_settings() reads the server's configuration files in pg_file_settings instead for, see init_settings(), its configuration files on a reload changing them still; before 9.5, with none, those of this session taken by it, as before
+            {
+                char *idle = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "idle", false, TEXTOID));
+                char *fetch = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "fetch", false, TEXTOID));
+                SetConfigOption("pg_work.idle", idle, PGC_USERSET, PGC_S_DATABASE_USER);
+                SetConfigOption("pg_work.fetch", fetch, PGC_USERSET, PGC_S_DATABASE_USER);
+                pfree(idle);
+                pfree(fetch);
+            }
+#endif
             // pg_task.plan, an SQL expression, in the default of the plan column and in the queries of pg_work since its start, not to be changed in them while it runs: a change of it, of the server, of the database or of the role, taken by exiting, for pg_work to be started again with it, see work_main()
             {
                 char *plan = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "plan", false, TEXTOID));

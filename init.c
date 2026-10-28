@@ -476,6 +476,8 @@ void init_settings(StringInfo src) {
                             "sleep", COALESCE(r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep', u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep', d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep', a."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep', g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.sleep') AS "sleep_setting",
                             COALESCE("spi", (r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.spi')::pg_catalog.bool, (u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.spi')::pg_catalog.bool, (d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.spi')::pg_catalog.bool, (a."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.spi')::pg_catalog.bool, (g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.spi')::pg_catalog.bool)::pg_catalog.bool AS "spi",
                             COALESCE(r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.limit', u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.limit', d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.limit', a."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.limit', g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.limit') AS "limit",
+                            COALESCE(r."setconfig" OPERATOR(pg_catalog.->>) 'pg_work.idle', u."setconfig" OPERATOR(pg_catalog.->>) 'pg_work.idle', d."setconfig" OPERATOR(pg_catalog.->>) 'pg_work.idle', a."setconfig" OPERATOR(pg_catalog.->>) 'pg_work.idle', g."setconfig" OPERATOR(pg_catalog.->>) 'pg_work.idle') AS "idle",
+                            COALESCE(r."setconfig" OPERATOR(pg_catalog.->>) 'pg_work.fetch', u."setconfig" OPERATOR(pg_catalog.->>) 'pg_work.fetch', d."setconfig" OPERATOR(pg_catalog.->>) 'pg_work.fetch', a."setconfig" OPERATOR(pg_catalog.->>) 'pg_work.fetch', g."setconfig" OPERATOR(pg_catalog.->>) 'pg_work.fetch') AS "fetch",
                             COALESCE(r."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.plan', u."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.plan', d."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.plan', a."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.plan', g."setconfig" OPERATOR(pg_catalog.->>) 'pg_task.plan') AS "plan",
                             COALESCE(r."setconfig" OPERATOR(pg_catalog.->>) 'pg_work.restart', u."setconfig" OPERATOR(pg_catalog.->>) 'pg_work.restart', d."setconfig" OPERATOR(pg_catalog.->>) 'pg_work.restart', a."setconfig" OPERATOR(pg_catalog.->>) 'pg_work.restart', g."setconfig" OPERATOR(pg_catalog.->>) 'pg_work.restart') AS "restart",
                             COALESCE("user", "data", pg_catalog.current_setting('pg_task.user')::pg_catalog.name)::pg_catalog.text AS "user", "i"
@@ -492,14 +494,14 @@ void init_settings(StringInfo src) {
         // the session of pg_conf or pg_work itself got the settings of its own database and role on connecting, which aren't those of other databases and roles: for a setting from there, fall back to the one of the server's configuration files instead, or else to the default; one of all databases and roles (ALTER ROLE ALL SET), after those of the database and the role and before this, is read from pg_db_role_setting as they are, a, rather than as the session got it on connecting, if at all
         SQL(
             SELECT pg_catalog.jsonb_object(pg_catalog.array_agg("name"), pg_catalog.array_agg("setting")) AS "setconfig" FROM (
-                SELECT "name", CASE WHEN "source" OPERATOR(pg_catalog.=) ANY(ARRAY['database', 'user', 'database user']) THEN COALESCE((SELECT f."setting" FROM "pg_catalog"."pg_file_settings" AS f WHERE f."name" OPERATOR(pg_catalog.=) p."name" AND f."error" IS NULL ORDER BY f."seqno" DESC LIMIT 1), "boot_val") ELSE "setting" END AS "setting" FROM "pg_catalog"."pg_settings" AS p WHERE "name" OPERATOR(pg_catalog.~~) 'pg_task.%' OR "name" OPERATOR(pg_catalog.=) 'pg_work.restart'
+                SELECT "name", CASE WHEN "source" OPERATOR(pg_catalog.=) ANY(ARRAY['database', 'user', 'database user']) THEN COALESCE((SELECT f."setting" FROM "pg_catalog"."pg_file_settings" AS f WHERE f."name" OPERATOR(pg_catalog.=) p."name" AND f."error" IS NULL ORDER BY f."seqno" DESC LIMIT 1), "boot_val") ELSE "setting" END AS "setting" FROM "pg_catalog"."pg_settings" AS p WHERE "name" OPERATOR(pg_catalog.~~) 'pg_task.%' OR "name" OPERATOR(pg_catalog.=) ANY(ARRAY['pg_work.restart', 'pg_work.idle', 'pg_work.fetch'])
             ) AS p
         )
 #else
         "json_object",
         // no pg_file_settings yet to tell the server's configuration files apart from the settings of the database and role of pg_conf or pg_work itself
         SQL(
-            SELECT pg_catalog.json_object(pg_catalog.array_agg("name"), pg_catalog.array_agg("setting")) AS "setconfig" FROM "pg_catalog"."pg_settings" WHERE "name" OPERATOR(pg_catalog.~~) 'pg_task.%' OR "name" OPERATOR(pg_catalog.=) 'pg_work.restart'
+            SELECT pg_catalog.json_object(pg_catalog.array_agg("name"), pg_catalog.array_agg("setting")) AS "setconfig" FROM "pg_catalog"."pg_settings" WHERE "name" OPERATOR(pg_catalog.~~) 'pg_task.%' OR "name" OPERATOR(pg_catalog.=) ANY(ARRAY['pg_work.restart', 'pg_work.idle', 'pg_work.fetch'])
         )
 #endif
     );
