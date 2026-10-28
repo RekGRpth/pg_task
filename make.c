@@ -545,19 +545,24 @@ static void make_immutable(const Work *w, const char *column) {
     pfree(source.data);
 }
 
+// but repeat of a task by its own input, the run of the task in WORK, in the process of its pid, as the pattern of the README to retry till success has it, cancelling its repeat once its work committed, which the bookkeeping reads after the input, see task_done()
 static void make_conditional_immutable(const Work *w, const char *column) {
     StringInfoData name;
+    StringInfoData own;
     StringInfoData source;
     initStringInfoMy(&name);
     make_name(w, &name, column);
+    initStringInfoMy(&own);
+    if (!strcmp(column, "repeat")) appendStringInfo(&own, SQL( AND NOT (OLD."state" OPERATOR(pg_catalog.=) 'WORK'::%1$s AND OLD."pid" OPERATOR(pg_catalog.=) pg_catalog.pg_backend_pid())), w->schema_type);
     initStringInfoMy(&source);
     appendStringInfo(&source, SQL(
         BEGIN
-            IF OLD."state" OPERATOR(pg_catalog.<>) 'PLAN'::%2$s AND NEW."%1$s" IS DISTINCT FROM OLD."%1$s" THEN RAISE EXCEPTION '%1$s column is immutable once task left PLAN state';
+            IF OLD."state" OPERATOR(pg_catalog.<>) 'PLAN'::%2$s AND NEW."%1$s" IS DISTINCT FROM OLD."%1$s"%3$s THEN RAISE EXCEPTION '%1$s column is immutable once task left PLAN state';
             END IF;
             RETURN NEW;
         END;
-    ), column, w->schema_type);
+    ), column, w->schema_type, own.data);
+    pfree(own.data);
     make_function(w, name.data, source.data, false);
     make_trigger(w, name.data, TRIGGER_TYPE_BEFORE | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, column);
     pfree(name.data);

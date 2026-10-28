@@ -205,7 +205,7 @@ The other 23 are plain `BEFORE UPDATE OF "<column>"` guards, one per remaining c
 
 - `state` is governed by the transition-validation trigger described in [Task state machine](#task-state-machine) above, rather than by immutability.
 - `id`, `group`, `remote` and `parent` are immutable unconditionally, from the moment of insert — a task's routing and ancestry can't be edited after the fact, only fixed by inserting a new row instead (see Patterns).
-- every other self-provisioned column — `plan`, `active`, `live`, `repeat`, `timeout`, `count`, `max`, `delete`, `drift`, `header`, `save`, `string`, `delimiter`, `escape`, `quote`, `input`, `null`, `data` — is immutable only once the task has left `PLAN`: freely editable on a still-queued task (e.g. `UPDATE task SET input = ... WHERE state = 'PLAN'`), frozen the instant it's dispatched.
+- every other self-provisioned column — `plan`, `active`, `live`, `repeat`, `timeout`, `count`, `max`, `delete`, `drift`, `header`, `save`, `string`, `delimiter`, `escape`, `quote`, `input`, `null`, `data` — is immutable only once the task has left `PLAN`: freely editable on a still-queued task (e.g. `UPDATE task SET input = ... WHERE state = 'PLAN'`), frozen the instant it's dispatched — but for `repeat` of a task in `WORK` by its own run, the process of its `pid`, as the [Retry until success](#retry-until-success) pattern has it.
 
 None of this applies to columns you add yourself — `pg_task` only ever generates a trigger for a column it created (see Patterns).
 
