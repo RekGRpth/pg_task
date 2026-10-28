@@ -177,12 +177,12 @@ static void conf_check(void) {
         // an entry is known by the hash of its schema and table, the length of the schema before them, or a dot in a name would make two entries one, schema a.b with table c and schema a with table b.c, the second of which then never started; work_check() of pg_work goes by the same one
         init_settings(&src);
         appendStringInfoString(&src, SQL(
-            SELECT    DISTINCT ON ("data", "user", "schema", "table") j.*, pg_catalog.hashtext(pg_catalog.concat_ws('.', pg_catalog.length("schema"), "schema", "table"))::pg_catalog.int4 AS "hash", "pid" IS NULL AS "new" FROM j
+            SELECT    DISTINCT ON ("data", "user", "schema", "table") j.*, pg_catalog.hashtext(pg_catalog.concat_ws('.', pg_catalog.length("schema"), "schema", "table"))::pg_catalog.int4 AS "hash", "pid" IS NULL AS "new", pg_catalog.first_value("user") OVER (PARTITION BY "data", "schema", "table" ORDER BY "i") AS "first" FROM j
             LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock'
             AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock'
             AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3
             AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) "data")
-            AND "classid" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_roles" WHERE "rolname" OPERATOR(pg_catalog.=) "user")
+            AND "classid" OPERATOR(pg_catalog.=) 0::pg_catalog.oid
             AND "objid" OPERATOR(pg_catalog.=) pg_catalog.hashtext(pg_catalog.concat_ws('.', pg_catalog.length("schema"), "schema", "table"))::pg_catalog.oid
             ORDER BY "data", "user", "schema", "table", "i"
         ));
@@ -212,6 +212,14 @@ static void conf_check(void) {
                 text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "schema", false, TEXTOID)), w->shared->schema, sizeof(w->shared->schema));
                 text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "table", false, TEXTOID)), w->shared->table, sizeof(w->shared->table));
                 text_to_cstring_buffer((text *)DatumGetPointer(SPI_getbinval_my(val, tupdesc, "user", false, TEXTOID)), w->shared->user, sizeof(w->shared->user));
+                // one pg_work of a table at most, of the first of its entries in pg_task.json, an entry of another role after it, of the same database, schema and table, left out, see lock_data_hash()
+                {
+                    char *first = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "first", false, TEXTOID));
+                    bool other = strcmp(first, w->shared->user) != 0;
+                    if (other) ereport(WARNING, (errmsg("entry of pg_task.json for database \"%s\", user \"%s\", schema \"%s\" and table \"%s\" left out", w->shared->data, w->shared->user, w->shared->schema, w->shared->table), errdetail("An entry of user \"%s\" before it is of the same database, schema and table, which one pg_work runs at most.", first)));
+                    pfree(first);
+                    if (other) { pfree(w->shared); pfree(w); SPI_freetuple(val); continue; }
+                }
                 elog(DEBUG1, "row = " UINT64_FORMAT ", user = %s, data = %s, schema = %s, table = %s, sleep = " INT64_FORMAT ", reset = " INT64_FORMAT ", run = %i, hash = %i, spi = %s, limit = %i, spawn = %s", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset, w->shared->run, w->shared->hash, w->shared->spi ? "true" : "false", w->shared->limit, w->spawn ? "true" : "false");
                 dlist_push_tail(&head, &w->node);
                 SPI_freetuple(val);

@@ -215,9 +215,14 @@ static void work_check(const Work *w) {
         initStringInfoMy(&src);
         init_settings(&src);
         appendStringInfo(&src, SQL(
-            SELECT DISTINCT ON ("data", "user", "schema", "table") j.* FROM j WHERE "user" OPERATOR(pg_catalog.=) session_user AND "data" OPERATOR(pg_catalog.=) current_catalog AND pg_catalog.hashtext(pg_catalog.concat_ws('.', pg_catalog.length("schema"), "schema", "table"))::pg_catalog.int4 OPERATOR(pg_catalog.=) %i
-            ORDER BY "data", "user", "schema", "table", "i"
-        ), w->shared->hash);
+            SELECT * FROM (SELECT DISTINCT ON ("data", %2$s "schema", "table") j.* FROM j ORDER BY "data", %2$s "schema", "table", "i") AS j WHERE "user" OPERATOR(pg_catalog.=) session_user AND "data" OPERATOR(pg_catalog.=) current_catalog AND pg_catalog.hashtext(pg_catalog.concat_ws('.', pg_catalog.length("schema"), "schema", "table"))::pg_catalog.int4 OPERATOR(pg_catalog.=) %1$i
+        ), w->shared->hash,
+#if PG_VERSION_NUM >= 90500
+            "" // the first entry of its table, an entry of another role before it taking it, see conf_check()
+#else
+            "\"user\"," // its own, with no pg_file_settings before 9.5 to tell the settings of other entries by, but by those of its own session, the schema and table of an entry of no settings of its own taken for those of its role, its own entry for another one's then
+#endif
+        );
     }
     // as pg_conf does, keep running with the settings as they are rather than exit over a pg_task.json that doesn't parse or fit the types of its keys
     PG_TRY();
@@ -230,7 +235,7 @@ static void work_check(const Work *w) {
         );
         if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
         SPI_execute_plan_my(src.data, plan, NULL, NULL, SPI_OK_SELECT);
-        if (!SPI_processed) { ereport(LOG, (errmsg("no entry of pg_task.json for database \"%s\", user \"%s\", schema \"%s\" and table \"%s\"", w->shared->data, w->shared->user, w->shared->schema, w->shared->table), errdetail("The entry is gone, or the settings of this database and role give it another schema or table than those pg_conf read, see pg_task.json in the README."))); ShutdownRequestPending = true; } else { // gone, or found by pg_conf only, which reads the settings of its own database and role for those of others, see init_settings(): exiting cleanly, to be started again by pg_conf, if at all, after its pg_work.restart, see conf_exited()
+        if (!SPI_processed) { ereport(LOG, (errmsg("no entry of pg_task.json for database \"%s\", user \"%s\", schema \"%s\" and table \"%s\"", w->shared->data, w->shared->user, w->shared->schema, w->shared->table), errdetail("The entry is gone, or the settings of this database and role give it another schema or table than those pg_conf read, or an entry of another role before it in pg_task.json is of the same database, schema and table, which one pg_work runs at most, see pg_task.json in the README."))); ShutdownRequestPending = true; } else { // gone, or found by pg_conf only, which reads the settings of its own database and role for those of others, see init_settings(): exiting cleanly, to be started again by pg_conf, if at all, after its pg_work.restart, see conf_exited()
             HeapTuple val = SPI_tuptable->vals[0];
             TupleDesc tupdesc = SPI_tuptable->tupdesc;
             init_work_kept(w->shared);
@@ -1758,7 +1763,7 @@ void work_main(Datum main_arg) {
     initStringInfoMy(&schema_table);
     appendStringInfo(&schema_table, "%s.%s", work.schema, work.table);
     work.schema_table = schema_table.data;
-    if (!lock_data_user_hash(MyDatabaseId, GetUserId(), work.shared->hash)) { ereport(WARNING, (errmsg("!lock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.shared->hash))); ShutdownRequestPending = true; return; } // exit without error to disable restart, then not start conf
+    if (!lock_data_hash(MyDatabaseId, work.shared->hash)) { ereport(WARNING, (errmsg("!lock_data_hash(%i, %i)", MyDatabaseId, work.shared->hash), errdetail("Another pg_work runs the table %s, which one pg_work runs at most.", work.schema_table))); ShutdownRequestPending = true; return; } // exit without error to disable restart, then not start conf
     // restarted after a crash, it may serve what pg_task.json no longer has, and no pg_conf that has been restarted meanwhile knows to cancel that restart: check before taking any task, and exit without error, so as not to be restarted again
     work_check(&work);
     if (ShutdownRequestPending) return;
@@ -1871,5 +1876,5 @@ void work_main(Datum main_arg) {
         FreeWaitEventSet(set);
         pfree(events);
     }
-    if (!unlock_data_user_hash(MyDatabaseId, GetUserId(), work.shared->hash)) ereport(WARNING, (errmsg("!unlock_data_user_hash(%i, %i, %i)", MyDatabaseId, GetUserId(), work.shared->hash)));
+    if (!unlock_data_hash(MyDatabaseId, work.shared->hash)) ereport(WARNING, (errmsg("!unlock_data_hash(%i, %i)", MyDatabaseId, work.shared->hash)));
 }

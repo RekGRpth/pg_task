@@ -114,9 +114,10 @@ uint32 init_table_key(Oid table) {
     return (uint32)table ^ ((uint32)MyDatabaseId * 2654435761U);
 }
 
-bool lock_data_user_hash(Oid data, Oid user, int hash) {
-    LOCKTAG tag = {data, user, (uint32)hash, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    elog(DEBUG1, "data = %i, user = %i, hash = %i", data, user, hash);
+// the pg_work of a table, by its database and the hash of its schema and table, whatever its role: one at most, as pg_task runs one scheduler of a table, a second one, of an entry of another role, see conf_check(), or one started while the one of an entry of the table before it is on its way out, failing to take it, to exit, see work_main()
+bool lock_data_hash(Oid data, int hash) {
+    LOCKTAG tag = {data, 0, (uint32)hash, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "data = %i, hash = %i", data, hash);
     return LockAcquire(&tag, AccessExclusiveLock, true, true) == LOCKACQUIRE_OK;
 }
 
@@ -172,9 +173,9 @@ bool unlock_table_take(Oid table, int64 id) {
     return LockRelease(&tag, AccessExclusiveLock, true);
 }
 
-bool unlock_data_user_hash(Oid data, Oid user, int hash) {
-    LOCKTAG tag = {data, user, (uint32)hash, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    elog(DEBUG1, "data = %i, user = %i, hash = %i", data, user, hash);
+bool unlock_data_hash(Oid data, int hash) {
+    LOCKTAG tag = {data, 0, (uint32)hash, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "data = %i, hash = %i", data, hash);
     return LockRelease(&tag, AccessExclusiveLock, true);
 }
 

@@ -1,0 +1,44 @@
+-- one pg_work of a table at most: an entry of pg_task.json of another role after the one of a table, of the same database, schema and table, is left out, with a warning, its pg_work started by none, the lock of the pg_work of a table being of its database and table, not of its role, see lock_data_hash(); put before it, its pg_work is the one of the table, the other one exiting as its entry is no longer the first
+SET client_min_messages = warning;
+DROP ROLE IF EXISTS one_work_other;
+RESET client_min_messages;
+CREATE ROLE one_work_other LOGIN SUPERUSER;
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT pid AS work_pid FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database()
+\gset
+SELECT set_config('pg_task_test.work_pid', :'work_pid', false) IS NOT NULL AS work_pid_saved;
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"one_work_other"}]' AS json_after
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_after';
+SELECT pg_reload_conf();
+SELECT pg_sleep(3);
+SELECT count(*) = 0 AS other_left_out FROM pg_catalog.pg_stat_activity WHERE usename = 'one_work_other';
+SELECT pid = :work_pid AS same_work FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database();
+-- the entry of the other role first: its pg_work the one of the table
+SELECT '[{"data":"' || :'DBNAME' || '","user":"one_work_other"},' || substr(:'json_baseline', 2) AS json_before
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_before';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF current_setting('server_version_num')::int < 90500 THEN ok := true; EXIT; END IF; -- before 9.5 a pg_work running stays, by its own entry, with no pg_file_settings to tell the settings of other entries by, see work_check()
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE pid = current_setting('pg_task_test.work_pid')::int) AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work public task %' AND usename = 'one_work_other' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work of role one_work_other to be the one of the table'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT count(*) AS works_of_table FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database();
+-- back as it was, the pg_work of the test's role the one of the table again
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE usename = 'one_work_other') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work public task %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work of the table to be the one of the test''s role again'; END IF;
+END;$body$ LANGUAGE plpgsql;
+DROP ROLE one_work_other;
