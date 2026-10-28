@@ -580,6 +580,16 @@ void init_task_ids(StringInfo ids, const char *data, Oid oid) {
     LWLockRelease(BackgroundWorkerLock);
 }
 
+// the tasks the task workers of a table run, by their slots, the id of each with the pid of its worker, one started: for a STOP to cancel one whose input let go of the lock of its id, as pg_advisory_unlock_all() does, its worker taking it back only after the command, or the whole input in spi mode, see work_stop()
+void init_task_running(const char *data, Oid oid, StringInfo ids, StringInfo pids) {
+    LWLockAcquire(BackgroundWorkerLock, LW_SHARED);
+    for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].reg && shared[slot].taken && shared[slot].pid && shared[slot].oid == oid && !strcmp(shared[slot].data, data)) {
+        appendStringInfo(ids, "%s" INT64_FORMAT, ids->len > 1 ? "," : "", shared[slot].id);
+        appendStringInfo(pids, "%s%i", pids->len > 1 ? "," : "", shared[slot].pid);
+    }
+    LWLockRelease(BackgroundWorkerLock);
+}
+
 // the task workers of a table, by their slots, each with its pid, or a placeholder unlike any for one yet to start, and the hash of its group: for a pass to count the slots of a group taken with them too, which their inputs can't let go of, as they can of their locks, a worker counted once, its lock held still or not (see work_sleep())
 void init_task_pids(const char *data, Oid oid, StringInfo pids, StringInfo hashes) {
     LWLockAcquire(BackgroundWorkerLock, LW_SHARED);

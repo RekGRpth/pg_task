@@ -1114,9 +1114,12 @@ static void work_stop(const Work *w) {
     int64 *current;
     static int64 *cancelled = NULL; // ids already cancelled, so that a task gets a single cancel, not another one while it's already done with its query and recording its result
     static instr_time last;
+    static Oid argtypes[] = {TEXTOID, TEXTOID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
     static uint64 ncancelled = 0;
+    Datum values[2];
+    StringInfoData ids, pids;
     uint64 ncurrent = 0;
     uint64 processed;
     INSTR_TIME_SET_CURRENT(now);
@@ -1130,16 +1133,29 @@ static void work_stop(const Work *w) {
     if (!src.data) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
-            SELECT "id", l."pid" FROM %1$s AS t JOIN "pg_catalog"."pg_locks" AS l ON l."locktype" OPERATOR(pg_catalog.=) 'userlock' AND l."mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND l."granted" AND l."objsubid" OPERATOR(pg_catalog.=) 4 AND l."database" OPERATOR(pg_catalog.=) %2$u AND l."classid" OPERATOR(pg_catalog.=) (("id" OPERATOR(pg_catalog.>>) 32) OPERATOR(pg_catalog.&) 4294967295) AND l."objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
-            WHERE "state" OPERATOR(pg_catalog.=) 'STOP'
+            SELECT t."id", COALESCE(l."pid", s."pid") AS "pid" FROM %1$s AS t LEFT JOIN "pg_catalog"."pg_locks" AS l ON l."locktype" OPERATOR(pg_catalog.=) 'userlock' AND l."mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND l."granted" AND l."objsubid" OPERATOR(pg_catalog.=) 4 AND l."database" OPERATOR(pg_catalog.=) %2$u AND l."classid" OPERATOR(pg_catalog.=) ((t."id" OPERATOR(pg_catalog.>>) 32) OPERATOR(pg_catalog.&) 4294967295) AND l."objid" OPERATOR(pg_catalog.=) (t."id" OPERATOR(pg_catalog.&) 4294967295)
+            LEFT JOIN ROWS FROM (pg_catalog.unnest(($1)::pg_catalog.int8[]), pg_catalog.unnest(($2)::pg_catalog.int4[])) AS s ("id", "pid") ON s."id" OPERATOR(pg_catalog.=) t."id"
+            WHERE "state" OPERATOR(pg_catalog.=) 'STOP' AND (l."pid" IS NOT NULL OR s."pid" IS NOT NULL)
         ), w->schema_table, init_table_key(w->shared->oid));
     }
+    // and those of the task workers, by their slots, see init_task_running()
+    initStringInfoMy(&ids);
+    initStringInfoMy(&pids);
+    appendStringInfoChar(&ids, '{');
+    appendStringInfoChar(&pids, '{');
+    init_task_running(w->shared->data, w->shared->oid, &ids, &pids);
+    appendStringInfoChar(&ids, '}');
+    appendStringInfoChar(&pids, '}');
     SPI_connect_my(src.data, InvalidOid);
-    if (!plan) plan = SPI_prepare_my(src.data, 0, NULL);
-    SPI_execute_plan_my(src.data, plan, NULL, NULL, SPI_OK_SELECT);
+    values[0] = CStringGetTextDatum(ids.data); // in the memory of SPI, freed with it
+    values[1] = CStringGetTextDatum(pids.data);
+    pfree(ids.data);
+    pfree(pids.data);
+    if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+    SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_SELECT);
     processed = SPI_processed;
     current = processed ? MemoryContextAlloc(TopMemoryContext, processed * sizeof(*current)) : NULL;
-    for (uint64 row = 0; row < processed; row++) { // only STOP tasks still running, i.e. whose lock is held: by us for a remote one, by its task worker for a local one
+    for (uint64 row = 0; row < processed; row++) { // only STOP tasks still running, i.e. whose lock is held, by us for a remote one, by its task worker for a local one, or run by a task worker, by its slot
         bool again = false;
         int64 id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "id", false, INT8OID));
         int pid = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, "pid", false, INT4OID));
