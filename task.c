@@ -246,12 +246,14 @@ static bool task_held(const Task *t) {
 }
 
 // a step of the bookkeeping beyond the task's own result, the repeat inserted, the row deleted, the group paused, in a subtransaction of its own: one failing, a plan taken out of range by the repeat or the pause, a trigger of the author's say, is logged and left undone, rather than fail the bookkeeping, outside any error handling, leaving the task in WORK, to run again on every reset, or pg_work, with every remote task it runs, the task's result recorded still
-static void task_step(Task *t, void (*step)(Task *t, TimestampTz pause), TimestampTz pause, const char *what) {
+// true once the step is done, false on its error, logged and rolled back, as of the step only
+static bool task_step(Task *t, void (*step)(Task *t, TimestampTz pause), TimestampTz pause, const char *what) {
     MemoryContext oldcontext = CurrentMemoryContext;
     ResourceOwner oldowner = CurrentResourceOwner;
     uint32 holdoff = InterruptHoldoffCount; // which an error's errfinish() sets to 0, the bookkeeping holding interrupts off, and cancels, see task_done() and SPI_connect_my(), resuming them later
     uint32 cancel_holdoff = QueryCancelHoldoffCount;
     ErrorData *edata;
+    volatile bool done = false;
     BeginInternalSubTransaction(NULL);
     MemoryContextSwitchTo(oldcontext);
     PG_TRY();
@@ -259,6 +261,7 @@ static void task_step(Task *t, void (*step)(Task *t, TimestampTz pause), Timesta
         ReleaseCurrentSubTransaction();
         MemoryContextSwitchTo(oldcontext);
         CurrentResourceOwner = oldowner;
+        done = true;
     PG_CATCH();
         MemoryContextSwitchTo(oldcontext);
         edata = CopyErrorData();
@@ -275,7 +278,7 @@ static void task_step(Task *t, void (*step)(Task *t, TimestampTz pause), Timesta
         QueryCancelHoldoffCount = cancel_holdoff;
         ereport(WARNING, (errcode(edata->sqlerrcode), errmsg("id = " INT64_FORMAT ", %s: %s", t->shared->id, what, edata->message)));
         FreeErrorData(edata);
-    PG_END_TRY();
+    PG_END_TRY();    return done;
 }
 
 static void task_insert_step(Task *t, TimestampTz pause) { task_insert(t); }
@@ -348,12 +351,14 @@ bool task_done(Task *t, bool live) {
         if (update) pause = DatumGetTimestampTz(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "pause", true, TIMESTAMPTZOID));
         elog(DEBUG1, "delete = %s, exit = %s, insert = %s, update = %s", delete ? "true" : "false", exit ? "true" : "false", insert ? "true" : "false", update ? "true" : "false");
     }
-    if (insert) task_step(t, task_insert_step, 0, "repeat not inserted");
+    // the task deleted only with its repeat inserted, if any: one whose repeat failed kept, done, rather than gone with no trace of it, its repeats ended for good
+    if (insert && !task_step(t, task_insert_step, 0, "repeat not inserted")) delete = false;
     if (delete) task_step(t, task_delete_step, 0, "not deleted");
     if (pause) task_step(t, task_update_step, pause, "tasks of its group not paused"); // none for a plan of -infinity, due at once, which can't be subtracted from, failing the bookkeeping outside any error handling, see above
+    SPI_finish_my();
+    // once the bookkeeping is committed, not before: its commit failing, on a deferred trigger say, would leave the task in WORK with no lock of its id, to be reset and run again, and the bookkeeping, tried again, not find it, see work_bookkeeping()
     if (t->lock && !unlock_table_id(t->shared->oid, t->shared->id)) { ereport(WARNING, (errmsg("!unlock_table_id(%i, " INT64_FORMAT ")", t->shared->oid, t->shared->id))); exit = true; }
     t->lock = false;
-    SPI_finish_my();
     t->booked = true; // for an error of task_live() not to be taken for one of the bookkeeping, before 9.5 and in Greengage, where it waits for the row of the next task, see work_bookkeeping()
     if (pause) init_pause(t->shared->oid, t->shared->hash, pause);
     set_ps_display_my("idle");
