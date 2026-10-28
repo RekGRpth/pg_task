@@ -6,9 +6,9 @@ DROP FUNCTION IF EXISTS row_memory_used(numeric);
 RESET client_min_messages;
 CREATE TABLE row_memory_t AS SELECT i::numeric AS n FROM generate_series(1, 10000) AS i;
 CREATE FUNCTION row_memory_used(numeric) RETURNS bigint LANGUAGE plpgsql AS $function$BEGIN
-    RETURN CASE WHEN current_setting('server_version_num')::int >= 140000 THEN (SELECT sum(total_bytes) FROM pg_catalog.pg_backend_memory_contexts WHERE name = 'ExecutorState') ELSE 0 END;
+    RETURN (SELECT sum(total_bytes) FROM pg_catalog.pg_backend_memory_contexts WHERE name = 'ExecutorState');
 END;$function$;
-INSERT INTO task ("group", input) VALUES ('row_memory', 'SELECT n, n, n, n, n, public.row_memory_used(n) AS used FROM row_memory_t');
+INSERT INTO task ("group", input) SELECT 'row_memory', CASE WHEN current_setting('server_version_num')::int >= 140000 THEN 'SELECT n, n, n, n, n, public.row_memory_used(n) AS used FROM row_memory_t' ELSE 'SELECT n, n, n, n, n, 0 AS used FROM row_memory_t' END;
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'row_memory' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;

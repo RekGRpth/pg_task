@@ -363,10 +363,8 @@ static void dest_analyze(ParseState *pstate, Query *query) {
 }
 #endif
 
-#if PG_VERSION_NUM < 100000
-// the position of an error in the syntax of the body of a function, of a DO say, function_parse_error_transpose() moves into the text of the active portal, which before 10 it takes for there, asserting it, and with none dereferences, taking the server down: spi mode runs in none, unlike local mode, so one for it, active while the input runs, see dest_execute(), of the text SPI runs, whose error callback takes the position for one within that text, which dest_execute_spi_at() moves into the whole input, as local mode has it
+// the position of an error in the syntax of the body of a function, of a DO say, function_parse_error_transpose() moves into the text of the active portal, as local mode has it, within the whole input, or from 10 on gives up with none, the position left within the body, the body as the query, while before 10 it takes one for there, asserting it, and with none dereferences, taking the server down: spi mode runs in none, unlike local mode, so one for it, active while a statement runs, see dest_execute_spi_at(), of the text SPI runs, whose error callback takes the position for one within that text, which dest_execute_spi_at() moves into the whole input then
 static PortalData dest_portal = {.status = PORTAL_ACTIVE};
-#endif
 
 static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     bool count = false;
@@ -379,9 +377,7 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     const char *tagname = CreateCommandTag(stmt);
 #endif
     if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else disable_timeout(STATEMENT_TIMEOUT, false); // for each statement of the input anew, as exec_simple_query() has it from 13 on in local mode, rather than once for all of them, see SPI_connect_my(); for an EXECUTE too, and none once the input set statement_timeout to 0, rather than the rest of the one of the statement before
-#if PG_VERSION_NUM < 100000
     dest_portal.sourceText = src;
-#endif
     if (alone && IsA(stmt, ExecuteStmt)) { dest_execute_prepared((ExecuteStmt *)stmt); return; }
     if (alone && IsA(stmt, FetchStmt)) { dest_execute_fetch((FetchStmt *)stmt); return; }
 #if PG_VERSION_NUM >= 90500
@@ -467,11 +463,14 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
 // the statement of the input at location, in bytes, an error at a position in it at that position in the whole input, as local mode reports it, the input its STATEMENT, rather than within the text of the statement alone, which SPI reports as its QUERY then
 static void dest_execute_spi_at(const char *src, Node *stmt, bool alone, int location) {
     MemoryContext oldcontext = CurrentMemoryContext;
+    Portal portal = ActivePortal;
+    ActivePortal = &dest_portal; // see dest_execute_spi()
     PG_TRY();
         dest_execute_spi(src, stmt, alone);
     PG_CATCH();
         {
             ErrorData *edata;
+            ActivePortal = portal;
             MemoryContextSwitchTo(oldcontext);
             dest_lexer_back(); // an error of SPI reading the statement, see dest_lexer_read()
             edata = CopyErrorData();
@@ -488,6 +487,7 @@ static void dest_execute_spi_at(const char *src, Node *stmt, bool alone, int loc
             PG_RE_THROW();
         }
     PG_END_TRY();
+    ActivePortal = portal;
 }
 
 #if PG_VERSION_NUM < 100000
@@ -520,7 +520,7 @@ static void dest_execute_split(const char *src, List *parsetree_list) {
     if (tokens) { stmts = lappend(stmts, pstrdup(src + start)); locations = lappend_int(locations, start); }
     if (list_length(stmts) != list_length(parsetree_list)) { // not to be, but rather than run a statement by the parse tree of another: as SPI_execute() runs them all, reporting the last statement only
         elog(WARNING, "%i statements of %i parse trees", list_length(stmts), list_length(parsetree_list));
-        dest_execute_spi(src, (Node *)llast(parsetree_list), false);
+        dest_execute_spi_at(src, (Node *)llast(parsetree_list), false, 0);
         return;
     }
     forboth(stmt, stmts, tree, parsetree_list) dest_execute_spi_at(lfirst(stmt), (Node *)lfirst(tree), true, list_nth_int(locations, i++));
@@ -579,14 +579,7 @@ static void dest_execute(void) {
             dest_execute_spi_at(task.input + prev_start, prev_stmt, true, prev_start);
         }
 #else
-        ActivePortal = &dest_portal; // see dest_execute_spi()
-        PG_TRY();
-            if (list_length(parsetree_list) <= 1) dest_execute_spi_at(task.input, (Node *)linitial(parsetree_list), true, 0); else dest_execute_split(task.input, parsetree_list);
-        PG_CATCH();
-            ActivePortal = NULL;
-            PG_RE_THROW();
-        PG_END_TRY();
-        ActivePortal = NULL;
+        if (list_length(parsetree_list) <= 1) dest_execute_spi_at(task.input, (Node *)linitial(parsetree_list), true, 0); else dest_execute_split(task.input, parsetree_list);
 #endif
     }
 }
@@ -714,7 +707,7 @@ static void dest_shmem_exit(int code, Datum arg) {
 // a termination right after the input committed, at the first check for interrupts, as the end of any message logged has, the duration of the statement, say, would leave the task done in WORK, to run again on reset: hold interrupts from its commit on, in local mode, where exec_simple_query() commits it, till the bookkeeping is done, or the next statement of the input starts, see dest_resume()
 // not one a utility command makes within itself, as VACUUM does, before it gets to its first table even, or CREATE INDEX CONCURRENTLY, while its portal runs still (exec_simple_query() drops it before its own commit, ActivePortal back to none at the top level): the rest of the command, a lock waited for say, would go on with no timeout, cancel or termination let through, a shutdown waiting for it, and the cost of a VACUUM no longer delayed from 16 on, an interrupt pending
 static void dest_xact(XactEvent event, void *arg) {
-    if (event != XACT_EVENT_COMMIT || !running || held || ActivePortal) return;
+    if (event != XACT_EVENT_COMMIT || !running || held || (ActivePortal && ActivePortal != &dest_portal)) return; // the portal of spi mode, of no utility command, see dest_execute_spi(), as none
 #ifdef HAVE_SPI_INSIDE_NONATOMIC_CONTEXT
     if (SPI_inside_nonatomic_context()) return; // not the commit of a COMMIT a procedure or a DO block runs, the rest of which, no statement of the input starting till its end, would go on with no interrupts, no timeout, cancel or termination let through
 #endif
