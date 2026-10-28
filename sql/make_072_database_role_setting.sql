@@ -1,0 +1,43 @@
+-- a role set by the settings of the database, by its owner, who isn't a superuser, ALTER DATABASE ... SET role say, doesn't make pg_work act as that role: the objects of pg_task it makes are owned by pg_task.user, not by the owner of the database, whose trigger on the task table would run as pg_task.user in the bookkeeping, nor checked against that role
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT current_user AS test_user, current_database() AS regress_db
+\gset
+SET client_min_messages = warning;
+DROP DATABASE IF EXISTS task_make_role_setting;
+DROP ROLE IF EXISTS task_make_role_setting;
+RESET client_min_messages;
+CREATE ROLE task_make_role_setting LOGIN;
+CREATE DATABASE task_make_role_setting OWNER task_make_role_setting;
+ALTER DATABASE task_make_role_setting SET role = 'task_make_role_setting';
+SELECT left(:'json_baseline', -1) || ',{"data":"task_make_role_setting","user":"' || :'test_user' || '","schema":"role_setting_schema"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE datname = 'task_make_role_setting' AND application_name LIKE 'pg_work role_setting_schema task %' AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of database task_make_role_setting to become idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+\connect task_make_role_setting
+SELECT current_user = 'task_make_role_setting' AS role_set;
+SET ROLE NONE; -- RESET ROLE would go back to the role of the settings of the database
+SELECT pg_catalog.pg_get_userbyid(nspowner) = :'test_user' AS schema_of_pg_task_user FROM pg_catalog.pg_namespace WHERE nspname = 'role_setting_schema';
+SELECT pg_catalog.pg_get_userbyid(relowner) = :'test_user' AS table_of_pg_task_user FROM pg_catalog.pg_class WHERE oid = 'role_setting_schema.task'::regclass;
+SELECT count(*) AS functions_of_others FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid = pronamespace WHERE nspname = 'role_setting_schema' AND pg_catalog.pg_get_userbyid(proowner) <> :'test_user';
+\connect :regress_db
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE datname = 'task_make_role_setting') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for backend(s) connected to database task_make_role_setting to disconnect'; END IF;
+END;$body$ LANGUAGE plpgsql;
+DROP DATABASE task_make_role_setting;
+DROP ROLE task_make_role_setting;

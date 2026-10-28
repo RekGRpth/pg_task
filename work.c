@@ -1702,6 +1702,8 @@ void work_main(Datum main_arg) {
 #endif
     BackgroundWorkerInitializeConnectionMy(work.shared->data, work.shared->user);
     before_shmem_exit(work_exit, (Datum)0); // registered after the one ending the session, so as to run before it
+    // as pg_task.user itself, not as a role the settings of the database or the role set, ALTER DATABASE ... SET role of its owner say, for the objects pg_work makes to be owned by pg_task.user, and checked against it, see make_owner(), not by that role, whose trigger on the task table would then run as pg_task.user in the bookkeeping
+    SetConfigOption("role", "none", PGC_USERSET, PGC_S_SESSION);
     initStringInfoMy(&application_name);
     appendStringInfo(&application_name, "pg_work %s %s " INT64_FORMAT, work.shared->schema, work.shared->table, work.shared->sleep);
     SetConfigOption("application_name", application_name.data, PGC_USERSET, PGC_S_SESSION);

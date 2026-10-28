@@ -327,6 +327,7 @@ void conf_main(Datum main_arg) {
     pqsignal(SIGTERM, die); // terminate at the next CHECK_FOR_INTERRUPTS(), as a backend does, rather than in the default handler of background workers, whose FATAL right there can come in the middle of a commit
     BackgroundWorkerUnblockSignals();
     BackgroundWorkerInitializeConnectionMy("postgres", NULL);
+    SetConfigOption("role", "none", PGC_USERSET, PGC_S_SESSION); // as the superuser it connects as, not as a role the settings of the database set, as pg_work, see work_main()
     SetConfigOption("application_name", "pg_conf", PGC_USERSET, PGC_S_SESSION);
     SetConfigOption("search_path", "", PGC_USERSET, PGC_S_SESSION);
     // the transaction characteristics of the settings of the database or the role, for the transactions of tasks, not for its own: read only would fail every one of them, repeatable read or serializable some on a row changed meanwhile
