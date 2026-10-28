@@ -71,8 +71,8 @@ static void conf_reconcile(void) {
         if (GetBackgroundWorkerPid(r->handle, &pid) != BGWH_STOPPED) { if (r->terminated) conf_retry_at(1); continue; } // but one terminated already, going down still
         // stopped, and either no longer wanted, taken over by another pg_work of its entry, or about to be spawned anew by conf_work(): drop it either way, so no stale registration is left to be restarted, or to free a slot that a later pg_work has taken
         elog(DEBUG1, "reaping stopped worker, data = %s, user = %s, hash = %i, slot = %i", r->data, r->user, r->hash, r->slot);
-        // exited cleanly, its slot freed by itself, maybe only after the query of conf_check() saw its lock held still, its entry put back meanwhile started by none then: checked again after its pg_work.restart, as conf_exited() has it, its notice of the stop to find no registration of it any more
-        if (!init_held_work(r->slot, r->reg)) conf_retry_at(r->restart);
+        // gone maybe only after the query of conf_check() saw its lock held still, its entry started by none then: checked again after its pg_work.restart, as conf_exited() has it, its notice of the stop to find no registration of it any more; one exited cleanly, its slot freed by itself, its entry put back meanwhile, or one that crashed, whose restart by the postmaster is cancelled below, its slot freed here, as the postmaster would restart it then
+        conf_retry_at(r->restart);
         TerminateBackgroundWorker(r->handle); // cancel a pending crash restart
         // or terminate the pg_work the postmaster restarted since it was seen stopped, its slot left to it till it's gone, freed on the next check, a second on, see init_free_work(), the registration kept for it
         if (!init_free_work(r->slot, r->reg) && init_held_work(r->slot, r->reg)) { r->terminated = true; conf_retry_at(1); continue; }
