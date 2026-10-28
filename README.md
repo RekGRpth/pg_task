@@ -27,12 +27,12 @@ On startup, `pg_task` sets up everything it needs by itself — role, database, 
 Second, schedule work by inserting rows into the `task` table — one row is one job:
 ```sql
 INSERT INTO task (input) VALUES ('SELECT now()'); -- no plan/repeat: runs once, as soon as possible
-INSERT INTO task (plan, input) VALUES (now() + '5 min':INTERVAL, 'SELECT now()'); -- runs once, after a 5 minute delay (plan = planned time)
+INSERT INTO task (plan, input) VALUES (now() + '5 min'::INTERVAL, 'SELECT now()'); -- runs once, after a 5 minute delay (plan = planned time)
 INSERT INTO task (plan, input) VALUES ('2029-07-01 12:51:00', 'SELECT now()'); -- runs once, at that exact timestamp (plan = planned time)
 INSERT INTO task (repeat, input) VALUES ('5 min', 'SELECT now()'); -- runs, then reinserts itself to run again every 5 minutes (repeat = interval)
 INSERT INTO task (input) VALUES ('SELECT 1/0'); -- an error doesn't crash the worker: it's caught and written to error as text
-INSERT INTO task (group, max, input) VALUES ('group', 1, 'SELECT now()'); -- max = 1 lets one extra task of this group run concurrently with this one (2 at a time total)
-INSERT INTO task (group, max, input) VALUES ('group', 2, 'SELECT now()'); -- a higher max also jumps the queue ahead of lower-max tasks in the same group — it behaves like a priority, not just a concurrency cap
+INSERT INTO task ("group", max, input) VALUES ('group', 1, 'SELECT now()'); -- max = 1 lets one extra task of this group run concurrently with this one (2 at a time total)
+INSERT INTO task ("group", max, input) VALUES ('group', 2, 'SELECT now()'); -- a higher max also jumps the queue ahead of lower-max tasks in the same group — it behaves like a priority, not just a concurrency cap
 INSERT INTO task (input, remote) VALUES ('SELECT now()', 'user=user host=host'); -- remote runs input on another database instead of the local one
 UPDATE task SET state = 'STOP' WHERE id = ...; -- cancels a running (state = WORK) task, local or remote; input's query gets cancelled and state stays STOP, not FAIL
 ```
