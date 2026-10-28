@@ -16,7 +16,14 @@ else
 	REL="$(test "$PG_MAJOR" -lt 10 && echo "REL$PG_VERSION" || echo "REL_$PG_VERSION")"
 	STABLE="$(test "$PG_MAJOR" -lt 10 && echo "REL${PG_MAJOR}_${PG_MINOR}_STABLE" || echo "REL_${PG_MAJOR}_STABLE")"
 fi
+# each try to a file of its own, a download cut short on the way not to have the next one appended to the part it got, extracted twice then, see exec.sh
 for TAG in "$REL" "$STABLE" "$MAIN"; do
 	[ -n "$TAG" ] || continue
-	curl --no-progress-meter -fL "https://raw.githubusercontent.com/$REPO/$TAG/src/backend/tcop/postgres.c" && break
+	if curl --no-progress-meter -fL -o postgres.c.tmp "https://raw.githubusercontent.com/$REPO/$TAG/src/backend/tcop/postgres.c"; then
+		cat postgres.c.tmp
+		rm -f postgres.c.tmp
+		exit 0
+	fi
+	rm -f postgres.c.tmp
 done
+exit 1

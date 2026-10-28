@@ -1,5 +1,5 @@
 MODULE_big = pg_task
-EXTRA_CLEAN = postgres.c exec.c latch.c latch.h latch.o latch_my.h latch.c.tmp latch.h.tmp exec.c.tmp
+EXTRA_CLEAN = postgres.c exec.c latch.c latch.h latch.o latch_my.h latch.c.tmp latch.h.tmp exec.c.tmp postgres.c.tmp
 # a file generated in part, its script failing on the way, a download say, removed rather than taken for done on the next make
 .DELETE_ON_ERROR:
 PG_CONFIG = pg_config
