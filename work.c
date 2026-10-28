@@ -340,6 +340,7 @@ static void work_fatal(Task *t, const PGresult *result) {
 }
 
 static void work_free(Task *t) {
+    if (t->take && !proc_exit_inprogress && !unlock_table_take(t->shared->oid, t->shared->id)) ereport(WARNING, (errmsg("!unlock_table_take(%i, " INT64_FORMAT ")", t->shared->oid, t->shared->id)));
     dlist_delete(&t->node);
     task_free(t);
     pfree(t->shared);
@@ -354,11 +355,20 @@ static void work_unreserve(Task *t) {
 // the bookkeeping of a remote task, in pg_work, which takes no row someone else holds, for a while, say, see task_done(), as every other remote task, the taking of tasks and their cancels would wait for it, or pg_work fail on a deadlock, with all of them: false, the bookkeeping put off, to be tried again, see work_pending()
 static bool work_bookkeeping(Task *t, bool live, bool *exit) {
     ErrorData *edata;
+    int64 id = t->shared->id;
     MemoryContext oldMemoryContext = CurrentMemoryContext;
     volatile bool done = true;
     PG_TRY();
         *exit = task_done(t, live);
         if (t->held) { t->held = false; done = false; } // its row held, see task_done()
+        // the lock of the taking of the task done let go of, and that of the next one of its group taken, if any, see lock_table_take()
+        else {
+            if (t->take && (!t->shared->taken || t->shared->id != id)) {
+                if (!unlock_table_take(t->shared->oid, id)) ereport(WARNING, (errmsg("!unlock_table_take(%i, " INT64_FORMAT ")", t->shared->oid, id)));
+                t->take = false;
+            }
+            if (!t->take && t->shared->taken) t->take = lock_table_take(t->shared->oid, t->shared->id);
+        }
     PG_CATCH();
         MemoryContextSwitchTo(oldMemoryContext);
         edata = CopyErrorData();
@@ -559,7 +569,7 @@ static void work_reset(const Work *w) {
         initStringInfoMy(&found_src);
         appendStringInfo(&found_src, SQL(
             SELECT pg_catalog.array_agg("id")::pg_catalog.text AS "found" FROM %1$s AS t LEFT JOIN "pg_catalog"."pg_locks" AS l ON l."locktype" OPERATOR(pg_catalog.=) 'userlock' AND l."mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND l."granted" AND l."objsubid" OPERATOR(pg_catalog.=) 4 AND l."database" OPERATOR(pg_catalog.=) %2$u AND l."classid" OPERATOR(pg_catalog.=) (("id" OPERATOR(pg_catalog.>>) 32) OPERATOR(pg_catalog.&) 4294967295) AND l."objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
-            WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND l.pid IS NULL
+            WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND l.pid IS NULL AND NOT EXISTS (SELECT * FROM "pg_catalog"."pg_locks" AS k WHERE k."locktype" OPERATOR(pg_catalog.=) 'userlock' AND k."mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND k."granted" AND k."objsubid" OPERATOR(pg_catalog.=) 9 AND k."database" OPERATOR(pg_catalog.=) %2$u AND k."classid" OPERATOR(pg_catalog.=) (("id" OPERATOR(pg_catalog.>>) 32) OPERATOR(pg_catalog.&) 4294967295) AND k."objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295))
         ), w->schema_table, init_table_key(w->shared->oid), w->schema_type);
     }
     SPI_connect_my(found_src.data, InvalidOid);
@@ -579,7 +589,7 @@ static void work_reset(const Work *w) {
         appendStringInfo(&src, SQL(
             WITH s AS (
                 SELECT "id" FROM %1$s AS t LEFT JOIN "pg_catalog"."pg_locks" AS l ON l."locktype" OPERATOR(pg_catalog.=) 'userlock' AND l."mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND l."granted" AND l."objsubid" OPERATOR(pg_catalog.=) 4 AND l."database" OPERATOR(pg_catalog.=) %2$u AND l."classid" OPERATOR(pg_catalog.=) (("id" OPERATOR(pg_catalog.>>) 32) OPERATOR(pg_catalog.&) 4294967295) AND l."objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)
-                WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND "id" OPERATOR(pg_catalog.=) ANY(($2)::pg_catalog.int8[]) AND "id" OPERATOR(pg_catalog.<>) ALL(($1)::pg_catalog.int8[]) AND l.pid IS NULL FOR NO KEY UPDATE OF t %4$s
+                WHERE "state" OPERATOR(pg_catalog.=) ANY(ARRAY['TAKE', 'WORK']::%3$s[]) AND "id" OPERATOR(pg_catalog.=) ANY(($2)::pg_catalog.int8[]) AND "id" OPERATOR(pg_catalog.<>) ALL(($1)::pg_catalog.int8[]) AND l.pid IS NULL AND NOT EXISTS (SELECT * FROM "pg_catalog"."pg_locks" AS k WHERE k."locktype" OPERATOR(pg_catalog.=) 'userlock' AND k."mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND k."granted" AND k."objsubid" OPERATOR(pg_catalog.=) 9 AND k."database" OPERATOR(pg_catalog.=) %2$u AND k."classid" OPERATOR(pg_catalog.=) (("id" OPERATOR(pg_catalog.>>) 32) OPERATOR(pg_catalog.&) 4294967295) AND k."objid" OPERATOR(pg_catalog.=) ("id" OPERATOR(pg_catalog.&) 4294967295)) FOR NO KEY UPDATE OF t %4$s
             ) UPDATE %1$s AS t SET "state" = 'PLAN', "start" = NULL, "stop" = NULL, "pid" = NULL FROM s WHERE t.id OPERATOR(pg_catalog.=) s.id RETURNING t.id
         ), w->schema_table, init_table_key(w->shared->oid), w->schema_type,
 #if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
@@ -1323,6 +1333,7 @@ static void work_remote(Task *t) {
     later_remote = false; // a file descriptor for it, see work_later()
     dlist_delete(&t->node);
     dlist_push_tail(&remote, &t->node);
+    t->take = lock_table_take(t->shared->oid, t->shared->id); // for the reset of another pg_work of the table to leave it be, see work_reset()
     // hold the slot of the group from now on, not only once connected, or the next work_sleep() doesn't count it and takes another task of the group over its max
     if (!(t->reserve = lock_table_id_hash(t->shared->oid, t->shared->id, t->shared->hash))) ereport(WARNING, (errmsg("!lock_table_id_hash(%i, " INT64_FORMAT ", %i)", t->shared->oid, t->shared->id, t->shared->hash)));
     if (!opts) { work_error((errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), work_errdetail(err))); if (err) PQfreemem(err); return; }

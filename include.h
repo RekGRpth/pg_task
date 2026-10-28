@@ -107,6 +107,7 @@ typedef struct Task {
     bool booked; // its bookkeeping committed, the next task of its group being taken, which may fail on its own, see task_done()
     bool held; // of a remote task, its row held by someone else, its bookkeeping not done, see task_done()
     bool lost; // of a remote task, a cancel of it given up, timed out or failed, which may get through still, see work_cancel_lost()
+    bool take; // of a remote task, the lock of its taking held, see lock_table_take()
     bool spare; // of a remote task, from 13 on, a file descriptor held, along with that of its connection, for the socket of a cancel request on it, see work_acquire()
     bool lock;
     bool reserve;
@@ -164,6 +165,7 @@ bool lock_data_user(Oid data, Oid user);
 bool lock_table_id(Oid table, int64 id);
 bool lock_table_id_hash(Oid table, int64 id, int hash);
 bool lock_table_pid_hash(Oid table, int pid, int hash);
+bool lock_table_take(Oid table, int64 id);
 bool task_done(Task *t, bool live);
 bool task_work(Task *t);
 const char *task_char(const Task *t);
@@ -182,6 +184,7 @@ void init_task_pid(int slot, const char *data, Oid oid, int64 id, int pid);
 bool unlock_table_id(Oid table, int64 id);
 bool unlock_table_id_hash(Oid table, int64 id, int hash);
 bool unlock_table_pid_hash(Oid table, int pid, int hash);
+bool unlock_table_take(Oid table, int64 id);
 char *TextDatumGetCStringMy(Datum datum);
 const char *error_severity(int elevel);
 const char *init_null(void);

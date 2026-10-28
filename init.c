@@ -159,6 +159,19 @@ bool lock_table_id_hash(Oid table, int64 id, int hash) {
     return LockAcquire(&tag, AccessShareLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
 }
 
+// a remote task of a pg_work, from its taking on, its connection still made, say, or the next one of its group, taken by the bookkeeping, still to start, see work_remote(), with no lock of its id yet, which lock_table_id() takes only on its start: for the reset of another pg_work of the table, of an entry of another role, to tell it from one of a pg_work gone, see work_reset()
+bool lock_table_take(Oid table, int64 id) {
+    LOCKTAG tag = {init_table_key(table), (uint32)(id >> 32), (uint32)id, 9, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "table = %i, id = " INT64_FORMAT, table, id);
+    return LockAcquire(&tag, AccessExclusiveLock, true, true) == LOCKACQUIRE_OK;
+}
+
+bool unlock_table_take(Oid table, int64 id) {
+    LOCKTAG tag = {init_table_key(table), (uint32)(id >> 32), (uint32)id, 9, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "table = %i, id = " INT64_FORMAT, table, id);
+    return LockRelease(&tag, AccessExclusiveLock, true);
+}
+
 bool unlock_data_user_hash(Oid data, Oid user, int hash) {
     LOCKTAG tag = {data, user, (uint32)hash, 3, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
     elog(DEBUG1, "data = %i, user = %i, hash = %i", data, user, hash);

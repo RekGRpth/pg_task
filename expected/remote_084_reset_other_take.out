@@ -1,0 +1,109 @@
+-- a remote task of a pg_work, still connecting, with no lock of its id yet, is left be by the reset of another pg_work of the same table, of an entry of another role, rather than given back to PLAN, to be taken and connected again meanwhile, its taking keeping a lock of its own (192.0.2.1, reserved for documentation, doesn't answer)
+DELETE FROM task WHERE "group" = 'reset_other';
+SET client_min_messages = warning;
+DROP TABLE IF EXISTS reset_other_log;
+DROP ROLE IF EXISTS reset_other;
+RESET client_min_messages;
+CREATE ROLE reset_other LOGIN SUPERUSER;
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"reset_other"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work public task %' AND usename = 'reset_other' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work of role reset_other to be idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- whether the task is given back to PLAN at all, which a pg_work taking it again at once would hide
+CREATE TABLE reset_other_log (state text);
+CREATE FUNCTION reset_other_log() RETURNS trigger LANGUAGE plpgsql AS $function$BEGIN
+    INSERT INTO public.reset_other_log VALUES (NEW.state::text);
+    RETURN NEW;
+END;$function$;
+CREATE TRIGGER reset_other_log AFTER UPDATE OF state ON task FOR EACH ROW WHEN (NEW."group" = 'reset_other' AND NEW.state = 'PLAN') EXECUTE PROCEDURE reset_other_log();
+INSERT INTO task ("group", input, remote) VALUES ('reset_other', 'SELECT 1', 'host=192.0.2.1 dbname=' || :'DBNAME' || ' connect_timeout=15');
+-- taken by one of the two pg_work, connecting, its slot of the group held, see lock_table_id_hash()
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM task t JOIN pg_catalog.pg_locks l ON l.locktype = 'userlock' AND l.granted AND l.objsubid = 7 AND l.classid = (t.id & 4294967295)::oid WHERE t."group" = 'reset_other' AND t.state = 'TAKE') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task of group reset_other to be taken and connecting'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT set_config('pg_task_test.taker', (SELECT l.pid::text FROM task t JOIN pg_catalog.pg_locks l ON l.locktype = 'userlock' AND l.granted AND l.objsubid = 7 AND l.classid = (t.id & 4294967295)::oid WHERE t."group" = 'reset_other'), false) IS NOT NULL AS taker_saved;
+ taker_saved 
+-------------
+ t
+(1 row)
+
+-- the other pg_work of the table restarted, its reset on its start
+SELECT set_config('pg_task_test.other', (SELECT string_agg(pid::text, ',') FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database() AND pid <> current_setting('pg_task_test.taker')::int), false) IS NOT NULL AS other_saved;
+ other_saved 
+-------------
+ t
+(1 row)
+
+SELECT count(pg_terminate_backend(pid)) = 1 AS other_terminated FROM pg_catalog.pg_stat_activity WHERE pid = ANY (string_to_array(current_setting('pg_task_test.other'), ',')::int[]);
+ other_terminated 
+------------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work public task %' AND datname = current_database() AND pid <> current_setting('pg_task_test.taker')::int AND pid <> ALL (string_to_array(current_setting('pg_task_test.other'), ',')::int[]) AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the other pg_work to be restarted and idle, its reset done'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT count(*) = 0 AS not_reset FROM reset_other_log;
+ not_reset 
+-----------
+ t
+(1 row)
+
+-- its connection given up after connect_timeout: failed, once
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'reset_other' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task of group reset_other to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT state FROM task WHERE "group" = 'reset_other';
+ state 
+-------
+ FAIL
+(1 row)
+
+DROP TRIGGER reset_other_log ON task;
+DROP FUNCTION reset_other_log();
+DROP TABLE reset_other_log;
+DELETE FROM task WHERE "group" = 'reset_other';
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE usename = 'reset_other') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work of role reset_other to stop'; END IF;
+END;$body$ LANGUAGE plpgsql;
+DROP ROLE reset_other;
