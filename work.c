@@ -1494,7 +1494,11 @@ static void work_task(Task *t) {
         case BGWH_NOT_YET_STARTED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
         case BGWH_POSTMASTER_DIED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
         case BGWH_STARTED: elog(DEBUG1, "started id = " INT64_FORMAT, t->shared->id); later_local = false; /* a worker for it, see work_later() */ init_task_pid(DatumGetInt32(worker.bgw_main_arg), t->shared->data, t->shared->oid, t->shared->id, t->pid); work_local(t, handle); handle = NULL; work_free(t); break;
-        case BGWH_STOPPED: init_free_task(DatumGetInt32(worker.bgw_main_arg), t->shared->data, t->shared->oid, t->shared->id); work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log."))); break;
+        case BGWH_STOPPED:
+            // gone before it was seen to start: one that never ran, its slot ours still, failed to start, its task with it; but one that ran and exited meanwhile, pg_work held up for all of it, has freed its slot itself, its task done, given back to PLAN, or left in TAKE for the reset, by itself, see dest_shmem_exit(), not to be failed here, maybe taken by another task worker of its group by now
+            if (init_free_task(DatumGetInt32(worker.bgw_main_arg), t->shared->data, t->shared->oid, t->shared->id)) work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("could not start background worker"), errhint("More details may be available in the server log.")));
+            else { elog(DEBUG1, "id = " INT64_FORMAT ", its task worker ran and exited before it was seen to start", t->shared->id); later_local = false; work_free(t); }
+            break;
     }
     if (handle) pfree(handle);
 }
