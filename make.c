@@ -456,9 +456,9 @@ static void make_state_machine(const Work *w) {
             RETURN NEW;
         END;
     ), w->schema_type, MAKE_ACT,
-#if PG_VERSION_NUM >= 100000
+#if PG_VERSION_NUM >= 100000 && !defined(GP_VERSION_NUM)
         SQL("last" := COALESCE(pg_catalog.pg_sequence_last_value("sequence"::pg_catalog.regclass), 0);)
-#else
+#else // and in Greengage, where the row trigger may run on a segment, whose copy of the sequence the coordinator gives out its values by, past it, would tell none of them, refusing every id of an author then
         SQL("last" := pg_catalog.nextval("sequence"::pg_catalog.regclass);)
 #endif
     );
