@@ -216,6 +216,24 @@ void EndCommandMy(const char *commandTag, CommandDest dest) {
 }
 #endif
 
+#if PG_VERSION_NUM < 100000
+// before 10 a function a query calls that runs queries of its own through SPI, one of PL/pgSQL say, connects to SPI only once the connection of the caller is pushed, as SPI's own calls of the executor have it, failing with SPI_ERROR_CONNECT otherwise: pushed for the calls of the executor here, outside of SPI, as exec_simple_query() runs them in local mode, see dest_execute_prepared(), dest_execute_fetch() and the cursor of dest_execute_spi(), and popped on an error too, see dest_execute_spi_at()
+static bool pushed = false;
+
+static void dest_push(void) {
+    SPI_push();
+    pushed = true;
+}
+
+static void dest_pop(void) {
+    if (pushed) SPI_pop();
+    pushed = false;
+}
+#else
+#define dest_push() ((void)0)
+#define dest_pop() ((void)0)
+#endif
+
 // stmt is the parse tree of src, whose command tag is the one local mode and remote mode report, rather than SPI's own result code (UTILITY for any utility statement, say)
 // SPI tells of EXECUTE neither the command tag nor the row count of the prepared statement it runs, only UTILITY: run that one as exec_simple_query() does, into the receiver and with the completion of local mode, with a snapshot of its own, as SPI_execute() takes for each statement
 static void dest_execute_prepared(ExecuteStmt *stmt) {
@@ -229,11 +247,13 @@ static void dest_execute_prepared(ExecuteStmt *stmt) {
 #endif
     CommandCounterIncrement();
     PushActiveSnapshot(GetTransactionSnapshot());
+    dest_push();
 #if PG_VERSION_NUM >= 130000
     ExecuteQuery(pstate, stmt, NULL, NULL, CreateDestReceiverMy(DestDebug), &qc);
 #else
     ExecuteQuery(stmt, NULL, task.input, NULL, CreateDestReceiverMy(DestDebug), completionTag); // see above
 #endif
+    dest_pop();
     PopActiveSnapshot();
     CommandCounterIncrement();
 #if PG_VERSION_NUM >= 130000
@@ -257,7 +277,9 @@ static void dest_execute_fetch(FetchStmt *stmt) {
     PerformPortalFetch(stmt, CreateDestReceiverMy(DestDebug), &qc);
     EndCommandMy(&qc, DestDebug, false);
 #else
+    dest_push();
     PerformPortalFetch(stmt, CreateDestReceiverMy(DestDebug), completionTag);
+    dest_pop();
     EndCommandMy(completionTag, DestDebug);
 #endif
 }
@@ -406,7 +428,9 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
             error_context_stack = &context;
             elog(DEBUG1, "id = " INT64_FORMAT ", commandTag = %s, cursor", task.shared->id, tagname);
             // into the receiver of local mode, each row into the output as it comes, rather than by SPI_cursor_fetch() a few at a time, those of a fetch an error, a timeout or a STOP, came within lost with it; in one go, as each run of the portal starts the receiver anew, with the header again
+            dest_push();
             (void)PortalRunFetch(portal, FETCH_FORWARD, FETCH_ALL, CreateDestReceiverMy(DestDebug));
+            dest_pop();
             error_context_stack = context.previous;
             SPI_cursor_close(portal);
             SPI_freeplan(plan);
@@ -470,6 +494,7 @@ static void dest_execute_spi_at(const char *src, Node *stmt, bool alone, int loc
     PG_CATCH();
         {
             ErrorData *edata;
+            dest_pop(); // see dest_push()
             ActivePortal = portal;
             MemoryContextSwitchTo(oldcontext);
             dest_lexer_back(); // an error of SPI reading the statement, see dest_lexer_read()
