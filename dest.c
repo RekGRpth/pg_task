@@ -623,6 +623,10 @@ static void dest_catch(void) {
 #if PG_VERSION_NUM >= 110000
         PortalErrorCleanup();
 #endif
+#if PG_VERSION_NUM >= 110000 && PG_VERSION_NUM < 150000
+        // as PostgresMain() does before 11.17, 12.12, 13.8 and 14.5, where a COMMIT of a procedure or a DO block failing, on a deferred constraint say, leaves the stack of SPI to the caller, its connection, gone with its portal, current still, for all tasks of the worker after it, as if within a COMMIT of a procedure, see dest_xact(); a no-op from those on, the server it runs on, rather than the one it was built with, telling
+        SPICleanup();
+#endif
         if (MyReplicationSlot) ReplicationSlotRelease();
 #if PG_VERSION_NUM >= 170000
         ReplicationSlotCleanup(false);
