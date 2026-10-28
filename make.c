@@ -660,12 +660,12 @@ static void make_column(const Work *w, const char *name, const char *schema_type
         ), w->schema_table, schema_type ? "ADD" : "DROP", name, schema_type ? schema_type : "");
         make_ddl(src.data, SPI_OK_UTILITY);
     } else if (schema_type) {
-        // there already, of a table made by its owner say, a partitioned one, see the README, but of the very type, as pg_task reads it by, or every task would fail to start, a remote one taking pg_work down with it, again on every reset: not to be changed, rewriting a table pg_work didn't make, but refused, as a table with no state column is, see make_table(); the type by a parameter, which has the name of the schema in it for state, see make_default()
+        // there already, of a table made by its owner say, a partitioned one, see the README, but of the very type, as pg_task reads it by, or every task would fail to start, a remote one taking pg_work down with it, again on every reset: not to be changed, rewriting a table pg_work didn't make, but refused, as a table with no state column is, see make_table(); the type by a parameter, which has the name of the schema in it for state, see make_default(), cast rather than by to_regtype(), whose argument is a cstring before 9.6, every type of pg_task's there by then
         Datum values[] = {CStringGetTextDatum(schema_type)};
         static Oid argtypes[] = {TEXTOID};
         resetStringInfo(&src);
         appendStringInfo(&src, SQL(
-            SELECT atttypid OPERATOR(pg_catalog.=) pg_catalog.to_regtype($1) AS "test" FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s'
+            SELECT atttypid OPERATOR(pg_catalog.=) ($1)::pg_catalog.regtype AS "test" FROM pg_catalog.pg_attribute WHERE attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s'
         ), w->shared->oid, name);
         if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) ereport(ERROR, (errcode(ERRCODE_DATATYPE_MISMATCH), errmsg("column \"%s\" of table %s is not of type %s", name, w->schema_table, schema_type), errdetail("pg_task reads the column as of that type, and changes no column of its own type: change its type, or drop it for pg_work to add it.")));
         pfree((void *)values[0]);

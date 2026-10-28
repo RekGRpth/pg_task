@@ -49,6 +49,15 @@ SELECT state FROM column_type_schema.column_type;
 (1 row)
 
 ALTER TABLE column_type_schema.column_type ALTER COLUMN "delimiter" TYPE "char" USING "delimiter"::"char";
+-- the triggers made again first, the one dropped above, which before 9.5 locks the table as a whole, the wait for the task below, in a transaction of its own reading the table, keeping it from that till lock_timeout otherwise
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'column_type_schema' AND c.relname = 'column_type') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work column_type_schema column_type %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the pg_work worker of column_type_schema.column_type to be idle again, its triggers made'; END IF;
+END;$body$ LANGUAGE plpgsql;
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         IF NOT EXISTS (SELECT 1 FROM column_type_schema.column_type WHERE state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;

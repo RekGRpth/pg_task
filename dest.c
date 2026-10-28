@@ -348,6 +348,11 @@ static void dest_analyze(ParseState *pstate, Query *query) {
 }
 #endif
 
+#if PG_VERSION_NUM < 100000
+// the position of an error in the syntax of the body of a function, of a DO say, function_parse_error_transpose() moves into the text of the active portal, which before 10 it takes for there, asserting it, and with none dereferences, taking the server down: spi mode runs in none, unlike local mode, so one for it, active while the input runs, see dest_execute(), of the text SPI runs, whose error callback takes the position for one within that text, which dest_execute_spi_at() moves into the whole input, as local mode has it
+static PortalData dest_portal = {.status = PORTAL_ACTIVE};
+#endif
+
 static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     bool count = false;
     bool exists = false;
@@ -359,6 +364,9 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     const char *tagname = CreateCommandTag(stmt);
 #endif
     if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else disable_timeout(STATEMENT_TIMEOUT, false); // for each statement of the input anew, as exec_simple_query() has it from 13 on in local mode, rather than once for all of them, see SPI_connect_my(); for an EXECUTE too, and none once the input set statement_timeout to 0, rather than the rest of the one of the statement before
+#if PG_VERSION_NUM < 100000
+    dest_portal.sourceText = src;
+#endif
     if (alone && IsA(stmt, ExecuteStmt)) { dest_execute_prepared((ExecuteStmt *)stmt); return; }
     if (alone && IsA(stmt, FetchStmt)) { dest_execute_fetch((FetchStmt *)stmt); return; }
 #if PG_VERSION_NUM >= 90500
@@ -556,7 +564,14 @@ static void dest_execute(void) {
             dest_execute_spi_at(task.input + prev_start, prev_stmt, true, prev_start);
         }
 #else
-        if (list_length(parsetree_list) <= 1) dest_execute_spi_at(task.input, (Node *)linitial(parsetree_list), true, 0); else dest_execute_split(task.input, parsetree_list);
+        ActivePortal = &dest_portal; // see dest_execute_spi()
+        PG_TRY();
+            if (list_length(parsetree_list) <= 1) dest_execute_spi_at(task.input, (Node *)linitial(parsetree_list), true, 0); else dest_execute_split(task.input, parsetree_list);
+        PG_CATCH();
+            ActivePortal = NULL;
+            PG_RE_THROW();
+        PG_END_TRY();
+        ActivePortal = NULL;
 #endif
     }
 }

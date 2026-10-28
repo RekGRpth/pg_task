@@ -10,5 +10,6 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the tasks of group execute_error_position to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT -id AS n, state, split_part(error, E'\n', 1) AS error FROM task WHERE "group" = 'execute_error_position' ORDER BY id DESC;
+-- the wording of the error by the version, and its position in characters of the encoding of the database, a byte each in SQL_ASCII: that of the parameter in the input, counted alike
+SELECT -id AS n, state, split_part(error, E'\n', 1) LIKE 'ERROR:  invalid input syntax for %integer: "_" at character %' AS invalid, substring(split_part(error, E'\n', 1) from 'at character ([0-9]+)$')::int = strpos(input, $$('$$) + 1 AS at_parameter FROM task WHERE "group" = 'execute_error_position' ORDER BY id DESC;
 DELETE FROM task WHERE "group" = 'execute_error_position';

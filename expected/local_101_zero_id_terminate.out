@@ -47,15 +47,16 @@ END;$body$ LANGUAGE plpgsql;
 DELETE FROM zero_id_terminate_hold;
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
-        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'zero_id_terminate' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'zero_id_terminate' AND state NOT IN ('DONE', 'GONE', 'FAIL') AND (current_setting('server_version_num')::int >= 90500 OR state <> 'TAKE')) THEN ok := true; EXIT; END IF;
         PERFORM pg_sleep(0.1);
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task of id 0 to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT id, state, output, error FROM task WHERE "group" = 'zero_id_terminate';
- id | state | output | error 
-----+-------+--------+-------
-  0 | DONE  | 0      | 
+-- before 9.5, with no SKIP LOCKED, a worker going down gives back no task, of any id, left in TAKE till the reset, see dest_shmem_exit()
+SELECT id, current_setting('server_version_num')::int < 90500 OR (state = 'DONE' AND output = '0' AND error IS NULL) AS done FROM task WHERE "group" = 'zero_id_terminate';
+ id | done 
+----+------
+  0 | t
 (1 row)
 
 DROP TRIGGER zero_id_terminate_hold ON task;
