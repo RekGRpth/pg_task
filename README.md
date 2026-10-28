@@ -319,14 +319,21 @@ ALTER TABLE task ADD COLUMN depend text NOT NULL DEFAULT 'always' CHECK (depend 
 CREATE OR REPLACE FUNCTION task_depend_insert() RETURNS trigger AS $f$
 DECLARE
     parent_state state;
+    same boolean;
 BEGIN
     IF NEW.parent IS NULL THEN RETURN NEW; END IF;
-    SELECT state INTO parent_state FROM task WHERE id = NEW.parent;
-    IF parent_state IS NULL OR parent_state NOT IN ('DONE', 'FAIL') THEN
+    SELECT state, (input, "group", repeat) IS NOT DISTINCT FROM (NEW.input, NEW."group", NEW.repeat)
+    INTO parent_state, same FROM task WHERE id = NEW.parent;
+    IF NOT FOUND THEN
+        parent_state := 'DONE';                   -- parent deleted: done, pg_task deleting only a task done with no output (delete)
+    ELSIF same THEN
+        RETURN NEW;                               -- the next run of the task itself, a repeat, a retry or a cron occurrence, its parent the run before it: not held back by it
+    END IF;
+    IF parent_state NOT IN ('DONE', 'FAIL', 'STOP', 'GONE') THEN
         NEW.plan := 'infinity';                  -- parent hasn't settled yet — wait
     ELSIF NOT ((parent_state = 'DONE' AND NEW.depend IN ('success', 'always'))
-            OR (parent_state = 'FAIL' AND NEW.depend IN ('failure', 'always'))) THEN
-        NEW.state := 'STOP';                      -- parent already settled the other way — never run
+            OR (parent_state <> 'DONE' AND NEW.depend IN ('failure', 'always'))) THEN
+        NEW.state := 'STOP';                      -- parent already settled the other way, a STOP or GONE of it counting as a failure — never run
     END IF;
     RETURN NEW;
 END;
@@ -339,21 +346,21 @@ BEGIN
     UPDATE task SET plan = statement_timestamp()
     WHERE parent = NEW.id AND state = 'PLAN' AND plan = 'infinity'
       AND ((NEW.state = 'DONE' AND depend IN ('success', 'always'))
-        OR (NEW.state = 'FAIL' AND depend IN ('failure', 'always')));
+        OR (NEW.state <> 'DONE' AND depend IN ('failure', 'always')));
     UPDATE task SET state = 'STOP'
     WHERE parent = NEW.id AND state = 'PLAN' AND plan = 'infinity'
       AND NOT ((NEW.state = 'DONE' AND depend IN ('success', 'always'))
-            OR (NEW.state = 'FAIL' AND depend IN ('failure', 'always')));
+            OR (NEW.state <> 'DONE' AND depend IN ('failure', 'always')));
     RETURN NEW;
 END;
 $f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 CREATE TRIGGER task_depend_update AFTER UPDATE OF state ON task
-FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE PROCEDURE task_depend_update();
+FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL', 'STOP', 'GONE')) EXECUTE PROCEDURE task_depend_update();
 ```
 
 This relies on two more of `pg_task`'s own self-provisioned triggers, beyond the five named in Self-provisioning and the helper triggers above: `plan` is only frozen *after* a task leaves `PLAN` (`BEFORE UPDATE OF "plan"`, conditional on `OLD.state <> 'PLAN'`), so a still-`PLAN` child's `plan` remains freely updatable — and updating it fires the existing wake-up trigger for free, so a released child is picked up immediately rather than on the next poll. `plan = 'infinity'` also keeps the child out of reach of the `active`-window `GONE` transition (`plan + active` stays `infinity` too), so it can wait indefinitely without expiring. Inserting an unsatisfied child straight in `STOP`, with no `start`, is what the built-in state-machine trigger lets any author insert besides `PLAN`, and moving a waiting one there later the one transition it allows out of `PLAN` besides `TAKE`/`GONE`.
 
-This only expresses a single upstream dependency (one `depend` per `parent`, matching the column's own cardinality), not a multi-parent join.
+This only expresses a single upstream dependency (one `depend` per `parent`, matching the column's own cardinality), not a multi-parent join. A parent cancelled (`STOP`) or expired (`GONE`) counts as a failure, and one deleted, as `pg_task` deletes only a task done with no output (`delete`), as done; and the next run of a task itself — its `repeat`, or a retry or a cron occurrence of the patterns here, which carry `depend` along with the rest, their `parent` the run before — isn't held back by that run, told by its same `input`, `group` and `repeat`.
 
 ### Cron-like scheduling
 
@@ -444,7 +451,7 @@ END;
 $f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
 
 CREATE TRIGGER task_cron_trigger AFTER UPDATE OF state ON task
-FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL')) EXECUTE PROCEDURE task_cron();
+FOR EACH ROW WHEN (NEW.state IN ('DONE', 'FAIL', 'GONE')) EXECUTE PROCEDURE task_cron(); -- GONE too: an occurrence missed, the server down past its active say, not to end the schedule
 ```
 
 `cron_field()` expands one field (`*`, `a-b`, `*/n`, `a-b/n`, comma-separated lists of any of those) into a sorted array of matching values; `cron_next()` walks forward day by day (bounded to roughly four years, long enough to land on a Feb-29-only schedule) and, on a day that matches month/day-of-month/day-of-week, returns the first hour:minute in the field sets that's after `from_ts`. Both are ordinary `IMMUTABLE`/`STABLE` SQL functions, so you can also call `cron_next()` directly to sanity-check an expression before using it. `task_cron()` reuses the same dynamic column-clone trick as the retry trigger above; only rows with `cron IS NOT NULL` are affected, so it's safe to add alongside tasks that use plain `repeat`.
@@ -455,7 +462,7 @@ This parser only covers the classic 5-field syntax (numeric fields, `*`, ranges,
 
 Rather than polling `task`, have it push: `pg_notify()` for listeners inside the same database, or a webhook (via the [`pg_curl`](https://github.com/RekGRpth/pg_curl) extension) for anything outside it — both as a plain `AFTER UPDATE OF state` trigger, no core changes needed.
 
-A trigger of yours on `task` runs inside the bookkeeping of the task, the update recording its state, this pattern's or [Cron-like scheduling](#cron-like-scheduling)'s or [Retry with exponential backoff](#retry-with-exponential-backoff)'s: should it fail there, the task is recorded as `FAIL` by its error instead, with no `output`, and a `WARNING` logged; should it fail that update too, as one failing whatever the state does, the task is left in `WORK`, to be reset and run again, its input done once more each time. So have it fail on nothing it can catch, as the ones below do.
+A trigger of yours on `task` runs inside the bookkeeping of the task, the update recording its state, this pattern's or [Cron-like scheduling](#cron-like-scheduling)'s or [Retry with exponential backoff](#retry-with-exponential-backoff)'s: should it fail there, the task is recorded as `FAIL` by its error instead, with no `output`, and a `WARNING` logged; should it fail that update too, as one failing whatever the state does, the task is left in `WORK`, to be reset and run again, its input done once more each time. So have it fail on nothing it can catch, as the ones below do. And mind who gets what: any session of the database may `LISTEN` on the channel of a `NOTIFY`, an author's included, so leave `output` and `error` out of its payload where the authors of tasks are not to see each other's results; and the server calls the `hook` URL of any task, one an author inserted too, so honour it only for roles you trust, or for URLs of a list of yours.
 
 `NOTIFY`, no extra dependencies:
 
@@ -520,21 +527,28 @@ CREATE TABLE task_archive_default PARTITION OF task_archive DEFAULT;
 -- plus dated partitions, by hand or on a schedule -- see Automatic partitioning below
 
 CREATE OR REPLACE FUNCTION task_archive() RETURNS trigger AS $f$
+DECLARE
+    columns text;
 BEGIN
     BEGIN
-        INSERT INTO task_archive SELECT OLD.*;
+        -- by name, the columns of both, rather than OLD.* by position, which a column added to task after task_archive was made would shift
+        SELECT string_agg(quote_ident(a.attname), ', ' ORDER BY a.attnum) INTO columns
+        FROM pg_attribute AS a JOIN pg_attribute AS t ON t.attrelid = TG_RELID AND t.attname = a.attname AND t.attnum > 0 AND NOT t.attisdropped
+        WHERE a.attrelid = 'task_archive'::regclass AND a.attnum > 0 AND NOT a.attisdropped AND a.attname <> 'stop';
+        -- stop, the key of the partitions, of a task deleted before it ran, in PLAN or STOP, as the time of its deletion
+        EXECUTE format('INSERT INTO task_archive (stop, %s) SELECT COALESCE(stop, statement_timestamp()), %s FROM (SELECT ($1).*) AS o', columns, columns) USING OLD;
     EXCEPTION WHEN OTHERS THEN
         RAISE WARNING 'task_archive: failed to archive id = %: %', OLD.id, SQLERRM;
     END;
     RETURN OLD;
 END;
-$f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
+$f$ LANGUAGE plpgsql SECURITY DEFINER SET search_path FROM CURRENT; -- as its owner, for a task deleted by its author, who may insert into task_archive not
 
 CREATE TRIGGER task_archive_trigger AFTER DELETE ON task
 FOR EACH ROW EXECUTE PROCEDURE task_archive();
 ```
 
-Two things confirmed by testing this end to end: a partitioned table's unique/primary key must include the partition key, so this is `PRIMARY KEY (id, stop)`, not just `(id)` — `LIKE task INCLUDING ALL` would carry over `task`'s own `(id)` primary key and fail with `PRIMARY KEY constraint ... must include all partitioning columns`. And the `DEFAULT` partition and the `EXCEPTION WHEN OTHERS` are both load-bearing, not redundant: like the webhook trigger above, this one runs inside the same transaction `task_done()`/`task_error()` use to delete the row, so an archive insert failing outright (no partition covers this `stop`, some constraint, ...) would otherwise take that deletion — and the task's own bookkeeping — down with it. With the `DEFAULT` partition in place a row with no dedicated partition still lands somewhere; with neither, the deletion still succeeds and only a `WARNING` is logged, verified by deliberately deleting both safety nets and confirming the row failed to archive but `DELETE FROM task` still returned normally.
+Two things confirmed by testing this end to end: a partitioned table's unique/primary key must include the partition key, so this is `PRIMARY KEY (id, stop)`, not just `(id)` — `LIKE task INCLUDING ALL` would carry over `task`'s own `(id)` primary key and fail with `PRIMARY KEY constraint ... must include all partitioning columns`. And the `DEFAULT` partition and the `EXCEPTION WHEN OTHERS` are both load-bearing, not redundant: like the webhook trigger above, this one runs inside the same transaction `task_done()`/`task_error()` use to delete the row, so an archive insert failing outright (no partition covers this `stop`, some constraint, ...) would otherwise take that deletion — and the task's own bookkeeping — down with it. With the `DEFAULT` partition in place a row with no dedicated partition still lands somewhere; with neither, the deletion still succeeds and only a `WARNING` is logged, verified by deliberately deleting both safety nets and confirming the row failed to archive but `DELETE FROM task` still returned normally. A column you add to `task` later is archived once you add it to `task_archive` too; till then it's left out of the copy, rather than shifting the others.
 
 ### Automatic partitioning via a repeating task
 
@@ -547,10 +561,18 @@ DECLARE
     to_ts timestamptz := date_trunc('month', now() + lead) + '1 month';
 BEGIN
     WHILE from_ts < to_ts LOOP
-        EXECUTE format(
-            'CREATE TABLE IF NOT EXISTS %I PARTITION OF task_archive FOR VALUES FROM (%L) TO (%L)',
-            'task_archive_' || to_char(from_ts, 'YYYY_MM'), from_ts, from_ts + '1 month'
-        );
+        BEGIN
+            IF to_regclass('task_archive_' || to_char(from_ts, 'YYYY_MM')) IS NULL THEN
+                -- made apart and attached, the rows of its month that landed in the DEFAULT partition meanwhile moved into it first, rather than CREATE TABLE ... PARTITION OF, which those would fail
+                EXECUTE format('CREATE TABLE %I (LIKE task_archive INCLUDING DEFAULTS)', 'task_archive_' || to_char(from_ts, 'YYYY_MM'));
+                EXECUTE format('WITH m AS (DELETE FROM task_archive_default WHERE stop >= %L AND stop < %L RETURNING *) INSERT INTO %I SELECT * FROM m',
+                    from_ts, from_ts + '1 month', 'task_archive_' || to_char(from_ts, 'YYYY_MM'));
+                EXECUTE format('ALTER TABLE task_archive ATTACH PARTITION %I FOR VALUES FROM (%L) TO (%L)',
+                    'task_archive_' || to_char(from_ts, 'YYYY_MM'), from_ts, from_ts + '1 month');
+            END IF;
+        EXCEPTION WHEN OTHERS THEN -- one month failing, the others made still
+            RAISE WARNING 'task_archive_partition: %: %', to_char(from_ts, 'YYYY_MM'), SQLERRM;
+        END;
         from_ts := from_ts + '1 month';
     END LOOP;
 END;
@@ -559,7 +581,7 @@ $f$ LANGUAGE plpgsql;
 INSERT INTO task (repeat, input) VALUES ('1 day', $$SELECT task_archive_partition()$$);
 ```
 
-The repeating task keeps one month of lead time stocked up ahead of the current date; `CREATE TABLE IF NOT EXISTS` makes each daily run a no-op once that month's partition already exists, so a missed or doubled-up firing is harmless. Widen `lead` or shrink the `repeat` interval for finer-grained (weekly/daily) partitioning.
+The repeating task keeps one month of lead time stocked up ahead of the current date; a partition already there makes each daily run a no-op for its month, so a missed or doubled-up firing is harmless, and the rows of a month archived into the `DEFAULT` partition before its own was made, on the first run say, are moved into it rather than keep it from being attached. Widen `lead` or shrink the `repeat` interval for finer-grained (weekly/daily) partitioning.
 
 ### Structured tags/metadata
 
@@ -585,11 +607,11 @@ Nothing stops the same logical job from being inserted twice — a retrying call
 ```sql
 ALTER TABLE task ADD COLUMN idem_key text;
 
-CREATE UNIQUE INDEX task_idem_key_uq ON task (idem_key)
+CREATE UNIQUE INDEX task_idem_key_uq ON task ("user", idem_key) -- of each author, whose tasks the policy keeps apart, rather than one author's key keeping out another's
     WHERE idem_key IS NOT NULL AND state IN ('PLAN', 'TAKE', 'WORK');
 
 INSERT INTO task (input, idem_key) VALUES ($$...$$, 'daily-report-2026-09-17')
-    ON CONFLICT (idem_key) WHERE idem_key IS NOT NULL AND state IN ('PLAN', 'TAKE', 'WORK') DO NOTHING;
+    ON CONFLICT ("user", idem_key) WHERE idem_key IS NOT NULL AND state IN ('PLAN', 'TAKE', 'WORK') DO NOTHING;
 ```
 
 The index has to be partial, and specifically scoped to `PLAN`/`TAKE`/`WORK`, not unconditional: a task that already reached `DONE`/`FAIL`/`GONE`/`STOP` has settled, so the same `idem_key` should be insertable again for the next occurrence of that logical job. An unconditional unique index would instead permanently block any future insert of that key the moment the first one finishes.
@@ -599,6 +621,8 @@ The index has to be partial, and specifically scoped to `PLAN`/`TAKE`/`WORK`, no
 To see a chain of `parent`/child tasks as a single trace in Jaeger/Tempo/etc. rather than as unrelated rows, carry a trace context through the same `parent` link `pg_task` already tracks:
 
 ```sql
+CREATE EXTENSION IF NOT EXISTS pgcrypto; -- for gen_random_bytes()
+
 ALTER TABLE task ADD COLUMN trace_id text;
 ALTER TABLE task ADD COLUMN span_id text;
 
@@ -648,7 +672,7 @@ CREATE TRIGGER task_dry_run_trigger BEFORE INSERT ON task
 FOR EACH ROW WHEN (NEW.dry_run) EXECUTE PROCEDURE task_dry_run();
 ```
 
-The `BEGIN ... EXCEPTION ... END` block is an implicit savepoint, so raising the sentinel exception right after `EXECUTE` unconditionally discards whatever `input` just did, real side effects included — this is closer to actually validating the statement than `EXPLAIN` would be (which rejects DDL and most utility statements outright), at the cost of genuinely executing `input` once. This does not reproduce all three execution paths equally: PL/pgSQL's `EXECUTE` runs through SPI regardless of the task's own `spi` setting, so a `dry_run` task using `COPY ... TO/FROM` a file or program — allowed for a real `spi = off` run — is rejected here (`SPI_ERROR_COPY`) even though it would have succeeded for real. Treat a clean dry run as "no syntax/permission/missing-object errors caught this way", not as a full guarantee.
+The `BEGIN ... EXCEPTION ... END` block is an implicit savepoint, so raising the sentinel exception right after `EXECUTE` unconditionally discards whatever `input` just did, real side effects included — this is closer to actually validating the statement than `EXPLAIN` would be (which rejects DDL and most utility statements outright), at the cost of genuinely executing `input` once. This does not reproduce all three execution paths equally: PL/pgSQL's `EXECUTE` runs through SPI regardless of the task's own `spi` setting, so a `dry_run` task using `COPY ... TO/FROM` a file or program — allowed for a real `spi = off` run — is rejected here (`SPI_ERROR_COPY`) even though it would have succeeded for real. So is one that can't run within a transaction block or a function, `VACUUM` or `CREATE INDEX CONCURRENTLY` say, or that ends a transaction of its own, `BEGIN`/`COMMIT`. Treat a clean dry run as "no syntax/permission/missing-object errors caught this way", not as a full guarantee.
 
 ## Capabilities and limitations
 
