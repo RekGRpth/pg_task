@@ -333,15 +333,53 @@ bool task_done(Task *t, bool live) {
     if (t->error.data) enlargeStringInfo(&t->error, VARHDRSZ);
     if (t->output.data) values[1] = task_text(&t->output);
     if (t->error.data) values[2] = task_text(&t->error);
-    PG_TRY();
-        SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
-    PG_CATCH();
+    // in a subtransaction of its own: a trigger of the owner of the table failing on it, after the update of the state, on an output too long for the payload of a NOTIFY say, would fail the whole bookkeeping, the task left in WORK, to run again on every reset, its input done each time; recorded as failed instead, by the error of the bookkeeping, with no output, which a trigger failing whatever the state still fails, see the README
+    {
+        MemoryContext oldcontext = CurrentMemoryContext;
+        ResourceOwner oldowner = CurrentResourceOwner;
+        uint32 holdoff = InterruptHoldoffCount; // which an error's errfinish() sets to 0, as in task_step()
+        uint32 cancel_holdoff = QueryCancelHoldoffCount;
+        ErrorData *edata = NULL;
+        BeginInternalSubTransaction(NULL);
+        MemoryContextSwitchTo(oldcontext);
+        PG_TRY();
+            SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
+            ReleaseCurrentSubTransaction();
+            MemoryContextSwitchTo(oldcontext);
+            CurrentResourceOwner = oldowner;
+        PG_CATCH();
+            MemoryContextSwitchTo(oldcontext);
+            edata = CopyErrorData();
+            FlushErrorState();
+            RollbackAndReleaseCurrentSubTransaction();
+            MemoryContextSwitchTo(oldcontext);
+            CurrentResourceOwner = oldowner;
+#if PG_VERSION_NUM < 100000
+            SPI_restore_connection();
+#endif
+            InterruptHoldoffCount = holdoff;
+            QueryCancelHoldoffCount = cancel_holdoff;
+        PG_END_TRY();
         if (values[1]) task_untext(&t->output);
         if (values[2]) task_untext(&t->error);
-        PG_RE_THROW();
-    PG_END_TRY();
-    if (values[1]) task_untext(&t->output);
-    if (values[2]) task_untext(&t->error);
+        if (edata) {
+            StringInfoData error;
+            // a row someone else holds, or a deadlock over it, by the bookkeeping of a remote task in pg_work: tried again later, the whole of it, see work_bookkeeping()
+            if (t->remote && t != get_task() && (edata->sqlerrcode == ERRCODE_LOCK_NOT_AVAILABLE || edata->sqlerrcode == ERRCODE_T_R_DEADLOCK_DETECTED)) ReThrowError(edata);
+            ereport(WARNING, (errcode(edata->sqlerrcode), errmsg("id = " INT64_FORMAT ", bookkeeping failed: %s", t->shared->id, edata->message), errdetail("The task is recorded as failed by this error, with no output.")));
+            initStringInfoMy(&error);
+            if (t->error.data && t->error.len) appendStringInfo(&error, "%s\n", t->error.data);
+            appendStringInfo(&error, "%s:  %s", _("ERROR"), edata->message);
+            FreeErrorData(edata);
+            nulls[1] = 'n';
+            nulls[2] = ' ';
+            values[1] = (Datum)0;
+            values[2] = CStringGetTextDatum(error.data);
+            pfree(error.data);
+            SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING); // failing too, on a trigger failing whatever the state, the task left in WORK, as before
+            pfree((void *)values[2]);
+        }
+    }
     if (SPI_processed != 1) { ereport(WARNING, (errmsg("id = " INT64_FORMAT ", SPI_processed " UINT64_FORMAT " != 1", t->shared->id, (uint64)SPI_processed))); exit = true; } else {
         delete = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delete", false, BOOLOID));
         exit = !live || !DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "live", false, BOOLOID));

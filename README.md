@@ -290,11 +290,15 @@ BEGIN
     SELECT string_agg(quote_ident(attname), ', ' ORDER BY attnum) INTO columns
     FROM pg_attribute
     WHERE attrelid = TG_RELID AND attnum > 0 AND NOT attisdropped
+      AND attgenerated = '' AND attidentity <> 'a' -- no generated or always identity column, which takes no value (PostgreSQL 12+; leave this line out before)
       AND attname NOT IN ('id', 'plan', 'parent', 'start', 'stop', 'pid', 'state', 'error', 'output', 'retry');
     EXECUTE format(
         'INSERT INTO %I (parent, plan, retry, %s) SELECT id, statement_timestamp() + retry_interval * power(2, retry), retry + 1, %s FROM %I WHERE id = $1',
         TG_TABLE_NAME, columns, columns, TG_TABLE_NAME
     ) USING NEW.id;
+    RETURN NEW;
+EXCEPTION WHEN OTHERS THEN -- no retry inserted, with a warning, rather than the task run again, see Notifications on completion
+    RAISE WARNING 'task_retry: id = %, no retry: %', NEW.id, SQLERRM;
     RETURN NEW;
 END;
 $f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
@@ -426,11 +430,15 @@ BEGIN
     SELECT string_agg(quote_ident(attname), ', ' ORDER BY attnum) INTO columns
     FROM pg_attribute
     WHERE attrelid = TG_RELID AND attnum > 0 AND NOT attisdropped
+      AND attgenerated = '' AND attidentity <> 'a' -- no generated or always identity column, which takes no value (PostgreSQL 12+; leave this line out before)
       AND attname NOT IN ('id', 'plan', 'parent', 'start', 'stop', 'pid', 'state', 'error', 'output');
     EXECUTE format(
         'INSERT INTO %I (parent, plan, %s) SELECT id, cron_next(cron, statement_timestamp()), %s FROM %I WHERE id = $1',
         TG_TABLE_NAME, columns, columns, TG_TABLE_NAME
     ) USING NEW.id;
+    RETURN NEW;
+EXCEPTION WHEN OTHERS THEN -- an expression cron_next() can't take, say: the schedule ended, with a warning, rather than the task run again, see Notifications on completion
+    RAISE WARNING 'task_cron: id = %, no next occurrence: %', NEW.id, SQLERRM;
     RETURN NEW;
 END;
 $f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
@@ -447,6 +455,8 @@ This parser only covers the classic 5-field syntax (numeric fields, `*`, ranges,
 
 Rather than polling `task`, have it push: `pg_notify()` for listeners inside the same database, or a webhook (via the [`pg_curl`](https://github.com/RekGRpth/pg_curl) extension) for anything outside it — both as a plain `AFTER UPDATE OF state` trigger, no core changes needed.
 
+A trigger of yours on `task` runs inside the bookkeeping of the task, the update recording its state, this pattern's or [Cron-like scheduling](#cron-like-scheduling)'s or [Retry with exponential backoff](#retry-with-exponential-backoff)'s: should it fail there, the task is recorded as `FAIL` by its error instead, with no `output`, and a `WARNING` logged; should it fail that update too, as one failing whatever the state does, the task is left in `WORK`, to be reset and run again, its input done once more each time. So have it fail on nothing it can catch, as the ones below do.
+
 `NOTIFY`, no extra dependencies:
 
 ```sql
@@ -454,8 +464,11 @@ CREATE OR REPLACE FUNCTION task_notify() RETURNS trigger AS $f$
 BEGIN
     PERFORM pg_notify('task_done', json_build_object(
         'id', NEW.id, 'group', NEW."group", 'state', NEW.state,
-        'output', NEW.output, 'error', NEW.error
+        'output', left(NEW.output, 1000), 'error', left(NEW.error, 1000) -- a payload is 8000 bytes at most
     )::text);
+    RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'task_notify: id = %: %', NEW.id, SQLERRM;
     RETURN NEW;
 END;
 $f$ LANGUAGE plpgsql SET search_path FROM CURRENT;
