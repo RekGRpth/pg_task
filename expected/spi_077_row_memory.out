@@ -1,0 +1,28 @@
+-- in spi mode too, the memory the output functions take for each value of a row, a copy numeric_out() makes of a value read from a table, say, is freed after the row, as the server does for a client, rather than kept till the end of the statement, gigabytes of a large SELECT whose output keeps within the most a task may keep: what the executor of the worker uses, as each row comes, no more by the last row than by the first (pg_backend_memory_contexts from 14 on)
+DELETE FROM task WHERE "group" = 'row_memory';
+SET client_min_messages = warning;
+DROP TABLE IF EXISTS row_memory_t;
+DROP FUNCTION IF EXISTS row_memory_used(numeric);
+RESET client_min_messages;
+CREATE TABLE row_memory_t AS SELECT i::numeric AS n FROM generate_series(1, 10000) AS i;
+CREATE FUNCTION row_memory_used(numeric) RETURNS bigint LANGUAGE plpgsql AS $function$BEGIN
+    RETURN CASE WHEN current_setting('server_version_num')::int >= 140000 THEN (SELECT sum(total_bytes) FROM pg_catalog.pg_backend_memory_contexts WHERE name = 'ExecutorState') ELSE 0 END;
+END;$function$;
+INSERT INTO task ("group", input) VALUES ('row_memory', 'SELECT n, n, n, n, n, public.row_memory_used(n) AS used FROM row_memory_t');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'row_memory' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''row_memory'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- the output has a header first, then the rows, the used memory last in each
+SELECT state, split_part(split_part(output, E'\n', 10001), E'\t', 6)::bigint - split_part(split_part(output, E'\n', 2), E'\t', 6)::bigint < 512 * 1024 AS freed FROM task WHERE "group" = 'row_memory';
+ state | freed 
+-------+-------
+ DONE  | t
+(1 row)
+
+DELETE FROM task WHERE "group" = 'row_memory';
+DROP TABLE row_memory_t;
+DROP FUNCTION row_memory_used(numeric);

@@ -48,6 +48,13 @@ static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumbe
     return OidOutputFunctionCall(foutoid, attr);
 }
 
+// the memory of the output functions of the values of a row, a copy of a value read from a table that numeric_out() detoasts, say, and doesn't free, reset after each row, as printtup() has it, rather than kept till the end of the statement, as that of the executor is, gigabytes for a large SELECT whose output keeps within the most a task may keep, see TASK_OUTPUT_MAX
+static MemoryContext dest_row_context(void) {
+    static MemoryContext context = NULL;
+    if (!context) context = AllocSetContextCreate(TopMemoryContext, "dest_row", ALLOCSET_DEFAULT_SIZES);
+    return context;
+}
+
 static void headers(TupleDesc tupdesc) {
     task_line(&task);
     for (int col = 1; col <= tupdesc->natts; col++) {
@@ -73,6 +80,7 @@ bool
 void
 #endif
 receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
+    MemoryContext oldcontext;
     TupleDesc tupdesc = slot->tts_tupleDescriptor;
     if (!task.shared)
         return
@@ -81,6 +89,7 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
 #endif
     ;
     if (!task.output.data) initStringInfoMy(&task.output);
+    oldcontext = MemoryContextSwitchTo(dest_row_context()); // see dest_row_context(), the output itself kept in its own, of TopMemoryContext, see initStringInfoMy()
     if (task.header && !task.row && tupdesc->natts > 1) headers(result_tupdesc && result_tupdesc->natts == tupdesc->natts ? result_tupdesc : tupdesc);
     task_line(&task);
     for (int col = 1; col <= tupdesc->natts; col++) {
@@ -91,6 +100,8 @@ receiveSlot(TupleTableSlot *slot, DestReceiver *self) {
             pfree(value);
         }
     }
+    MemoryContextSwitchTo(oldcontext);
+    MemoryContextReset(dest_row_context());
     task.row++;
     if (task.output.len > (int)TASK_OUTPUT_MAX) ereport(ERROR, (errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED), errmsg("task output exceeds %lu bytes", (unsigned long)TASK_OUTPUT_MAX)));
 #if PG_VERSION_NUM >= 90600
@@ -280,8 +291,10 @@ static void dest_spi_context(void *arg) {
 // the rows of SPI_tuptable into the output, the first of all, first, after the header, if any, its size checked against the most a task may keep after each
 static void dest_spi_output(uint64 first) {
     for (uint64 row = 0; row < SPI_processed; row++) {
+        MemoryContext oldcontext;
         task.skip = 1;
         if (!task.output.data) initStringInfoMy(&task.output);
+        oldcontext = MemoryContextSwitchTo(dest_row_context()); // as in receiveSlot()
         if (task.header && !first && !row && SPI_tuptable->tupdesc->natts > 1) headers(SPI_tuptable->tupdesc);
         task_line(&task);
         for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
@@ -292,6 +305,8 @@ static void dest_spi_output(uint64 first) {
                 pfree(value);
             }
         }
+        MemoryContextSwitchTo(oldcontext);
+        MemoryContextReset(dest_row_context());
         if (task.output.len > (int)TASK_OUTPUT_MAX) ereport(ERROR, (errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED), errmsg("task output exceeds %lu bytes", (unsigned long)TASK_OUTPUT_MAX)));
     }
 }
