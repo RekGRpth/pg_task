@@ -108,7 +108,7 @@ static bool make_test(const char *src, int nargs, Oid *argtypes, Datum *values, 
     return test;
 }
 
-// an object of pg_task's that someone else made before pg_work did, in public, say, where anyone could create one before 15, is theirs to change still, the body of a function, which CREATE OR REPLACE leaves theirs, the table, its policy or its enum of states, and so to run what they like as pg_task.user or as the authors of tasks: rather than take it in, refuse unless it's owned by pg_task.user or a superuser
+// an object of pg_task's that someone else made before pg_work did, in public, say, where anyone could create one before 15, is theirs to change still, the body of a function, which CREATE OR REPLACE leaves theirs, the table, its policy or its enum of states, and so to run what they like as pg_task.user or as the authors of tasks: rather than take it in, refuse unless it's owned by pg_task.user or a superuser; checked again once made, or found, as made in between by someone else, its check, its test and its making each a transaction of its own, as the table of another, made right after the check, would be taken in, its triggers run as pg_task.user, see make_schema(), make_type(), make_table() and make_function()
 static void make_owner(const char *what, const char *name, const char *src, int nargs, Oid *argtypes, Datum *values) {
     SPI_connect_my(src, InvalidOid);
     SPI_execute_with_args_my(src, nargs, argtypes, values, NULL, SPI_OK_SELECT);
@@ -120,6 +120,7 @@ void make_schema(const Work *w) {
     Datum values[] = {CStringGetTextDatum(w->shared->schema)};
     static Oid argtypes[] = {TEXTOID};
     StringInfoData src;
+    StringInfoData test;
     set_ps_display_my("schema");
     initStringInfoMy(&src);
     // its owner may drop the objects of others in it, the task table of pg_task say, for one of its own, whose triggers then run as pg_task.user: pg_work refuses it too, unless owned by pg_task.user or a superuser, as the objects of its own; that of public from 15 on, pg_database_owner, being the owner of the database
@@ -127,17 +128,19 @@ void make_schema(const Work *w) {
         SELECT r.rolname::pg_catalog.text AS "owner" FROM pg_catalog.pg_namespace AS n JOIN pg_catalog.pg_roles AS r ON r.oid OPERATOR(pg_catalog.=) CASE WHEN n.nspowner OPERATOR(pg_catalog.=) (SELECT "oid" FROM pg_catalog.pg_roles WHERE rolname OPERATOR(pg_catalog.=) 'pg_database_owner') THEN (SELECT datdba FROM pg_catalog.pg_database WHERE datname OPERATOR(pg_catalog.=) pg_catalog.current_database()) ELSE n.nspowner END WHERE nspname OPERATOR(pg_catalog.=) $1 AND r.rolname OPERATOR(pg_catalog.<>) current_user AND NOT r.rolsuper
     ));
     make_owner("schema", w->schema, src.data, countof(argtypes), argtypes, values);
-    resetStringInfo(&src);
-    appendStringInfo(&src, SQL(
+    initStringInfoMy(&test);
+    appendStringInfo(&test, SQL(
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_namespace WHERE nspname OPERATOR(pg_catalog.=) $1) AS "test"
     ));
-    if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
-        resetStringInfo(&src);
-        appendStringInfo(&src, SQL(
+    if (!make_test(test.data, countof(argtypes), argtypes, values, NULL)) {
+        resetStringInfo(&test);
+        appendStringInfo(&test, SQL(
             CREATE SCHEMA %s;
         ), w->schema);
-        make_ddl(src.data, SPI_OK_UTILITY);
+        make_ddl(test.data, SPI_OK_UTILITY);
     }
+    make_owner("schema", w->schema, src.data, countof(argtypes), argtypes, values); // again, see make_owner()
+    pfree(test.data);
     pfree(src.data);
     pfree((void *)values[0]);
     set_ps_display_my("idle");
@@ -248,36 +251,39 @@ static void make_constraint(const Work *w, const char *name, const char *value, 
 static void make_function(const Work *w, const char *name, const char *source, bool security_definer) {
     Datum values[] = {CStringGetTextDatum(name), CStringGetTextDatum(w->shared->schema), CStringGetTextDatum(source), BoolGetDatum(security_definer)};
     static Oid argtypes[] = {TEXTOID, TEXTOID, TEXTOID, BOOLOID};
+    StringInfoData function;
     StringInfoData src;
+    StringInfoData test;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         SELECT r.rolname::pg_catalog.text AS "owner" FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace JOIN pg_catalog.pg_roles r ON r.oid OPERATOR(pg_catalog.=) proowner WHERE proname OPERATOR(pg_catalog.=) $1 AND nspname OPERATOR(pg_catalog.=) $2 AND pronargs OPERATOR(pg_catalog.=) 0 AND r.rolname OPERATOR(pg_catalog.<>) current_user AND NOT r.rolsuper
     ));
     {
         const char *quote = quote_identifier(name);
-        StringInfoData function;
         initStringInfoMy(&function);
         appendStringInfo(&function, "%s.%s()", w->schema, quote);
         make_owner("function", function.data, src.data, 2, argtypes, values);
-        pfree(function.data);
         if (quote != name) pfree((void *)quote);
     }
-    resetStringInfo(&src);
+    initStringInfoMy(&test);
     // the trigger function, with no arguments, not one of the same name with some, which someone may have made too
-    appendStringInfo(&src, SQL(
+    appendStringInfo(&test, SQL(
         SELECT COALESCE((SELECT prosrc OPERATOR(pg_catalog.=) $3 AND prosecdef OPERATOR(pg_catalog.=) $4 AND proconfig OPERATOR(pg_catalog.=) ARRAY['search_path=pg_catalog, pg_temp']::pg_catalog.text[] FROM pg_catalog.pg_proc JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) pronamespace WHERE proname OPERATOR(pg_catalog.=) $1 AND nspname OPERATOR(pg_catalog.=) $2 AND pronargs OPERATOR(pg_catalog.=) 0), false) AS "test"
     ));
-    if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
+    if (!make_test(test.data, countof(argtypes), argtypes, values, NULL)) {
         const char *quote = quote_identifier(name);
         const char *quote_source = quote_literal_cstr(source); // the body has the names of the schema in it, which would end a dollar quote, see make_default()
-        resetStringInfo(&src);
-        appendStringInfo(&src, SQL(
+        resetStringInfo(&test);
+        appendStringInfo(&test, SQL(
             CREATE OR REPLACE FUNCTION %1$s.%2$s() RETURNS TRIGGER SET search_path = pg_catalog, pg_temp %4$s AS %3$s LANGUAGE plpgsql;
         ), w->schema, quote, quote_source, security_definer ? "SECURITY DEFINER" : "SECURITY INVOKER");
-        make_ddl(src.data, SPI_OK_UTILITY);
+        make_ddl(test.data, SPI_OK_UTILITY);
         if (quote != name) pfree((void *)quote);
         pfree((void *)quote_source);
     }
+    make_owner("function", function.data, src.data, 2, argtypes, values); // again, see make_owner(), CREATE OR REPLACE leaving a function made in between someone else's
+    pfree(function.data);
+    pfree(test.data);
     pfree(src.data);
     pfree((void *)values[0]);
     pfree((void *)values[1]);
@@ -772,15 +778,16 @@ static void make_comment(const Work *w, const char *name, const char *value) {
 void make_table(const Work *w) {
     Datum values[] = {CStringGetTextDatum(w->shared->schema), CStringGetTextDatum(w->shared->table)};
     static Oid argtypes[] = {TEXTOID, TEXTOID};
+    StringInfoData owner;
     StringInfoData src;
     elog(DEBUG1, "schema_table = %s, schema_type = %s", w->schema_table, w->schema_type);
     set_ps_display_my("table");
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(
+    initStringInfoMy(&owner);
+    appendStringInfo(&owner, SQL(
         SELECT r.rolname::pg_catalog.text AS "owner" FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) relnamespace JOIN pg_catalog.pg_roles r ON r.oid OPERATOR(pg_catalog.=) relowner WHERE nspname OPERATOR(pg_catalog.=) $1 AND relname OPERATOR(pg_catalog.=) $2 AND relkind OPERATOR(pg_catalog.=) ANY(ARRAY['r', 'p']::"char"[]) AND r.rolname OPERATOR(pg_catalog.<>) current_user AND NOT r.rolsuper
     ));
-    make_owner("table", w->schema_table, src.data, countof(argtypes), argtypes, values);
-    resetStringInfo(&src);
+    make_owner("table", w->schema_table, owner.data, countof(argtypes), argtypes, values);
+    initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) relnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND relname OPERATOR(pg_catalog.=) $2 AND relkind OPERATOR(pg_catalog.=) ANY(ARRAY['r', 'p']::"char"[])) AS "test"
     ));
@@ -826,6 +833,8 @@ void make_table(const Work *w) {
         SELECT pg_catalog.pg_class.oid FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) relnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND relname OPERATOR(pg_catalog.=) $2 AND relkind OPERATOR(pg_catalog.=) ANY(ARRAY['r', 'p']::"char"[])
     ));
     w->shared->oid = make_oid(src.data, countof(argtypes), argtypes, values, NULL);
+    make_owner("table", w->schema_table, owner.data, countof(argtypes), argtypes, values); // again, see make_owner()
+    pfree(owner.data);
 #if PG_VERSION_NUM >= 100000 && PG_VERSION_NUM < 130000
     // a partitioned one, which the README lets one make of it, takes the row triggers before an update or an insert of pg_task only from 13 on, before which pg_work would fail on them over and over, having changed some of it already: refused at once rather
     resetStringInfo(&src);
@@ -1036,14 +1045,15 @@ static void make_enum(const Work *w, const char *name) {
 void make_type(const Work *w) {
     Datum values[] = {CStringGetTextDatum(w->shared->schema)};
     static Oid argtypes[] = {TEXTOID};
+    StringInfoData owner;
     StringInfoData src;
     set_ps_display_my("type");
-    initStringInfoMy(&src);
-    appendStringInfo(&src, SQL(
+    initStringInfoMy(&owner);
+    appendStringInfo(&owner, SQL(
         SELECT r.rolname::pg_catalog.text AS "owner" FROM pg_catalog.pg_type JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace JOIN pg_catalog.pg_roles r ON r.oid OPERATOR(pg_catalog.=) typowner WHERE nspname OPERATOR(pg_catalog.=) $1 AND typname OPERATOR(pg_catalog.=) 'state' AND r.rolname OPERATOR(pg_catalog.<>) current_user AND NOT r.rolsuper
     ));
-    make_owner("type", w->schema_type, src.data, countof(argtypes), argtypes, values);
-    resetStringInfo(&src);
+    make_owner("type", w->schema_type, owner.data, countof(argtypes), argtypes, values);
+    initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
         SELECT EXISTS (SELECT * FROM pg_catalog.pg_type JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid OPERATOR(pg_catalog.=) typnamespace WHERE nspname OPERATOR(pg_catalog.=) $1 AND typname OPERATOR(pg_catalog.=) 'state') AS "test"
     ));
@@ -1061,6 +1071,8 @@ void make_type(const Work *w) {
         ));
         if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) ereport(ERROR, (errcode(ERRCODE_WRONG_OBJECT_TYPE), errmsg("type %s exists and is not the state type of pg_task", w->schema_type), errdetail("It is not an enum of no other labels than PLAN, GONE, TAKE, WORK, DONE, FAIL and STOP."), errhint("Have pg_task.schema name another schema, or rename or drop this type.")));
     }
+    make_owner("type", w->schema_type, owner.data, countof(argtypes), argtypes, values); // again, see make_owner()
+    pfree(owner.data);
     pfree(src.data);
     pfree((void *)values[0]);
     make_enum(w, "PLAN");
