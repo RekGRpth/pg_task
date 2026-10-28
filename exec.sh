@@ -37,7 +37,8 @@ static bool stmt_timeout_active = false;
 static bool xact_started = false;
 static CachedPlanSource *unnamed_stmt_psrc = NULL;
 EOF
-cat postgres.c | pcregrep -M \
+# by a file of its own, its failure failing the script, a pcregrep missing or none of the functions found say, rather than lost in the pipe to sed, an exec.c of none of them left
+pcregrep -M \
 -e '(?s)^static bool CheckDebugDtmActionSqlCommandTag\(.*?\);' \
 -e '(?s)^static void enable_statement_timeout\(.*?\);' \
 -e '(?s)^static void start_xact_command\(.*?\);' \
@@ -62,12 +63,15 @@ cat postgres.c | pcregrep -M \
 -e '(?s)^static void\n^disable_statement_timeout\(.*?^}' \
 -e '(?s)^static void\n^finish_xact_command\(.*?^}' \
 -e '(?s)^static void\nexec_simple_query\(.*?^}' \
-- | sed \
+postgres.c >exec.c.tmp
+sed \
 -e 's/TRACE_POSTGRESQL_QUERY_/\/\/TRACE_POSTGRESQL_QUERY_/' \
 -e 's/BeginCommand/BeginCommandMy/' \
 -e 's/CreateDestReceiver/CreateDestReceiverMy/' \
 -e 's/EndCommand/EndCommandMy/' \
--e 's/NullCommand/NullCommandMy/'
+-e 's/NullCommand/NullCommandMy/' \
+exec.c.tmp
+rm -f exec.c.tmp
 cat <<EOF
 void exec_simple_query_my(const char *query_string) {
     exec_simple_query(query_string);

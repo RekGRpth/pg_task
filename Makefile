@@ -1,5 +1,7 @@
 MODULE_big = pg_task
-EXTRA_CLEAN = postgres.c exec.c latch.c latch.h latch.o latch_my.h
+EXTRA_CLEAN = postgres.c exec.c latch.c latch.h latch.o latch_my.h latch.c.tmp latch.h.tmp exec.c.tmp
+# a file generated in part, its script failing on the way, a download say, removed rather than taken for done on the next make
+.DELETE_ON_ERROR:
 PG_CONFIG = pg_config
 postgres.c:
 	PG_CONFIG=$(PG_CONFIG) ./postgres.sh >$@
@@ -11,9 +13,13 @@ work.o: latch_my.h
 latch_my.h: latch.h
 	./latch.sh >$@
 latch.h:
-	curl --no-progress-meter -fL "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/include/storage/latch.h" | sed -e 's/InitializeLatchSupport/InitializeLatchSupportMy/' >$@
+	curl --no-progress-meter -fL -o $@.tmp "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/include/storage/latch.h"
+	sed -e 's/InitializeLatchSupport/InitializeLatchSupportMy/' $@.tmp >$@
+	rm -f $@.tmp
 latch.c: latch.h
-	curl --no-progress-meter -fL "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/backend/storage/ipc/latch.c" | sed -e 's/storage\/latch/latch/' -e 's/InitializeLatchSupport/InitializeLatchSupportMy/' >$@
+	curl --no-progress-meter -fL -o $@.tmp "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/backend/storage/ipc/latch.c"
+	sed -e 's/storage\/latch/latch/' -e 's/InitializeLatchSupport/InitializeLatchSupportMy/' $@.tmp >$@
+	rm -f $@.tmp
 OBJS = init.o conf.o work.o task.o spi.o dest.o latch.o exec.o make.o
 PG_CFLAGS += -Wno-cpp
 else
