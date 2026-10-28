@@ -101,7 +101,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | Name | Type | Nullable? | Default | Description |
 | --- | --- | --- | --- | --- |
 | id | bigserial | NOT NULL | autoincrement | Primary key |
-| parent | bigint | NULL | pg_task.id | Parent task id (if exists, like foreign key to id, but without constraint, for performance) |
+| parent | bigint | NULL | pg_task.id | Parent task id (if exists, like foreign key to id, but without constraint, for performance); the default of a table of a version before `pg_task.id` was empty out of a task, `NULLIF(current_setting('pg_task.id')::bigint, 0)`, fails every insert out of a task on this one, till `pg_work` sets it anew, the first thing it does to the table on its start after the upgrade |
 | plan | timestamptz | NOT NULL | pg_task.plan | Planned date and time of start; `infinity` holds a task back till its `plan` is set to a time (see the pattern of a parent task below), `-infinity` makes it due at once, with no pause of its group (`max < 0`) after it, and the next of a repeating one planned from now |
 | start | timestamptz | NULL | | Actual date and time of start |
 | stop | timestamptz | NULL | | Actual date and time of stop |

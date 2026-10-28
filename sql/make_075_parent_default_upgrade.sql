@@ -1,0 +1,45 @@
+-- the default of parent of an earlier version, NULLIF(current_setting('pg_task.id')::bigint, 0), failing on the empty pg_task.id of this one out of a task, is set anew by pg_work before anything it may refuse the table on, a column of another type say, rather than after it: inserts into the table out of a task fail no longer then, though pg_work refuses the table still
+SELECT current_setting('pg_task.json') AS json_baseline
+\gset
+SELECT current_user AS test_user
+\gset
+ALTER SYSTEM SET pg_work.restart = 1;
+SELECT left(:'json_baseline', -1) || ',{"data":"' || :'DBNAME' || '","user":"' || :'test_user' || '","schema":"parent_upgrade_schema","table":"parent_upgrade"}]' AS json_val
+\gset
+ALTER SYSTEM SET pg_task.json = :'json_val';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'parent_upgrade_schema' AND c.relname = 'parent_upgrade') AND EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work parent_upgrade_schema parent_upgrade %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for table parent_upgrade_schema.parent_upgrade to be created by the pg_work worker'; END IF;
+END;$body$ LANGUAGE plpgsql;
+-- the default of parent of an earlier version, and a column pg_work refuses the table on, after parent
+ALTER TABLE parent_upgrade_schema.parent_upgrade ALTER COLUMN parent SET DEFAULT NULLIF((current_setting('pg_task.id'))::bigint, 0);
+DROP TRIGGER parent_upgrade_delimiter ON parent_upgrade_schema.parent_upgrade;
+ALTER TABLE parent_upgrade_schema.parent_upgrade ALTER COLUMN "delimiter" TYPE char(1);
+SELECT pg_terminate_backend(pid) AS work_terminated FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work parent_upgrade_schema parent_upgrade %' AND datname = current_database();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF pg_catalog.pg_get_expr((SELECT adbin FROM pg_catalog.pg_attrdef WHERE adrelid = 'parent_upgrade_schema.parent_upgrade'::regclass AND adnum = (SELECT attnum FROM pg_catalog.pg_attribute WHERE attrelid = 'parent_upgrade_schema.parent_upgrade'::regclass AND attname = 'parent')), 'parent_upgrade_schema.parent_upgrade'::regclass) NOT LIKE '%::bigint, 0)' THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the default of parent of parent_upgrade_schema.parent_upgrade to be set anew'; END IF;
+END;$body$ LANGUAGE plpgsql;
+INSERT INTO parent_upgrade_schema.parent_upgrade (input) VALUES ('SELECT 1 AS a') RETURNING parent;
+ALTER SYSTEM RESET pg_work.restart;
+ALTER SYSTEM SET pg_task.json = :'json_baseline';
+SELECT pg_reload_conf();
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work parent_upgrade_schema %') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work worker(s) matching ''pg_work parent_upgrade_schema %%'' to stop'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SET client_min_messages TO WARNING;
+DROP SCHEMA IF EXISTS parent_upgrade_schema CASCADE;
+RESET client_min_messages;

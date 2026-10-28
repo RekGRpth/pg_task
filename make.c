@@ -878,6 +878,8 @@ void make_table(const Work *w) {
     pfree((void *)values[1]);
     make_legacy_hash(w);
     make_column(w, "parent", "pg_catalog.int8");
+    // right after its column, before anything pg_work may refuse the table on, a column of another type say: the default of an earlier version, NULLIF(current_setting('pg_task.id')::bigint, 0), fails on the empty pg_task.id of this one out of a task, every insert into the table failing till it's set anew
+    make_default_fill(w, "parent", "(NULLIF(current_setting('pg_task.id'::text), ''::text))::bigint", false); // the task inserting it, if any, by pg_task.id, empty out of a task, rather than 0, which the id of a task may be too, an author inserting it
     make_column(w, "plan", "pg_catalog.timestamptz");
     make_column(w, "start", "pg_catalog.timestamptz");
     make_column(w, "stop", "pg_catalog.timestamptz");
@@ -935,7 +937,6 @@ void make_table(const Work *w) {
     make_comment(w, "output", "Received result(s)");
     make_comment(w, "remote", "Connect to remote database (if need)");
     make_comment(w, "user", "Role that inserted the task; input is executed as this role");
-    make_default_fill(w, "parent", "(NULLIF(current_setting('pg_task.id'::text), ''::text))::bigint", false); // the task inserting it, if any, by pg_task.id, empty out of a task, rather than 0, which the id of a task may be too, an author inserting it
     make_default(w, "plan", init_plan());
     make_default(w, "active", "(current_setting('pg_task.active'::text))::interval");
     make_default(w, "live", "(current_setting('pg_task.live'::text))::interval");
