@@ -1,4 +1,4 @@
--- LISTEN fails in local mode and spi mode, a background worker having no way to receive notifications, and runs in remote mode, on the remote server, where nothing of pg_task hears it
+-- LISTEN fails in local mode and spi mode from PostgreSQL 13 on, a background worker having no way to receive notifications, which before it ran with nobody to hear them, and runs in remote mode, on the remote server, where nothing of pg_task hears it
 DELETE FROM task WHERE "group" = 'listen_unsupported';
 SELECT quote_literal('dbname=' || :'DBNAME') AS remote
 \gset
