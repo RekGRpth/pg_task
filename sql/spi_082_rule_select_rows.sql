@@ -1,0 +1,36 @@
+-- the rows of a SELECT that a rule of INSERT, UPDATE or DELETE runs, DO INSTEAD or DO ALSO, come back as those of the statement, with no command tag, in every mode, spi mode too, where SPI drops them, as they aren't of the query that sets the tag
+DELETE FROM task WHERE "group" = 'rule_select_rows';
+SET client_min_messages = warning;
+DROP TABLE IF EXISTS rsr_i, rsr_a, rsr_d, rsr_u;
+RESET client_min_messages;
+CREATE TABLE rsr_i (i int);
+CREATE RULE rsr_i_rule AS ON INSERT TO rsr_i DO INSTEAD SELECT 30 AS a, 'y'::text AS b;
+CREATE TABLE rsr_a (i int);
+CREATE RULE rsr_a_rule AS ON INSERT TO rsr_a DO ALSO SELECT NEW.i AS a;
+CREATE TABLE rsr_d (i int);
+INSERT INTO rsr_d VALUES (1);
+CREATE RULE rsr_d_rule AS ON DELETE TO rsr_d DO INSTEAD SELECT OLD.i AS a;
+CREATE TABLE rsr_u (i int);
+INSERT INTO rsr_u VALUES (5);
+CREATE RULE rsr_u_rule AS ON UPDATE TO rsr_u DO INSTEAD SELECT OLD.i AS a, NEW.i AS b;
+\set remote NULL
+CREATE TEMP TABLE rsr_case (n int, input text, state text, output text, error text);
+INSERT INTO rsr_case VALUES
+    (1, 'INSERT INTO rsr_i VALUES (3)', 'DONE', E'a\tb\n30\ty', NULL),
+    (2, 'INSERT INTO rsr_a VALUES (4)', 'DONE', '4', NULL),
+    (3, 'DELETE FROM rsr_d WHERE i = 1', 'DONE', '1', NULL),
+    (4, 'UPDATE rsr_u SET i = 6', 'DONE', E'a\tb\n5\t6', NULL),
+    (5, 'INSERT INTO rsr_i VALUES (3); INSERT INTO rsr_a VALUES (7)', 'DONE', E'a\tb\n30\ty\n7', NULL);
+INSERT INTO task ("group", max, "delete", remote, input) SELECT 'rule_select_rows', 0, false, :remote, input FROM rsr_case ORDER BY n;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..600 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'rule_select_rows' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 600 x pg_sleep(0.1) waiting for task group ''rule_select_rows'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT c.n, t.state::text AS state, t.output, t.error FROM rsr_case AS c JOIN task AS t ON t.input = c.input AND t."group" = 'rule_select_rows' ORDER BY c.n;
+SELECT c.n, t.state::text = c.state AND t.output = c.output AS as_expected FROM rsr_case AS c JOIN task AS t ON t.input = c.input AND t."group" = 'rule_select_rows' ORDER BY c.n;
+DELETE FROM task WHERE "group" = 'rule_select_rows';
+DROP TABLE rsr_case;
+DROP TABLE rsr_i, rsr_a, rsr_d, rsr_u;

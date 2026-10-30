@@ -21,6 +21,7 @@
 #include <utils/builtins.h>
 #include <utils/lsyscache.h>
 #include <utils/memutils.h>
+#include <utils/plancache.h>
 #include <utils/ps_status.h>
 #include <utils/snapmgr.h>
 #include <utils/timeout.h>
@@ -403,6 +404,20 @@ static void dest_analyze(ParseState *pstate, Query *query) {
 // the position of an error in the syntax of the body of a function, of a DO say, function_parse_error_transpose() moves into the text of the active portal, as local mode has it, within the whole input, or from 10 on gives up with none, the position left within the body, the body as the query, while before 10 it takes one for there, asserting it, and with none dereferences, taking the server down: spi mode runs in none, unlike local mode, so one for it, active while a statement runs, see dest_execute_spi_at(), of the text SPI runs, whose error callback takes the position for one within that text, which dest_execute_spi_at() moves into the whole input then
 static PortalData dest_portal = {.status = PORTAL_ACTIVE};
 
+// the SELECT of a rule of INSERT, UPDATE or DELETE, whose rows SPI drops for it's not the query that sets the command tag, which local mode and remote mode return: made that one, in the plan about to run, its rows kept then as those of the statement, with no tag, as they have it, true if there is one; a plan is replanned from its own statements, these among them, as long as it stays valid, nothing changing it between here and its run
+static bool dest_spi_rule_rows(SPIPlanPtr plan) {
+    bool found = false;
+    ListCell *source;
+    foreach(source, SPI_plan_get_plan_sources(plan)) {
+        ListCell *query;
+        foreach(query, ((CachedPlanSource *)lfirst(source))->query_list) {
+            Query *q = (Query *)lfirst(query);
+            if (q->commandType == CMD_SELECT && !q->canSetTag && !q->utilityStmt) { q->canSetTag = true; found = true; }
+        }
+    }
+    return found;
+}
+
 static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     bool count = false;
     bool exists = false;
@@ -455,7 +470,12 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
         SPI_freeplan(plan);
     }
     dest_lexer_read();
-    rc = SPI_execute(src, false, 0);
+    if (IsA(stmt, InsertStmt) || IsA(stmt, UpdateStmt) || IsA(stmt, DeleteStmt)) {
+        SPIPlanPtr plan = SPI_prepare(src, 0, NULL);
+        if (!plan) { dest_lexer_back(); ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_prepare failed"), errdetail("%s", SPI_result_code_string(SPI_result)))); }
+        if (dest_spi_rule_rows(plan)) rc = SPI_execute_plan(plan, NULL, NULL, false, 0); else rc = SPI_execute(src, false, 0);
+        SPI_freeplan(plan);
+    } else rc = SPI_execute(src, false, 0);
     dest_lexer_back();
     switch (rc) {
         case SPI_ERROR_ARGUMENT: ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("invalid arguments"))); break;
