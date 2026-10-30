@@ -342,57 +342,78 @@ static void make_name(const Work *w, StringInfo name, const char *suffix) {
     else appendStringInfo(name, "%.*s_%08x_%s", pg_mbcliplen(w->shared->table, len, NAMEDATALEN - 1 - (int)strlen("_12345678_") - (int)strlen(suffix)), w->shared->table, (uint32)w->shared->hash, suffix);
 }
 
+// the statement that wakes pg_work up, by the lock it holds on the hash of its table; in Greengage by its application name, see work_appname(), as its pg_locks asks every segment, for each row inserted, and fails with one of them down, the insert of a repeat with it
+static void make_cancel(const Work *w, StringInfo cancel) {
+#ifdef GP_VERSION_NUM
+    char *prefix = psprintf("pg_work %s %s ", w->shared->schema, w->shared->table);
+    const char *quote;
+    int len = pg_mbcliplen(prefix, strlen(prefix), NAMEDATALEN - 1); // as the session keeps it
+#if PG_VERSION_NUM >= 120000
+    for (char *c = prefix; *c; c++) if (IS_HIGHBIT_SET(*c)) *c = '?'; // as its check hook does
+#endif
+    prefix[len] = '\0';
+    quote = quote_literal_cstr(prefix);
+    appendStringInfo(cancel, SQL(
+        PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_stat_activity" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog AND pg_catalog.left("application_name", %1$i) OPERATOR(pg_catalog.=) %2$s;
+    ), pg_mbstrlen_with_len(prefix, len), quote);
+    pfree((void *)quote);
+    pfree(prefix);
+#else
+    appendStringInfo(cancel, SQL(
+        PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %1$i;
+    ), w->shared->hash);
+#endif
+}
+
 static void make_wake_up(const Work *w) {
+    StringInfoData cancel;
     StringInfoData name;
     StringInfoData source;
+    initStringInfoMy(&cancel);
     initStringInfoMy(&name);
     make_name(w, &name, "wake_up");
     initStringInfoMy(&source);
+    make_cancel(w, &cancel);
     appendStringInfo(&source, SQL(
         BEGIN
             BEGIN
-                PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %1$i;
+                %1$s
             EXCEPTION WHEN insufficient_privilege THEN NULL;
             END;
-            RETURN %2$s;
+            RETURN NULL;
         END;
-    ), w->shared->hash,
-#ifdef GP_VERSION_NUM
-"NEW"
-#else
-"NULL"
-#endif
-    );
+    ), cancel.data);
     make_function(w, name.data, source.data, true);
-    make_trigger(w, name.data, TRIGGER_TYPE_AFTER | TRIGGER_TYPE_INSERT | TRIGGER_TYPE_DELETE | TRIGGER_TYPE_UPDATE
-#ifdef GP_VERSION_NUM
-        | TRIGGER_TYPE_ROW
-#endif
-    , "plan");
+    make_trigger(w, name.data, TRIGGER_TYPE_AFTER | TRIGGER_TYPE_INSERT | TRIGGER_TYPE_DELETE | TRIGGER_TYPE_UPDATE, "plan"); // by statement, in Greengage too: the table, with no distribution policy, is the coordinator's alone, where they fire, once for a statement rather than for each row
+    pfree(cancel.data);
     pfree(name.data);
     pfree(source.data);
 }
 
 // only wakes pg_work up, which then cancels the task (work_stop), local or remote alike: a local task runs as its author, whose backend pg_task.user may not signal from SQL, and a single canceller never signals a task twice
 static void make_stop(const Work *w) {
+    StringInfoData cancel;
     StringInfoData name;
     StringInfoData source;
+    initStringInfoMy(&cancel);
     initStringInfoMy(&name);
     make_name(w, &name, "stop");
     initStringInfoMy(&source);
+    make_cancel(w, &cancel);
     appendStringInfo(&source, SQL(
         BEGIN
             IF OLD."state" OPERATOR(pg_catalog.=) 'WORK' AND NEW."state" OPERATOR(pg_catalog.=) 'STOP' THEN
                 BEGIN
-                    PERFORM pg_catalog.pg_cancel_backend(pid) FROM "pg_catalog"."pg_locks" WHERE "locktype" OPERATOR(pg_catalog.=) 'userlock' AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock' AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3 AND "database" OPERATOR(pg_catalog.=) (SELECT "oid" FROM "pg_catalog"."pg_database" WHERE "datname" OPERATOR(pg_catalog.=) current_catalog) AND "objid" OPERATOR(pg_catalog.=) %1$i;
+                    %1$s
                 EXCEPTION WHEN insufficient_privilege THEN NULL;
                 END;
             END IF;
             RETURN NEW;
         END;
-    ), w->shared->hash);
+    ), cancel.data);
     make_function(w, name.data, source.data, true);
     make_trigger(w, name.data, TRIGGER_TYPE_AFTER | TRIGGER_TYPE_UPDATE | TRIGGER_TYPE_ROW, "state");
+    pfree(cancel.data);
     pfree(name.data);
     pfree(source.data);
 }
