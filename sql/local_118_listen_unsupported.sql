@@ -9,5 +9,5 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''listen_unsupported'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT state, CASE WHEN current_setting('server_version_num')::int >= 130000 THEN state = 'FAIL' AND error LIKE 'ERROR:  cannot execute LISTEN within a background process%' ELSE state = 'DONE' END AS as_expected FROM task WHERE "group" = 'listen_unsupported';
+SELECT CASE WHEN current_setting('server_version_num')::int >= 130000 THEN state = 'FAIL' AND error LIKE 'ERROR:  cannot execute LISTEN within a background process%' ELSE state = 'DONE' END AS as_expected FROM task WHERE "group" = 'listen_unsupported';
 DELETE FROM task WHERE "group" = 'listen_unsupported';
