@@ -14,7 +14,7 @@ ALTER SYSTEM SET pg_task.sleep = 200;
 ALTER SYSTEM SET pg_work.idle = 5;
 SELECT pg_reload_conf();
 SELECT pg_sleep(3);
-SELECT current_setting('server_version_num')::int < 90500 OR idle_role_polls() < 8 AS idle;
+SELECT current_setting('server_version_num')::int < 90600 OR idle_role_polls() < 8 AS idle; -- before 9.6 pg_work wakes every sleep, idle or not, see work_main()
 ALTER ROLE :"test_user" IN DATABASE :"DBNAME" SET pg_work.idle = 1000000;
 SELECT pg_reload_conf();
 SELECT pg_sleep(1);

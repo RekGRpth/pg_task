@@ -24,7 +24,7 @@ SELECT pg_sleep(3);
  
 (1 row)
 
-SELECT current_setting('server_version_num')::int < 90500 OR idle_role_polls() < 8 AS idle;
+SELECT current_setting('server_version_num')::int < 90600 OR idle_role_polls() < 8 AS idle; -- before 9.6 pg_work wakes every sleep, idle or not, see work_main()
  idle 
 ------
  t
