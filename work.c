@@ -21,6 +21,8 @@
 #include <utils/timeout.h>
 
 #ifdef GP_VERSION_NUM
+#include <nodes/makefuncs.h>
+#include <storage/lmgr.h>
 #ifdef HAVE_CREATING_EXTENSION_LOCAL
 #include <commands/extension.h>
 #endif
@@ -575,36 +577,20 @@ static void work_expire(void) {
 #endif
 }
 
-// Greengage without its global deadlock detector locks the whole table in ExclusiveLock for UPDATE and SELECT FOR UPDATE, which waits behind any open INSERT, or deadlocks with a remote task, undetected: take it with no wait, in the transaction just started, or give it up for the next pass
+// Greengage without its global deadlock detector locks the whole table in ExclusiveLock for UPDATE and SELECT FOR UPDATE, which waits behind any open INSERT, or deadlocks with a remote task, undetected: take it with no wait, in the transaction just started, or give it up for the next pass; not by LOCK TABLE, which is sent to every segment, for each pass, and fails with one of them down
 static bool work_lock(const Work *w) {
 #ifdef GP_VERSION_NUM
     static int detector = -1;
-    static StringInfoData src = {0};
-    ErrorData *edata;
-    MemoryContext oldMemoryContext = CurrentMemoryContext;
-    volatile bool locked = true;
+    Oid oid;
     if (detector < 0) {
         const char *value = GetConfigOption("gp_enable_global_deadlock_detector", true, false);
         detector = value && !strcmp(value, "on");
     }
     if (detector) return true;
-    if (!src.data) {
-        initStringInfoMy(&src);
-        appendStringInfo(&src, SQL(LOCK TABLE %1$s IN EXCLUSIVE MODE NOWAIT), w->schema_table);
-    }
-    PG_TRY();
-        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
-    PG_CATCH();
-        MemoryContextSwitchTo(TopMemoryContext); // the copy outlives the transaction, whose memory the abort frees
-        edata = CopyErrorData();
-        MemoryContextSwitchTo(oldMemoryContext);
-        if (edata->sqlerrcode != ERRCODE_LOCK_NOT_AVAILABLE) ReThrowError(edata);
-        FlushErrorState();
-        SPI_abort_my();
-        FreeErrorData(edata);
-        locked = false;
-    PG_END_TRY();
-    return locked;
+    oid = RangeVarGetRelid(makeRangeVar((char *)w->shared->schema, (char *)w->shared->table, -1), NoLock, true);
+    if (!OidIsValid(oid) || ConditionalLockRelationOid(oid, ExclusiveLock)) return true;
+    SPI_finish_my();
+    return false;
 #else
     return true;
 #endif
