@@ -25,6 +25,7 @@
 #include <utils/ps_status.h>
 #include <utils/snapmgr.h>
 #include <utils/timeout.h>
+#include <utils/timestamp.h>
 
 #if PG_VERSION_NUM >= 110000
 #include <jit/jit.h>
@@ -529,11 +530,12 @@ static void dest_execute_spi_at(const char *src, Node *stmt, bool alone, int loc
     MemoryContext oldcontext = CurrentMemoryContext;
     Portal portal = ActivePortal;
     char *trimmed = NULL;
-    // the ; that ends it and what stands between it and the next statement, which SPI would report as the statement of its error context, SQL statement "SELECT 1 / 0; ", rather than the statement itself
+    // the ; that ends it and what stands between it and the next statement, which SPI would report as the statement of its error context, SQL statement "SELECT 1 / 0; ", rather than the statement itself, and, before 18, where it starts at the end of the one before it, with the space ahead of it too: the position of an error is within it, so from where it starts now
     if (alone) {
-        size_t len = strlen(src);
+        size_t lead = 0, len = strlen(src);
         while (len && (isspace((unsigned char)src[len - 1]) || src[len - 1] == ';')) len--;
-        if (len < strlen(src)) src = trimmed = pnstrdup(src, len);
+        while (lead < len && isspace((unsigned char)src[lead])) lead++;
+        if (lead || len < strlen(src)) { src = trimmed = pnstrdup(src + lead, len - lead); location += lead; }
     }
     ActivePortal = &dest_portal; // see dest_execute_spi()
     PG_TRY();

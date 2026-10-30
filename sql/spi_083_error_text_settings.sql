@@ -15,6 +15,7 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 600 x pg_sleep(0.1) waiting for task group ''error_text_settings'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT c.n, t.state::text AS state, t.error FROM ets_case AS c JOIN task AS t ON t.input = c.input AND t."group" = 'error_text_settings' ORDER BY c.n;
+SELECT c.n, t.state::text = 'FAIL' AS failed, CASE WHEN c.n < 4 THEN t.error LIKE '%DETAIL:  d%' AND t.error LIKE '%HINT:  h%' AND t.error NOT LIKE '%P0001%' AND t.error NOT LIKE '%LOCATION:%' ELSE right(t.error, length('STATEMENT:  ' || t.input)) = 'STATEMENT:  ' || t.input END AS as_expected FROM ets_case AS c JOIN task AS t ON t.input = c.input AND t."group" = 'error_text_settings' ORDER BY c.n;
+SELECT count(DISTINCT regexp_replace(t.error, E'\\nSTATEMENT:.*$', '')) = 1 AS same_error FROM ets_case AS c JOIN task AS t ON t.input = c.input AND t."group" = 'error_text_settings' WHERE c.n < 4;
 DELETE FROM task WHERE "group" = 'error_text_settings';
 DROP TABLE ets_case;

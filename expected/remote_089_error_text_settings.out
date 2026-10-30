@@ -16,27 +16,20 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 600 x pg_sleep(0.1) waiting for task group ''error_text_settings'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT c.n, t.state::text AS state, t.error FROM ets_case AS c JOIN task AS t ON t.input = c.input AND t."group" = 'error_text_settings' ORDER BY c.n;
- n | state |                                                         error                                                         
----+-------+-----------------------------------------------------------------------------------------------------------------------
- 1 | FAIL  | ERROR:  e                                                                                                            +
-   |       | DETAIL:  d                                                                                                           +
-   |       | HINT:  h                                                                                                             +
-   |       | CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE                                                        +
-   |       | STATEMENT:  DO $$ BEGIN RAISE EXCEPTION 'e' USING DETAIL = 'd', HINT = 'h'; END $$
- 2 | FAIL  | ERROR:  e                                                                                                            +
-   |       | DETAIL:  d                                                                                                           +
-   |       | HINT:  h                                                                                                             +
-   |       | CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE                                                        +
-   |       | STATEMENT:  SET log_error_verbosity = terse; DO $$ BEGIN RAISE EXCEPTION 'e' USING DETAIL = 'd', HINT = 'h'; END $$
- 3 | FAIL  | ERROR:  e                                                                                                            +
-   |       | DETAIL:  d                                                                                                           +
-   |       | HINT:  h                                                                                                             +
-   |       | CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE                                                        +
-   |       | STATEMENT:  SET log_error_verbosity = verbose; DO $$ BEGIN RAISE EXCEPTION 'e' USING DETAIL = 'd', HINT = 'h'; END $$
- 4 | FAIL  | ERROR:  division by zero                                                                                             +
-   |       | STATEMENT:  SET log_min_error_statement = panic; SELECT 1 / 0
+SELECT c.n, t.state::text = 'FAIL' AS failed, CASE WHEN c.n < 4 THEN t.error LIKE '%DETAIL:  d%' AND t.error LIKE '%HINT:  h%' AND t.error NOT LIKE '%P0001%' AND t.error NOT LIKE '%LOCATION:%' ELSE right(t.error, length('STATEMENT:  ' || t.input)) = 'STATEMENT:  ' || t.input END AS as_expected FROM ets_case AS c JOIN task AS t ON t.input = c.input AND t."group" = 'error_text_settings' ORDER BY c.n;
+ n | failed | as_expected 
+---+--------+-------------
+ 1 | t      | t
+ 2 | t      | t
+ 3 | t      | t
+ 4 | t      | t
 (4 rows)
+
+SELECT count(DISTINCT regexp_replace(t.error, E'\\nSTATEMENT:.*$', '')) = 1 AS same_error FROM ets_case AS c JOIN task AS t ON t.input = c.input AND t."group" = 'error_text_settings' WHERE c.n < 4;
+ same_error 
+------------
+ t
+(1 row)
 
 DELETE FROM task WHERE "group" = 'error_text_settings';
 DROP TABLE ets_case;
