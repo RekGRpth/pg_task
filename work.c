@@ -575,9 +575,45 @@ static void work_expire(void) {
 #endif
 }
 
+// Greengage without its global deadlock detector locks the whole table in ExclusiveLock for UPDATE and SELECT FOR UPDATE, which waits behind any open INSERT, or deadlocks with a remote task, undetected: take it with no wait, in the transaction just started, or give it up for the next pass
+static bool work_lock(const Work *w) {
+#ifdef GP_VERSION_NUM
+    static int detector = -1;
+    static StringInfoData src = {0};
+    ErrorData *edata;
+    MemoryContext oldMemoryContext = CurrentMemoryContext;
+    volatile bool locked = true;
+    if (detector < 0) {
+        const char *value = GetConfigOption("gp_enable_global_deadlock_detector", true, false);
+        detector = value && !strcmp(value, "on");
+    }
+    if (detector) return true;
+    if (!src.data) {
+        initStringInfoMy(&src);
+        appendStringInfo(&src, SQL(LOCK TABLE %1$s IN EXCLUSIVE MODE NOWAIT), w->schema_table);
+    }
+    PG_TRY();
+        SPI_execute_with_args_my(src.data, 0, NULL, NULL, NULL, SPI_OK_UTILITY);
+    PG_CATCH();
+        MemoryContextSwitchTo(TopMemoryContext); // the copy outlives the transaction, whose memory the abort frees
+        edata = CopyErrorData();
+        MemoryContextSwitchTo(oldMemoryContext);
+        if (edata->sqlerrcode != ERRCODE_LOCK_NOT_AVAILABLE) ReThrowError(edata);
+        FlushErrorState();
+        SPI_abort_my();
+        FreeErrorData(edata);
+        locked = false;
+    PG_END_TRY();
+    return locked;
+#else
+    return true;
+#endif
+}
+
 // a task isn't abandoned only for not being locked by task_work() yet: skip the ones we are still starting, a remote one connecting or between tasks of its connection, a local one whose task worker is starting, or they'd be taken again while we still run them
 // in two steps, the ids of the tasks pg_work and the task workers start taken only once the tasks left in TAKE or WORK with no lock are found: a task worker taking the next task of its group, see task_live(), has its id in its slot before it commits it into TAKE, but, its lock taken only after that, see task_work(), one committed into TAKE between the ids taken and the tasks found would be put back to PLAN, the worker exiting on it and the task run by the next one; a task found in TAKE or WORK by the first step was there before the ids are taken
-static void work_reset(const Work *w) {
+// false if the table was locked by others, for the next pass to try again
+static bool work_reset(const Work *w) {
     char *found;
     Datum values[2];
     dlist_iter iter;
@@ -588,7 +624,7 @@ static void work_reset(const Work *w) {
     static SPIPlanPtr plan = NULL;
     static StringInfoData found_src = {0};
     static StringInfoData src = {0};
-    if (ShutdownRequestPending) return; // as work_sleep() does
+    if (ShutdownRequestPending) return true; // as work_sleep() does
     set_ps_display_my("reset");
     work_reap(w);
     // the lock of a task is tagged by the high and the low 32 bits of its id, unsigned (see lock_table_id()), the low ones as id & 4294967295, and the high ones as id >> 32 & 4294967295, here as in work_timeout() and work_stop(): an arithmetic id << 32 >> 32 would extend their sign, into a negative oid for half the ids, and so would id >> 32 for a negative id, which an author may insert, and an error taking pg_work down
@@ -602,7 +638,7 @@ static void work_reset(const Work *w) {
     SPI_connect_my(found_src.data, InvalidOid);
     if (!found_plan) found_plan = SPI_prepare_my(found_src.data, 0, NULL);
     SPI_execute_plan_my(found_src.data, found_plan, NULL, NULL, SPI_OK_SELECT);
-    if (SPI_processed != 1 || !(found = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "found", true, TEXTOID)))) { SPI_finish_my(); set_ps_display_my("idle"); return; } // none, as mostly
+    if (SPI_processed != 1 || !(found = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "found", true, TEXTOID)))) { SPI_finish_my(); set_ps_display_my("idle"); return true; } // none, as mostly
     SPI_finish_my();
     initStringInfoMy(&ids);
     appendStringInfoChar(&ids, '{');
@@ -627,6 +663,7 @@ static void work_reset(const Work *w) {
         );
     }
     SPI_connect_my(src.data, InvalidOid);
+    if (!work_lock(w)) { pfree(found); pfree(ids.data); idle_count = 0; set_ps_display_my("idle"); return false; }
     values[0] = CStringGetTextDatum(ids.data); // in the memory of SPI, freed with it
     values[1] = CStringGetTextDatum(found);
     pfree(found);
@@ -644,6 +681,7 @@ static void work_reset(const Work *w) {
     SPI_finish_my();
     pfree(ids.data);
     set_ps_display_my("idle");
+    return true;
 }
 
 // reset is how long until the next work_reset(), the one to put a task orphaned in TAKE or WORK (its lock held by no one) back to PLAN: waking up for one any sooner only finds it still there, again and again
@@ -1589,6 +1627,7 @@ static void work_sleep(Work *w) {
             ), w->schema_table, init_plan());
         }
         SPI_connect_my(gp_src.data, InvalidOid);
+        if (!work_lock(w)) { pfree(pids.data); pfree(hashes.data); pfree(pauses.data); idle_count = 0; set_ps_display_my("idle"); return; }
         if (!gp_plan) gp_plan = SPI_prepare_my(gp_src.data, 0, NULL);
         SPI_execute_plan_my(gp_src.data, gp_plan, NULL, NULL, SPI_OK_UPDATE);
         SPI_finish_my();
@@ -1675,6 +1714,7 @@ static void work_sleep(Work *w) {
         pfree(take);
     }
     SPI_connect_my(src.data, InvalidOid);
+    if (!work_lock(w)) { pfree(pids.data); pfree(hashes.data); pfree(pauses.data); idle_count = 0; set_ps_display_my("idle"); return; }
     values[3] = CStringGetTextDatum(pids.data); // in the memory of SPI, freed with it
     values[4] = CStringGetTextDatum(hashes.data);
     values[5] = CStringGetTextDatum(pauses.data);
@@ -1747,6 +1787,7 @@ void work_main(Datum main_arg) {
     instr_time start_time_sleep;
     long current_reset = -1;
     long current_sleep = -1;
+    bool reset_again;
     int own;
     StringInfoData application_name, schema_table, schema_type;
     elog(DEBUG1, "main_arg = %i", DatumGetInt32(main_arg));
@@ -1848,7 +1889,7 @@ void work_main(Datum main_arg) {
 #endif
 #endif
     set_ps_display_my("idle");
-    work_reset(&work);
+    reset_again = !work_reset(&work);
     while (!ShutdownRequestPending) {
         int nevents = work_nevents();
         WaitEvent *events = MemoryContextAllocZero(TopMemoryContext, nevents * sizeof(WaitEvent));
@@ -1909,7 +1950,7 @@ void work_main(Datum main_arg) {
         INSTR_TIME_SET_CURRENT(current_time_reset);
         INSTR_TIME_SUBTRACT(current_time_reset, start_time_reset);
         current_reset = work.shared->reset - (long)INSTR_TIME_GET_MILLISEC(current_time_reset);
-        if (current_reset <= 0) work_reset(&work);
+        if (current_reset <= 0 || reset_again) reset_again = !work_reset(&work);
         INSTR_TIME_SET_CURRENT(current_time_sleep);
         INSTR_TIME_SUBTRACT(current_time_sleep, start_time_sleep);
         current_sleep = work.shared->sleep - (long)INSTR_TIME_GET_MILLISEC(current_time_sleep);

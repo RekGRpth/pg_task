@@ -1,0 +1,21 @@
+-- pg_work waits for no lock of the whole table, which Greengage without its global deadlock detector takes in ExclusiveLock, behind the open insert of a task
+DELETE FROM task WHERE "group" LIKE 'table_lock_%';
+INSERT INTO task ("group", input) VALUES ('table_lock_a', 'INSERT INTO task ("group", input) VALUES (''table_lock_b'', ''SELECT 2''); SELECT pg_sleep(6)');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'table_lock_a' AND state = 'WORK') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task in group ''table_lock_a'' to start'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pg_sleep(2);
+SELECT count(*) = 0 AS none_waiting FROM pg_locks WHERE relation = 'task'::regclass AND NOT granted;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" LIKE 'table_lock_%' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task groups table_lock_a and table_lock_b to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT "group", state FROM task WHERE "group" LIKE 'table_lock_%' ORDER BY "group";
+DELETE FROM task WHERE "group" LIKE 'table_lock_%';
