@@ -318,6 +318,7 @@ static void work_fatal(Task *t, const PGresult *result) {
     if (!t->output.data) initStringInfoMy(&t->output);
     if (!t->error.data) initStringInfoMy(&t->error);
     t->skip++;
+    if (severity_error(work_severity(result)) >= FATAL) t->fatal = true;
     if (t->error.len) appendStringInfoChar(&t->error, '\n');
     if ((value = work_severity(result))) appendStringInfo(&t->error, "%s:  ", _(error_severity(severity_error(value))));
     if (Log_error_verbosity >= PGERROR_VERBOSE && (value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&t->error, "%s: ", value);
@@ -704,7 +705,8 @@ static void work_notice(void *arg, const PGresult *result) {
 }
 
 static void work_readable(Task *t) {
-    if (PQstatus(t->conn) == CONNECTION_OK && !PQconsumeInput(t->conn)) { work_broken((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("!PQconsumeInput"), work_errdetail(PQerrorMessage(t->conn)))); return; }
+    // the end of the connection after a FATAL of its server is no error of its own, the FATAL is the task's, read already: gone on to the task done with it
+    if (PQstatus(t->conn) == CONNECTION_OK && !PQconsumeInput(t->conn) && !t->fatal) { work_broken((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("!PQconsumeInput"), work_errdetail(PQerrorMessage(t->conn)))); return; }
     // the notifications of a LISTEN of the task, which libpq would keep for as long as the connection lives, with save say, a task having nowhere to take them: logged for debug and dropped
     for (PGnotify *notify; (notify = PQnotifies(t->conn)); PQfreemem(notify)) elog(DEBUG1, "id = " INT64_FORMAT ", notification \"%s\" from %i: %s", t->shared->id, notify->relname, notify->be_pid, notify->extra);
     if (t->held && t->socket == work_query) return; // waiting for its row to start, see task_work(), which it does once a sleep only, see work_held(), not on what its connection got, the FATAL of a server closing it say, the end of which comes next
