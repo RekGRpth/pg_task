@@ -522,18 +522,34 @@ void task_error(Task *t) {
     MemoryContextDelete(context);
 }
 
+// the settings an error is told by, those of the server, the database and the role, not of the session, which the input may have set: as a remote task has them, in pg_work, whose session its input doesn't run in, and as one of the same input in another mode, rather than the text of its error depending on them
+static int task_verbosity(void) {
+    const char *value = GetConfigOptionResetString("log_error_verbosity");
+    if (!strcmp(value, "terse")) return PGERROR_TERSE;
+    if (!strcmp(value, "verbose")) return PGERROR_VERBOSE;
+    return PGERROR_DEFAULT;
+}
+
+static int task_min_statement(void) {
+    static const struct { const char *name; int level; } levels[] = {{"debug5", DEBUG5}, {"debug4", DEBUG4}, {"debug3", DEBUG3}, {"debug2", DEBUG2}, {"debug1", DEBUG1}, {"debug", DEBUG1}, {"info", INFO}, {"notice", NOTICE}, {"warning", WARNING}, {"error", ERROR}, {"log", LOG}, {"fatal", FATAL}, {"panic", PANIC}};
+    const char *value = GetConfigOptionResetString("log_min_error_statement");
+    for (int i = 0; i < countof(levels); i++) if (!strcmp(value, levels[i].name)) return levels[i].level;
+    return ERROR;
+}
+
 void task_error_data(Task *t, const ErrorData *edata) {
+    int verbosity = task_verbosity();
     if (!t->error.data) initStringInfoMy(&t->error);
     if (!t->output.data) initStringInfoMy(&t->output);
     t->skip++;
     if (t->error.len) appendStringInfoChar(&t->error, '\n');
     appendStringInfo(&t->error, "%s:  ", _(error_severity(edata->elevel)));
-    if (Log_error_verbosity >= PGERROR_VERBOSE) appendStringInfo(&t->error, "%s: ", unpack_sql_state(edata->sqlerrcode));
+    if (verbosity >= PGERROR_VERBOSE) appendStringInfo(&t->error, "%s: ", unpack_sql_state(edata->sqlerrcode));
     if (edata->message) append_with_tabs(&t->error, edata->message);
     else append_with_tabs(&t->error, _("missing error text"));
     if (edata->cursorpos > 0) appendStringInfo(&t->error, _(" at character %d"), edata->cursorpos);
     else if (edata->internalpos > 0) appendStringInfo(&t->error, _(" at character %d"), edata->internalpos);
-    if (Log_error_verbosity >= PGERROR_DEFAULT) {
+    if (verbosity >= PGERROR_DEFAULT) {
         // the detail the client gets, as a remote task has it, not detail_log, which is for the server log only, with the queries of others in it, those of a deadlock say
         if (edata->detail) {
             if (t->error.len) appendStringInfoChar(&t->error, '\n');
@@ -559,7 +575,7 @@ void task_error_data(Task *t, const ErrorData *edata) {
             appendStringInfoString(&t->error, _("CONTEXT:  "));
             append_with_tabs(&t->error, edata->context);
         }
-        if (Log_error_verbosity >= PGERROR_VERBOSE) {
+        if (verbosity >= PGERROR_VERBOSE) {
             if (edata->funcname && edata->filename) { // assume no newlines in funcname or filename...
                 if (t->error.len) appendStringInfoChar(&t->error, '\n');
                 appendStringInfo(&t->error, _("LOCATION:  %s, %s:%d"), edata->funcname, edata->filename, edata->lineno);
@@ -576,7 +592,7 @@ void task_error_data(Task *t, const ErrorData *edata) {
         }
 #endif
     }
-    if (t->input && is_log_level_output(edata->elevel, log_min_error_statement) && !edata->hide_stmt) { // If the user wants the query that generated this error logged, do it.
+    if (t->input && is_log_level_output(edata->elevel, task_min_statement()) && !edata->hide_stmt) { // If the user wants the query that generated this error logged, do it.
         if (t->error.len) appendStringInfoChar(&t->error, '\n');
         appendStringInfoString(&t->error, _("STATEMENT:  "));
         append_with_tabs(&t->error, t->input);

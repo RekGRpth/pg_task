@@ -1,0 +1,21 @@
+-- the text of the error of a task doesn't depend on the settings of logging its input sets in its session, log_error_verbosity and log_min_error_statement, but on those of the server, as for a remote task, whose input runs in another session: terse leaves DETAIL, HINT and CONTEXT in, verbose adds no SQLSTATE and LOCATION, and the statement is told whatever the level it is told from
+DELETE FROM task WHERE "group" = 'error_text_settings';
+SELECT quote_literal('dbname=' || :'DBNAME') AS remote
+\gset
+CREATE TEMP TABLE ets_case (n int, input text);
+INSERT INTO ets_case VALUES
+    (1, 'DO $$ BEGIN RAISE EXCEPTION ''e'' USING DETAIL = ''d'', HINT = ''h''; END $$'),
+    (2, 'SET log_error_verbosity = terse; DO $$ BEGIN RAISE EXCEPTION ''e'' USING DETAIL = ''d'', HINT = ''h''; END $$'),
+    (3, 'SET log_error_verbosity = verbose; DO $$ BEGIN RAISE EXCEPTION ''e'' USING DETAIL = ''d'', HINT = ''h''; END $$'),
+    (4, 'SET log_min_error_statement = panic; SELECT 1 / 0');
+INSERT INTO task ("group", max, "delete", remote, input) SELECT 'error_text_settings', 0, false, :remote, input FROM ets_case ORDER BY n;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..600 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" = 'error_text_settings' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 600 x pg_sleep(0.1) waiting for task group ''error_text_settings'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT c.n, t.state::text AS state, t.error FROM ets_case AS c JOIN task AS t ON t.input = c.input AND t."group" = 'error_text_settings' ORDER BY c.n;
+DELETE FROM task WHERE "group" = 'error_text_settings';
+DROP TABLE ets_case;
