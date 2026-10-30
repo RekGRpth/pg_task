@@ -372,9 +372,15 @@ void conf_main(Datum main_arg) {
             TimestampDifference(GetCurrentTimestamp(), retry, &secs, &usecs); // 0 once past
             timeout = Min(secs * 1000 + usecs / 1000, INT_MAX);
         }
+#if PG_VERSION_NUM < 90600
+        if (timeout < 0 || timeout > 1000) timeout = 1000; // the notice of a pg_work stopped doesn't wake pg_conf before 9.6, seen in CI on 9.5: look for it every second
+#endif
         rc = WaitLatchMy(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH | (timeout >= 0 ? WL_TIMEOUT : 0), timeout);
         if (rc & WL_POSTMASTER_DEATH) ShutdownRequestPending = true;
         if ((rc & WL_LATCH_SET) || ConfigReloadPending) conf_latch();
+#if PG_VERSION_NUM < 90600
+        else if (!ShutdownRequestPending) conf_exited();
+#endif
         if (!ShutdownRequestPending && retry && GetCurrentTimestamp() >= retry) conf_check(); // the entries that couldn't be started tried again, see conf_check()
     }
     if (!unlock_data_user(MyDatabaseId, GetUserId())) ereport(WARNING, (errmsg("!unlock_data_user(%i, %i)", MyDatabaseId, GetUserId())));
