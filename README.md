@@ -69,7 +69,7 @@ If you already have the exact source tree the server was built from (e.g. a cust
 | pg_conf.restart | int | 60 | config | Restart pg_conf after it crashed in that many seconds (read once, at server start) |
 | pg_task.count | int | 0 | config, database, user, session | Non-negative maximum count of tasks, are executed by current background worker process before exit |
 | pg_task.fetch | int | 100 | config, database, user | Fetch task rows at once |
-| pg_task.id | bigint | | session | Current task id (for read only), empty out of a task, as a task may have id 0 |
+| pg_task.id | bigint | | session | Current task id, to be read, not set: nothing keeps `input` from changing it with `SET`, which changes the `parent` that the tasks it inserts after that get by default, and nothing else, `pg_task` going by its own id of the task, not by this setting, and setting it anew for the next task; empty out of a task, as a task may have id 0 |
 | pg_task.limit | int | 1000 | config, database, user | Limit task rows at once: the most tasks `pg_work` takes in a pass; `0` takes none, holding every task of the entry back |
 | pg_task.max | int | 0 | config, database, user, session | Maximum count of additional concurrently executing tasks in group (total concurrency = max + 1), negative value means pause between tasks in milliseconds |
 | pg_task.run | int | 2147483647 | config, database, user | Maximum count of concurrently executing tasks in work |
@@ -236,6 +236,7 @@ Each path has its own restrictions on what `input` can contain:
 | Several `;`-separated statements | all results appended to `output` | all results appended to `output` (split via `RawStmt.stmt_location`, or before PostgreSQL 10 by the server's own scanner, at each `;` outside parentheses) | all results appended to `output` |
 | `COPY ... FROM STDIN` / `... TO STDOUT` / `COPY BOTH` | rejected outright (`COPY … is not supported`), the whole `input` before any statement of it runs | rejected outright (`COPY … is not supported`), the whole `input` before any statement of it runs | `FROM STDIN` rejected the same way (pg_task has no data to stream in); `BOTH` rejected; `TO STDOUT` **is** supported and streamed straight into `output`, its rows on lines of their own |
 | `COPY ... TO/FROM` a server-side file or `PROGRAM` | allowed, if the role has the privilege | allowed, if the role has the privilege (SPI rejects only `STDIN`/`STDOUT`) | allowed, if the role has the privilege — runs on the remote server |
+| `LISTEN` | fails (`cannot execute LISTEN within a background process`: a background worker has no way to receive notifications) | fails the same way | runs on the remote server, but nothing of `pg_task` hears what it gets, notifications are dropped (logged at `DEBUG1`) |
 | Explicit `BEGIN`/`COMMIT`/`ROLLBACK` in `input` | allowed (a transaction left open at the end is closed automatically, with no tag of its own in `output`, as in remote mode) | rejected (`SPI_ERROR_TRANSACTION`) | allowed (it's a real client session on the far side) |
 | DDL | allowed | allowed (as an SPI utility statement) | allowed |
 | Statements that can't run inside a transaction block (`VACUUM`, `DISCARD ALL`, `CREATE DATABASE`, ...) | allowed | rejected (SPI runs `input` inside a transaction) | allowed |

@@ -528,6 +528,13 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
 static void dest_execute_spi_at(const char *src, Node *stmt, bool alone, int location) {
     MemoryContext oldcontext = CurrentMemoryContext;
     Portal portal = ActivePortal;
+    char *trimmed = NULL;
+    // the ; that ends it and what stands between it and the next statement, which SPI would report as the statement of its error context, SQL statement "SELECT 1 / 0; ", rather than the statement itself
+    if (alone) {
+        size_t len = strlen(src);
+        while (len && (isspace((unsigned char)src[len - 1]) || src[len - 1] == ';')) len--;
+        if (len < strlen(src)) src = trimmed = pnstrdup(src, len);
+    }
     ActivePortal = &dest_portal; // see dest_execute_spi()
     PG_TRY();
         dest_execute_spi(src, stmt, alone);
@@ -553,6 +560,7 @@ static void dest_execute_spi_at(const char *src, Node *stmt, bool alone, int loc
         }
     PG_END_TRY();
     ActivePortal = portal;
+    if (trimmed) pfree(trimmed);
 }
 
 #if PG_VERSION_NUM < 100000

@@ -1,0 +1,14 @@
+-- LISTEN fails in local mode and spi mode, a background worker having no way to receive notifications, and runs in remote mode, on the remote server, where nothing of pg_task hears it
+DELETE FROM task WHERE "group" = 'listen_unsupported';
+SELECT quote_literal('dbname=' || :'DBNAME') AS remote
+\gset
+INSERT INTO task ("group", max, "delete", remote, input) VALUES ('listen_unsupported', 0, false, :remote, 'LISTEN listen_unsupported_channel');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'listen_unsupported' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''listen_unsupported'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT input, state, output, error FROM task WHERE "group" = 'listen_unsupported';
+DELETE FROM task WHERE "group" = 'listen_unsupported';
