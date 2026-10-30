@@ -502,11 +502,12 @@ const char *task_char(const Task *t) {
 }
 
 void task_error(Task *t) {
-    MemoryContext oldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+    MemoryContext context = AllocSetContextCreate(TopMemoryContext, "task_error", ALLOCSET_DEFAULT_SIZES); // dropped whole, as FreeErrorData() leaves some fields of the copy, in PG19, a long-living worker's TopMemoryContext growing with every failed task otherwise
+    MemoryContext oldMemoryContext = MemoryContextSwitchTo(context);
     ErrorData *edata = CopyErrorData();
     MemoryContextSwitchTo(oldMemoryContext);
     task_error_data(t, edata);
-    FreeErrorData(edata);
+    MemoryContextDelete(context);
 }
 
 void task_error_data(Task *t, const ErrorData *edata) {
