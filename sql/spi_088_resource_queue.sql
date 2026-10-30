@@ -2,7 +2,7 @@
 DELETE FROM task WHERE "group" LIKE 'spi_queue_%';
 SET client_min_messages = warning;
 -- the queue is Greengage's, made by statements of their own, which a function can't run, and only where it manages resources by queues
-SELECT (SELECT setting FROM pg_settings WHERE name = 'gp_resource_manager') = 'queue' AS queued,
+SELECT COALESCE((SELECT setting FROM pg_settings WHERE name = 'gp_resource_manager'), '') = 'queue' AS queued,
     CASE WHEN (SELECT setting FROM pg_settings WHERE name = 'gp_resource_manager') = 'queue' THEN 'CREATE RESOURCE QUEUE spi_queue_probe WITH (ACTIVE_STATEMENTS = 1)' ELSE 'DO $x$ BEGIN END $x$' END AS make_queue,
     CASE WHEN (SELECT setting FROM pg_settings WHERE name = 'gp_resource_manager') = 'queue' THEN 'RESOURCE QUEUE spi_queue_probe' ELSE '' END AS role_queue,
     CASE WHEN (SELECT setting FROM pg_settings WHERE name = 'gp_resource_manager') = 'queue' THEN 'DROP RESOURCE QUEUE spi_queue_probe' ELSE 'DO $x$ BEGIN END $x$' END AS drop_queue
