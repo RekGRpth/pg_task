@@ -229,6 +229,7 @@ void task_error(Task *t);
 void task_error_data(Task *t, const ErrorData *edata);
 void task_free(Task *t);
 void task_untake(Task *t);
+bool task_untake_try(Task *t);
 void xact_started_my(bool value);
 Work *get_work(void);
 extern volatile sig_atomic_t make_lock_timeout;

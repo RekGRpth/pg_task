@@ -12,6 +12,7 @@
 #include <pgstat.h>
 #include <replication/slot.h>
 #include <storage/ipc.h>
+#include <storage/pmsignal.h>
 #include <storage/proc.h>
 #include <tcop/pquery.h>
 #include <tcop/tcopprot.h>
@@ -32,10 +33,24 @@
 #include <parser/scanner.h>
 #endif
 
+#define DEST_UNTAKE_TIMEOUT 5000 // milliseconds the next task, whose row someone else holds, may take to be given back on the way out
+
 static Task task = {0};
 
 Task *get_task(void) {
     return &task;
+}
+
+// the next task taken for nothing back to PLAN, its row held by someone else, a user's update say, tried again for a while, rather than left in TAKE till the next reset, an hour by default
+static void dest_untake(void) {
+    TimestampTz end = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), DEST_UNTAKE_TIMEOUT);
+    while (!task_untake_try(&task)) {
+        if (!PostmasterIsAlive() || GetCurrentTimestamp() >= end) {
+            ereport(WARNING, (errmsg("id = " INT64_FORMAT ", not put back to PLAN, its row held by someone else, left in TAKE for the next reset", task.shared->id)));
+            return;
+        }
+        pg_usleep(100 * 1000L);
+    }
 }
 
 static char *SPI_getvalue_my(TupleTableSlot *slot, TupleDesc tupdesc, int fnumber) {
@@ -720,7 +735,7 @@ static void dest_shmem_exit(int code, Datum arg) {
     if (!fatal && !failed && !running && task.shared && task.shared->taken && !task.worked) {
         HOLD_INTERRUPTS();
         AbortOutOfAnyTransaction();
-        task_untake(&task);
+        dest_untake();
         RESUME_INTERRUPTS();
     }
 #endif
@@ -860,12 +875,12 @@ bool dest_timeout(void) {
                 FlushErrorState();
                 SPI_abort_my();
             } else dest_catch();
-            task_untake(&task);
+            dest_untake();
             task.shared->taken = false; // back to PLAN already, not to be again on the way out, see dest_shmem_exit()
             exit = true;
         PG_END_TRY();
     }
-    if (!exit && ProcDiePending) { task_untake(&task); task.shared->taken = false; exit = true; } // to be terminated, now that its interrupts come through: the next task, taken for nothing, back to PLAN
+    if (!exit && ProcDiePending) { dest_untake(); task.shared->taken = false; exit = true; } // to be terminated, now that its interrupts come through: the next task, taken for nothing, back to PLAN
     RESUME_INTERRUPTS();
     return exit;
 }

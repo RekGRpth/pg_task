@@ -194,7 +194,11 @@ static void task_update(const Task *t, TimestampTz until) {
 // live: whether the caller can go on with the next task of the same group, which task_live() then takes into TAKE; a caller that is about to drop t (work_error) must pass false, or that next task is left in TAKE until reset
 // without the lock of task_work(), i.e. failing before the task ran (work_error), the task is only still ours in TAKE: work_reset may have taken it back to PLAN, where PLAN -> FAIL would be an invalid state transition, or even have given it to another run
 // gives back a task task_live() took that pg_work then can't run on the connection, rather than leave it in TAKE, counted against the max of its group, until the next reset
-void task_untake(Task *t) {
+static bool task_held(const Task *t);
+
+// false if its row is held by someone else, see task_held(), to try again, true otherwise
+bool task_untake_try(Task *t) {
+    bool held = false;
     Datum values[] = {Int64GetDatum(t->shared->id)};
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
@@ -209,8 +213,16 @@ void task_untake(Task *t) {
     SPI_connect_my(src.data, userid);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_UPDATE);
-    if (!SPI_processed) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", not put back to PLAN, its row held by someone else, or it's not in TAKE", t->shared->id)));
+    if (!SPI_processed) {
+        if (TASK_SKIP_LOCKED && (held = task_held(t))) elog(DEBUG1, "id = " INT64_FORMAT ", its row held by someone else", t->shared->id);
+        else ereport(WARNING, (errmsg("id = " INT64_FORMAT ", not put back to PLAN, it's not in TAKE", t->shared->id)));
+    }
     SPI_finish_my();
+    return !held;
+}
+
+void task_untake(Task *t) {
+    if (!task_untake_try(t)) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", not put back to PLAN, its row held by someone else", t->shared->id)));
 }
 
 // the output and the error of a task together within the most it may keep, see TASK_OUTPUT_MAX, as its row is put together whole before TOAST takes them out of it, or its bookkeeping fails, and the task runs again on every reset: the error first, which tells why it failed, then of the output what room is left
