@@ -181,6 +181,7 @@ void NullCommandMy(CommandDest dest) {
 }
 
 static bool held = false; // interrupts held since the input committed, see dest_xact()
+static int tag_start = -1; // where the command tag of the statement last run starts in the output, none if it left no tag, see dest_timeout()
 
 // the next statement of the input after one that committed, COMMIT, say, to run with interrupts, as before
 // the locks of the task and of its group back, after a command of its input that let go of them, as pg_advisory_unlock_all() and DISCARD ALL do, not telling them from advisory ones: for a pg_work restarted meanwhile not to take its group for free of it, nor the task for orphaned (see init_task_ids()), and for the bookkeeping to find them
@@ -211,6 +212,7 @@ void EndCommandMy(const QueryCompletion *qc, CommandDest dest, bool force_undeco
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
     elog(DEBUG1, "id = " INT64_FORMAT ", completionTag = %s", task.shared->id, completionTag);
     if (task.skip) task.skip = 0; else {
+        tag_start = task.output.data ? task.output.len : 0;
         task_line(&task);
         appendStringInfoString(&task.output, completionTag);
     }
@@ -226,6 +228,7 @@ void EndCommandMy(const char *commandTag, CommandDest dest) {
     dest_relock();
     elog(DEBUG1, "id = " INT64_FORMAT ", commandTag = %s", task.shared->id, commandTag);
     if (task.skip) task.skip = 0; else {
+        tag_start = task.output.data ? task.output.len : 0;
         task_line(&task);
         appendStringInfoString(&task.output, commandTag);
     }
@@ -430,6 +433,7 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
 #endif
     if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else disable_timeout(STATEMENT_TIMEOUT, false); // for each statement of the input anew, as exec_simple_query() has it from 13 on in local mode, rather than once for all of them, see SPI_connect_my(); for an EXECUTE too, and none once the input set statement_timeout to 0, rather than the rest of the one of the statement before
     dest_portal.sourceText = src;
+    tag_start = -1;
     if (alone && IsA(stmt, ExecuteStmt)) { dest_execute_prepared((ExecuteStmt *)stmt); return; }
     if (alone && IsA(stmt, FetchStmt)) { dest_execute_fetch((FetchStmt *)stmt); return; }
 #if PG_VERSION_NUM >= 90500
@@ -514,6 +518,7 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     else snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s", tagname);
     elog(DEBUG1, "id = " INT64_FORMAT ", completionTag = %s", task.shared->id, completionTag);
     if (task.skip) task.skip = 0; else {
+        tag_start = task.output.data ? task.output.len : 0;
         task_line(&task);
         appendStringInfoString(&task.output, completionTag);
     }
@@ -808,6 +813,7 @@ bool dest_timeout(void) {
     int StatementTimeoutTask;
     volatile bool released = false, finished = false;
     failed = false; // of this task, see dest_shmem_exit()
+    tag_start = -1;
 #ifdef HOLD_CANCEL_INTERRUPTS
     HOLD_CANCEL_INTERRUPTS(); // a cancel coming from here up to its reset below, after the bookkeeping that starts the task, is for no task, as one coming in between tasks, rather than one failing that start, or, once its WORK is committed, the worker, outside any PG_TRY(), the task left in WORK, to run again on reset, as an elog() of DEBUG1 would let it through, see errfinish(), with log_min_messages that low
 #endif
@@ -873,6 +879,8 @@ bool dest_timeout(void) {
             } else if (!finished) {
                 SPI_abort_my(); // the commit failed
                 finished = true;
+                // the tag of the last statement, which local mode and remote mode send only once it's committed, as exec_simple_query() has it, not of an input that failed in its commit
+                if (tag_start >= 0 && task.output.data && tag_start <= task.output.len) task.output.data[task.output.len = tag_start] = '\0';
             }
         }
     PG_END_TRY();
