@@ -936,6 +936,7 @@ static void work_input(Task *t) {
             default: elog(DEBUG1, "id = " INT64_FORMAT ", %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
         }
     }
+    if (!t->error.data && dest_copy_stdin(t->input)) { work_error((errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("COPY FROM STDIN is not supported"))); return; } // as a local task is, before any statement of its input runs, not once its server gets to it
     // a stop come between the preamble and the input, whose cancel the server, idle there, ignored, the input to run to the end otherwise, never cancelled again: not sent, the task failed as the cancel would have it, as a local one is, see dest_timeout()
     if (!t->error.data && task_char(t)) { // its output made here, see work_output(), as a local one's is: failed before its input runs too, see dest_timeout()
         if (!t->output.data) initStringInfoMy(&t->output);

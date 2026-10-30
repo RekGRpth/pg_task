@@ -234,7 +234,7 @@ Each path has its own restrictions on what `input` can contain:
 | | local | SPI | remote |
 | --- | --- | --- | --- |
 | Several `;`-separated statements | all results appended to `output` | all results appended to `output` (split via `RawStmt.stmt_location`, or before PostgreSQL 10 by the server's own scanner, at each `;` outside parentheses) | all results appended to `output` |
-| `COPY ... FROM STDIN` / `... TO STDOUT` / `COPY BOTH` | rejected outright (`COPY … is not supported`) | rejected outright (`SPI_ERROR_COPY`) | `FROM STDIN`/`BOTH` rejected (pg_task has no data to stream in); `TO STDOUT` **is** supported and streamed straight into `output`, its rows on lines of their own |
+| `COPY ... FROM STDIN` / `... TO STDOUT` / `COPY BOTH` | rejected outright (`COPY … is not supported`), the whole `input` before any statement of it runs | rejected outright (`COPY … is not supported`), the whole `input` before any statement of it runs | `FROM STDIN` rejected the same way (pg_task has no data to stream in); `BOTH` rejected; `TO STDOUT` **is** supported and streamed straight into `output`, its rows on lines of their own |
 | `COPY ... TO/FROM` a server-side file or `PROGRAM` | allowed, if the role has the privilege | allowed, if the role has the privilege (SPI rejects only `STDIN`/`STDOUT`) | allowed, if the role has the privilege — runs on the remote server |
 | Explicit `BEGIN`/`COMMIT`/`ROLLBACK` in `input` | allowed (a transaction left open at the end is closed automatically, with no tag of its own in `output`, as in remote mode) | rejected (`SPI_ERROR_TRANSACTION`) | allowed (it's a real client session on the far side) |
 | DDL | allowed | allowed (as an SPI utility statement) | allowed |

@@ -148,6 +148,7 @@ typedef struct Task {
 } Task;
 
 bool dest_timeout(void);
+bool dest_copy_stdin(const char *input);
 void dest_init(void);
 bool init_free_task(int slot, const char *data, Oid oid, int64 id);
 bool init_free_work(int slot, int64 reg);

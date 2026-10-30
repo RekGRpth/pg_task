@@ -594,20 +594,56 @@ static void dest_execute_split(const char *src, List *parsetree_list) {
 }
 #endif
 
-static void dest_execute(void) {
-    if (!task.shared->spi) {
-        ListCell *cell;
-        MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
-        MemoryContextResetAndDeleteChildren(MessageContext);
-        InvalidateCatalogSnapshotConditionally();
-        foreach(cell, pg_parse_query(task.input)) {
+static const char *dest_copy(Node *node) {
+    if (!IsA(node, CopyStmt) || ((CopyStmt *)node)->filename) return NULL;
+    return ((CopyStmt *)node)->is_from ? "FROM STDIN" : "TO STDOUT";
+}
+
+// the whole input, before any statement of it runs, as local mode has it, rather than spi mode only once it gets to the COPY, with the statements before it run and reported, their output left in the error's task
+static void dest_reject_copy(List *parsetree_list) {
+    ListCell *cell;
+    foreach(cell, parsetree_list) {
+#if PG_VERSION_NUM >= 100000
+        Node *node = ((RawStmt *)lfirst(cell))->stmt;
+#else
+        Node *node = (Node *)lfirst(cell);
+#endif
+        const char *copy = dest_copy(node);
+        if (copy) ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("COPY %s is not supported", copy)));
+    }
+}
+
+// whether the input of a remote task has a COPY FROM STDIN, which it can't feed, for it to fail as a whole before any statement of it runs on its server, as a local one does; one this server doesn't parse, of the syntax of another version of the remote one say, is left to that server
+bool dest_copy_stdin(const char *input) {
+    volatile bool found = false;
+    ListCell *cell;
+    MemoryContext oldMemoryContext = CurrentMemoryContext;
+    MemoryContext context = AllocSetContextCreate(CurrentMemoryContext, "dest_copy_stdin", ALLOCSET_DEFAULT_SIZES);
+    MemoryContextSwitchTo(context);
+    PG_TRY();
+        foreach(cell, pg_parse_query(input)) {
 #if PG_VERSION_NUM >= 100000
             Node *node = ((RawStmt *)lfirst(cell))->stmt;
 #else
             Node *node = (Node *)lfirst(cell);
 #endif
-            if (IsA(node, CopyStmt) && !((CopyStmt *)node)->filename) ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("COPY %s is not supported", ((CopyStmt *)node)->is_from ? "FROM STDIN" : "TO STDOUT")));
+            if (dest_copy(node) && ((CopyStmt *)node)->is_from) found = true;
         }
+    PG_CATCH();
+        MemoryContextSwitchTo(oldMemoryContext);
+        FlushErrorState();
+    PG_END_TRY();
+    MemoryContextSwitchTo(oldMemoryContext);
+    MemoryContextDelete(context);
+    return found;
+}
+
+static void dest_execute(void) {
+    if (!task.shared->spi) {
+        MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
+        MemoryContextResetAndDeleteChildren(MessageContext);
+        InvalidateCatalogSnapshotConditionally();
+        dest_reject_copy(pg_parse_query(task.input));
         MemoryContextSwitchTo(oldMemoryContext);
         whereToSendOutput = DestNone; // as for any background worker: the receiver and the command hooks above take the output, whatever it is, while DestDebug would have every message of the worker written to stderr too, besides the log_destination, csvlog say, see send_message_to_server_log()
         ReadyForQueryMy(whereToSendOutput);
@@ -623,6 +659,7 @@ static void dest_execute(void) {
         dest_lexer_input();
         parsetree_list = pg_parse_query(task.input);
         if (!parsetree_list) return; // no statement at all: nothing to run and no output, as NullCommand in local mode, rather than SPI_execute()'s SPI_OK_REWRITTEN tag
+        dest_reject_copy(parsetree_list);
 #if PG_VERSION_NUM >= 100000
         // RawStmt.stmt_location lets us slice task.input into the text of each individual
         // statement and run them through SPI one by one, the same way exec_simple_query and

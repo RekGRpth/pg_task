@@ -14,11 +14,10 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''copy_from_stdin'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", input, output, error, state FROM task WHERE "group" = 'copy_from_stdin' AND plan > :ct::timestamp;
-      group      |           input            | output |                              error                               | state 
------------------+----------------------------+--------+------------------------------------------------------------------+-------
- copy_from_stdin | COPY copy_probe FROM STDIN |        | ERROR:  COPY from stdin failed: COPY FROM STDIN is not supported+| FAIL
-                 |                            |        | CONTEXT:  COPY copy_probe, line 1                               +| 
-                 |                            |        | STATEMENT:  COPY copy_probe FROM STDIN                           | 
+      group      |           input            | output |                  error                   | state 
+-----------------+----------------------------+--------+------------------------------------------+-------
+ copy_from_stdin | COPY copy_probe FROM STDIN |        | ERROR:  COPY FROM STDIN is not supported+| FAIL
+                 |                            |        | STATEMENT:  COPY copy_probe FROM STDIN   | 
 (1 row)
 
 DROP TABLE copy_probe;
