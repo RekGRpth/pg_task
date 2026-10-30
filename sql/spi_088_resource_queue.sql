@@ -1,0 +1,27 @@
+-- the portal of spi mode is one of the resource queue of the role of a task: its SELECT takes a slot of the queue, so one of a role in a queue of a single active statement waits for the one before it, rather than runs unqueued, and a statement's memory limit, that of the queue, asserts no more with a portal of none
+DELETE FROM task WHERE "group" LIKE 'spi_queue_%';
+SET client_min_messages = warning;
+-- the queue is Greengage's, made by statements of their own, which a function can't run, and only where it manages resources by queues
+SELECT (SELECT setting FROM pg_settings WHERE name = 'gp_resource_manager') = 'queue' AS queued,
+    CASE WHEN (SELECT setting FROM pg_settings WHERE name = 'gp_resource_manager') = 'queue' THEN 'CREATE RESOURCE QUEUE spi_queue_probe WITH (ACTIVE_STATEMENTS = 1)' ELSE 'DO $x$ BEGIN END $x$' END AS make_queue,
+    CASE WHEN (SELECT setting FROM pg_settings WHERE name = 'gp_resource_manager') = 'queue' THEN 'RESOURCE QUEUE spi_queue_probe' ELSE '' END AS role_queue,
+    CASE WHEN (SELECT setting FROM pg_settings WHERE name = 'gp_resource_manager') = 'queue' THEN 'DROP RESOURCE QUEUE spi_queue_probe' ELSE 'DO $x$ BEGIN END $x$' END AS drop_queue
+\gset
+:make_queue;
+CREATE ROLE spi_queue_role LOGIN :role_queue;
+INSERT INTO task ("group", input, "user") VALUES ('spi_queue_a', 'SELECT pg_sleep(4)', 'spi_queue_role');
+SELECT pg_sleep(1);
+INSERT INTO task ("group", input, "user") VALUES ('spi_queue_b', 'SELECT 1', 'spi_queue_role');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF (SELECT count(*) FROM task WHERE "group" LIKE 'spi_queue_%' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task groups spi_queue_a and spi_queue_b to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT bool_and(state = 'DONE') AS done, CASE WHEN :'queued'::boolean THEN (SELECT stop FROM task WHERE "group" = 'spi_queue_b') > (SELECT start + interval '3 sec' FROM task WHERE "group" = 'spi_queue_a') ELSE true END AS waited
+FROM task WHERE "group" LIKE 'spi_queue_%';
+DELETE FROM task WHERE "group" LIKE 'spi_queue_%';
+DROP ROLE spi_queue_role;
+:drop_queue;
+RESET client_min_messages;

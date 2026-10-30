@@ -31,6 +31,11 @@
 #include <jit/jit.h>
 #endif
 
+#ifdef GP_VERSION_NUM
+#include <utils/resource_manager.h>
+#include <utils/resscheduler.h>
+#endif
+
 #if PG_VERSION_NUM < 100000
 #include <parser/scanner.h>
 #endif
@@ -408,6 +413,25 @@ static void dest_analyze(ParseState *pstate, Query *query) {
 // the position of an error in the syntax of the body of a function, of a DO say, function_parse_error_transpose() moves into the text of the active portal, as local mode has it, within the whole input, or from 10 on gives up with none, the position left within the body, the body as the query, while before 10 it takes one for there, asserting it, and with none dereferences, taking the server down: spi mode runs in none, unlike local mode, so one for it, active while a statement runs, see dest_execute_spi_at(), of the text SPI runs, whose error callback takes the position for one within that text, which dest_execute_spi_at() moves into the whole input then
 static PortalData dest_portal = {.status = PORTAL_ACTIVE};
 
+#ifdef GP_VERSION_NUM
+// the portal of spi mode is one of a client's statement for the resource queue of the role too: a statement's memory limit is that of its queue, with none it asserts, and a SELECT takes a slot of it, see _SPI_pquery(); with no queue its statements would go unqueued, in a build with no assertions
+static void dest_queue(const Node *stmt) {
+    dest_portal.queueId = InvalidOid;
+    dest_portal.portalId = 0;
+    dest_portal.hasResQueueLock = false;
+    dest_portal.sourceTag = nodeTag(stmt);
+    if (IsResQueueEnabled()) {
+        SetResQueueId(); // the role may have changed by the input, which a cached queue doesn't follow
+        dest_portal.queueId = GetResQueueId();
+    }
+}
+
+// the slot a statement took, given back, as dropping its portal would do
+static void dest_unqueue(void) {
+    if (dest_portal.hasResQueueLock) ResUnLockPortal(&dest_portal);
+}
+#endif
+
 // the SELECT of a rule of INSERT, UPDATE or DELETE, whose rows SPI drops for it's not the query that sets the command tag, which local mode and remote mode return: made that one, in the plan about to run, its rows kept then as those of the statement, with no tag, as they have it, true if there is one; a plan is replanned from its own statements, these among them, as long as it stays valid, nothing changing it between here and its run
 static bool dest_spi_rule_rows(SPIPlanPtr plan) {
     bool found = false;
@@ -435,6 +459,9 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
     if (StatementTimeout > 0) enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout); else disable_timeout(STATEMENT_TIMEOUT, false); // for each statement of the input anew, as exec_simple_query() has it from 13 on in local mode, rather than once for all of them, see SPI_connect_my(); for an EXECUTE too, and none once the input set statement_timeout to 0, rather than the rest of the one of the statement before
     dest_portal.sourceText = src;
     tag_start = -1;
+#ifdef GP_VERSION_NUM
+    dest_queue(stmt);
+#endif
     if (alone && IsA(stmt, ExecuteStmt)) { dest_execute_prepared((ExecuteStmt *)stmt); return; }
     if (alone && IsA(stmt, FetchStmt)) { dest_execute_fetch((FetchStmt *)stmt); return; }
 #if PG_VERSION_NUM >= 90500
@@ -545,6 +572,9 @@ static void dest_execute_spi_at(const char *src, Node *stmt, bool alone, int loc
             ErrorData *edata;
             dest_pop(); // see dest_push()
             ActivePortal = portal;
+#ifdef GP_VERSION_NUM
+            dest_unqueue();
+#endif
             MemoryContextSwitchTo(oldcontext);
             dest_lexer_back(); // an error of SPI reading the statement, see dest_lexer_read()
             edata = CopyErrorData();
@@ -562,6 +592,9 @@ static void dest_execute_spi_at(const char *src, Node *stmt, bool alone, int loc
         }
     PG_END_TRY();
     ActivePortal = portal;
+#ifdef GP_VERSION_NUM
+    dest_unqueue();
+#endif
     if (trimmed) pfree(trimmed);
 }
 

@@ -706,7 +706,8 @@ Limitations:
 - no coordination across independent clusters — if the same `task` table or the same `remote` target is reachable from more than one place at once, consistency is on you; these locks only protect against races inside one server instance;
 - building requires network access to GitHub, or a pre-existing source tree (see Build above) — the extension pulls part of the matching version's real `postgres.c` at build time rather than just linking against an installed server;
 - only the server branches/versions actually exercised by CI are supported — a brand-new major version may need a follow-up patch before the code extracted from its `postgres.c` matches again;
-- a task has exactly the privileges of its role, in local and SPI mode alike, including `COPY ... TO/FROM PROGRAM` if the role can do that — this follows directly from running `input` as that role, not from a bug; if task authors aren't fully trusted, restrict the role's privileges (see Security considerations below).
+- a task has exactly the privileges of its role, in local and SPI mode alike, including `COPY ... TO/FROM PROGRAM` if the role can do that — this follows directly from running `input` as that role, not from a bug; if task authors aren't fully trusted, restrict the role's privileges (see Security considerations below);
+- on Greengage with resource queues (`gp_resource_manager = queue`), the statements of a task in SPI mode go by the queue of its role, as those of a client do, a superuser's apart: a `SELECT` takes a slot of the queue while it runs, and the memory of a statement is the queue's share, but an `INSERT`, `UPDATE` or `DELETE` takes none, as in a function.
 
 ## Security considerations
 
