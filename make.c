@@ -739,8 +739,9 @@ static void make_not_null(const Work *w, const char *name, bool not_null) {
 static void make_index(const Work *w, const char *name) {
     StringInfoData src;
     initStringInfoMy(&src);
+    // an index left invalid, of a CREATE INDEX CONCURRENTLY cancelled say, or a partial one, serves none of the queries of the passes: none of pg_task's own, made rather than counted for one
     appendStringInfo(&src, SQL(
-        SELECT EXISTS (SELECT * FROM pg_catalog.pg_index JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) indrelid WHERE attnum OPERATOR(pg_catalog.=) indkey[0] AND attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s') AS "test"
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_index AS i JOIN pg_catalog.pg_attribute ON attrelid OPERATOR(pg_catalog.=) indrelid WHERE attnum OPERATOR(pg_catalog.=) indkey[0] AND attrelid OPERATOR(pg_catalog.=) %1$i AND attnum OPERATOR(pg_catalog.>) 0 AND NOT attisdropped AND attname OPERATOR(pg_catalog.=) '%2$s' AND i.indisvalid AND i.indpred IS NULL) AS "test"
     ), w->shared->oid, name);
     if (!make_test(src.data, 0, NULL, NULL, NULL)) {
         resetStringInfo(&src);
@@ -758,7 +759,7 @@ static void make_hash(const Work *w, const char *value) {
     StringInfoData src;
     initStringInfoMy(&src);
     appendStringInfo(&src, SQL(
-        SELECT EXISTS (SELECT * FROM pg_catalog.pg_index WHERE 0 OPERATOR(pg_catalog.=) indkey[0] AND indrelid OPERATOR(pg_catalog.=) %1$i AND pg_catalog.pg_get_expr(indexprs, indrelid) OPERATOR(pg_catalog.=) $1) AS "test"
+        SELECT EXISTS (SELECT * FROM pg_catalog.pg_index AS i WHERE 0 OPERATOR(pg_catalog.=) indkey[0] AND indrelid OPERATOR(pg_catalog.=) %1$i AND pg_catalog.pg_get_expr(indexprs, indrelid) OPERATOR(pg_catalog.=) $1 AND i.indisvalid AND i.indpred IS NULL) AS "test"
     ), w->shared->oid);
     if (!make_test(src.data, countof(argtypes), argtypes, values, NULL)) {
         resetStringInfo(&src);
