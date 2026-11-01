@@ -1264,11 +1264,7 @@ static void work_stop(const Work *w) {
                 if (t->shared->id == id) { // marked too, for an input not sent yet not to be, see work_input()
                     t->shared->stop = id;
                     t->shared->stopped = true;
-#if PG_VERSION_NUM >= 130000
-                    if (!work_cancel(t) && PQstatus(t->conn) == CONNECTION_OK && !t->spare) ncurrent--; // no file descriptor for it yet: not cancelled, for the next pass to send it, see work_waiting()
-#else
-                    work_cancel(t);
-#endif
+                    if (!work_cancel(t) && PQstatus(t->conn) == CONNECTION_OK) ncurrent--; // not cancelled, its cancel request failed to be made or sent, no file descriptor for it yet say: not remembered as one then, for the next pass to send it again, see work_waiting()
                     break;
                 }
             }
