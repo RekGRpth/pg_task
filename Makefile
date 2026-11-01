@@ -1,9 +1,15 @@
 MODULE_big = pg_task
-EXTRA_CLEAN = postgres.c exec.c latch.c latch.h latch.o latch_my.h latch.c.tmp latch.h.tmp exec.c.tmp postgres.c.tmp
+EXTRA_CLEAN = postgres.c exec.c latch.c latch.h latch.o latch_my.h latch.c.tmp latch.h.tmp exec.c.tmp postgres.c.tmp postgres.version
 # a file generated in part, its script failing on the way, a download say, removed rather than taken for done on the next make
 .DELETE_ON_ERROR:
 PG_CONFIG = pg_config
-postgres.c:
+# the version of the server built for, kept in a file of its own, its date changed on a change of the version only, for postgres.c of it to be fetched again then, by another PG_CONFIG say, rather than the one of the old version kept against the headers of the new one
+POSTGRES_VERSION = $(shell $(PG_CONFIG) --version)
+.PHONY: FORCE
+FORCE:
+postgres.version: FORCE
+	@printf '%s\n' '$(POSTGRES_VERSION)' >$@.tmp && { cmp -s $@.tmp $@ || mv -f $@.tmp $@; } && rm -f $@.tmp
+postgres.c: postgres.sh postgres.version
 	PG_CONFIG=$(PG_CONFIG) ./postgres.sh >$@
 exec.c: postgres.c exec.sh
 	./exec.sh >$@

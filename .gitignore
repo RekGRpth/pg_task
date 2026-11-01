@@ -11,6 +11,7 @@ regression.out
 log/
 core
 postgres.c
+postgres.version
 exec.c
 latch.c
 latch.h
