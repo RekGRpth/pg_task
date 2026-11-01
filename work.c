@@ -106,6 +106,7 @@ static dlist_head cancels;
 #endif
 #define WORK_CANCEL_TIMEOUT 10000 // milliseconds a cancel request, a single packet, may take to get through, or, sent, to take effect, see work_failed()
 #define WORK_PENDING_TIMEOUT 5000 // milliseconds the bookkeeping put off may take on the exit of pg_work, see work_shmem_exit()
+#define WORK_RESULT_TIMEOUT 1000 // milliseconds the last result of a remote task, the COMMIT of an input that left a transaction open say, may take to come on the exit of pg_work, see work_exit()
 static volatile uint64 idle_count = 0;
 static volatile sig_atomic_t woken = false; // by the wake-up trigger, see work_idle()
 static bool later_local = false, later_remote = false; // no worker, or no file descriptor for a connection, to be had for the last task of its kind, see work_later()
@@ -1154,6 +1155,31 @@ static void work_exit(int code, Datum arg) {
             FlushErrorState();
             SPI_abort_my(); // the task cancelled below, as it was
         PG_END_TRY();
+    }
+    // the COMMIT of an input that left a transaction open, which work_done() has just sent above, or had sent before pg_work was held up: its result waited for and read here, rather than the task cancelled with its input committed, its row left in WORK, for the next pg_work to reset and run it again, a second time on its remote server; no other result waited for, of an input still running, whose cancel rolls it back, nor after an error, nor past the timeout
+    {
+        TimestampTz end = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), WORK_RESULT_TIMEOUT);
+        bool busy = true;
+        while (busy && PostmasterIsAlive() && GetCurrentTimestamp() < end) {
+            busy = false;
+            dlist_foreach_modify(iter, &remote) {
+                Task *t = dlist_container(Task, node, iter.cur);
+                MemoryContext oldMemoryContext = CurrentMemoryContext;
+                if (t->socket != work_result || !t->skip || PQstatus(t->conn) != CONNECTION_OK || !PQconsumeInput(t->conn)) continue;
+                if (PQisBusy(t->conn)) { busy = true; continue; }
+                PG_TRY();
+                    work_result(t); // which books the task, and may free it, or put its bookkeeping off, see the pending below
+                PG_CATCH();
+                    MemoryContextSwitchTo(oldMemoryContext);
+                    EmitErrorReport();
+                    FlushErrorState();
+                    SPI_abort_my();
+                    busy = false; // no more of it after an error: the tasks still here cancelled below, as they were
+                    break;
+                PG_END_TRY();
+            }
+            if (busy) pg_usleep(100 * 1000L);
+        }
     }
     dlist_foreach_modify(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
