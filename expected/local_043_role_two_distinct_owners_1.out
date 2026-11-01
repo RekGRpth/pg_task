@@ -14,7 +14,7 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''role_two_distinct_owners'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT bool_and(output = 't') AS each_task_saw_its_own_identity, count(DISTINCT "user") = 2 AS two_distinct_owners FROM task WHERE "group" = 'role_two_distinct_owners' AND plan > :ct::timestamp;
+SELECT bool_and(output = 't') AS each_task_saw_its_own_identity, count(DISTINCT "user") = 2 AS two_distinct_owners FROM task WHERE "group" = 'role_two_distinct_owners' AND plan > :ct::timestamptz;
  each_task_saw_its_own_identity | two_distinct_owners 
 --------------------------------+---------------------
  t                              | t

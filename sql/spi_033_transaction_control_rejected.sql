@@ -9,4 +9,4 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 150 x pg_sleep(0.1) waiting for task group ''transaction_control_rejected'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT state, error LIKE '%transaction control statement is not supported%' AS rejected_cleanly FROM task WHERE "group" = 'transaction_control_rejected' AND plan > :ct::timestamp;
+SELECT state, error LIKE '%transaction control statement is not supported%' AS rejected_cleanly FROM task WHERE "group" = 'transaction_control_rejected' AND plan > :ct::timestamptz;

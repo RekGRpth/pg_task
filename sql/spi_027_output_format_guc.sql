@@ -19,4 +19,4 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 150 x pg_sleep(0.1) waiting for task group ''output_format_guc'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT output = '"1","text",<NULL>' AS format_ok FROM task WHERE "group" = 'output_format_guc' AND plan > :ct::timestamp;
+SELECT output = '"1","text",<NULL>' AS format_ok FROM task WHERE "group" = 'output_format_guc' AND plan > :ct::timestamptz;

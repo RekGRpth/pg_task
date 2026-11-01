@@ -11,7 +11,7 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''max1_vs_max2'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT
-    (SELECT count(*) FROM task WHERE "group" = 'max1_vs_max2' AND max = 2 AND plan > :ct::timestamp AND state = 'DONE') = 1 AS max2_task_done,
-    (SELECT count(DISTINCT pid) FROM task WHERE "group" = 'max1_vs_max2' AND max = 2 AND plan > :ct::timestamp) = 1 AS max2_single_worker,
-    (SELECT count(*) FROM task WHERE "group" = 'max1_vs_max2' AND max = 1 AND plan > :ct::timestamp AND state = 'DONE') = 10 AS max1_all_done,
-    (SELECT count(DISTINCT pid) FROM task WHERE "group" = 'max1_vs_max2' AND max = 1 AND plan > :ct::timestamp) >= 2 AS max1_multiple_workers;
+    (SELECT count(*) FROM task WHERE "group" = 'max1_vs_max2' AND max = 2 AND plan > :ct::timestamptz AND state = 'DONE') = 1 AS max2_task_done,
+    (SELECT count(DISTINCT pid) FROM task WHERE "group" = 'max1_vs_max2' AND max = 2 AND plan > :ct::timestamptz) = 1 AS max2_single_worker,
+    (SELECT count(*) FROM task WHERE "group" = 'max1_vs_max2' AND max = 1 AND plan > :ct::timestamptz AND state = 'DONE') = 10 AS max1_all_done,
+    (SELECT count(DISTINCT pid) FROM task WHERE "group" = 'max1_vs_max2' AND max = 1 AND plan > :ct::timestamptz) >= 2 AS max1_multiple_workers;

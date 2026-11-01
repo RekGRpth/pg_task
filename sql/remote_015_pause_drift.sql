@@ -11,5 +11,5 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''pause_drift'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", min(start) - :ct14::timestamptz < interval '2500 ms' AS first_run_immediate, bool_and(gap IS NULL OR gap >= interval '1 sec') AS pause_ok FROM (
-    SELECT "group", start, plan - lag(plan) OVER (ORDER BY plan) AS gap FROM task WHERE "group" = 'pause_drift' AND plan > :ct::timestamp
+    SELECT "group", start, plan - lag(plan) OVER (ORDER BY plan) AS gap FROM task WHERE "group" = 'pause_drift' AND plan > :ct::timestamptz
 ) x GROUP BY "group";

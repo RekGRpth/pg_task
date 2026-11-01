@@ -45,7 +45,7 @@ DO $body$ BEGIN
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
-SELECT state, output FROM task WHERE "group" = 'reap_slot_reuse' AND plan > :ct::timestamp;
+SELECT state, output FROM task WHERE "group" = 'reap_slot_reuse' AND plan > :ct::timestamptz;
 DELETE FROM task WHERE "group" = 'reap_slot_reuse';
 SELECT (SELECT count(*) FROM pg_catalog.pg_settings WHERE name = 'gp_role') > 0 AS is_gp
 \gset

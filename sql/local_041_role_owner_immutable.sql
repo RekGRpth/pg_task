@@ -7,7 +7,7 @@ DO $$ BEGIN
 EXCEPTION WHEN OTHERS THEN
     IF SQLERRM <> 'user column is immutable' THEN RAISE; END IF;
 END $$;
-SELECT "user" = current_user AS owner_immutable FROM task WHERE "group" = 'role_owner_immutable' AND plan > :ct::timestamp;
+SELECT "user" = current_user AS owner_immutable FROM task WHERE "group" = 'role_owner_immutable' AND plan > :ct::timestamptz;
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         IF (SELECT count(*) FROM task WHERE "group" = 'role_owner_immutable' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;

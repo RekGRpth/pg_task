@@ -17,7 +17,7 @@ DO $body$ BEGIN
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
-SELECT input, state, split_part(error, E'\n', 1) LIKE 'ERROR:  permission denied for database %' AS no_connect, split_part(error, E'\n', 2) AS detail FROM task WHERE "group" = 'owner_no_connect' AND plan > :ct::timestamp ORDER BY id;
+SELECT input, state, split_part(error, E'\n', 1) LIKE 'ERROR:  permission denied for database %' AS no_connect, split_part(error, E'\n', 2) AS detail FROM task WHERE "group" = 'owner_no_connect' AND plan > :ct::timestamptz ORDER BY id;
 DELETE FROM task WHERE "group" = 'owner_no_connect';
 GRANT CONNECT ON DATABASE :"DBNAME" TO PUBLIC;
 DROP ROLE task_noconnect_author;

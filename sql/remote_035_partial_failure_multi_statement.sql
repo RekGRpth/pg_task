@@ -9,4 +9,4 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 150 x pg_sleep(0.1) waiting for task group ''partial_failure'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT output, error, state FROM task WHERE "group" = 'partial_failure' AND plan > :ct::timestamp;
+SELECT output, error, state FROM task WHERE "group" = 'partial_failure' AND plan > :ct::timestamptz;

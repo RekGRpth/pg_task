@@ -7,7 +7,7 @@ DO $$ BEGIN
 EXCEPTION WHEN OTHERS THEN
     IF SQLERRM <> 'user column is immutable' THEN RAISE; END IF;
 END $$;
-SELECT "user" = current_user AS owner_immutable FROM task WHERE "group" = 'role_owner_immutable' AND plan > :ct::timestamp;
+SELECT "user" = current_user AS owner_immutable FROM task WHERE "group" = 'role_owner_immutable' AND plan > :ct::timestamptz;
  owner_immutable 
 -----------------
  t

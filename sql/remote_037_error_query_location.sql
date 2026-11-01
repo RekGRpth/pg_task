@@ -14,7 +14,7 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 150 x pg_sleep(0.1) waiting for task group ''error_query_location'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT error LIKE '%QUERY:  SELECT SELEKT 1%' AS query_field_ok, error LIKE '%LOCATION:  %, %:%' AS location_field_ok, state FROM task WHERE "group" = 'error_query_location' AND plan > :ct::timestamp;
+SELECT error LIKE '%QUERY:  SELECT SELEKT 1%' AS query_field_ok, error LIKE '%LOCATION:  %, %:%' AS location_field_ok, state FROM task WHERE "group" = 'error_query_location' AND plan > :ct::timestamptz;
 DROP FUNCTION query_location_probe();
 ALTER SYSTEM RESET log_error_verbosity;
 SELECT pg_reload_conf();

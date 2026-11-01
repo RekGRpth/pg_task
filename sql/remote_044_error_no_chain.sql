@@ -12,5 +12,5 @@ DO $body$ BEGIN
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
-SELECT input, state, error IS NOT NULL AS has_error FROM task WHERE "group" = 'error_no_chain' AND plan > :ct::timestamp ORDER BY id;
+SELECT input, state, error IS NOT NULL AS has_error FROM task WHERE "group" = 'error_no_chain' AND plan > :ct::timestamptz ORDER BY id;
 DELETE FROM task WHERE "group" = 'error_no_chain';

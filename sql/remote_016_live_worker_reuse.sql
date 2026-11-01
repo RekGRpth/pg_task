@@ -10,5 +10,5 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''live_worker_reuse'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", count(DISTINCT pid) > 1 AS multiple_workers, max(cnt) > 1 AS reuse_happened FROM (
-    SELECT "group", pid, count(*) AS cnt FROM task WHERE "group" = 'live_worker_reuse' AND plan > :ct::timestamp GROUP BY "group", pid
+    SELECT "group", pid, count(*) AS cnt FROM task WHERE "group" = 'live_worker_reuse' AND plan > :ct::timestamptz GROUP BY "group", pid
 ) x GROUP BY "group";

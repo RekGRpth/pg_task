@@ -13,4 +13,4 @@ SELECT "group", state,
     array_length(regexp_split_to_array(rtrim(output, chr(10)), chr(10)), 1) = 100000 AS row_count_ok,
     (regexp_split_to_array(rtrim(output, chr(10)), chr(10)))[1] = '1' AS first_row_ok,
     (regexp_split_to_array(rtrim(output, chr(10)), chr(10)))[100000] = '100000' AS last_row_ok
-FROM task WHERE "group" = 'copy_large_result' AND plan > :ct::timestamp;
+FROM task WHERE "group" = 'copy_large_result' AND plan > :ct::timestamptz;

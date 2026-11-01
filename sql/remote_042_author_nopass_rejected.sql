@@ -14,7 +14,7 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 150 x pg_sleep(0.1) waiting for task groups ''author_nopass'' and ''author_bogus_password'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT state = 'FAIL' AS rejected_without_password_for_unprivileged_author, error LIKE '%password is required%' AS password_error_ok FROM task WHERE "group" = 'author_nopass' AND plan > :ct::timestamp;
-SELECT state = 'FAIL' AS rejected_with_unrequested_password_for_unprivileged_author, error LIKE '%password is required%' AS password_error_ok FROM task WHERE "group" = 'author_bogus_password' AND plan > :ct::timestamp;
-SELECT state = 'FAIL' AS rejected_with_empty_password_for_unprivileged_author, error LIKE '%must provide a password in the connection string%' AS password_error_ok FROM task WHERE "group" = 'author_empty_password' AND plan > :ct::timestamp;
+SELECT state = 'FAIL' AS rejected_without_password_for_unprivileged_author, error LIKE '%password is required%' AS password_error_ok FROM task WHERE "group" = 'author_nopass' AND plan > :ct::timestamptz;
+SELECT state = 'FAIL' AS rejected_with_unrequested_password_for_unprivileged_author, error LIKE '%password is required%' AS password_error_ok FROM task WHERE "group" = 'author_bogus_password' AND plan > :ct::timestamptz;
+SELECT state = 'FAIL' AS rejected_with_empty_password_for_unprivileged_author, error LIKE '%must provide a password in the connection string%' AS password_error_ok FROM task WHERE "group" = 'author_empty_password' AND plan > :ct::timestamptz;
 DELETE FROM task WHERE "group" IN ('author_nopass', 'author_bogus_password', 'author_empty_password');

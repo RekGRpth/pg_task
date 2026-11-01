@@ -11,7 +11,7 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''role_owner_recorded'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT "user" = 'task_owner_test' AS owner_recorded, output = 't' AS ran_unprivileged, state FROM task WHERE "group" = 'role_owner_recorded' AND plan > :ct::timestamp;
+SELECT "user" = 'task_owner_test' AS owner_recorded, output = 't' AS ran_unprivileged, state FROM task WHERE "group" = 'role_owner_recorded' AND plan > :ct::timestamptz;
  owner_recorded | ran_unprivileged | state 
 ----------------+------------------+-------
  t              | t                | DONE

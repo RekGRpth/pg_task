@@ -9,4 +9,4 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''it''s a \group'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT state, "group" OPERATOR(pg_catalog.=) output AS group_roundtrip_ok FROM task WHERE "group" = $task$it's a \group$task$ AND plan > :ct::timestamp;
+SELECT state, "group" OPERATOR(pg_catalog.=) output AS group_roundtrip_ok FROM task WHERE "group" = $task$it's a \group$task$ AND plan > :ct::timestamptz;

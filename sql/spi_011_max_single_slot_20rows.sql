@@ -10,5 +10,5 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''max_single_slot_20rows'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 -- which worker gets the last tasks depends on timing (once one is through its count, pg_work may hand the next task to a new one before another takes it on), so check what holds whatever the timing
-SELECT count(*) = 20 AS all_twenty, bool_and(state = 'DONE' AND error IS NULL) AS all_done FROM task WHERE "group" = 'max_single_slot_20rows' AND plan > :ct::timestamp;
-SELECT max(n) <= 5 AS count_respected, max(n) > 1 AS worker_reused FROM (SELECT count(*) AS n FROM task WHERE "group" = 'max_single_slot_20rows' AND plan > :ct::timestamp GROUP BY pid) AS w;
+SELECT count(*) = 20 AS all_twenty, bool_and(state = 'DONE' AND error IS NULL) AS all_done FROM task WHERE "group" = 'max_single_slot_20rows' AND plan > :ct::timestamptz;
+SELECT max(n) <= 5 AS count_respected, max(n) > 1 AS worker_reused FROM (SELECT count(*) AS n FROM task WHERE "group" = 'max_single_slot_20rows' AND plan > :ct::timestamptz GROUP BY pid) AS w;

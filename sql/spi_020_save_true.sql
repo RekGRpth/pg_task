@@ -11,4 +11,4 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''save_true'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", count(DISTINCT pid) = 1 AS same_worker, max(output) FILTER (WHERE input LIKE 'SELECT count%') = '1' AS state_preserved
-FROM task WHERE "group" = 'save_true' AND plan > :ct::timestamp GROUP BY "group";
+FROM task WHERE "group" = 'save_true' AND plan > :ct::timestamptz GROUP BY "group";

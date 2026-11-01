@@ -9,4 +9,4 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''max_active_timeout_recycle'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT "group", input, output, error, state, count(id) FROM task WHERE "group" = 'max_active_timeout_recycle' AND plan > :ct::timestamp GROUP BY "group", input, output, error, state ORDER BY 6;
+SELECT "group", input, output, error, state, count(id) FROM task WHERE "group" = 'max_active_timeout_recycle' AND plan > :ct::timestamptz GROUP BY "group", input, output, error, state ORDER BY 6;

@@ -12,6 +12,6 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''bad_conninfo'' and ''connection_refused'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 -- only the first line of the error: its details come from libpq and differ between versions and platforms
-SELECT "group", state, split_part(error, E'\n', 1) ~ '^ERROR:  (PQconninfoParse failed|PQconnectPoll failed|PQstatus == CONNECTION_BAD)$' AS connection_error FROM task WHERE "group" IN ('bad_conninfo', 'connection_refused') AND plan > :ct::timestamp ORDER BY "group";
-SELECT split_part(error, E'\n', 1) AS error FROM task WHERE "group" = 'bad_conninfo' AND plan > :ct::timestamp;
+SELECT "group", state, split_part(error, E'\n', 1) ~ '^ERROR:  (PQconninfoParse failed|PQconnectPoll failed|PQstatus == CONNECTION_BAD)$' AS connection_error FROM task WHERE "group" IN ('bad_conninfo', 'connection_refused') AND plan > :ct::timestamptz ORDER BY "group";
+SELECT split_part(error, E'\n', 1) AS error FROM task WHERE "group" = 'bad_conninfo' AND plan > :ct::timestamptz;
 DELETE FROM task WHERE "group" IN ('bad_conninfo', 'connection_refused');

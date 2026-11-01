@@ -10,7 +10,7 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for self-chained task to insert its follow-up row and both to finish'; END IF;
 END;$body$ LANGUAGE plpgsql;
 WITH g AS (
-    SELECT id, parent, input, state FROM task WHERE "group" = 'self_chaining_insert' AND plan > :ct::timestamp
+    SELECT id, parent, input, state FROM task WHERE "group" = 'self_chaining_insert' AND plan > :ct::timestamptz
 )
 SELECT count(*) = 2 AS both_rows_present,
     bool_and(state = 'DONE') AS both_done,

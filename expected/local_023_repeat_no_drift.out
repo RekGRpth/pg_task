@@ -27,7 +27,7 @@ END;$body$ LANGUAGE plpgsql;
 DELETE FROM task WHERE "group" = 'repeat_no_drift' AND state NOT IN ('DONE', 'GONE', 'FAIL');
 WITH g AS (
     SELECT id, parent, lag(id) OVER (ORDER BY plan) AS prev_id, plan - lag(plan) OVER (ORDER BY plan) AS gap
-    FROM task WHERE "group" = 'repeat_no_drift' AND plan > :ct::timestamp
+    FROM task WHERE "group" = 'repeat_no_drift' AND plan > :ct::timestamptz
 )
 SELECT count(*) >= 3 AS repeated_enough,
     bool_and(parent IS NOT DISTINCT FROM prev_id) AS parent_chain_ok,

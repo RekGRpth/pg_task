@@ -15,6 +15,6 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''empty_input'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT quote_literal(input) AS input, output, error, state FROM task WHERE "group" = 'empty_input' AND plan > :ct::timestamp ORDER BY id;
-SELECT "group", "delete", state FROM task WHERE "group" IN ('empty_input_kept', 'empty_input_deleted') AND plan > :ct::timestamp ORDER BY "group";
+SELECT quote_literal(input) AS input, output, error, state FROM task WHERE "group" = 'empty_input' AND plan > :ct::timestamptz ORDER BY id;
+SELECT "group", "delete", state FROM task WHERE "group" IN ('empty_input_kept', 'empty_input_deleted') AND plan > :ct::timestamptz ORDER BY "group";
 DELETE FROM task WHERE "group" IN ('empty_input', 'empty_input_kept', 'empty_input_deleted');

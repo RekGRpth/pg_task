@@ -24,6 +24,6 @@ SELECT pg_reload_conf();
 RESET statement_timeout;
 SELECT EXISTS (
     SELECT 1 FROM task a JOIN task b ON a.pid = b.pid
-    WHERE a."group" = 'worker_reuse_timeout_reload' AND b."group" = 'worker_reuse_timeout_reload' AND a.plan > :ct::timestamp AND b.plan > :ct::timestamp
+    WHERE a."group" = 'worker_reuse_timeout_reload' AND b."group" = 'worker_reuse_timeout_reload' AND a.plan > :ct::timestamptz AND b.plan > :ct::timestamptz
     AND a.state = 'DONE' AND b.state = 'FAIL' AND b.error LIKE '%statement timeout%'
 ) AS reused_worker_saw_reload;

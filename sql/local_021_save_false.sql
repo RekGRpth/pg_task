@@ -11,4 +11,4 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''save_false'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
 SELECT "group", bool_and(CASE WHEN input LIKE 'CREATE%' THEN state = 'DONE' ELSE state = 'FAIL' END) AS discard_worked, count(DISTINCT pid) = 1 AS same_worker
-FROM task WHERE "group" = 'save_false' AND plan > :ct::timestamp GROUP BY "group";
+FROM task WHERE "group" = 'save_false' AND plan > :ct::timestamptz GROUP BY "group";

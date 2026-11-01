@@ -11,5 +11,5 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for at least 3 DONE runs in repeating task group ''role_owner_preserved_repeat'''; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT count(*) >= 3 AS repeated_enough, bool_and("user" = 'task_owner_test') AS owner_preserved_across_repeats FROM task WHERE "group" = 'role_owner_preserved_repeat' AND plan > :ct::timestamp;
+SELECT count(*) >= 3 AS repeated_enough, bool_and("user" = 'task_owner_test') AS owner_preserved_across_repeats FROM task WHERE "group" = 'role_owner_preserved_repeat' AND plan > :ct::timestamptz;
 DELETE FROM task WHERE "group" = 'role_owner_preserved_repeat';

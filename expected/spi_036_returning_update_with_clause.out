@@ -9,7 +9,7 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 150 x pg_sleep(0.1) waiting for task group ''returning_update_with_clause'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT "group", output, error, state FROM task WHERE "group" = 'returning_update_with_clause' AND plan > :ct::timestamp;
+SELECT "group", output, error, state FROM task WHERE "group" = 'returning_update_with_clause' AND plan > :ct::timestamptz;
             group             | output | error | state 
 ------------------------------+--------+-------+-------
  returning_update_with_clause | 2      |       | DONE

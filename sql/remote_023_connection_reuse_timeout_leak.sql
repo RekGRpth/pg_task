@@ -13,4 +13,4 @@ END;$body$ LANGUAGE plpgsql;
 SELECT "group",
     bool_and(CASE WHEN input = 'SELECT pg_sleep(3)' THEN state = 'FAIL' AND error LIKE '%statement timeout%' ELSE state = 'DONE' END) AS timeout_leak_fixed,
     count(DISTINCT pid) = 1 AS same_connection_reused
-FROM task WHERE "group" = 'connection_reuse_timeout_leak' AND plan > :ct::timestamp GROUP BY "group";
+FROM task WHERE "group" = 'connection_reuse_timeout_leak' AND plan > :ct::timestamptz GROUP BY "group";

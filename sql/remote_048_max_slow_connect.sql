@@ -17,9 +17,9 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''max_slow_connect'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT "group", output, error, state, count(id) FROM task WHERE "group" = 'max_slow_connect' AND plan > :ct::timestamp GROUP BY "group", output, error, state;
+SELECT "group", output, error, state, count(id) FROM task WHERE "group" = 'max_slow_connect' AND plan > :ct::timestamptz GROUP BY "group", output, error, state;
 -- max = 1: never more than two of them running at once
-SELECT max(c) <= 2 AS within_max FROM (SELECT (SELECT count(*) FROM task AS b WHERE b."group" = a."group" AND b.start <= a.start AND a.start < b.stop) AS c FROM task AS a WHERE a."group" = 'max_slow_connect' AND a.plan > :ct::timestamp) AS s;
+SELECT max(c) <= 2 AS within_max FROM (SELECT (SELECT count(*) FROM task AS b WHERE b."group" = a."group" AND b.start <= a.start AND a.start < b.stop) AS c FROM task AS a WHERE a."group" = 'max_slow_connect' AND a.plan > :ct::timestamptz) AS s;
 DELETE FROM task WHERE "group" = 'max_slow_connect';
 DO $body$ BEGIN
     IF current_setting('server_version_num')::int >= 170000 THEN

@@ -13,8 +13,8 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''spi_reset_role_escape'' and ''spi_session_authorization_escape'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT "user" = 'task_spi_owner_test' AS owner_recorded, replace(replace(output, E'\n', ' | '), E'\t', ' ') AS output, state FROM task WHERE "group" = 'spi_reset_role_escape' AND plan > :ct::timestamp;
-SELECT error LIKE '%permission denied to set session authorization%' AS session_authorization_denied, state FROM task WHERE "group" = 'spi_session_authorization_escape' AND plan > :ct::timestamp;
+SELECT "user" = 'task_spi_owner_test' AS owner_recorded, replace(replace(output, E'\n', ' | '), E'\t', ' ') AS output, state FROM task WHERE "group" = 'spi_reset_role_escape' AND plan > :ct::timestamptz;
+SELECT error LIKE '%permission denied to set session authorization%' AS session_authorization_denied, state FROM task WHERE "group" = 'spi_session_authorization_escape' AND plan > :ct::timestamptz;
 DELETE FROM task WHERE "group" IN ('spi_reset_role_escape', 'spi_session_authorization_escape');
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP

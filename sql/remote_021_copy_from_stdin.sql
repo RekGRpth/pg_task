@@ -13,5 +13,5 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''copy_from_stdin'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT "group", input, output, error, state FROM task WHERE "group" = 'copy_from_stdin' AND plan > :ct::timestamp;
+SELECT "group", input, output, error, state FROM task WHERE "group" = 'copy_from_stdin' AND plan > :ct::timestamptz;
 DROP TABLE copy_probe;
