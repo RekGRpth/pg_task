@@ -175,10 +175,10 @@ static void conf_check(void) {
     dlist_init(&head);
     if (!src.data) {
         initStringInfoMy(&src);
-        // an entry is known by the hash of its schema and table, the length of the schema before them, or a dot in a name would make two entries one, schema a.b with table c and schema a with table b.c, the second of which then never started; work_check() of pg_work goes by the same one
+        // an entry is known by the hash of its schema and table, the length of the schema before them, or a dot in a name would make two entries one, schema a.b with table c and schema a with table b.c, the second of which then never started; work_check() of pg_work goes by the same one; and two tables of one database their hashes have collided, the second of them left out with a warning, by first_schema/first_table below, rather than never started with no word, one pg_work of a database and hash at most, see lock_data_hash()
         init_settings(&src);
         appendStringInfoString(&src, SQL(
-            SELECT    DISTINCT ON ("data", "user", "schema", "table") j.*, pg_catalog.hashtext(pg_catalog.concat_ws('.', pg_catalog.length("schema"), "schema", "table"))::pg_catalog.int4 AS "hash", "pid" IS NULL AS "new", pg_catalog.first_value("user") OVER (PARTITION BY "data", "schema", "table" ORDER BY "i") AS "first" FROM j
+            SELECT    DISTINCT ON ("data", "user", "schema", "table") j.*, pg_catalog.hashtext(pg_catalog.concat_ws('.', pg_catalog.length("schema"), "schema", "table"))::pg_catalog.int4 AS "hash", "pid" IS NULL AS "new", pg_catalog.first_value("user") OVER (PARTITION BY "data", "schema", "table" ORDER BY "i") AS "first", pg_catalog.first_value("schema") OVER (PARTITION BY "data", pg_catalog.hashtext(pg_catalog.concat_ws('.', pg_catalog.length("schema"), "schema", "table")) ORDER BY "i") AS "first_schema", pg_catalog.first_value("table") OVER (PARTITION BY "data", pg_catalog.hashtext(pg_catalog.concat_ws('.', pg_catalog.length("schema"), "schema", "table")) ORDER BY "i") AS "first_table" FROM j
             LEFT JOIN "pg_catalog"."pg_locks" AS l ON "locktype" OPERATOR(pg_catalog.=) 'userlock'
             AND "mode" OPERATOR(pg_catalog.=) 'AccessExclusiveLock'
             AND "granted" AND "objsubid" OPERATOR(pg_catalog.=) 3
@@ -219,6 +219,16 @@ static void conf_check(void) {
                     bool other = strcmp(first, w->shared->user) != 0;
                     if (other) ereport(WARNING, (errmsg("entry of pg_task.json for database \"%s\", user \"%s\", schema \"%s\" and table \"%s\" left out", w->shared->data, w->shared->user, w->shared->schema, w->shared->table), errdetail("An entry of user \"%s\" before it is of the same database, schema and table, which one pg_work runs at most.", first)));
                     pfree(first);
+                    if (other) { pfree(w->shared); pfree(w); SPI_freetuple(val); continue; }
+                }
+                // one pg_work of a database and hash at most, the lock of it the same for two tables their hashes have collided, the first of their entries in pg_task.json kept, this one left out with a word, rather than never started with none, see lock_data_hash()
+                {
+                    char *first_schema = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "first_schema", false, TEXTOID));
+                    char *first_table = TextDatumGetCStringMy(SPI_getbinval_my(val, tupdesc, "first_table", false, TEXTOID));
+                    bool other = strcmp(first_schema, w->shared->schema) || strcmp(first_table, w->shared->table);
+                    if (other) ereport(WARNING, (errmsg("entry of pg_task.json for database \"%s\", user \"%s\", schema \"%s\" and table \"%s\" left out", w->shared->data, w->shared->user, w->shared->schema, w->shared->table), errdetail("The hash of it is that of the schema \"%s\" and table \"%s\" of an entry before it, two tables of one database and hash, which one pg_work runs at most.", first_schema, first_table)));
+                    pfree(first_schema);
+                    pfree(first_table);
                     if (other) { pfree(w->shared); pfree(w); SPI_freetuple(val); continue; }
                 }
                 elog(DEBUG1, "row = " UINT64_FORMAT ", user = %s, data = %s, schema = %s, table = %s, sleep = " INT64_FORMAT ", reset = " INT64_FORMAT ", run = %i, hash = %i, spi = %s, limit = %i, spawn = %s", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset, w->shared->run, w->shared->hash, w->shared->spi ? "true" : "false", w->shared->limit, w->spawn ? "true" : "false");

@@ -219,15 +219,22 @@ static void work_check(const Work *w) {
     if (!src.data) {
         initStringInfoMy(&src);
         init_settings(&src);
-        appendStringInfo(&src, SQL(
-            SELECT * FROM (SELECT DISTINCT ON ("data", %2$s "schema", "table") j.* FROM j ORDER BY "data", %2$s "schema", "table", "i") AS j WHERE "user" OPERATOR(pg_catalog.=) session_user AND "data" OPERATOR(pg_catalog.=) current_catalog AND pg_catalog.hashtext(pg_catalog.concat_ws('.', pg_catalog.length("schema"), "schema", "table"))::pg_catalog.int4 OPERATOR(pg_catalog.=) %1$i
-        ), w->shared->hash,
+        {
+            char *schema = quote_literal_cstr(w->shared->schema);
+            char *table = quote_literal_cstr(w->shared->table);
+            appendStringInfo(&src, SQL(
+                SELECT * FROM (SELECT DISTINCT ON ("data", %2$s "schema", "table") j.* FROM j ORDER BY "data", %2$s "schema", "table", "i") AS j WHERE "user" OPERATOR(pg_catalog.=) session_user AND "data" OPERATOR(pg_catalog.=) current_catalog AND pg_catalog.hashtext(pg_catalog.concat_ws('.', pg_catalog.length("schema"), "schema", "table"))::pg_catalog.int4 OPERATOR(pg_catalog.=) %1$i AND "schema" OPERATOR(pg_catalog.=) %3$s AND "table" OPERATOR(pg_catalog.=) %4$s
+            ), w->shared->hash,
 #if PG_VERSION_NUM >= 90500
-            "" // the first entry of its table, an entry of another role before it taking it, see conf_check()
+                "", // the first entry of its table, an entry of another role before it taking it, see conf_check()
 #else
-            "\"user\"," // its own, with no pg_file_settings before 9.5 to tell the settings of other entries by, but by those of its own session, the schema and table of an entry of no settings of its own taken for those of its role, its own entry for another one's then
+                "\"user\",", // its own, with no pg_file_settings before 9.5 to tell the settings of other entries by, but by those of its own session, the schema and table of an entry of no settings of its own taken for those of its role, its own entry for another one's then
 #endif
-        );
+                schema, table // its own schema and table too, not its hash alone, for an entry of another table of the same hash not to pass for its own, see conf_check()
+            );
+            pfree(schema);
+            pfree(table);
+        }
     }
     // as pg_conf does, keep running with the settings as they are rather than exit over a pg_task.json that doesn't parse or fit the types of its keys
     PG_TRY();
