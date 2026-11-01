@@ -347,10 +347,7 @@ static void make_cancel(const Work *w, StringInfo cancel) {
 #ifdef GP_VERSION_NUM
     char *prefix = psprintf("pg_work %s %s ", w->shared->schema, w->shared->table);
     const char *quote;
-    int len = pg_mbcliplen(prefix, strlen(prefix), NAMEDATALEN - 1); // as the session keeps it
-#if PG_VERSION_NUM >= 120000
-    for (char *c = prefix; *c; c++) if (IS_HIGHBIT_SET(*c)) *c = '?'; // as its check hook does
-#endif
+    int len = pg_mbcliplen(prefix, strlen(prefix), NAMEDATALEN - 1); // as the session keeps it, its raw bytes, not the '?' of the check hook of its GUC, which pgstat_report_appname() of work.c reports over, mbclipped only
     prefix[len] = '\0';
     quote = quote_literal_cstr(prefix);
     appendStringInfo(cancel, SQL(
