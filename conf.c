@@ -201,6 +201,7 @@ static void conf_check(void) {
                 Work *w = MemoryContextAllocZero(TopMemoryContext, sizeof(Work));
                 set_ps_display_my("row");
                 w->shared = MemoryContextAllocZero(TopMemoryContext, sizeof(Shared));
+                dlist_push_tail(&head, &w->node); // from its start, for the catch below to free it whatever an error of its filling takes from it, conf_free() touching its node and shared only
                 w->shared->hash = DatumGetInt32(SPI_getbinval_my(val, tupdesc, "hash", false, INT4OID));
                 w->spawn = DatumGetBool(SPI_getbinval_my(val, tupdesc, "new", false, BOOLOID));
                 w->shared->reset = DatumGetInt64(SPI_getbinval_my(val, tupdesc, "reset", false, INT8OID));
@@ -219,7 +220,7 @@ static void conf_check(void) {
                     bool other = strcmp(first, w->shared->user) != 0;
                     if (other) ereport(WARNING, (errmsg("entry of pg_task.json for database \"%s\", user \"%s\", schema \"%s\" and table \"%s\" left out", w->shared->data, w->shared->user, w->shared->schema, w->shared->table), errdetail("An entry of user \"%s\" before it is of the same database, schema and table, which one pg_work runs at most.", first)));
                     pfree(first);
-                    if (other) { pfree(w->shared); pfree(w); SPI_freetuple(val); continue; }
+                    if (other) { conf_free(w); SPI_freetuple(val); continue; }
                 }
                 // one pg_work of a database and hash at most, the lock of it the same for two tables their hashes have collided, the first of their entries in pg_task.json kept, this one left out with a word, rather than never started with none, see lock_data_hash()
                 {
@@ -229,10 +230,9 @@ static void conf_check(void) {
                     if (other) ereport(WARNING, (errmsg("entry of pg_task.json for database \"%s\", user \"%s\", schema \"%s\" and table \"%s\" left out", w->shared->data, w->shared->user, w->shared->schema, w->shared->table), errdetail("The hash of it is that of the schema \"%s\" and table \"%s\" of an entry before it, two tables of one database and hash, which one pg_work runs at most.", first_schema, first_table)));
                     pfree(first_schema);
                     pfree(first_table);
-                    if (other) { pfree(w->shared); pfree(w); SPI_freetuple(val); continue; }
+                    if (other) { conf_free(w); SPI_freetuple(val); continue; }
                 }
                 elog(DEBUG1, "row = " UINT64_FORMAT ", user = %s, data = %s, schema = %s, table = %s, sleep = " INT64_FORMAT ", reset = " INT64_FORMAT ", run = %i, hash = %i, spi = %s, limit = %i, spawn = %s", row, w->shared->user, w->shared->data, w->shared->schema, w->shared->table, w->shared->sleep, w->shared->reset, w->shared->run, w->shared->hash, w->shared->spi ? "true" : "false", w->shared->limit, w->spawn ? "true" : "false");
-                dlist_push_tail(&head, &w->node);
                 SPI_freetuple(val);
             }
         } while (SPI_processed);
