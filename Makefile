@@ -16,7 +16,7 @@ exec.c: postgres.c exec.sh
 PG9495 = $(shell $(PG_CONFIG) --version | grep -E " 9\.4| 9\.5" > /dev/null && echo yes || echo no)
 ifeq ($(PG9495),yes)
 work.o: latch_my.h
-latch_my.h: latch.h
+latch_my.h: latch.sh latch.h
 	./latch.sh >$@
 latch.h:
 	curl --no-progress-meter -fL -o $@.tmp "https://raw.githubusercontent.com/postgres/postgres/REL9_6_STABLE/src/include/storage/latch.h"
