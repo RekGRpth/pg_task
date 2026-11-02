@@ -78,6 +78,10 @@ EXTRA_CLEAN += libpq_my.a libpq_my.o libpq_my.sym
 else
 SHLIB_LINK = $(libpq)
 endif
+# pg_regress of Greengage compares the output of a test by gpdiff, but the patterns of what gpdiff may ignore it takes from an init file, given by --init-file, which pg_regress of PostgreSQL has no option for
+ifeq ($(GREENGAGE),yes)
+REGRESS_OPTS += --init-file=./init_file
+endif
 # in the order of their names, setup first and teardown last, as make from 4.3 on has the wildcard, before it in the order of the directory
 TESTS = $(sort $(wildcard sql/*.sql))
 EXTRA_CLEAN += test.conf
