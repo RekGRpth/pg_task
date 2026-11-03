@@ -689,17 +689,21 @@ bool init_free_task(int slot, const char *data, Oid oid, int64 id) {
     return freed;
 }
 
-// marks the task work_stop() cancels in the slot of the task worker running it, for that worker to cancel only that one (see dest_cancel()): found by the task itself, as it may be a worker that an earlier pg_work started, before it was restarted; among the slots of task workers only, of no registration, unlike those of pg_work, whose id is 0 too, as that of a task may be
+// marks the task work_stop() cancels in the slot of the task worker running it, for that worker to cancel only that one (see dest_cancel()), and signals it, the pid read from the slot under the same lock: one read earlier, by pg_locks or a snapshot of the slots, the OS may have handed to another process since, the worker gone, its exit freeing the slot under this very lock; one whose slot has no pid yet is only starting and cancels the task by the flag, see dest_timeout(); found by the task itself, as it may be a worker that an earlier pg_work started, before it was restarted; among the slots of task workers only, of no registration, unlike those of pg_work, whose id is 0 too, as that of a task may be
 bool init_stop(const char *data, Oid oid, int64 id) {
     bool marked = false;
+    int err = 0, pid = 0;
     LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
     for (int slot = 0; slot < init.conf.max; slot++) if (shared[slot].in_use && !shared[slot].reg && shared[slot].taken && shared[slot].id == id && shared[slot].oid == oid && !strcmp(shared[slot].data, data)) {
         shared[slot].stop = id;
         shared[slot].stopped = true;
         marked = true;
+        if ((pid = shared[slot].pid) && kill(pid, SIGUSR2)) err = errno;
         break;
     }
     LWLockRelease(BackgroundWorkerLock);
+    if (err) { errno = err; ereport(WARNING, (errmsg("id = " INT64_FORMAT ", could not send signal to process %i: %m", id, pid))); }
+    else if (marked && pid) ereport(WARNING, (errmsg("cancel id = " INT64_FORMAT ", pid = %i", id, pid)));
     return marked;
 }
 

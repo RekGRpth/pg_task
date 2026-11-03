@@ -1275,10 +1275,8 @@ static void work_stop(const Work *w) {
                     break;
                 }
             }
-        } else { // a task worker held the lock of this task just now, one that an earlier pg_work may have started too, but may be done with it by now: mark the task in its slot, for it to cancel only that one, along with the processes its input started (see dest_cancel()), with no role checks of pg_cancel_backend() to pass either, as the worker runs as the task author, whom pg_task.user may not signal from SQL
+        } else { // a task worker held the lock of this task just now, one that an earlier pg_work may have started too, but may be done with it by now: mark the task in its slot and signal the worker, both by init_stop(), which reads the pid there, under the slot lock, rather than trust the one the query read, which the OS may have given another process since, for it to cancel only that one, along with the processes its input started (see dest_cancel()), with no role checks of pg_cancel_backend() to pass either, as the worker runs as the task author, whom pg_task.user may not signal from SQL
             if (!init_stop(w->shared->data, w->shared->oid, id)) elog(DEBUG1, "id = " INT64_FORMAT ", no longer run by a task worker", id);
-            else if (kill(pid, SIGUSR2)) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", could not send signal to process %i: %m", id, pid)));
-            else ereport(WARNING, (errmsg("cancel id = " INT64_FORMAT ", pid = %i", id, pid)));
         }
     }
     if (cancelled) pfree(cancelled);
