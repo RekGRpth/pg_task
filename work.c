@@ -1580,11 +1580,11 @@ static void work_task(Task *t) {
     registered = RegisterDynamicBackgroundWorker(&worker, &handle);
     MemoryContextSwitchTo(oldMemoryContext);
     if (!registered) {
-        init_free(worker.bgw_main_arg);
+        init_free(DatumGetInt32(worker.bgw_main_arg));
         work_later(t, "could not register background worker", "max_worker_processes");
     } else switch (WaitForBackgroundWorkerStartup(handle, &t->pid)) {
-        case BGWH_NOT_YET_STARTED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
-        case BGWH_POSTMASTER_DIED: init_free(worker.bgw_main_arg); work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
+        case BGWH_NOT_YET_STARTED: init_free(DatumGetInt32(worker.bgw_main_arg)); work_error((errcode(ERRCODE_INTERNAL_ERROR), errmsg("BGWH_NOT_YET_STARTED is never returned!"))); break;
+        case BGWH_POSTMASTER_DIED: init_free(DatumGetInt32(worker.bgw_main_arg)); work_error((errcode(ERRCODE_INSUFFICIENT_RESOURCES), errmsg("cannot start background worker without postmaster"), errhint("Kill all remaining database processes and restart the database."))); break;
         case BGWH_STARTED: elog(DEBUG1, "started id = " INT64_FORMAT, t->shared->id); later_local = false; /* a worker for it, see work_later() */ init_task_pid(DatumGetInt32(worker.bgw_main_arg), t->shared->data, t->shared->oid, t->shared->id, t->pid); work_local(t, handle); handle = NULL; work_free(t); break;
         case BGWH_STOPPED:
             // gone before it was seen to start: one that never ran, its slot ours still, failed to start, its task with it; but one that ran and exited meanwhile, pg_work held up for all of it, has freed its slot itself, its task done, given back to PLAN, or left in TAKE for the reset, by itself, see dest_shmem_exit(), not to be failed here, maybe taken by another task worker of its group by now
