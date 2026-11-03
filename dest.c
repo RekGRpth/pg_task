@@ -335,14 +335,14 @@ static void dest_spi_context(void *arg) {
     errcontext("SQL statement \"%s\"", (const char *)arg);
 }
 
-// the rows of SPI_tuptable into the output, the first of all, first, after the header, if any, its size checked against the most a task may keep after each
-static void dest_spi_output(uint64 first) {
+// the rows of SPI_tuptable into the output, after the header, if any, its size checked against the most a task may keep after each
+static void dest_spi_output(void) {
     for (uint64 row = 0; row < SPI_processed; row++) {
         MemoryContext oldcontext;
         task.skip = 1;
         if (!task.output.data) initStringInfoMy(&task.output);
         oldcontext = MemoryContextSwitchTo(dest_row_context()); // as in receiveSlot()
-        if (task.header && !first && !row && SPI_tuptable->tupdesc->natts > 1) headers(SPI_tuptable->tupdesc);
+        if (task.header && !row && SPI_tuptable->tupdesc->natts > 1) headers(SPI_tuptable->tupdesc);
         task_line(&task);
         for (int col = 1; col <= SPI_tuptable->tupdesc->natts; col++) {
             char *value = SPI_getvalue(SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col);
@@ -537,7 +537,7 @@ static void dest_execute_spi(const char *src, Node *stmt, bool alone) {
         case SPI_OK_UPDATE_RETURNING: task.skip = 1; break;
     }
     elog(DEBUG1, "id = " INT64_FORMAT ", commandTag = %s", task.shared->id, tagname);
-    if (SPI_tuptable) dest_spi_output(0);
+    if (SPI_tuptable) dest_spi_output();
 #if PG_VERSION_NUM < 120000
     // the oid of the one row inserted into a table WITH OIDS before 12, as local mode and remote mode report it, 0 for none or several
     if (count && !strcmp(tagname, "INSERT")) snprintf(completionTag, COMPLETION_TAG_BUFSIZE, "%s %u " UINT64_FORMAT, tagname, SPI_processed == 1 ? SPI_lastoid : InvalidOid, (uint64)SPI_processed); else
