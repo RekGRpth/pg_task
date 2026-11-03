@@ -196,9 +196,9 @@ static void task_update(const Task *t, TimestampTz until) {
 // gives back a task task_live() took that pg_work then can't run on the connection, rather than leave it in TAKE, counted against the max of its group, until the next reset
 static bool task_held(const Task *t);
 
-// false if its row is held by someone else, see task_held(), to try again, true otherwise
+// false if its row is held by someone else, see task_held(), or, before 9.5 and in Greengage, by the error of NOWAIT, to try again, true otherwise
 bool task_untake_try(Task *t) {
-    bool held = false;
+    volatile bool held = false;
     Datum values[] = {Int64GetDatum(t->shared->id)};
     static Oid argtypes[] = {INT8OID};
     static SPIPlanPtr plan = NULL;
@@ -208,15 +208,50 @@ bool task_untake_try(Task *t) {
         initStringInfoMy(&src);
         appendStringInfo(&src, SQL(
             UPDATE %1$s AS t SET "state" = 'PLAN' FROM (SELECT "id" FROM %1$s WHERE "id" OPERATOR(pg_catalog.=) $1 AND "state" OPERATOR(pg_catalog.=) 'TAKE' FOR NO KEY UPDATE %2$s) AS u WHERE t.id OPERATOR(pg_catalog.=) u.id
-        ), t->work->schema_table, TASK_SKIP_LOCKED ? "SKIP LOCKED" : ""); // in pg_work, which waits for no row someone else holds, see task_done(): one held left in TAKE, for the next reset to put back to PLAN
+        ), t->work->schema_table, TASK_SKIP_LOCKED ? "SKIP LOCKED" : "NOWAIT"); // in pg_work, which waits for no row someone else holds, see task_done(): one held left in TAKE, for the next reset to put back to PLAN; SKIP LOCKED from 9.5 on, NOWAIT before, and in Greengage, which has none, its error caught below
     }
     SPI_connect_my(src.data, userid);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
+#if TASK_SKIP_LOCKED
     SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_UPDATE);
     if (!SPI_processed) {
-        if (TASK_SKIP_LOCKED && (held = task_held(t))) elog(DEBUG1, "id = " INT64_FORMAT ", its row held by someone else", t->shared->id);
+        if ((held = task_held(t))) elog(DEBUG1, "id = " INT64_FORMAT ", its row held by someone else", t->shared->id);
         else ereport(WARNING, (errmsg("id = " INT64_FORMAT ", not put back to PLAN, it's not in TAKE", t->shared->id)));
     }
+#else
+    { // no SKIP LOCKED: the error of NOWAIT on a row someone else holds, caught, told from one not in TAKE, for dest_untake() to try again, till DEST_UNTAKE_TIMEOUT, rather than wait for the row past it, till its owner commits; in a subtransaction of its own, as a step of the bookkeeping, see task_step()
+        MemoryContext oldcontext = CurrentMemoryContext;
+        ResourceOwner oldowner = CurrentResourceOwner;
+        uint32 holdoff = InterruptHoldoffCount; // which an error's errfinish() sets to 0, see task_step()
+        uint32 cancel_holdoff = QueryCancelHoldoffCount;
+        ErrorData *edata;
+        BeginInternalSubTransaction(NULL);
+        MemoryContextSwitchTo(oldcontext);
+        PG_TRY();
+            SPI_execute_plan_my(src.data, plan, values, NULL, SPI_OK_UPDATE);
+            ReleaseCurrentSubTransaction();
+            MemoryContextSwitchTo(oldcontext);
+            CurrentResourceOwner = oldowner;
+        PG_CATCH();
+            MemoryContextSwitchTo(oldcontext);
+            edata = CopyErrorData();
+            FlushErrorState();
+            RollbackAndReleaseCurrentSubTransaction();
+            MemoryContextSwitchTo(oldcontext);
+            CurrentResourceOwner = oldowner;
+#if PG_VERSION_NUM < 100000
+            SPI_restore_connection();
+#endif
+            if (edata->sqlerrcode != ERRCODE_LOCK_NOT_AVAILABLE) ReThrowError(edata);
+            FreeErrorData(edata);
+            InterruptHoldoffCount = holdoff;
+            QueryCancelHoldoffCount = cancel_holdoff;
+            held = true;
+        PG_END_TRY();
+    }
+    if (held) elog(DEBUG1, "id = " INT64_FORMAT ", its row held by someone else", t->shared->id);
+    else if (!SPI_processed) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", not put back to PLAN, it's not in TAKE", t->shared->id)));
+#endif
     SPI_finish_my();
     return !held;
 }
