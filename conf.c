@@ -380,7 +380,7 @@ void conf_main(Datum main_arg) {
             long secs;
             int usecs;
             TimestampDifference(GetCurrentTimestamp(), retry, &secs, &usecs); // 0 once past
-            timeout = Min(secs * 1000 + usecs / 1000, INT_MAX);
+            timeout = Min((int64)secs * 1000 + usecs / 1000, (int64)INT_MAX); // in int64 before the clamp: long may be 32 bits, while pg_work.restart may be INT_MAX seconds
         }
 #if PG_VERSION_NUM < 90600
         if (timeout < 0 || timeout > 1000) timeout = 1000; // the notice of a pg_work stopped doesn't wake pg_conf before 9.6, seen in CI on 9.5: look for it every second
