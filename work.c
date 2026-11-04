@@ -828,7 +828,7 @@ static void work_done(Task *t) {
         return;
     }
     if (!work_encoding(t)) return;
-    live = !exiting && PQstatus(t->conn) == CONNECTION_OK && !work_cancelling(t) && !t->lost; // take the next task of the group only for a connection to run it on, and one no cancel is on its way to, nor one given up, which may get there still
+    live = !exiting && PQstatus(t->conn) == CONNECTION_OK && !work_cancelling(t) && !t->cancelled; // take the next task of the group only for a connection to run it on, and one no cancel request was created for, which its server may not have processed yet
     // nor on a session kept with a client_encoding the input set, for the input of the next one to be sent in, read as that, its text taken amiss with no error, and for its results to come in, which DISCARD ALL resets otherwise, and which can't be set back before it, a query read in the client_encoding it comes in, as the preamble would come with the input: as of the end of the input, which servers from 14 on tell of only then
     if (t->save && PQclientEncoding(t->conn) != GetDatabaseEncoding()) live = false;
     if (!work_bookkeeping(t, live, &exit)) { work_defer(t); return; }
@@ -1103,7 +1103,7 @@ static void work_cancel_lost(Cancel *c) {
     dlist_iter iter;
     dlist_foreach(iter, &remote) {
         Task *t = dlist_container(Task, node, iter.cur);
-        if (t->shared->id == c->id) { t->lost = true; break; }
+        if (t->shared->id == c->id) { t->cancelled = true; break; }
     }
     work_cancel_free(c);
 }
@@ -1150,6 +1150,7 @@ static bool work_cancel(Task *t) {
     if (!t->spare) { ereport(WARNING, (errmsg("id = " INT64_FORMAT ", no file descriptor for a cancel request yet", t->shared->id))); return false; }
 #endif
     if (!(conn = PQcancelCreate(t->conn))) { ereport(WARNING, (errmsg("PQcancelCreate failed"))); return false; }
+    t->cancelled = true; // created, so its server may get it after this task, while the connection runs the next one already: not reused either way
     if (!PQcancelStart(conn)) { ereport(WARNING, (errmsg("PQcancelStart failed"), work_errdetail(PQcancelErrorMessage(conn)))); PQcancelFinish(conn); return false; }
     c = MemoryContextAllocZero(TopMemoryContext, sizeof(*c));
     c->conn = conn;
@@ -1162,6 +1163,7 @@ static bool work_cancel(Task *t) {
 #endif
 #else
     if (!(cancel = PQgetCancel(t->conn))) { ereport(WARNING, (errmsg("PQgetCancel failed"), work_errdetail(PQerrorMessage(t->conn)))); return false; }
+    t->cancelled = true; // even a failure to send it below leaves no way to tell that nothing went out: don't risk the next task on this connection
     if (!PQcancel(cancel, errbuf, sizeof(errbuf))) { ereport(WARNING, (errmsg("PQcancel failed"), errdetail("%s", errbuf))); PQfreeCancel(cancel); return false; }
     PQfreeCancel(cancel);
 #endif

@@ -1,0 +1,27 @@
+-- a connection whose task was cancelled is never reused for the next one, even with save: the cancel request has no acknowledgement of its processing by the server and may otherwise cancel that next task instead
+DELETE FROM task WHERE "group" = 'stop_save_connection';
+INSERT INTO task ("group", input, remote, save, count) VALUES
+    ('stop_save_connection', 'SELECT pg_sleep(5)', 'dbname=' || :'DBNAME', true, 2),
+    ('stop_save_connection', 'SELECT 1', 'dbname=' || :'DBNAME', true, 2);
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'stop_save_connection' AND input = 'SELECT pg_sleep(5)' AND state = 'WORK') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task of group stop_save_connection to start'; END IF;
+END;$body$ LANGUAGE plpgsql;
+UPDATE task SET state = 'STOP' WHERE "group" = 'stop_save_connection' AND input = 'SELECT pg_sleep(5)';
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'stop_save_connection' AND state NOT IN ('DONE', 'GONE', 'FAIL', 'STOP')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the tasks of group stop_save_connection to finish'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT array_agg(state::text ORDER BY id) = '{STOP,DONE}' AS states, count(DISTINCT pid) = 2 AS new_connection FROM task WHERE "group" = 'stop_save_connection';
+ states | new_connection 
+--------+----------------
+ t      | t
+(1 row)
+
+DELETE FROM task WHERE "group" = 'stop_save_connection';
