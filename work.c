@@ -1192,7 +1192,8 @@ static void work_exit(int code, Datum arg) {
     // the COMMIT of an input that left a transaction open, which work_done() has just sent above, or had sent before pg_work was held up: its result waited for and read here, rather than the task cancelled with its input committed, its row left in WORK, for the next pg_work to reset and run it again, a second time on its remote server; no other result waited for, of an input still running, whose cancel rolls it back, nor after an error, nor past the timeout
     {
         TimestampTz end = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), WORK_RESULT_TIMEOUT);
-        bool busy = true;
+        dlist_iter scan;
+        volatile bool busy = true;
         while (busy && PostmasterIsAlive() && GetCurrentTimestamp() < end) {
             busy = false;
             dlist_foreach_modify(iter, &remote) {
@@ -1202,6 +1203,11 @@ static void work_exit(int code, Datum arg) {
                 if (PQisBusy(t->conn)) { busy = true; continue; }
                 PG_TRY();
                     work_result(t); // which books the task, and may free it, or put its bookkeeping off, see the pending below
+                    // work_done() may have sent the COMMIT only in that call: wait for it too, looking at the list rather than at t, which may be freed already
+                    dlist_foreach(scan, &remote) {
+                        Task *s = dlist_container(Task, node, scan.cur);
+                        if (s->socket == work_result && s->skip && PQstatus(s->conn) == CONNECTION_OK) { busy = true; break; }
+                    }
                 PG_CATCH();
                     MemoryContextSwitchTo(oldMemoryContext);
                     EmitErrorReport();
