@@ -44,6 +44,7 @@ static bool task_live(Task *t) {
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID, TEXTOID, TEXTOID, TEXTOID, INT8OID};
     static SPIPlanPtr plan = NULL;
     static StringInfoData src = {0};
+    if (t->count >= INT_MAX) return true; // stop rather than let task_work() overflow its int; every finite pg_task.count refuses another task already
     elog(DEBUG1, "id = " INT64_FORMAT ", hash = %i, max = %i, count = %i, start = %s", t->shared->id, t->shared->hash, t->shared->max, t->count, timestamptz_to_str(t->start));
     set_ps_display_my("live");
     if (!src.data) {
