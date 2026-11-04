@@ -753,27 +753,44 @@ static bool work_busy(Task *t, void (*socket) (Task *t)) {
     return true;
 }
 
-// the results came in the client_encoding of the connection, which is that of this database (see work_remote()) unless the input set another one, which, as servers from 14 on tell of it only once the input is through, if at all, can't be told by result, and so did the messages of the server, localized: the output and the error are stored only if they are text of this database at least, one that isn't dropped, for the error of it, after the one the task has, if any, rather than stored as it is, invalid for anything that reads it
-static bool work_verify(Task *t) {
+// the results came in the client_encoding of the connection, which is that of this database (see work_remote()) unless the input set another one, which, as servers from 14 on tell of it only once the input is through, if at all, can't be told by result, and so did the messages of the server, localized: convert them to the encoding of this database, rather than only check their bytes as text of it, which other characters may be valid as too; one that can't be converted is dropped, for the error of it, after the one the task has, if any
+static bool work_convert(Task *t, StringInfo buf, int encoding) {
+    char *data;
     MemoryContext context = CurrentMemoryContext;
-    StringInfoData bad = {0};
-    if (t->output.data && !pg_verifymbstr(t->output.data, t->output.len, true)) { bad = t->output; t->output.data = NULL; t->output.len = 0; }
-    if (t->error.data && !pg_verifymbstr(t->error.data, t->error.len, true)) {
-        if (bad.data) pfree(t->error.data); else bad = t->error;
-        t->error.data = NULL;
-        t->error.len = 0;
-    }
-    if (!bad.data) return true;
+    bool started = encoding != GetDatabaseEncoding() && !IsTransactionState(); // the conversion's catalog lookup needs a transaction, which reading a result doesn't otherwise have
+    bool valid = true;
+    if (!buf->data) return true;
     PG_TRY();
-        (void)pg_verifymbstr(bad.data, bad.len, false);
+        if (started) StartTransactionCommand();
+        MemoryContextSwitchTo(TopMemoryContext); // the converted buffer must outlive the transaction
+        data = pg_any_to_server(buf->data, buf->len, encoding); // validates even when no conversion is needed
+        if (started) CommitTransactionCommand();
+        MemoryContextSwitchTo(context);
+        if (data != buf->data) {
+            pfree(buf->data);
+            buf->data = data;
+            buf->len = strlen(data);
+            buf->maxlen = buf->len + 1;
+        }
     PG_CATCH();
         MemoryContextSwitchTo(context); // out of ErrorContext, as in work_error()
+        if (IsTransactionState()) AbortCurrentTransaction();
+        pfree(buf->data);
+        buf->data = NULL;
+        buf->len = 0;
         task_error(t);
         EmitErrorReport();
         FlushErrorState();
+        valid = false;
     PG_END_TRY();
-    pfree(bad.data);
-    return false;
+    return valid;
+}
+
+static bool work_verify(Task *t) {
+    int encoding = t->conn ? t->encoding : GetDatabaseEncoding();
+    bool valid = work_convert(t, &t->error, encoding); // first, so a conversion error is appended only to text of this database
+    if (!work_convert(t, &t->output, encoding)) valid = false;
+    return valid;
 }
 
 // a task done with results that aren't text of this database fails, as inserting them would
@@ -794,6 +811,10 @@ static bool work_cancelling(const Task *t) {
 }
 
 static bool exiting = false; // on the way out, see work_exit(): no next task of a group to be taken, see work_done()
+
+static void work_encoding_update(Task *t) {
+    if (PQstatus(t->conn) == CONNECTION_OK) t->encoding = PQclientEncoding(t->conn);
+}
 
 static void work_done(Task *t) {
     bool exit;
@@ -821,6 +842,7 @@ static void work_discard(Task *t) {
     for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK; PQclear(result)) {
         if (work_busy(t, work_discard)) return;
         if (!(result = PQgetResult(t->conn))) break;
+        work_encoding_update(t);
         switch (PQresultStatus(result)) {
             case PGRES_COMMAND_OK: elog(DEBUG1, "id = " INT64_FORMAT ", %s", t->shared->id, PQcmdStatus(result)); break;
             case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); PQclear(result); task_untake(t); work_finish(t); return; // closes the connection, whatever else it was to read
@@ -866,6 +888,7 @@ static void work_drain(Task *t) {
     for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK; PQclear(result)) {
         if (work_busy(t, work_drain)) return;
         if (!(result = PQgetResult(t->conn))) break;
+        work_encoding_update(t);
         switch (PQresultStatus(result)) {
             case PGRES_COPY_BOTH: if (PQputCopyEnd(t->conn, "COPY BOTH is not supported") == -1) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
             case PGRES_COPY_IN: if (PQputCopyEnd(t->conn, "COPY FROM STDIN is not supported") == -1) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQputCopyEnd failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); break;
@@ -878,6 +901,7 @@ static void work_drain(Task *t) {
             default: ereport(DEBUG1, (errmsg("id = " INT64_FORMAT ", dropped %s", t->shared->id, PQresStatus(PQresultStatus(result))), work_errdetail(PQresultErrorMessage(result)))); break;
         }
     }
+    work_encoding_update(t);
     work_fail(t);
 }
 
@@ -933,6 +957,7 @@ static void work_result(Task *t) {
         volatile bool copy = false, failed = false;
         if (work_busy(t, work_result)) return;
         if (!(result = PQgetResult(t->conn))) break;
+        work_encoding_update(t);
         PG_TRY();
             switch (PQresultStatus(result)) {
                 case PGRES_COMMAND_OK: work_command(t, result); break;
@@ -955,6 +980,7 @@ static void work_result(Task *t) {
         if (failed) { PQclear(result); work_failed(t); return; }
         if (copy) { if (!work_copy(t)) { PQclear(result); return; } continue; } // the result freed by the loop then, as for any other, going on to the next one, with no recursion, see work_copy()
     }
+    work_encoding_update(t);
     work_done(t);
 }
 
@@ -962,12 +988,14 @@ static void work_input(Task *t) {
     for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK; PQclear(result)) {
         if (work_busy(t, work_input)) return;
         if (!(result = PQgetResult(t->conn))) break;
+        work_encoding_update(t);
         switch (PQresultStatus(result)) {
             case PGRES_COMMAND_OK: elog(DEBUG1, "id = " INT64_FORMAT ", %s", t->shared->id, PQcmdStatus(result)); break;
             case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); work_fatal(t, result); break;
             default: elog(DEBUG1, "id = " INT64_FORMAT ", %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
         }
     }
+    work_encoding_update(t);
     if (!t->error.data && dest_copy_stdin(t->input)) { work_error((errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("COPY FROM STDIN is not supported"))); return; } // as a local task is, before any statement of its input runs, not once its server gets to it
     // a stop come between the preamble and the input, whose cancel the server, idle there, ignored, the input to run to the end otherwise, never cancelled again: not sent, the task failed as the cancel would have it, as a local one is, see dest_timeout()
     if (!t->error.data && task_char(t)) { // its output made here, see work_output(), as a local one's is: failed before its input runs too, see dest_timeout()
@@ -1337,6 +1365,7 @@ static void work_start(Task *t) {
     int connect_timeout = 0;
     PQconninfoOption *opts = PQconninfoParse(t->remote, &err);
     StringInfoData name, value;
+    t->encoding = GetDatabaseEncoding(); // work_start() makes the connection use it, and keeps a known one for errors before any result
     if (!opts) { work_error((errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), work_errdetail(err))); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;

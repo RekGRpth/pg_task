@@ -126,6 +126,7 @@ typedef struct Task {
     char *user;
     dlist_node node;
     int count;
+    int encoding; // of the output and error bytes, the last one the remote server reported, kept because PQclientEncoding() returns -1 once its connection is bad
     int event;
     int host; // of them, the one tried now, in the order of hosts
     int *hosts; // the order the hosts of the connection string are tried in, one at a time, for the connect_timeout of each, see work_remote(), or NULL for libpq to try them itself
