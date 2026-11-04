@@ -984,11 +984,11 @@ bool dest_timeout(void) {
                 SPI_abort_my();
             } else dest_catch();
             dest_untake();
-            task.shared->taken = false; // back to PLAN already, not to be again on the way out, see dest_shmem_exit()
+            init_task_taken(task.shared, task.shared->id, false); // back to PLAN already, not to be again on the way out, see dest_shmem_exit()
             exit = true;
         PG_END_TRY();
     }
-    if (!exit && ProcDiePending) { dest_untake(); task.shared->taken = false; exit = true; } // to be terminated, now that its interrupts come through: the next task, taken for nothing, back to PLAN
+    if (!exit && ProcDiePending) { dest_untake(); init_task_taken(task.shared, task.shared->id, false); exit = true; } // to be terminated, now that its interrupts come through: the next task, taken for nothing, back to PLAN
     RESUME_INTERRUPTS();
     return exit;
 }

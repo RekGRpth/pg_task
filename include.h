@@ -185,6 +185,8 @@ int init_task_count(const char *data, Oid oid);
 void init_task_running(const char *data, Oid oid, StringInfo ids, StringInfo pids);
 void init_pause(Oid oid, int hash, TimestampTz until);
 TimestampTz init_pauses(Oid oid, StringInfo hashes);
+void init_task_taken(Shared *shared, int64 id, bool taken);
+void init_task_hash(Shared *shared, int hash);
 void init_task_pid(int slot, const char *data, Oid oid, int64 id, int pid);
 bool unlock_table_id(Oid table, int64 id);
 bool unlock_table_key_hash(Oid table, int key, int hash);

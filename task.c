@@ -38,6 +38,7 @@ static Oid userid = InvalidOid; // pg_task.user, whose rights the task table boo
 // and one that fits in its group by its own max, as work_sleep() takes them, with no more than max others running: those of a higher max, taken since the one just done, may well fill the group past it; counted by their rows in TAKE or WORK, or in STOP still running, its cancel on its way, started and not done, which keeps STOP, rather than by pg_locks, too much to read after every task, which count no fewer of them, only maybe more, those left by a pg_work gone, until the reset, or those whose bookkeeping is put off, see work_defer(), or one in STOP whose worker went down before it was done, which no reset puts back: the next one is left to work_sleep() then
 static bool task_live(Task *t) {
     bool taken;
+    int64 id = 0;
     char nulls[] = {' ', ' ', ' ', ' ', ' ', ' ', t->remote ? ' ' : 'n', ' '};
     Datum values[] = {Int32GetDatum(t->shared->hash), Int32GetDatum(t->shared->max), Int32GetDatum(t->count), TimestampTzGetDatum(t->start), (Datum)0, (Datum)0, (Datum)0, Int64GetDatum(t->shared->id)};
     static Oid argtypes[] = {INT4OID, INT4OID, INT4OID, TIMESTAMPTZOID, TEXTOID, TEXTOID, TEXTOID, INT8OID};
@@ -67,7 +68,9 @@ static bool task_live(Task *t) {
     if (t->remote) values[6] = CStringGetTextDatum(t->remote);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
     SPI_execute_plan_my(src.data, plan, values, nulls, SPI_OK_UPDATE_RETURNING);
-    t->shared->id = (t->shared->taken = taken = SPI_processed == 1) ? DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID)) : 0;
+    taken = SPI_processed == 1;
+    if (taken) id = DatumGetInt64(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "id", false, INT8OID));
+    init_task_taken(t->shared, id, taken); // before SPI_finish_my() commits the TAKE, so reset sees the id whenever it can see the row
     elog(DEBUG1, "id = " INT64_FORMAT, t->shared->id);
     SPI_finish_my();
     set_ps_display_my("idle");
@@ -447,7 +450,7 @@ bool task_done(Task *t, bool live) {
     t->booked = true; // for an error of task_live() not to be taken for one of the bookkeeping, before 9.5 and in Greengage, where it waits for the row of the next task, see work_bookkeeping()
     if (pause) init_pause(t->shared->oid, t->shared->hash, pause);
     set_ps_display_my("idle");
-    t->shared->taken = false; // the task done, till task_live() takes the next one, if called at all
+    init_task_taken(t->shared, t->shared->id, false); // the task done, till task_live() takes the next one, if called at all
     exit = ShutdownRequestPending || exit || task_live(t); // with the group and remote of the task just done still there to match the next one by
     task_free(t);
     RESUME_INTERRUPTS();
@@ -509,7 +512,7 @@ bool task_work(Task *t) {
         t->delimiter = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "delimiter", false, CHAROID));
         t->escape = DatumGetChar(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "escape", false, CHAROID));
         t->group = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "group", false, TEXTOID));
-        t->shared->hash = DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "hash", false, INT4OID));
+        init_task_hash(t->shared, DatumGetInt32(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "hash", false, INT4OID)));
         t->header = DatumGetBool(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "header", false, BOOLOID));
         t->input = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "input", false, TEXTOID));
         t->null = TextDatumGetCStringMy(SPI_getbinval_my(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, "null", false, TEXTOID));
@@ -718,7 +721,7 @@ void task_main(Datum main_arg) {
     SetConfigOption("pg_task.oid", oid.data, PGC_USERSET, PGC_S_SESSION);
     pfree(oid.data);
     task->pid = MyProcPid;
-    task->shared->pid = MyProcPid; // for pg_work to count this worker in its group by its slot, see init_task_pids(), once, with its lock
+    init_task_pid(DatumGetInt32(main_arg), task->shared->data, task->shared->oid, task->shared->id, MyProcPid); // for pg_work to count this worker in its group by its slot, see init_task_pids(), once, with its lock
     task->start = GetCurrentTimestamp();
     set_ps_display_my("idle");
 #ifdef HOLD_CANCEL_INTERRUPTS
