@@ -91,6 +91,7 @@ typedef struct Local {
 static dlist_head local; // started task workers whose slot we hold too, until they exit: see work_local()
 static dlist_head pending; // remote tasks done, their connections closed, whose bookkeeping waits for a row someone else holds, see work_bookkeeping()
 static dlist_head remote;
+static uint32 remote_key = 0; // of a remote task's reservation and connection, its high bit set to tell it from a task worker's pid
 
 #ifdef LIBPQ_HAS_ASYNC_CANCEL
 // a cancel request in flight, sent asynchronously, as PQcancel() would block pg_work and every task it runs until it gets through, for as long as the TCP timeout to a server that doesn't answer
@@ -385,7 +386,7 @@ static void work_free(Task *t) {
 }
 
 static void work_unreserve(Task *t) {
-    if (t->reserve && !unlock_table_id_hash(t->shared->oid, t->shared->id, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_id_hash(%i, " INT64_FORMAT ", %i)", t->shared->oid, t->shared->id, t->shared->hash)));
+    if (t->reserve && !unlock_table_key_hash(t->shared->oid, t->key, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_key_hash(%i, %i, %i)", t->shared->oid, t->key, t->shared->hash)));
     t->reserve = false;
 }
 
@@ -452,7 +453,7 @@ static void work_finish(Task *t) {
         work_release(t);
 #endif
     }
-    if (!proc_exit_inprogress && t->key && !unlock_table_pid_hash(t->shared->oid, t->key, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->key, t->shared->hash)));
+    if (!proc_exit_inprogress && t->pid && !unlock_table_pid_hash(t->shared->oid, t->key, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->key, t->shared->hash)));
     idle_count = 0; // a slot of its group is free now, for a task of the group that waits for one, which an idle pg_work doesn't wait for: see work_reap()
     work_free(t);
 }
@@ -470,8 +471,8 @@ static void work_defer(Task *t) {
     // a pause, of a negative max, scheduled by the bookkeeping only, see task_done(): the slot of the group held till then, by the locks of the connection gone, for no next task of the group to be taken before the pause, see work_pending()
     if (t->shared->max >= 0) {
         work_unreserve(t);
-        if (t->key && !unlock_table_pid_hash(t->shared->oid, t->key, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->key, t->shared->hash)));
-        t->key = 0;
+        if (t->pid && !unlock_table_pid_hash(t->shared->oid, t->key, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->key, t->shared->hash)));
+        t->key = t->pid = 0;
         idle_count = 0;
     }
     dlist_delete(&t->node);
@@ -1053,7 +1054,6 @@ static void work_query(Task *t) {
 static void work_connect(Task *t) {
     bool connected = false;
     int pid;
-    static uint32 key = 0;
     switch (PQstatus(t->conn)) {
         case CONNECTION_BAD: if (!work_next(t, PQerrorMessage(t->conn))) work_error((errcode(ERRCODE_CONNECTION_FAILURE), errmsg("PQstatus == CONNECTION_BAD"), work_errdetail(t->failed ? t->failed : PQerrorMessage(t->conn)))); return;
         case CONNECTION_OK: elog(DEBUG1, "id = " INT64_FORMAT ", PQstatus == CONNECTION_OK", t->shared->id); connected = true; break;
@@ -1071,10 +1071,8 @@ static void work_connect(Task *t) {
         // only now does libpq know whether the server actually asked for the password, and it's the task author who must not be able to connect without one
         if (!work_superuser(t->user) && !PQconnectionUsedPassword(t->conn)) { work_error((errcode(ERRCODE_S_R_E_PROHIBITED_SQL_STATEMENT_ATTEMPTED), errmsg("password is required"), errdetail("Non-superuser cannot connect if the server does not request a password."), errhint("Target server's authentication method must be changed."))); return; }
         if (!(pid = PQbackendPID(t->conn))) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQbackendPID failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
-        // by a key of its own, in place of the pid of the connection, as a task worker holds it by its pid: the pid of another server, one of the hosts of the connection string say, may be that of another connection of the group, whose lock the same tag would make one, the slots of the group counted one short, rather than the pid of a process here, which no key takes, from 2^31 on
-        if (!++key) key = 1;
-        if (!lock_table_pid_hash(t->shared->oid, (int)(key | 0x80000000), t->shared->hash)) { work_error((errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", t->shared->oid, (int)(key | 0x80000000), t->shared->hash))); return; }
-        t->key = (int)(key | 0x80000000);
+        // the key its reservation already holds the slot by, in place of the pid of the connection, as a task worker holds it by its pid: the pid of another server, one of the hosts of the connection string say, may be that of another connection of the group, whose lock the same tag would make one, the slots of the group counted one short; taken once more before the reservation is let go
+        if (!lock_table_pid_hash(t->shared->oid, t->key, t->shared->hash)) { work_error((errcode(ERRCODE_LOCK_NOT_AVAILABLE), errmsg("!lock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->key, t->shared->hash))); return; }
         t->pid = pid;
         work_unreserve(t); // the slot is now held by the lock of the connection
         work_query(t);
@@ -1476,8 +1474,10 @@ static void work_remote(Task *t) {
     dlist_delete(&t->node);
     dlist_push_tail(&remote, &t->node);
     t->take = lock_table_take(t->shared->oid, t->shared->id); // for the reset of another pg_work of the table to leave it be, see work_reset()
-    // hold the slot of the group from now on, not only once connected, or the next work_sleep() doesn't count it and takes another task of the group over its max
-    if (!(t->reserve = lock_table_id_hash(t->shared->oid, t->shared->id, t->shared->hash))) ereport(WARNING, (errmsg("!lock_table_id_hash(%i, " INT64_FORMAT ", %i)", t->shared->oid, t->shared->id, t->shared->hash)));
+    // hold the slot of the group from now on, not only once connected, or the next work_sleep() doesn't count it and takes another task of the group over its max: by a key of its own, not any part of its id, whose low half alone would make ids differing only in their high half share one slot
+    if (!++remote_key) remote_key = 1;
+    t->key = (int)(remote_key | 0x80000000);
+    if (!(t->reserve = lock_table_key_hash(t->shared->oid, t->key, t->shared->hash))) ereport(WARNING, (errmsg("!lock_table_key_hash(%i, %i, %i)", t->shared->oid, t->key, t->shared->hash)));
     if (!opts) { work_error((errcode(ERRCODE_INVALID_PARAMETER_VALUE), errmsg("PQconninfoParse failed"), work_errdetail(err))); if (err) PQfreemem(err); return; }
     for (PQconninfoOption *opt = opts; opt->keyword; opt++) {
         if (!opt->val) continue;
@@ -1721,7 +1721,7 @@ static void work_sleep(Work *w) {
             )
         ), w->schema_table);
 #endif
-        // the slots taken in each group: one per pid holding the slot lock (a task worker and we for it hold the same one), or per key and holder for the key of a remote connection, of the high bit set, which two pg_work of a table, of entries of two roles, number alike, see work_connect(),, or having a slot of a task worker of the group, which its input can't let go of, as it can of its lock, with pg_advisory_unlock_all() say, and which an earlier pg_work, restarted since, held no more, plus one per remote task not yet connected; the tasks that fit in the slots left in their group, cut there before the limit, not after it, or a group with more tasks due than it has slots for would take up the whole limit and keep the others waiting for the next pass, and of them, locked, as a window function can't be, the local ones that fit in the slots of pg_task free now, each needing a task worker in one, as a remote one doesn't, for no more of them to be taken only to go back to PLAN, and the remote ones, one each as a probe while none could be run, see work_later(), counted once locked, not before, or a row someone else holds, its author editing it, say, would take the place of one free, and, the one probe of its kind, keep every other task of that kind waiting for as long as it's held
+        // the slots taken in each group: one per pid holding the slot lock (a task worker and we for it hold the same one), or per key and holder for the key of a remote connection, of the high bit set, which two pg_work of a table, of entries of two roles, number alike, see work_remote(), or having a slot of a task worker of the group, which its input can't let go of, as it can of its lock, with pg_advisory_unlock_all() say, and which an earlier pg_work, restarted since, held no more, plus one per remote task not yet connected; the tasks that fit in the slots left in their group, cut there before the limit, not after it, or a group with more tasks due than it has slots for would take up the whole limit and keep the others waiting for the next pass, and of them, locked, as a window function can't be, the local ones that fit in the slots of pg_task free now, each needing a task worker in one, as a remote one doesn't, for no more of them to be taken only to go back to PLAN, and the remote ones, one each as a probe while none could be run, see work_later(), counted once locked, not before, or a row someone else holds, its author editing it, say, would take the place of one free, and, the one probe of its kind, keep every other task of that kind waiting for as long as it's held
         appendStringInfo(&src, SQL(
             %6$s l AS (
                 SELECT pg_catalog.count(DISTINCT CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 5 THEN CASE WHEN "classid" OPERATOR(pg_catalog.>=) 2147483648::pg_catalog.oid THEN "classid"::pg_catalog.int8 OPERATOR(pg_catalog.+) ("pid"::pg_catalog.int8 OPERATOR(pg_catalog.<<) 32) ELSE "classid"::pg_catalog.int8 END END) OPERATOR(pg_catalog.+) pg_catalog.count(CASE WHEN "objsubid" OPERATOR(pg_catalog.=) 7 THEN "classid" END) AS "classid", "objid" FROM (

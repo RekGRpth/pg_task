@@ -1,4 +1,4 @@
--- a remote task counts against max from TAKE on, not once its connection is up: slow the connections of pg_task down with a login event trigger (PostgreSQL 17+), so that work_sleep() runs while they are still coming up
+-- remote tasks count against max from TAKE on, not once their connections are up, even ids that differ only in their high 32 bits: slow the connections of pg_task down with a login event trigger (PostgreSQL 17+), so that work_sleep() runs while they are still coming up
 SELECT current_setting('server_version_num')::int >= 170000 AS slow_login;
 DO $body$ BEGIN
     IF current_setting('server_version_num')::int >= 170000 THEN
@@ -9,7 +9,7 @@ END;$body$ LANGUAGE plpgsql;
 DELETE FROM task WHERE "group" = 'max_slow_connect';
 SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
 \gset
-WITH s AS (SELECT generate_series(1, 10) AS s) INSERT INTO task ("group", input, max, remote) SELECT 'max_slow_connect', 'SELECT pg_sleep(0.3) AS a', 1, 'dbname=' || :'DBNAME' FROM s;
+WITH s AS (SELECT generate_series(0, 9) AS s) INSERT INTO task (id, "group", input, max, remote) SELECT s * 4294967296, 'max_slow_connect', 'SELECT pg_sleep(0.3) AS a', 1, 'dbname=' || :'DBNAME' FROM s;
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         IF (SELECT count(*) FROM task WHERE "group" = 'max_slow_connect' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;

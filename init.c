@@ -153,10 +153,10 @@ bool lock_table_pid_hash(Oid table, int pid, int hash) {
     return LockAcquire(&tag, AccessShareLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
 }
 
-// the slot of the group hash a remote task takes before its connection has a pid to lock with lock_table_pid_hash(); only the low half of the id, so already held is fine
-bool lock_table_id_hash(Oid table, int64 id, int hash) {
-    LOCKTAG tag = {init_table_key(table), (uint32)id, (uint32)hash, 7, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    elog(DEBUG1, "table = %i, id = " INT64_FORMAT ", hash = %i", table, id, hash);
+// the slot of the group hash a remote task takes before its connection has a pid to lock with lock_table_pid_hash(): by the key it will take that lock by too, unique within its pg_work rather than by any part of its id
+bool lock_table_key_hash(Oid table, int key, int hash) {
+    LOCKTAG tag = {init_table_key(table), (uint32)key, (uint32)hash, 7, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "table = %i, key = %i, hash = %i", table, key, hash);
     return LockAcquire(&tag, AccessShareLock, true, true) != LOCKACQUIRE_NOT_AVAIL;
 }
 
@@ -191,9 +191,9 @@ bool unlock_table_id(Oid table, int64 id) {
     return LockRelease(&tag, AccessExclusiveLock, true);
 }
 
-bool unlock_table_id_hash(Oid table, int64 id, int hash) {
-    LOCKTAG tag = {init_table_key(table), (uint32)id, (uint32)hash, 7, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
-    elog(DEBUG1, "table = %i, id = " INT64_FORMAT ", hash = %i", table, id, hash);
+bool unlock_table_key_hash(Oid table, int key, int hash) {
+    LOCKTAG tag = {init_table_key(table), (uint32)key, (uint32)hash, 7, LOCKTAG_USERLOCK, USER_LOCKMETHOD};
+    elog(DEBUG1, "table = %i, key = %i, hash = %i", table, key, hash);
     return LockRelease(&tag, AccessShareLock, true);
 }
 

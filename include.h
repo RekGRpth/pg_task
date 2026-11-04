@@ -132,7 +132,7 @@ typedef struct Task {
     int *hosts; // the order the hosts of the connection string are tried in, one at a time, for the connect_timeout of each, see work_remote(), or NULL for libpq to try them itself
     int nhosts;
     int standby; // of the tries of the hosts, the first ones for a standby only, of target_session_attrs=prefer-standby, see work_remote()
-    int key; // of the lock a remote task holds the slot of its group by, see work_connect()
+    int key; // of the locks a remote task holds the slot of its group by, before its connection has a pid and after, see work_remote() and work_connect()
     uint64 rows; // of the result a remote task gets in single-row mode so far, its headers before the first, see work_result()
     int pid;
     int skip;
@@ -166,7 +166,7 @@ bool lock_data_hash(Oid data, int hash);
 bool lock_data_make(Oid data);
 bool lock_data_user(Oid data, Oid user);
 bool lock_table_id(Oid table, int64 id);
-bool lock_table_id_hash(Oid table, int64 id, int hash);
+bool lock_table_key_hash(Oid table, int key, int hash);
 bool lock_table_pid_hash(Oid table, int pid, int hash);
 bool lock_table_take(Oid table, int64 id);
 bool task_done(Task *t, bool live);
@@ -187,7 +187,7 @@ void init_pause(Oid oid, int hash, TimestampTz until);
 TimestampTz init_pauses(Oid oid, StringInfo hashes);
 void init_task_pid(int slot, const char *data, Oid oid, int64 id, int pid);
 bool unlock_table_id(Oid table, int64 id);
-bool unlock_table_id_hash(Oid table, int64 id, int hash);
+bool unlock_table_key_hash(Oid table, int key, int hash);
 bool unlock_table_pid_hash(Oid table, int pid, int hash);
 bool unlock_table_take(Oid table, int64 id);
 char *TextDatumGetCStringMy(Datum datum);
