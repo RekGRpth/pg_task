@@ -653,7 +653,7 @@ static bool work_reset(const Work *w) {
 #if PG_VERSION_NUM >= 90500 && !defined(GP_VERSION_NUM)
             "SKIP LOCKED"
 #else
-            ""
+            "NOWAIT" // without SKIP LOCKED: don't update from a stale pg_locks snapshot after the row's owner commits WORK; retry the whole reset instead
 #endif
         );
     }
@@ -663,17 +663,33 @@ static bool work_reset(const Work *w) {
     values[1] = CStringGetTextDatum(found);
     pfree(found);
     if (!plan) plan = SPI_prepare_my(src.data, countof(argtypes), argtypes);
-    portal = SPI_cursor_open_my(src.data, plan, values, NULL, false);
-    do {
-        SPI_cursor_fetch_my(src.data, portal, true, init_work_fetch());
-        for (uint64 row = 0; row < SPI_processed; row++) {
-            HeapTuple val = SPI_tuptable->vals[row];
-            ereport(WARNING, (errmsg("row = " UINT64_FORMAT ", reset id = " INT64_FORMAT, row, DatumGetInt64(SPI_getbinval_my(val, SPI_tuptable->tupdesc, "id", false, INT8OID)))));
-            SPI_freetuple(val);
-        }
-    } while (SPI_processed);
-    SPI_cursor_close_my(portal);
-    SPI_finish_my();
+    {
+        MemoryContext oldMemoryContext = CurrentMemoryContext;
+        ErrorData *edata = NULL;
+        bool ok = true;
+        PG_TRY();
+            portal = SPI_cursor_open_my(src.data, plan, values, NULL, false);
+            do {
+                SPI_cursor_fetch_my(src.data, portal, true, init_work_fetch());
+                for (uint64 row = 0; row < SPI_processed; row++) {
+                    HeapTuple val = SPI_tuptable->vals[row];
+                    ereport(WARNING, (errmsg("row = " UINT64_FORMAT ", reset id = " INT64_FORMAT, row, DatumGetInt64(SPI_getbinval_my(val, SPI_tuptable->tupdesc, "id", false, INT8OID)))));
+                    SPI_freetuple(val);
+                }
+            } while (SPI_processed);
+            SPI_cursor_close_my(portal);
+            SPI_finish_my();
+        PG_CATCH();
+            MemoryContextSwitchTo(oldMemoryContext);
+            edata = CopyErrorData();
+            if (edata->sqlerrcode != ERRCODE_LOCK_NOT_AVAILABLE) ReThrowError(edata);
+            FlushErrorState();
+            SPI_abort_my();
+            FreeErrorData(edata);
+            ok = false;
+        PG_END_TRY();
+        if (!ok) { pfree(ids.data); set_ps_display_my("idle"); return false; } // a row's owner had it locked already, before NOWAIT could lock it: try again after its commit, with its locks read again
+    }
     pfree(ids.data);
     set_ps_display_my("idle");
     return true;
