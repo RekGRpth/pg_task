@@ -24,15 +24,26 @@ typedef enum STMT_TYPE {
     STMT_STATEMENT,
 } STMT_TYPE;
 
-static bool was_logged;
-static bool bookkeeping;
-static bool held;
-static bool switched;
-static int save_sec_context;
-static Oid save_userid;
+// the state of a bracket SPI_connect_my() opens, SPI_finish_my() or SPI_abort_my() to close, on a stack: one nested in another — work_lock() within work_sleep() and work_reset(), say — would write over the level outside it, the user and the security context it switched from, the cancels it held off and the memory to go back to, which all happen to be none at both those, InvalidOid both, only by luck
+typedef struct SpiState {
+    bool open; // till its SPI_finish_my() or SPI_abort_my(), one come to a level already closed leaving the level below it alone, see the latter
+    bool was_logged;
+    bool bookkeeping;
+    bool held;
+    bool switched;
+    int save_sec_context;
+    Oid save_userid;
 #if PG_VERSION_NUM < 180000
-static MemoryContext prior = NULL; // the memory before the transaction SPI_connect_my() started, to go back to once it's over, as PostgreSQL does from 18 on, rather than to TopMemoryContext, where what the caller allocates next, the memory of an attempt of pg_conf, say, see conf_check(), would never be freed
+    MemoryContext prior; // the memory before the transaction SPI_connect_my() started, to go back to once it's over, as PostgreSQL does from 18 on, rather than to TopMemoryContext, where what the caller allocates next, the memory of an attempt of pg_conf, say, see conf_check(), would never be freed
 #endif
+} SpiState;
+static SpiState spi_stack[8]; // of nested brackets, two deep today, room to spare beyond
+static int spi_depth = 0;
+
+// the innermost bracket, for the logging state of the check pair below, read within one
+static SpiState *spi_top(void) {
+    return &spi_stack[spi_depth > 0 ? spi_depth - 1 : 0];
+}
 
 static const char *stmt_type(STMT_TYPE stmt) {
     switch (stmt) {
@@ -88,24 +99,26 @@ static int errdetail_params_my(int nargs, Oid *argtypes, Datum *values, const ch
 }
 
 static void check_log_statement_my(STMT_TYPE stmt, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls, bool logged) {
-    if (!logged) was_logged = false;
-    else if (log_statement == LOGSTMT_NONE) was_logged = false;
-    else if (log_statement == LOGSTMT_ALL) was_logged = true;
-    else was_logged = false;
+    SpiState *s = spi_top();
+    if (!logged) s->was_logged = false;
+    else if (log_statement == LOGSTMT_NONE) s->was_logged = false;
+    else if (log_statement == LOGSTMT_ALL) s->was_logged = true;
+    else s->was_logged = false;
     debug_query_string = src;
     SetCurrentStatementStartTimestamp();
     if (!logged) ereport(DEBUG2, (errmsg("%s: %s", stmt_type(stmt), src), errhidestmt(true)));
-    else if (was_logged) ereport(LOG, (errmsg("%s: %s", stmt_type(stmt), src), errhidestmt(true), errdetail_params_my(nargs, argtypes, values, nulls)));
+    else if (s->was_logged) ereport(LOG, (errmsg("%s: %s", stmt_type(stmt), src), errhidestmt(true), errdetail_params_my(nargs, argtypes, values, nulls)));
 }
 
 static void check_log_duration_my(STMT_TYPE stmt, const char *src, int nargs, Oid *argtypes, Datum *values, const char *nulls) {
     char msec_str[32];
-    switch (check_log_duration(msec_str, was_logged)) {
+    SpiState *s = spi_top();
+    switch (check_log_duration(msec_str, s->was_logged)) {
         case 1: ereport(LOG, (errmsg("duration: %s ms", msec_str), errhidestmt(true))); break;
         case 2: ereport(LOG, (errmsg("duration: %s ms  %s: %s", msec_str, stmt_type(stmt), src), errhidestmt(true), errdetail_params_my(nargs, argtypes, values, nulls))); break;
     }
     debug_query_string = NULL;
-    was_logged = false;
+    s->was_logged = false;
 }
 
 Datum SPI_getbinval_my(HeapTuple tuple, TupleDesc tupdesc, const char *fname, bool allow_null, Oid typeid) {
@@ -160,29 +173,38 @@ static void SPI_set_config_my(const char *name, const char *value) {
 // a valid userid runs the whole transaction as that user, like a security definer function does, and as a security-restricted operation, as PostgreSQL does when running code as a more privileged user within someone else's session: switched only after the transaction started, so that an abort restores it by itself, and restored before the commit, since no transaction may start with a security context set
 void SPI_connect_my(const char *src, Oid userid) {
     int rc;
+    SpiState *s;
+    if (spi_depth >= countof(spi_stack)) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect_my nested %i deep", spi_depth)));
+    s = &spi_stack[spi_depth++];
+    s->open = true;
+    s->was_logged = false;
+    s->bookkeeping = s->held = s->switched = OidIsValid(userid);
 #ifdef HOLD_CANCEL_INTERRUPTS
     // a task worker's bookkeeping, outside any PG_TRY(), which a cancel coming meanwhile (pg_cancel_backend(), a timeout), up to the end of its commit, would fail, taking the worker and the task's result down: hold it off, for no task, as a backend between statements does
-    if ((held = OidIsValid(userid))) HOLD_CANCEL_INTERRUPTS();
+    if (s->held) HOLD_CANCEL_INTERRUPTS();
 #endif
-    debug_query_string = src;
-    pgstat_report_activity(STATE_RUNNING, src);
-    SetCurrentStatementStartTimestamp();
+    if (spi_depth == 1) {
+        // the outermost bracket only, its level the one the session belongs to: an inner SPI_connect/Finish would restore both the user and the memory to the level above it, not this one, and a GUC S saved within it taken for the author's one, so its settings and its snapshot belong only at this one too; a security context set within a transaction would break the next one's start, which asserts none outside, but the switch at this one is undone by the SPI finish or abort ending the transaction itself, so the next one starts clean
+        debug_query_string = src;
+        pgstat_report_activity(STATE_RUNNING, src);
+        SetCurrentStatementStartTimestamp();
 #if PG_VERSION_NUM < 180000
-    prior = IsTransactionOrTransactionBlock() ? NULL : CurrentMemoryContext; // none within a transaction going on, whose memory may be gone by the end of this one
+        s->prior = IsTransactionOrTransactionBlock() ? NULL : CurrentMemoryContext;
 #endif
+    }
     StartTransactionCommand();
     // the bookkeeping of a task, in its author's session, must not go by the transaction characteristics or the timeouts of that session, which the task's input or the author's role may have set (default_transaction_read_only = on would fail the bookkeeping, and the task run again on reset): read write and read committed, before any snapshot, and no timeouts, as for the scheduler's own queries in pg_work
-    if ((bookkeeping = OidIsValid(userid))) {
+    if (s->bookkeeping) {
         XactReadOnly = false;
         XactIsoLevel = XACT_READ_COMMITTED;
         XactDeferrable = false;
     }
-    if ((switched = OidIsValid(userid))) {
-        GetUserIdAndSecContext(&save_userid, &save_sec_context);
-        SetUserIdAndSecContext(userid, save_sec_context | SECURITY_LOCAL_USERID_CHANGE | SECURITY_RESTRICTED_OPERATION);
+    if (s->switched) {
+        GetUserIdAndSecContext(&s->save_userid, &s->save_sec_context);
+        SetUserIdAndSecContext(userid, s->save_sec_context | SECURITY_LOCAL_USERID_CHANGE | SECURITY_RESTRICTED_OPERATION);
     }
     // and a search_path of pg_catalog and pg_temp, last, for no object of the author's schemas to take part in it, nor of pg_temp, which an empty one would search first for tables and types, as triggers made by make_function() have it, no lock_timeout, nor transaction_timeout, which would fail it, the task left to run again on reset, as SET of a security definer function has them: for its transaction only, taken back by its commit, deferred triggers on the table run then included, or its abort, the session's settings, the author's, left as they are, for the input of the next task, as save has it
-    if (bookkeeping) {
+    if (s->bookkeeping) {
         (void)NewGUCNestLevel();
         SPI_set_config_my("search_path", "pg_catalog, pg_temp");
         SPI_set_config_my("lock_timeout", "0");
@@ -195,8 +217,8 @@ void SPI_connect_my(const char *src, Oid userid) {
 #endif
     }
     if ((rc = SPI_connect()) != SPI_OK_CONNECT) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_connect failed"), errdetail("%s", SPI_result_code_string(rc)), errcontext("%s", src)));
-    PushActiveSnapshot(GetTransactionSnapshot());
-    !bookkeeping && StatementTimeout > 0 ? enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout) : disable_timeout(STATEMENT_TIMEOUT, false);
+    if (spi_depth == 1) PushActiveSnapshot(GetTransactionSnapshot()); // after SPI_connect(), which may well have reset the stack itself; its restore belongs to the outermost bracket only, the one that pushed it, see SPI_finish_my()
+    !s->bookkeeping && StatementTimeout > 0 ? enable_timeout_after(STATEMENT_TIMEOUT, StatementTimeout) : disable_timeout(STATEMENT_TIMEOUT, false);
 }
 
 void SPI_cursor_close_my(Portal portal) {
@@ -231,41 +253,36 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 void SPI_abort_my(void) {
     disable_timeout(STATEMENT_TIMEOUT, false);
     AbortCurrentTransaction();
+    if (spi_depth > 0 && spi_stack[spi_depth - 1].open) { // its bracket, closed here; one already closed, its finish let down by its commit say, or none at all, left alone, nothing of it to undo
+        SpiState *s = &spi_stack[--spi_depth];
+        s->open = false;
 #if PG_VERSION_NUM < 180000
-    if (prior && !IsTransactionOrTransactionBlock()) MemoryContextSwitchTo(prior);
-    prior = NULL;
+        if (s->prior && !IsTransactionOrTransactionBlock()) MemoryContextSwitchTo(s->prior);
 #endif
-    bookkeeping = false;
-#ifdef HOLD_CANCEL_INTERRUPTS
-    held = false; // nothing to resume: called only once an error was caught, whose errfinish() let cancels through again by itself
-#endif
-    switched = false;
-    was_logged = false;
+        // the user the abort restored by itself, the cancels the error's errfinish() let through again by itself: nothing of the slot to take back beyond the memory above
+    }
     debug_query_string = NULL;
     pgstat_report_activity(STATE_IDLE, NULL);
 }
 
 void SPI_finish_my(void) {
     int rc;
+    SpiState *s = spi_depth > 0 ? &spi_stack[spi_depth - 1] : NULL;
     disable_timeout(STATEMENT_TIMEOUT, false);
-    PopActiveSnapshot();
+    if (s && s->open && spi_depth == 1) PopActiveSnapshot(); // the snapshot belongs to the bracket that pushed it, and no inner level touched that, see SPI_connect_my()
     if ((rc = SPI_finish()) != SPI_OK_FINISH) ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("SPI_finish failed"), errdetail("%s", SPI_result_code_string(rc))));
-    if (switched) SetUserIdAndSecContext(save_userid, save_sec_context); // only when switched: an unswitched SPI task with save = true may legitimately keep its own SET ROLE
-    switched = false;
+    if (s && s->open) { s->open = false; spi_depth--; } // closed from here, whatever follows: an abort for an error of it not to close the level below too
+    if (s && s->switched) SetUserIdAndSecContext(s->save_userid, s->save_sec_context); // only when switched: an unswitched SPI task with save = true may legitimately keep its own SET ROLE
     CommitTransactionCommand();
-    bookkeeping = false;
 #if PG_VERSION_NUM < 150000
     ProcessCompletedNotifies(); // only now, out of the transaction, as PostgresMain() calls it: before 13 it starts a transaction of its own to signal the listeners of what this one (or a task's input before) notified, which within this one is an error
 #endif
 #ifdef HOLD_CANCEL_INTERRUPTS
-    if (held) RESUME_CANCEL_INTERRUPTS();
-    held = false;
+    if (s && s->held) RESUME_CANCEL_INTERRUPTS();
 #endif
 #if PG_VERSION_NUM < 180000
-    if (prior && !IsTransactionOrTransactionBlock()) MemoryContextSwitchTo(prior); // and after ProcessCompletedNotifies(), whose transaction of its own before 13 goes to TopMemoryContext too
-    prior = NULL;
+    if (s && s->prior && !IsTransactionOrTransactionBlock()) MemoryContextSwitchTo(s->prior); // and after ProcessCompletedNotifies(), whose transaction of its own before 13 goes to TopMemoryContext too
 #endif
-    was_logged = false;
     pgstat_report_stat(false);
     debug_query_string = NULL;
     pgstat_report_activity(STATE_IDLE, NULL);
