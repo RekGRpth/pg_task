@@ -771,9 +771,9 @@ static void dest_execute(void) {
         MemoryContext oldMemoryContext = MemoryContextSwitchTo(MessageContext);
         MemoryContextResetAndDeleteChildren(MessageContext);
         InvalidateCatalogSnapshotConditionally();
+        whereToSendOutput = DestNone; // as for any background worker, before its input is parsed too: the receiver and the command hooks take the output, whatever it is, while DestDebug would have every message of the worker written to stderr too, a parse error of it say duplicated there besides the log_destination, csvlog say, see send_message_to_server_log()
         dest_reject_copy(pg_parse_query(task.input));
         MemoryContextSwitchTo(oldMemoryContext);
-        whereToSendOutput = DestNone; // as for any background worker: the receiver and the command hooks above take the output, whatever it is, while DestDebug would have every message of the worker written to stderr too, besides the log_destination, csvlog say, see send_message_to_server_log()
         ReadyForQueryMy(whereToSendOutput);
         SetCurrentStatementStartTimestamp();
         exec_simple_query_my(task.input);
