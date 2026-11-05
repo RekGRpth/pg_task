@@ -43,6 +43,12 @@
 #define WaitLatchOrSocketMy(latch, wakeEvents, sock, timeout) WaitLatchOrSocket(latch, wakeEvents, sock, timeout)
 #endif
 
+#if PG_VERSION_NUM >= 170000
+#define lnext_my(list, cell) lnext(list, cell)
+#else
+#define lnext_my(list, cell) lnext(cell)
+#endif
+
 #if PG_VERSION_NUM >= 110000
 #define BackgroundWorkerInitializeConnectionMy(dbname, username) BackgroundWorkerInitializeConnection(dbname, username, 0)
 #else
@@ -107,6 +113,7 @@ typedef struct Task {
     bool booked; // its bookkeeping committed, the next task of its group being taken, which may fail on its own, see task_done()
     bool held; // of a remote task, its row held by someone else, its bookkeeping not done, see task_done()
     bool cancelled; // of a remote task, a cancel request created or sent, which its server may not have processed yet: its connection is not to be reused for the next task
+    bool encoding_known; // of a remote statement, its results read to ReadyForQuery, so the server has reported any client_encoding it set
     bool fatal; // of a remote task, a FATAL of its server read, the end of its connection to come next, see work_readable()
     bool take; // of a remote task, the lock of its taking held, see lock_table_take()
     bool spare; // of a remote task, from 13 on, a file descriptor held, along with that of its connection, for the socket of a cancel request on it, see work_acquire()
@@ -124,9 +131,16 @@ typedef struct Task {
     char quote;
     char *remote;
     char *user;
+    List *statements; // of a remote input, one statement at a time, so the server reports the client_encoding of each
+    List *locations; // the byte offset of each statement in the input, for its error position to stay one of the whole input
+    ListCell *statement;
+    ListCell *location;
     dlist_node node;
     int count;
     int encoding; // of the output and error bytes, the last one the remote server reported, kept because PQclientEncoding() returns -1 once its connection is bad
+    int error_start; // the prefix already converted to this database's encoding, only the suffix after it still to convert
+    int output_start;
+    int statement_location;
     int event;
     int host; // of them, the one tried now, in the order of hosts
     int *hosts; // the order the hosts of the connection string are tried in, one at a time, for the connect_timeout of each, see work_remote(), or NULL for libpq to try them itself
@@ -150,6 +164,7 @@ typedef struct Task {
 
 bool dest_timeout(void);
 bool dest_copy_stdin(const char *input);
+List *dest_split(const char *input, List **locations);
 void dest_init(void);
 bool init_free_task(int slot, const char *data, Oid oid, int64 id);
 bool init_free_work(int slot, int64 reg);

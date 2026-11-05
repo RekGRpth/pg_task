@@ -8,7 +8,13 @@
 #include <commands/prepare.h>
 #include <miscadmin.h>
 #include <parser/analyze.h>
+#if PG_VERSION_NUM >= 90600
+#include <common/keywords.h>
+#else
+#include <parser/keywords.h>
+#endif
 #include <parser/parser.h>
+#include <parser/scanner.h>
 #include <pgstat.h>
 #include <replication/slot.h>
 #include <storage/ipc.h>
@@ -654,6 +660,63 @@ static void dest_reject_copy(List *parsetree_list) {
         const char *copy = dest_copy(node);
         if (copy) ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("COPY %s is not supported", copy)));
     }
+}
+
+// the input of a remote task as statements to send one at a time, for the server to report the client_encoding of each; up to each ; outside parentheses, by the server's own scanner, which takes quotes and dollar quotes as the parser would, and accepts syntax another version of the remote server may have that this one doesn't parse; one statement, or one the scanner can't split, left whole
+List *dest_split(const char *src, List **locations) {
+    MemoryContext oldMemoryContext = CurrentMemoryContext;
+    MemoryContext context = AllocSetContextCreate(CurrentMemoryContext, "dest_split", ALLOCSET_DEFAULT_SIZES);
+    List *volatile statements = NIL;
+    List *volatile positions = NIL;
+    List *result = NIL;
+    List *result_locations = NIL;
+    ListCell *cell, *position;
+    core_yy_extra_type yyextra;
+    core_yyscan_t scanner;
+    core_YYSTYPE yylval;
+    YYLTYPE yylloc;
+    int depth = 0, start = 0, token;
+    bool tokens = false;
+    *locations = NIL;
+    MemoryContextSwitchTo(context);
+    PG_TRY();
+#if PG_VERSION_NUM >= 190000
+        scanner = scanner_init(src, &yyextra, &ScanKeywords, ScanKeywordTokens);
+#else
+        scanner = scanner_init(src, &yyextra, ScanKeywords, NumScanKeywords);
+#endif
+#if PG_VERSION_NUM >= 90500 && PG_VERSION_NUM < 190000
+        yyextra.escape_string_warning = false;
+#endif
+        while ((token = core_yylex(&yylval, &yylloc, scanner))) {
+            if (token == ';' && depth <= 0) {
+                if (tokens) { statements = lappend(statements, pnstrdup(src + start, yylloc + 1 - start)); positions = lappend_int(positions, start); }
+                start = yylloc + 1;
+                tokens = false;
+                continue;
+            }
+            if (token == '(') depth++; else if (token == ')') depth--;
+            tokens = true;
+        }
+        scanner_finish(scanner);
+        if (tokens) { statements = lappend(statements, pstrdup(src + start)); positions = lappend_int(positions, start); }
+    PG_CATCH();
+        MemoryContextSwitchTo(oldMemoryContext);
+        FlushErrorState();
+        statements = NIL;
+        positions = NIL;
+    PG_END_TRY();
+    if (list_length(statements) > 1) {
+        MemoryContextSwitchTo(TopMemoryContext);
+        forboth(cell, statements, position, positions) {
+            result = lappend(result, pstrdup((char *)lfirst(cell)));
+            result_locations = lappend_int(result_locations, lfirst_int(position));
+        }
+        *locations = result_locations;
+    }
+    MemoryContextSwitchTo(oldMemoryContext);
+    MemoryContextDelete(context);
+    return result;
 }
 
 // whether the input of a remote task has a COPY FROM STDIN, which it can't feed, for it to fail as a whole before any statement of it runs on its server, as a local one does; one this server doesn't parse, of the syntax of another version of the remote one say, is left to that server

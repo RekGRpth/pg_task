@@ -1,0 +1,51 @@
+-- a remote input only partly sent when pg_work goes out isn't done: its row stays in WORK for the next reset, which runs it as a whole, rather than book the statements sent so far as if they were all
+DELETE FROM task WHERE "group" LIKE 'exit_unsent%';
+SET client_min_messages = warning;
+DROP SEQUENCE IF EXISTS exit_unsent_runs;
+RESET client_min_messages;
+CREATE SEQUENCE exit_unsent_runs;
+INSERT INTO task ("group", input, remote) VALUES ('exit_unsent', 'BEGIN; SELECT nextval(''exit_unsent_runs''); SELECT pg_sleep(1); SELECT repeat(''x'', 20000); SELECT nextval(''exit_unsent_runs'')', 'dbname=' || :'DBNAME');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM task WHERE "group" = 'exit_unsent' AND state = 'WORK' AND (SELECT is_called FROM exit_unsent_runs)) THEN PERFORM pg_sleep(0.5); ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task of group exit_unsent to start'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pid AS work_pid FROM pg_catalog.pg_stat_activity WHERE application_name LIKE 'pg_work public task %' AND datname = current_database()
+\gset
+SELECT set_config('pg_task_test.work_pid', :'work_pid', false) IS NOT NULL AS work_pid_saved;
+-- the table locked for a while by a local task, pg_work held up on its next query, the second remote statement through meanwhile, the third not sent yet
+INSERT INTO task ("group", input) VALUES ('exit_unsent_lock', 'LOCK TABLE task; SELECT pg_sleep(2.5)');
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE query = 'LOCK TABLE task; SELECT pg_sleep(2.5)' AND state = 'active') THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for the task locking the table to run'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pg_sleep(2);
+SELECT pg_terminate_backend(:work_pid) AS work_terminated;
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE pid = current_setting('pg_task_test.work_pid')::int) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for pg_work to be gone'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT state FROM task WHERE "group" = 'exit_unsent';
+-- the next pg_work up, idle, for the tests after this one, and the whole input run again
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..900 LOOP
+        PERFORM pg_stat_clear_snapshot();
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE application_name LIKE 'pg_work public task %' AND datname = current_database() AND state = 'idle' AND CASE WHEN current_setting('server_version_num')::int < 100000 THEN a.query LIKE 'WITH %' OR a.query LIKE 'SELECT COALESCE(LEAST(%' ELSE to_json(a) ->> 'wait_event_type' = 'Extension' END) AND NOT EXISTS (SELECT 1 FROM task WHERE "group" LIKE 'exit_unsent%' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 900 x pg_sleep(0.1) waiting for the next pg_work to be idle'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT state FROM task WHERE "group" = 'exit_unsent';
+SELECT last_value AS runs FROM exit_unsent_runs;
+DELETE FROM task WHERE "group" LIKE 'exit_unsent%';
+DROP SEQUENCE exit_unsent_runs;

@@ -133,6 +133,7 @@ static void work_cancel_lost(Cancel *c);
 #endif
 static bool work_reap(const Work *w);
 static void work_result(Task *t);
+static void work_statement(Task *t);
 static void work_stop(const Work *w);
 static bool work_superuser(const char *user);
 static bool work_verify(Task *t);
@@ -326,6 +327,7 @@ static void work_fatal(Task *t, const PGresult *result) {
     char *value = NULL;
     char *value2 = NULL;
     char *value3 = NULL;
+    char position[32];
     if (!t->output.data) initStringInfoMy(&t->output);
     if (!t->error.data) initStringInfoMy(&t->error);
     t->skip++;
@@ -335,7 +337,13 @@ static void work_fatal(Task *t, const PGresult *result) {
     if (Log_error_verbosity >= PGERROR_VERBOSE && (value = PQresultErrorField(result, PG_DIAG_SQLSTATE))) appendStringInfo(&t->error, "%s: ", value);
     if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_PRIMARY))) append_with_tabs(&t->error, value);
     else append_with_tabs(&t->error, _("missing error text"));
-    if ((value = PQresultErrorField(result, PG_DIAG_STATEMENT_POSITION))) appendStringInfo(&t->error, _(" at character %s"), value);
+    if ((value = PQresultErrorField(result, PG_DIAG_STATEMENT_POSITION))) {
+        if (t->statement) { // the remote server reports it within this statement, but the task's error has it within the whole input
+            snprintf(position, sizeof(position), "%d", pg_mbstrlen_with_len(t->input, t->statement_location) + atoi(value));
+            value = position;
+        }
+        appendStringInfo(&t->error, _(" at character %s"), value);
+    }
     else if ((value = PQresultErrorField(result, PG_DIAG_INTERNAL_POSITION))) appendStringInfo(&t->error, _(" at character %s"), value);
     if (Log_error_verbosity >= PGERROR_DEFAULT) {
         if ((value = PQresultErrorField(result, PG_DIAG_MESSAGE_DETAIL))) {
@@ -770,31 +778,39 @@ static bool work_busy(Task *t, void (*socket) (Task *t)) {
     return true;
 }
 
-// the results came in the client_encoding of the connection, which is that of this database (see work_remote()) unless the input set another one, which, as servers from 14 on tell of it only once the input is through, if at all, can't be told by result, and so did the messages of the server, localized: convert them to the encoding of this database, rather than only check their bytes as text of it, which other characters may be valid as too; one that can't be converted is dropped, for the error of it, after the one the task has, if any
-static bool work_convert(Task *t, StringInfo buf, int encoding) {
+// the results came in the client_encoding of the connection, which is that of this database (see work_remote()) unless the input set another one, which, as servers from 14 on tell of it only once the input is through, if at all, can't be told by result, and so did the messages of the server, localized: convert each statement's suffix to the encoding of this database, rather than only check its bytes as text of it, which other characters may be valid as too; one that can't be converted, or whose encoding wasn't reported before a connection loss, is dropped, for the error of it, after the one the task has, if any
+static bool work_convert(Task *t, StringInfo buf, int start, int encoding) {
     char *data;
+    int len;
     MemoryContext context = CurrentMemoryContext;
     bool started = encoding != GetDatabaseEncoding() && !IsTransactionState(); // the conversion's catalog lookup needs a transaction, which reading a result doesn't otherwise have
     bool valid = true;
-    if (!buf->data) return true;
+    if (!buf->data || start >= buf->len) return true;
+    len = buf->len - start;
     PG_TRY();
+        if (t->conn && !t->encoding_known) { // a statement cut short before ReadyForQuery, whose client_encoding the server may have changed without reporting it yet
+            for (int i = start; i < buf->len; i++) if (IS_HIGHBIT_SET(buf->data[i])) {
+                buf->len = start;
+                buf->data[start] = '\0';
+                ereport(ERROR, (errcode(ERRCODE_CHARACTER_NOT_IN_REPERTOIRE), errmsg("remote result encoding is unknown after connection loss")));
+            }
+        }
         if (started) StartTransactionCommand();
         MemoryContextSwitchTo(TopMemoryContext); // the converted buffer must outlive the transaction
-        data = pg_any_to_server(buf->data, buf->len, encoding); // validates even when no conversion is needed
+        data = pg_any_to_server(buf->data + start, len, encoding); // validates even when no conversion is needed
         if (started) CommitTransactionCommand();
         MemoryContextSwitchTo(context);
-        if (data != buf->data) {
-            pfree(buf->data);
-            buf->data = data;
-            buf->len = strlen(data);
-            buf->maxlen = buf->len + 1;
+        if (data != buf->data + start) {
+            int converted = strlen(data);
+            if (converted > len) enlargeStringInfo(buf, converted - len);
+            memcpy(buf->data + start, data, converted + 1);
+            buf->len = start + converted;
+            pfree(data);
         }
     PG_CATCH();
         MemoryContextSwitchTo(context); // out of ErrorContext, as in work_error()
         if (IsTransactionState()) AbortCurrentTransaction();
-        pfree(buf->data);
-        buf->data = NULL;
-        buf->len = 0;
+        if (buf->data) { buf->len = start; buf->data[start] = '\0'; }
         task_error(t);
         EmitErrorReport();
         FlushErrorState();
@@ -805,8 +821,8 @@ static bool work_convert(Task *t, StringInfo buf, int encoding) {
 
 static bool work_verify(Task *t) {
     int encoding = t->conn ? t->encoding : GetDatabaseEncoding();
-    bool valid = work_convert(t, &t->error, encoding); // first, so a conversion error is appended only to text of this database
-    if (!work_convert(t, &t->output, encoding)) valid = false;
+    bool valid = work_convert(t, &t->error, t->error_start, encoding); // first, so a conversion error is appended only to text of this database
+    if (!work_convert(t, &t->output, t->output_start, encoding)) valid = false;
     return valid;
 }
 
@@ -919,6 +935,7 @@ static void work_drain(Task *t) {
         }
     }
     work_encoding_update(t);
+    t->encoding_known = true; // the cancelled input drained to ReadyForQuery too
     work_fail(t);
 }
 
@@ -968,6 +985,60 @@ static void work_copy_socket(Task *t) {
     if (work_copy(t)) work_result(t);
 }
 
+// the text of the statement itself in the client_encoding the last one left, rather than in this database's encoding, as libpq would send its bytes unchanged otherwise
+static const char *work_statement_input(Task *t, const char *input) {
+    char *converted = NULL;
+    MemoryContext context = CurrentMemoryContext;
+    bool started = t->encoding != GetDatabaseEncoding() && !IsTransactionState();
+    ErrorData *volatile edata = NULL;
+    PG_TRY();
+        if (started) StartTransactionCommand();
+        MemoryContextSwitchTo(TopMemoryContext);
+        converted = pg_server_to_any(input, strlen(input), t->encoding);
+        if (started) CommitTransactionCommand();
+        MemoryContextSwitchTo(context);
+    PG_CATCH();
+        MemoryContextSwitchTo(TopMemoryContext);
+        edata = CopyErrorData();
+        FlushErrorState();
+        if (IsTransactionState()) AbortCurrentTransaction();
+        MemoryContextSwitchTo(context);
+    PG_END_TRY();
+    if (edata) {
+        work_error((errcode(edata->sqlerrcode), errmsg("%s", edata->message)));
+        FreeErrorData(edata);
+        return NULL;
+    }
+    return converted;
+}
+
+// send one statement, or the whole input the scanner couldn't split: after each of them the server reports its client_encoding, before the next one starts changing it
+static void work_statement(Task *t) {
+    const char *input = t->statement ? (const char *)lfirst(t->statement) : t->input;
+    const char *converted;
+    t->statement_location = t->location ? lfirst_int(t->location) : 0;
+    t->encoding_known = false;
+    // a stop come between statements, whose cancel the server, idle there, ignored: fail the task as the cancel would have it, rather than send the next one
+    if (t->shared->stopped && t->shared->stop == t->shared->id) {
+        if (!t->output.data) initStringInfoMy(&t->output);
+        initStringInfoMy(&t->error);
+        appendStringInfo(&t->error, "%s:  ", _(error_severity(ERROR)));
+        if (Log_error_verbosity >= PGERROR_VERBOSE) appendStringInfo(&t->error, "%s: ", unpack_sql_state(ERRCODE_QUERY_CANCELED));
+        appendStringInfoString(&t->error, _("canceling statement due to user request"));
+        work_done(t);
+        return;
+    }
+    converted = work_statement_input(t, input);
+    if (!converted) return;
+    if (!PQsendQuery(t->conn, converted)) { if (converted != input) pfree((void *)converted); work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
+    if (converted != input) pfree((void *)converted);
+    // the rows one by one, each looked at against the most of output a task may keep, see work_output(), rather than all of a result in libpq's memory first, many more than that, gigabytes of a remote SELECT, with pg_work and every remote task it runs taken down by running out of it
+    if (!PQsetSingleRowMode(t->conn)) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQsetSingleRowMode failed", t->shared->id)));
+    t->rows = 0;
+    t->socket = work_result;
+    t->event = WL_SOCKET_READABLE;
+}
+
 static void work_result(Task *t) {
     MemoryContext context = CurrentMemoryContext;
     for (PGresult *result; PQstatus(t->conn) == CONNECTION_OK; PQclear(result)) {
@@ -998,6 +1069,19 @@ static void work_result(Task *t) {
         if (copy) { if (!work_copy(t)) { PQclear(result); return; } continue; } // the result freed by the loop then, as for any other, going on to the next one, with no recursion, see work_copy()
     }
     work_encoding_update(t);
+    t->encoding_known = true; // ReadyForQuery read, any ParameterStatus of this statement with it
+    if (exiting && t->statement && lnext_my(t->statements, t->statement) && !t->error.data) return; // the rest never sent isn't done: leave it in WORK for the next reset rather than book a partial input
+    if (t->statement && lnext_my(t->statements, t->statement)) {
+        if (!work_encoding(t)) return; // the suffix of this statement is of this database now, before another one may change the encoding
+        t->error_start = t->error.data ? t->error.len : 0;
+        t->output_start = t->output.data ? t->output.len : 0;
+        if (!t->error.data) { // as with one multi-statement query, don't run the rest after an error
+            t->statement = lnext_my(t->statements, t->statement);
+            t->location = lnext_my(t->locations, t->location);
+            work_statement(t);
+            return;
+        }
+    }
     work_done(t);
 }
 
@@ -1014,7 +1098,6 @@ static void work_input(Task *t) {
     }
     work_encoding_update(t);
     if (!t->error.data && dest_copy_stdin(t->input)) { work_error((errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("COPY FROM STDIN is not supported"))); return; } // as a local task is, before any statement of its input runs, not once its server gets to it
-    // a stop come between the preamble and the input, whose cancel the server, idle there, ignored, the input to run to the end otherwise, never cancelled again: not sent, the task failed as the cancel would have it, as a local one is, see dest_timeout()
     if (!t->error.data && task_char(t)) { // its output made here, see work_output(), as a local one's is: failed before its input runs too, see dest_timeout()
         if (!t->output.data) initStringInfoMy(&t->output);
         initStringInfoMy(&t->error);
@@ -1022,20 +1105,11 @@ static void work_input(Task *t) {
         if (Log_error_verbosity >= PGERROR_VERBOSE) appendStringInfo(&t->error, "%s: ", unpack_sql_state(ERRCODE_CHARACTER_NOT_IN_REPERTOIRE));
         appendStringInfo(&t->error, _("%s is not a single-byte character in encoding \"%s\""), task_char(t), GetDatabaseEncodingName());
     }
-    if (!t->error.data && t->shared->stopped && t->shared->stop == t->shared->id) { // by the flag, not by an id of 0 for none, which an author may insert
-        if (!t->output.data) initStringInfoMy(&t->output);
-        initStringInfoMy(&t->error);
-        appendStringInfo(&t->error, "%s:  ", _(error_severity(ERROR)));
-        if (Log_error_verbosity >= PGERROR_VERBOSE) appendStringInfo(&t->error, "%s: ", unpack_sql_state(ERRCODE_QUERY_CANCELED));
-        appendStringInfoString(&t->error, _("canceling statement due to user request"));
-    }
     if (t->error.data) { work_done(t); return; }
-    if (!PQsendQuery(t->conn, t->input)) { work_error((errcode(ERRCODE_CONNECTION_EXCEPTION), errmsg("PQsendQuery failed"), work_errdetail(PQerrorMessage(t->conn)))); return; }
-    // the rows one by one, each looked at against the most of output a task may keep, see work_output(), rather than all of a result in libpq's memory first, many more than that, gigabytes of a remote SELECT, with pg_work and every remote task it runs taken down by running out of it
-    if (!PQsetSingleRowMode(t->conn)) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQsetSingleRowMode failed", t->shared->id)));
-    t->rows = 0;
-    t->socket = work_result;
-    t->event = WL_SOCKET_READABLE;
+    t->statements = dest_split(t->input, &t->locations);
+    t->statement = list_head(t->statements);
+    t->location = list_head(t->locations);
+    work_statement(t);
 }
 
 static void work_query(Task *t) {

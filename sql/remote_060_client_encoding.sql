@@ -4,7 +4,8 @@ INSERT INTO task ("group", remote, input) VALUES
     ('client_encoding_conninfo', 'dbname=' || :'DBNAME' || ' client_encoding=LATIN1', 'SELECT chr(252) AS a'),
     ('client_encoding_options', 'dbname=' || :'DBNAME' || ' options=''-c client_encoding=LATIN1''', 'SELECT chr(252) AS a'),
     ('client_encoding_input', 'dbname=' || :'DBNAME', 'SET client_encoding = ''LATIN1''; SELECT chr(252) AS a'),
-    ('client_encoding_valid', 'dbname=' || :'DBNAME', 'SET client_encoding = ''LATIN1''; SELECT chr(195) || chr(169) AS a');
+    ('client_encoding_valid', 'dbname=' || :'DBNAME', 'SET client_encoding = ''LATIN1''; SELECT chr(195) || chr(169) AS a'),
+    ('client_encoding_twice', 'dbname=' || :'DBNAME', 'SET client_encoding = ''LATIN1''; SELECT chr(195) || chr(169) AS a; SET client_encoding = ''UTF8''; SELECT chr(195) || chr(169) AS a');
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         IF (SELECT count(*) FROM task WHERE "group" LIKE 'client_encoding_%' AND state NOT IN ('DONE', 'GONE', 'FAIL')) = 0 THEN ok := true; EXIT; END IF;
@@ -12,5 +13,5 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task groups ''client_encoding_%%'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT "group", pg_catalog.getdatabaseencoding() <> 'UTF8' OR (state = 'DONE' AND output = CASE "group" WHEN 'client_encoding_input' THEN 'SET' || chr(10) || chr(252) WHEN 'client_encoding_valid' THEN 'SET' || chr(10) || chr(195) || chr(169) ELSE chr(252) END) AS ok FROM task WHERE "group" LIKE 'client_encoding_%' ORDER BY "group";
+SELECT "group", pg_catalog.getdatabaseencoding() <> 'UTF8' OR (state = 'DONE' AND output = CASE "group" WHEN 'client_encoding_input' THEN 'SET' || chr(10) || chr(252) WHEN 'client_encoding_valid' THEN 'SET' || chr(10) || chr(195) || chr(169) WHEN 'client_encoding_twice' THEN 'SET' || chr(10) || chr(195) || chr(169) || chr(10) || 'SET' || chr(10) || chr(195) || chr(169) ELSE chr(252) END) AS ok FROM task WHERE "group" LIKE 'client_encoding_%' ORDER BY "group";
 DELETE FROM task WHERE "group" LIKE 'client_encoding_%';

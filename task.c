@@ -673,6 +673,18 @@ void task_free(Task *t) {
     if (t->input) { pfree(t->input); t->input = NULL; }
     if (t->null) { pfree(t->null); t->null = NULL; }
     if (t->output.data) { pfree(t->output.data); t->output.data = NULL; t->output.len = 0; }
+    if (t->statements) {
+        ListCell *cell;
+        foreach(cell, t->statements) pfree(lfirst(cell));
+        list_free(t->statements);
+        t->statements = NULL;
+    }
+    t->statement = NULL;
+    if (t->locations) { list_free(t->locations); t->locations = NULL; }
+    t->location = NULL;
+    t->statement_location = 0;
+    t->error_start = t->output_start = 0;
+    t->encoding_known = false;
     t->line = false;
     t->worked = false; // the next task, task_live() took, in TAKE
     if (t->remote) { pfree(t->remote); t->remote = NULL; }
