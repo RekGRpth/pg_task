@@ -680,12 +680,12 @@ List *dest_split(const char *src, List **locations) {
     *locations = NIL;
     MemoryContextSwitchTo(context);
     PG_TRY();
-#if PG_VERSION_NUM >= 190000
+#if PG_VERSION_NUM >= 180000
         scanner = scanner_init(src, &yyextra, &ScanKeywords, ScanKeywordTokens);
 #else
         scanner = scanner_init(src, &yyextra, ScanKeywords, NumScanKeywords);
 #endif
-#if PG_VERSION_NUM >= 90500 && PG_VERSION_NUM < 190000
+#if PG_VERSION_NUM >= 90500 && PG_VERSION_NUM < 180000
         yyextra.escape_string_warning = false;
 #endif
         while ((token = core_yylex(&yylval, &yylloc, scanner))) {
