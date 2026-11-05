@@ -789,7 +789,7 @@ static bool work_convert(Task *t, StringInfo buf, int start, int encoding) {
     if (!buf->data || start >= buf->len) return true;
     len = buf->len - start;
     PG_TRY();
-        if (t->conn && !t->encoding_known) { // a statement cut short before ReadyForQuery, whose client_encoding the server may have changed without reporting it yet
+        if (t->conn && !t->encoding_known && (t->fatal || PQstatus(t->conn) != CONNECTION_OK)) { // a statement cut short by its connection gone, a FATAL of its server read or its socket broken, whose client_encoding the server may have changed without reporting it, and now never will: a live one is drained to its ReadyForQuery instead, which reports it, see work_failed(), and even one given up on is converted from the encoding last reported, rather than its output dropped
             for (int i = start; i < buf->len; i++) if (IS_HIGHBIT_SET(buf->data[i])) {
                 buf->len = start;
                 buf->data[start] = '\0';
@@ -948,9 +948,10 @@ static void work_drain(Task *t) {
 }
 
 static void work_failed(Task *t) {
-    bool drain = PQstatus(t->conn) == CONNECTION_OK && PQtransactionStatus(t->conn) == PQTRANS_ACTIVE && work_cancel(t); // the input still running on the remote server, cancelled before anything else, the cut of a gigabyte of output to the most of it a task may keep say
+    bool active = PQstatus(t->conn) == CONNECTION_OK && PQtransactionStatus(t->conn) == PQTRANS_ACTIVE; // the input still running on the remote server, or its results still unread, the cut of a gigabyte of output to the most of it a task may keep say
+    if (active) (void)work_cancel(t); // cancelled before anything else; one that fails to be made, no file descriptor for it say, doesn't keep the rest from being drained, for its ReadyForQuery, which tells the client_encoding the server changed to, is what the drain waits for
     if (t->output.data && t->output.len > (int)TASK_OUTPUT_MAX) t->output.data[t->output.len = pg_mbcliplen(t->output.data, t->output.len, TASK_OUTPUT_MAX)] = '\0';
-    if (drain) { t->deadline = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), WORK_CANCEL_TIMEOUT); work_drain(t); } else work_fail(t); // the rest drained for no longer than the cancel may take to get through and take effect, see work_expire()
+    if (active) { t->deadline = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), WORK_CANCEL_TIMEOUT); work_drain(t); } else work_fail(t); // the rest drained for no longer than the cancel may take to get through and take effect, see work_expire()
 }
 
 static void work_copy_socket(Task *t);
