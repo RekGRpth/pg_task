@@ -663,6 +663,14 @@ static void dest_reject_copy(List *parsetree_list) {
 }
 
 // the input of a remote task as statements to send one at a time, for the server to report the client_encoding of each; up to each ; outside parentheses, by the server's own scanner, which takes quotes and dollar quotes as the parser would, and accepts syntax another version of the remote server may have that this one doesn't parse; one statement, or one the scanner can't split, left whole
+// an SQL-standard routine body (PostgreSQL 14+) has statements of its own within it, each ending in a ; of its own at no depth of parentheses: not cut at them, the whole CREATE one statement till its END, which only ends the body where a statement of it would start, not within one, an END of a CASE say
+// its words told by the text at the token's place rather than by its code, which the installed headers don't tell: the scanner takes keywords case-insensitively, and no other token but the word itself starts with its letters
+static bool dest_word(const char *src, YYLTYPE loc, const char *word) {
+    size_t len = strlen(word);
+    unsigned char next = (unsigned char)src[loc + len];
+    return pg_strncasecmp(src + loc, word, len) == 0 && !(next == '_' || next == '$' || next >= 0x80 || isalnum(next));
+}
+
 List *dest_split(const char *src, List **locations) {
     MemoryContext oldMemoryContext = CurrentMemoryContext;
     MemoryContext context = AllocSetContextCreate(CurrentMemoryContext, "dest_split", ALLOCSET_DEFAULT_SIZES);
@@ -676,6 +684,9 @@ List *dest_split(const char *src, List **locations) {
     core_YYSTYPE yylval;
     YYLTYPE yylloc;
     int depth = 0, start = 0, token;
+    bool atomic = false; // inside a BEGIN ATOMIC routine body: its own ; no places to cut at
+    bool boundary = true; // where a statement of the body would start, at it or right after a ; of it: the only place its END can stand
+    bool after_begin = false; // the token before this one was BEGIN: the body opens on the ATOMIC that follows it
     bool tokens = false;
     *locations = NIL;
     MemoryContextSwitchTo(context);
@@ -690,13 +701,24 @@ List *dest_split(const char *src, List **locations) {
 #endif
         while ((token = core_yylex(&yylval, &yylloc, scanner))) {
             if (token == ';' && depth <= 0) {
+                boundary = true;
+                if (atomic) continue; // one of the body's own, part of the statement being sent
                 if (tokens) { statements = lappend(statements, pnstrdup(src + start, yylloc + 1 - start)); positions = lappend_int(positions, start); }
                 start = yylloc + 1;
                 tokens = false;
+                after_begin = false;
                 continue;
             }
             if (token == '(') depth++; else if (token == ')') depth--;
             tokens = true;
+            if (atomic) {
+                if (boundary && dest_word(src, yylloc, "end")) atomic = false;
+                else boundary = false;
+            } else if (after_begin && dest_word(src, yylloc, "atomic")) {
+                atomic = true;
+                boundary = true;
+            }
+            after_begin = dest_word(src, yylloc, "begin");
         }
         scanner_finish(scanner);
         if (tokens) { statements = lappend(statements, pstrdup(src + start)); positions = lappend_int(positions, start); }
