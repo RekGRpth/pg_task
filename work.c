@@ -567,7 +567,7 @@ static long work_deadline(void) {
 #endif
     if (!soonest) return -1;
     TimestampDifference(GetCurrentTimestamp(), soonest, &secs, &usecs);
-    return secs * 1000 + (usecs + 999) / 1000; // rounded up, so as not to wake up just before
+    return Min((int64)secs * 1000 + (usecs + 999) / 1000, (int64)INT_MAX); // rounded up, so as not to wake up just before, and in int64 before the clamp: long may be 32 bits
 }
 
 // a remote task still connecting past the connect_timeout of its connection string fails, as a synchronous connection would, or goes on to the next host, see work_next(); a cancel request still not through past its time is given up
@@ -1509,7 +1509,7 @@ static void work_start(Task *t) {
     values[arg] = NULL;
     t->event = WL_SOCKET_MASK;
     t->socket = work_connect;
-    t->deadline = connect_timeout > 0 ? TimestampTzPlusMilliseconds(GetCurrentTimestamp(), Max(connect_timeout, 2) * 1000L) : 0; // as libpq takes it, 2 seconds at least, for each host
+    t->deadline = connect_timeout > 0 ? TimestampTzPlusMilliseconds(GetCurrentTimestamp(), (int64)Max(connect_timeout, 2) * 1000) : 0; // as libpq takes it, 2 seconds at least, for each host; in int64, as long may be 32 bits
 #if PG_VERSION_NUM >= 130000
     if (!work_acquire(t)) work_error((errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION), errmsg("could not establish connection"), errdetail("There are too many open files on the local server."), errhint("Raise the server's max_files_per_process and/or \"ulimit -n\" limits."))); else
 #endif
@@ -2061,7 +2061,7 @@ void work_main(Datum main_arg) {
                 long secs;
                 int usecs;
                 TimestampDifference(GetCurrentTimestamp(), until, &secs, &usecs);
-                if (secs * 1000 + (usecs + 999) / 1000 < timeout) timeout = secs * 1000 + (usecs + 999) / 1000;
+                if ((int64)secs * 1000 + (usecs + 999) / 1000 < timeout) timeout = Min((int64)secs * 1000 + (usecs + 999) / 1000, (int64)INT_MAX); // in int64 before the clamp: long may be 32 bits
             }
             if (timeout < current_sleep) timeout = current_sleep;
         }
