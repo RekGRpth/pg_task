@@ -781,7 +781,7 @@ static bool work_busy(Task *t, void (*socket) (Task *t)) {
 
 // the results came in the client_encoding of the connection, which is that of this database (see work_remote()) unless the input set another one, which, as servers from 14 on tell of it only once the input is through, if at all, can't be told by result, and so did the messages of the server, localized: convert each statement's suffix to the encoding of this database, rather than only check its bytes as text of it, which other characters may be valid as too; one that can't be converted, or whose encoding wasn't reported before a connection loss, is dropped, for the error of it, after the one the task has, if any
 static bool work_convert(Task *t, StringInfo buf, int start, int encoding) {
-    char *data;
+    char *volatile data = NULL;
     int len;
     MemoryContext context = CurrentMemoryContext;
     bool started = encoding != GetDatabaseEncoding() && !IsTransactionState(); // the conversion's catalog lookup needs a transaction, which reading a result doesn't otherwise have
@@ -811,6 +811,7 @@ static bool work_convert(Task *t, StringInfo buf, int start, int encoding) {
     PG_CATCH();
         MemoryContextSwitchTo(context); // out of ErrorContext, as in work_error()
         if (IsTransactionState()) AbortCurrentTransaction();
+        if (data && data != buf->data + start) pfree(data); // converted and then let down by its commit or its buffer's growing: freed, not left behind, the buffer's own bytes never, see pg_any_to_server()
         if (buf->data) { buf->len = start; buf->data[start] = '\0'; }
         task_error(t);
         EmitErrorReport();
@@ -997,7 +998,7 @@ static void work_copy_socket(Task *t) {
 
 // the text of the statement itself in the client_encoding the last one left, rather than in this database's encoding, as libpq would send its bytes unchanged otherwise
 static const char *work_statement_input(Task *t, const char *input) {
-    char *converted = NULL;
+    char *volatile converted = NULL;
     MemoryContext context = CurrentMemoryContext;
     bool started = t->encoding != GetDatabaseEncoding() && !IsTransactionState();
     ErrorData *volatile edata = NULL;
@@ -1015,6 +1016,7 @@ static const char *work_statement_input(Task *t, const char *input) {
         MemoryContextSwitchTo(context);
     PG_END_TRY();
     if (edata) {
+        if (converted && converted != input) pfree(converted); // converted and then let down by its commit: freed, not left behind, the input's own bytes never, see pg_server_to_any()
         work_error((errcode(edata->sqlerrcode), errmsg("%s", edata->message)));
         FreeErrorData(edata);
         return NULL;
