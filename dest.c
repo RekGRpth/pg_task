@@ -680,7 +680,7 @@ List *dest_split(const char *src, List **locations) {
     *locations = NIL;
     MemoryContextSwitchTo(context);
     PG_TRY();
-#if PG_VERSION_NUM >= 180000
+#if PG_VERSION_NUM >= 120000
         scanner = scanner_init(src, &yyextra, &ScanKeywords, ScanKeywordTokens);
 #else
         scanner = scanner_init(src, &yyextra, ScanKeywords, NumScanKeywords);

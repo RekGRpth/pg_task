@@ -43,7 +43,7 @@
 #define WaitLatchOrSocketMy(latch, wakeEvents, sock, timeout) WaitLatchOrSocket(latch, wakeEvents, sock, timeout)
 #endif
 
-#if PG_VERSION_NUM >= 170000
+#if PG_VERSION_NUM >= 130000
 #define lnext_my(list, cell) lnext(list, cell)
 #else
 #define lnext_my(list, cell) lnext(cell)
