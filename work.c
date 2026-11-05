@@ -136,6 +136,7 @@ static void work_result(Task *t);
 static void work_statement(Task *t);
 static void work_stop(const Work *w);
 static bool work_superuser(const char *user);
+static void work_local_text(Task *t);
 static bool work_verify(Task *t);
 
 #define work_error(...) do { \
@@ -146,11 +147,11 @@ static bool work_verify(Task *t);
         ereport(ERROR, __VA_ARGS__); \
     PG_CATCH(); \
         MemoryContextSwitchTo(work_error_context); /* out of ErrorContext, the rest to run in, the bookkeeping say, rather than in one that the next error resets */ \
+        work_local_text(t); /* the output so far and the server's messages dealt with as a task done would have them, see work_encoding(), before the text of this error goes in */ \
         task_error(t); \
         EmitErrorReport(); \
         FlushErrorState(); \
     PG_END_TRY(); \
-    (void)work_verify(t); /* as a task done would have them, see work_encoding(): a remote task's output so far, and the server's messages, its connection broken say */ \
     if (!work_error_remote) { work_error_exit = task_done(t, false); /* with live = false nothing new is taken into t, so it can be dropped */ if (t->held) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", its row held by someone else, its error not recorded, the task left in TAKE for the next reset", t->shared->id))); work_free(t); } \
     else if (work_bookkeeping(t, false, &work_error_exit)) work_finish(t); \
     else work_defer(t); \
@@ -826,6 +827,13 @@ static bool work_verify(Task *t) {
     return valid;
 }
 
+// local text, in the encoding of this database, about to go into the output or the error of a remote task: the data of the statement in flight dealt with first, converted or dropped as of an encoding it can't be told from, so that none of it is taken with the local text after it, converted from the client_encoding or scanned as of an unknown one; the starts then past both, the local text no concern of what the next statement converts
+static void work_local_text(Task *t) {
+    (void)work_verify(t);
+    t->error_start = t->error.data ? t->error.len : 0;
+    t->output_start = t->output.data ? t->output.len : 0;
+}
+
 // a task done with results that aren't text of this database fails, as inserting them would
 static bool work_encoding(Task *t) {
     bool exit;
@@ -966,6 +974,7 @@ static bool work_copy(Task *t) {
         }
     PG_CATCH();
         MemoryContextSwitchTo(context); // out of ErrorContext, as in work_error()
+        work_local_text(t); // the output so far dealt with before the text of this error goes in, see work_error()
         task_error(t);
         EmitErrorReport();
         FlushErrorState();
@@ -1020,6 +1029,7 @@ static void work_statement(Task *t) {
     t->encoding_known = false;
     // a stop come between statements, whose cancel the server, idle there, ignored: fail the task as the cancel would have it, rather than send the next one
     if (t->shared->stopped && t->shared->stop == t->shared->id) {
+        work_local_text(t); // its text is local, of this database, not converted from whatever client_encoding the statements before it left
         if (!t->output.data) initStringInfoMy(&t->output);
         initStringInfoMy(&t->error);
         appendStringInfo(&t->error, "%s:  ", _(error_severity(ERROR)));
@@ -1060,6 +1070,7 @@ static void work_result(Task *t) {
             work_output(t);
         PG_CATCH();
             MemoryContextSwitchTo(context); // out of ErrorContext, as in work_error()
+            work_local_text(t); // the output so far dealt with before the text of this error goes in, see work_error()
             task_error(t);
             EmitErrorReport();
             FlushErrorState();
@@ -1099,6 +1110,7 @@ static void work_input(Task *t) {
     work_encoding_update(t);
     if (!t->error.data && dest_copy_stdin(t->input)) { work_error((errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("COPY FROM STDIN is not supported"))); return; } // as a local task is, before any statement of its input runs, not once its server gets to it
     if (!t->error.data && task_char(t)) { // its output made here, see work_output(), as a local one's is: failed before its input runs too, see dest_timeout()
+        work_local_text(t); // its text is local, of this database, not converted from whatever client_encoding a task before it on the session left, see save
         if (!t->output.data) initStringInfoMy(&t->output);
         initStringInfoMy(&t->error);
         appendStringInfo(&t->error, "%s:  ", _(error_severity(ERROR)));

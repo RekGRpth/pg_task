@@ -1,0 +1,16 @@
+-- the error pg_work itself writes into a remote task is text of this database, whatever client_encoding the task's statements set: kept as it is, neither dropped as of an encoding it can't be told from nor converted from the client one, told by a statement whose own text has no equivalence in the encoding it sets (in a database not in UTF8 there is nothing to tell)
+DELETE FROM task WHERE "group" = 'local_error';
+SELECT quote_literal(CURRENT_TIMESTAMP) AS ct
+\gset
+INSERT INTO task ("group", input, remote)
+SELECT 'local_error', 'SET client_encoding = ''EUC_JP''; SELECT ''ሴ''', 'dbname=' || :'DBNAME'
+WHERE pg_catalog.getdatabaseencoding() = 'UTF8';
+DO $body$ DECLARE ok boolean := false; BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM task WHERE "group" = 'local_error' AND state NOT IN ('DONE', 'GONE', 'FAIL')) THEN ok := true; EXIT; END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+    IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''local_error'' to finish (leave PLAN/TAKE/WORK)'; END IF;
+END;$body$ LANGUAGE plpgsql;
+SELECT pg_catalog.getdatabaseencoding() <> 'UTF8' OR (state = 'FAIL' AND error LIKE '%no equivalent%' AND error NOT LIKE '%unknown after connection loss%' AND pg_catalog.convert_to(error, 'UTF8') IS NOT NULL) AS ok FROM task WHERE "group" = 'local_error';
+DELETE FROM task WHERE "group" = 'local_error';
