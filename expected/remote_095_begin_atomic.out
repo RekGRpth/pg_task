@@ -24,6 +24,8 @@ SELECT current_setting('server_version_num')::int < 140000
  t
 (1 row)
 
+SET client_min_messages = warning;
 DROP FUNCTION IF EXISTS pg_task_test_begin_atomic();
+RESET client_min_messages;
 DELETE FROM task WHERE "group" = 'begin_atomic';
 DROP TABLE begin_atomic_runs;

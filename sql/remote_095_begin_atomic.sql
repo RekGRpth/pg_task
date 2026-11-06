@@ -19,6 +19,8 @@ END;$body$ LANGUAGE plpgsql;
 SELECT current_setting('server_version_num')::int < 140000
     OR ((SELECT count(*) = 1 FROM task WHERE "group" = 'begin_atomic' AND state = 'DONE' AND error IS NULL AND plan > :ct::timestamptz)
         AND (SELECT array_agg(v ORDER BY v) FROM begin_atomic_runs) = ARRAY[0, 1, 2]) AS ok;
+SET client_min_messages = warning;
 DROP FUNCTION IF EXISTS pg_task_test_begin_atomic();
+RESET client_min_messages;
 DELETE FROM task WHERE "group" = 'begin_atomic';
 DROP TABLE begin_atomic_runs;
