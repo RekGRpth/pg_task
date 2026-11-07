@@ -34,6 +34,30 @@ static Oid save_userid;
 static MemoryContext prior = NULL; // the memory before the transaction SPI_connect_my() started, to go back to once it's over, as PostgreSQL does from 18 on, rather than to TopMemoryContext, where what the caller allocates next, the memory of an attempt of pg_conf, say, see conf_check(), would never be freed
 #endif
 
+#ifdef USE_ASSERT_CHECKING
+// one live bracket only: its single state above would be overwritten by a nested connect, even for the same user. A bracket whose transaction was torn down without SPI_abort_my(), by AbortOutOfAnyTransaction() on a worker's exit say, is no longer live: a cleanup such as dest_untake() may open another one then. Reset the stale depth rather than count such cleanup as nesting. SPI_abort_my() also cleans up transactions opened outside the wrapper, by exec_simple_query() in make_data() say, so depth zero is valid there with a transaction to abort.
+static int spi_depth = 0;
+#define SPI_NESTING_ENTER() \
+    do { \
+        Assert(spi_depth == 0 || !IsTransactionState()); \
+        spi_depth = 1; \
+    } while (0)
+#define SPI_NESTING_LEAVE() \
+    do { \
+        Assert(spi_depth == 1); \
+        spi_depth = 0; \
+    } while (0)
+#define SPI_NESTING_ABORT() \
+    do { \
+        Assert(spi_depth == 1 || IsTransactionState()); \
+        spi_depth = 0; \
+    } while (0)
+#else
+#define SPI_NESTING_ENTER() ((void)0)
+#define SPI_NESTING_LEAVE() ((void)0)
+#define SPI_NESTING_ABORT() ((void)0)
+#endif
+
 static const char *stmt_type(STMT_TYPE stmt) {
     switch (stmt) {
         case STMT_BIND: return "bind";
@@ -160,6 +184,7 @@ static void SPI_set_config_my(const char *name, const char *value) {
 // a valid userid runs the whole transaction as that user, like a security definer function does, and as a security-restricted operation, as PostgreSQL does when running code as a more privileged user within someone else's session: switched only after the transaction started, so that an abort restores it by itself, and restored before the commit, since no transaction may start with a security context set
 void SPI_connect_my(const char *src, Oid userid) {
     int rc;
+    SPI_NESTING_ENTER();
 #ifdef HOLD_CANCEL_INTERRUPTS
     // a task worker's bookkeeping, outside any PG_TRY(), which a cancel coming meanwhile (pg_cancel_backend(), a timeout), up to the end of its commit, would fail, taking the worker and the task's result down: hold it off, for no task, as a backend between statements does
     if ((held = OidIsValid(userid))) HOLD_CANCEL_INTERRUPTS();
@@ -229,6 +254,7 @@ void SPI_execute_with_args_my(const char *src, int nargs, Oid *argtypes, Datum *
 
 // undoes SPI_connect_my() after an error its caller catches to carry on: aborting the transaction also ends SPI, pops the snapshot and takes back a switched userid
 void SPI_abort_my(void) {
+    SPI_NESTING_ABORT();
     disable_timeout(STATEMENT_TIMEOUT, false);
     AbortCurrentTransaction();
 #if PG_VERSION_NUM < 180000
@@ -269,4 +295,5 @@ void SPI_finish_my(void) {
     pgstat_report_stat(false);
     debug_query_string = NULL;
     pgstat_report_activity(STATE_IDLE, NULL);
+    SPI_NESTING_LEAVE();
 }
