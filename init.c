@@ -79,6 +79,7 @@ typedef struct Pause {
     TimestampTz until;
 } Pause;
 static Pause *pauses = NULL;
+static uint64 *work_reg = NULL; // the next registration of a pg_work, kept across restarts of pg_conf, unlike its pid and process-local counter, which could recur together and make a new registration indistinguishable from an old one
 #if PG_VERSION_NUM < 130000
 volatile sig_atomic_t ShutdownRequestPending = false;
 #endif
@@ -253,7 +254,7 @@ void appendBinaryStringInfoEscapeQuote(StringInfo buf, const char *data, int len
 }
 
 static size_t init_shared_memsize(void) {
-    return add_size(mul_size(init.conf.max, sizeof(Shared)), mul_size(init.conf.max, sizeof(Pause))); // as many pauses as slots, those of the more groups at once putting off the ones of the soonest ends, see init_pause()
+    return add_size(add_size(mul_size(init.conf.max, sizeof(Shared)), mul_size(init.conf.max, sizeof(Pause))), sizeof(*work_reg)); // as many pauses as slots, those of the more groups at once putting off the ones of the soonest ends, see init_pause(), and the registration counter
 }
 
 #if PG_VERSION_NUM >= 150000
@@ -270,6 +271,7 @@ static void init_shmem_startup_hook(void) {
     shared = ShmemInitStruct("pg_shared", init_shared_memsize(), &found);
     if (!found) MemSet(shared, 0, init_shared_memsize());
     pauses = (Pause *)(shared + init.conf.max);
+    work_reg = (uint64 *)(pauses + init.conf.max);
     elog(DEBUG1, "pg_shared %s found", found ? "" : "not");
     LWLockRelease(AddinShmemInitLock);
 }
@@ -442,6 +444,15 @@ bool is_log_level_output(int elevel, int log_min_level) {
         if (elevel >= FATAL) return true; // elevel != LOG
     } else if (elevel >= log_min_level) return true; // Neither is LOG
     return false;
+}
+
+// a registration of pg_work unlike any issued by an earlier pg_conf of this server too: the counter is in shared memory, which outlives pg_conf, rather than derived from its pid and a count starting over in each of its processes; zero, which marks a task worker's slot as having no registration, is skipped if the counter ever wraps
+int64 init_work_reg(void) {
+    uint64 reg;
+    LWLockAcquire(BackgroundWorkerLock, LW_EXCLUSIVE);
+    if (!(reg = ++*work_reg)) reg = ++*work_reg;
+    LWLockRelease(BackgroundWorkerLock);
+    return (int64)reg;
 }
 
 int init_arg(const Shared *s) {

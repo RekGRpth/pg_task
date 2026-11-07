@@ -46,12 +46,6 @@ typedef struct Registered {
     bool terminated; // by pg_conf, restarted by the postmaster since it was seen stopped, its slot left to it till it's gone: checked again every second till then, as its exit, its slot held still, tells conf_exited() nothing otherwise, see conf_reconcile()
 } Registered;
 
-// tells a registration of pg_work from any other, across restarts of pg_conf too, for its slot to be freed only while still its, see init_free_work()
-static int64 conf_reg(void) {
-    static uint32 n = 0;
-    return ((int64)MyProcPid << 32) | ++n;
-}
-
 static void conf_exit(int code, Datum arg) {
     elog(DEBUG1, "code = %i", code);
 }
@@ -125,7 +119,7 @@ static void conf_work(Work *w, bool in_use) {
     if ((len = strlcpy(worker.bgw_type, worker.bgw_name, sizeof(worker.bgw_type))) >= sizeof(worker.bgw_type)) ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("strlcpy %zu >= %zu", len, sizeof(worker.bgw_type))));
 #endif
     worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
-    w->shared->reg = conf_reg();
+    w->shared->reg = init_work_reg();
 #if PG_VERSION_NUM >= 90500
     memcpy(worker.bgw_extra, &w->shared->reg, sizeof(w->shared->reg)); // for the pg_work to tell its slot by, see init_work_start()
 #endif

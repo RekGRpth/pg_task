@@ -170,6 +170,7 @@ bool init_free_task(int slot, const char *data, Oid oid, int64 id);
 bool init_free_work(int slot, int64 reg);
 bool init_held_work(int slot, int64 reg);
 void init_work(int n, const char **data, const char **user, const int *hash, bool *in_use);
+int64 init_work_reg(void);
 int init_work_start(int slot, int64 reg, int pid);
 void init_work_exited(int slot, int64 reg);
 void init_work_kept(Shared *ws);
