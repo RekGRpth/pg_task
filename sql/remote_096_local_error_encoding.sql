@@ -12,5 +12,5 @@ DO $body$ DECLARE ok boolean := false; BEGIN
     END LOOP;
     IF NOT ok THEN RAISE EXCEPTION 'timed out after 300 x pg_sleep(0.1) waiting for task group ''local_error'' to finish (leave PLAN/TAKE/WORK)'; END IF;
 END;$body$ LANGUAGE plpgsql;
-SELECT pg_catalog.getdatabaseencoding() <> 'UTF8' OR (state = 'FAIL' AND error LIKE '%no equivalent%' AND error NOT LIKE '%unknown after connection loss%' AND pg_catalog.convert_to(error, 'UTF8') IS NOT NULL) AS ok FROM task WHERE "group" = 'local_error';
+SELECT pg_catalog.getdatabaseencoding() <> 'UTF8' OR pg_catalog.bool_and(state = 'FAIL' AND error LIKE '%no equivalent%' AND error NOT LIKE '%unknown after connection loss%' AND pg_catalog.convert_to(error, 'UTF8') IS NOT NULL) AS ok FROM task WHERE "group" = 'local_error';
 DELETE FROM task WHERE "group" = 'local_error';
