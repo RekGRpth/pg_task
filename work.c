@@ -161,8 +161,7 @@ static bool work_verify(Task *t);
 #define work_broken(...) do { \
     if (t->socket == work_discard || t->socket == work_query) { \
         ereport(WARNING, __VA_ARGS__); \
-        task_untake(t); \
-        work_finish(t); \
+        if (work_untake(t)) work_finish(t); \
     } else work_error(__VA_ARGS__); \
 } while(0)
 
@@ -467,9 +466,10 @@ static void work_finish(Task *t) {
     work_free(t);
 }
 
-// the bookkeeping put off: the connection closed, the task done with it, and the slot of its group freed, but for a negative max, but the task kept, with the lock of its id, for work_reset() to leave it be, till work_pending() records it
+// the bookkeeping put off: the connection closed, the task done with it, and the slot of its group freed, but for a negative max, but the task kept, with the lock of its id, for work_reset() to leave it be, till work_pending() records it; a task taken for nothing has no pause of a negative max to keep the slot for either
 static void work_defer(Task *t) {
-    ereport(WARNING, (errmsg("id = " INT64_FORMAT ", its row held by someone else, its bookkeeping put off", t->shared->id)));
+    if (t->untake) ereport(WARNING, (errmsg("id = " INT64_FORMAT ", its row held by someone else, its return to PLAN put off", t->shared->id)));
+    else ereport(WARNING, (errmsg("id = " INT64_FORMAT ", its row held by someone else, its bookkeeping put off", t->shared->id)));
     if (t->conn) {
         PQfinish(t->conn);
 #if PG_VERSION_NUM >= 130000
@@ -478,7 +478,7 @@ static void work_defer(Task *t) {
         t->conn = NULL;
     }
     // a pause, of a negative max, scheduled by the bookkeeping only, see task_done(): the slot of the group held till then, by the locks of the connection gone, for no next task of the group to be taken before the pause, see work_pending()
-    if (t->shared->max >= 0) {
+    if (t->shared->max >= 0 || t->untake) {
         work_unreserve(t);
         if (t->pid && !unlock_table_pid_hash(t->shared->oid, t->key, t->shared->hash)) ereport(WARNING, (errmsg("!unlock_table_pid_hash(%i, %i, %i)", t->shared->oid, t->key, t->shared->hash)));
         t->key = t->pid = 0;
@@ -486,6 +486,14 @@ static void work_defer(Task *t) {
     }
     dlist_delete(&t->node);
     dlist_push_tail(&pending, &t->node);
+}
+
+// a task taken for nothing back to PLAN, its row held by someone else, tried again once a sleep rather than left in TAKE till the next reset; the caller frees it only when it was put back now
+static bool work_untake(Task *t) {
+    if (task_untake_try(t)) return true;
+    t->untake = true;
+    work_defer(t);
+    return false;
 }
 
 // the remote tasks connected whose rows someone else held as they were to start, see task_work(), tried again
@@ -515,13 +523,15 @@ static bool work_waiting(void) {
     return false;
 }
 
-// the bookkeeping put off tried again, with no next task to take, the connection gone
+// the bookkeeping put off, or the return of a task taken for nothing to PLAN, tried again, with no next task to take, the connection gone
 static void work_pending(void) {
     dlist_mutable_iter iter;
     dlist_foreach_modify(iter, &pending) {
         Task *t = dlist_container(Task, node, iter.cur);
         bool exit;
-        if (work_bookkeeping(t, false, &exit)) work_finish(t); // the slot of its group freed too, if still held, see work_defer()
+        if (t->untake) {
+            if (task_untake_try(t)) work_finish(t);
+        } else if (work_bookkeeping(t, false, &exit)) work_finish(t); // the slot of its group freed too, if still held, see work_defer()
     }
 }
 
@@ -875,7 +885,7 @@ static void work_done(Task *t) {
     if (!work_bookkeeping(t, live, &exit)) { work_defer(t); return; }
     if (exit || !live) { work_finish(t); return; }
     if (t->save) { work_query(t); return; }
-    if (!PQsendQuery(t->conn, SQL(DISCARD ALL;))) { ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQsendQuery failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); task_untake(t); work_finish(t); return; }
+    if (!PQsendQuery(t->conn, SQL(DISCARD ALL;))) { ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQsendQuery failed", t->shared->id), work_errdetail(PQerrorMessage(t->conn)))); if (work_untake(t)) work_finish(t); return; }
     t->socket = work_discard;
     t->event = WL_SOCKET_READABLE;
 }
@@ -887,11 +897,11 @@ static void work_discard(Task *t) {
         work_encoding_update(t);
         switch (PQresultStatus(result)) {
             case PGRES_COMMAND_OK: elog(DEBUG1, "id = " INT64_FORMAT ", %s", t->shared->id, PQcmdStatus(result)); break;
-            case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); PQclear(result); task_untake(t); work_finish(t); return; // closes the connection, whatever else it was to read
+            case PGRES_FATAL_ERROR: ereport(WARNING, (errmsg("id = " INT64_FORMAT ", PQresultStatus == PGRES_FATAL_ERROR", t->shared->id), work_errdetail(PQresultErrorMessage(result)))); PQclear(result); if (work_untake(t)) work_finish(t); return; // closes the connection, whatever else it was to read
             default: elog(DEBUG1, "id = " INT64_FORMAT ", %s", t->shared->id, PQresStatus(PQresultStatus(result))); break;
         }
     }
-    if (PQstatus(t->conn) != CONNECTION_OK) { task_untake(t); work_finish(t); } else work_query(t); // the next task, which task_done() took already, has nothing to run on
+    if (PQstatus(t->conn) != CONNECTION_OK) { if (work_untake(t)) work_finish(t); } else work_query(t); // the next task, which task_done() took already, has nothing to run on
 }
 
 static void work_headers(Task *t, const PGresult *result) {
@@ -1695,8 +1705,7 @@ static void work_later(Task *t, const char *message, const char *setting) {
     bool *later = t->remote ? &later_remote : &later_local;
     ereport(*later ? DEBUG1 : WARNING, (errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED), errmsg("id = " INT64_FORMAT ", %s, to be run later", t->shared->id, message), errhint("Consider increasing configuration parameter \"%s\".", setting)));
     *later = true;
-    task_untake(t);
-    work_free(t);
+    if (work_untake(t)) work_free(t);
 }
 
 static void work_task(Task *t) {

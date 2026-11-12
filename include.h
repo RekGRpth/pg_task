@@ -116,6 +116,7 @@ typedef struct Task {
     bool encoding_known; // of a remote statement, its results read to ReadyForQuery, so the server has reported any client_encoding it set
     bool fatal; // of a remote task, a FATAL of its server read, the end of its connection to come next, see work_readable()
     bool take; // of a remote task, the lock of its taking held, see lock_table_take()
+    bool untake; // of a task taken for nothing, its return to PLAN waiting for a row someone else holds, see work_pending()
     bool spare; // of a remote task, from 13 on, a file descriptor held, along with that of its connection, for the socket of a cancel request on it, see work_acquire()
     bool lock;
     bool reserve;
