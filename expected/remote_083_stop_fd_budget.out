@@ -16,14 +16,14 @@ END;$body$ LANGUAGE plpgsql;
 SELECT set_config('pg_task_test.stop_at', clock_timestamp()::text, false) AS ignored
 \gset
 UPDATE task SET state = 'STOP' WHERE "group" LIKE 'stop_fd_budget_%' AND state IN ('PLAN', 'WORK');
--- one taken just then, as a probe for a file descriptor, may not go to STOP: stopped once back in PLAN, or in WORK
+-- one taken just then, as a probe for a file descriptor, may not go to STOP: stopped once back in PLAN, or in WORK; a held one returned to PLAN by the retry after an UPDATE would else be left there, so keep STOPping until none in PLAN, WORK, or TAKE
 DO $body$ BEGIN
     FOR i IN 1..100 LOOP
-        EXIT WHEN NOT EXISTS (SELECT 1 FROM task WHERE "group" LIKE 'stop_fd_budget_%' AND state = 'TAKE');
+        EXIT WHEN NOT EXISTS (SELECT 1 FROM task WHERE "group" LIKE 'stop_fd_budget_%' AND state IN ('PLAN', 'WORK', 'TAKE'));
+        UPDATE task SET state = 'STOP' WHERE "group" LIKE 'stop_fd_budget_%' AND state IN ('PLAN', 'WORK');
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$body$ LANGUAGE plpgsql;
-UPDATE task SET state = 'STOP' WHERE "group" LIKE 'stop_fd_budget_%' AND state IN ('PLAN', 'WORK');
 DO $body$ DECLARE ok boolean := false; BEGIN
     FOR i IN 1..300 LOOP
         PERFORM pg_stat_clear_snapshot();
